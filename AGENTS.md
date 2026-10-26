@@ -69,23 +69,52 @@ Planning documents live exactly as long as the PR is a draft
 An ad-hoc PR with no planning documents has nothing to wrap; say so in
 its body instead of inventing documents after the fact.
 
-## Quality gates (run before every push)
+## Lint and quality gates — mandatory before commit and before pushing a PR
+
+These are the lint rules of this repository. They are not advisory:
+the branch ruleset requires the same checks green in CI
+(`test (3.11)` / `test (3.12)`) before any PR can merge, so a red
+local run is a red PR.
+
+| Gate | Command | Rules configured in |
+|---|---|---|
+| Ruff lint | `uv run ruff check src tests` | `pyproject.toml` `[tool.ruff.lint]` (`E`, `F`, `I`, `UP`, `B`) |
+| Ruff format | `uv run ruff format --check src tests` | `pyproject.toml` `[tool.ruff]` |
+| Type check | `uv run mypy` | `pyproject.toml` `[tool.mypy]` — `strict = true` |
+| Tests | `uv run pytest -q` | `pyproject.toml` `[tool.pytest.ini_options]` |
+
+Rules for the agent:
+
+1. **Run the full set after your final edit and before `git commit`.**
+   Then run it again before pushing the PR branch (and again before
+   `gh pr ready` if anything changed since). One green run on stale
+   code proves nothing.
+2. **Never commit or push a red gate and hope CI or review catches
+   it.** Fix the code until every gate passes locally, in this order:
+   `ruff format` (auto-fix), `ruff check`, `mypy`, `pytest`.
+3. **Never silence a gate to get green** — no new `# noqa`,
+   `# type: ignore`, per-file ignores, relaxed mypy settings, or
+   skipped tests — unless the change itself is the subject of the PR
+   and the reason is stated in the PR body.
+4. If a gate failure looks pre-existing, prove it on the untouched
+   base (`git stash` / a clean checkout) before claiming so; report
+   it as a finding instead of letting your PR go red.
+5. Strong types everywhere: all of `src` and `tests` must pass `mypy`
+   in strict mode. No untyped definitions, no implicit `Any` leaking
+   out of adapters — contain untyped native boundaries behind a typed
+   protocol (see `src/surmap/slam/rtabmap.py`).
+6. The environment is project-local and uv-managed (`.venv`,
+   `uv.lock`); run the gates through `uv run`, never the system
+   Python.
 
 ```bash
-uv sync --group dev
+uv sync --group dev   # once per checkout / after dependency changes
 uv run ruff check src tests
 uv run ruff format --check src tests
-uv run mypy            # strict — untyped code is a failure
+uv run mypy
 uv run pytest -q
+# only when all four pass: git commit, git push, open/update the PR
 ```
-
-- Strong types everywhere: all of `src` and `tests` must pass `mypy`
-  in strict mode (configured in `pyproject.toml`). No untyped
-  definitions, no implicit `Any` leaking out of adapters — contain
-  untyped native boundaries behind a typed protocol (see
-  `src/surmap/slam/rtabmap.py`).
-- The environment is project-local and uv-managed (`.venv`,
-  `uv.lock`); never install into the system Python.
 
 ## Git and PR ownership
 
