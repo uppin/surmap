@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+package surmap.transport.v1;
+
+import "google/protobuf/wrappers.proto";
+
+/*
+ConnectRPC over one WebSocket: the frames both peers exchange.
+
+Every WebSocket binary frame is one serialized `SocketFrame`. A frame belongs to a call by its
+`stream_id`; many calls share the socket. Either peer may start a call — the peer that dialed
+the socket numbers its calls with odd stream ids, the peer that accepted it with even ones —
+so a server can call a method on a client that dialed out to it.
+
+A call opens with a `SocketRequest` carrying `call_init`, then sends zero or more request
+messages and `end_of_stream`. The called peer answers with `SocketResponse` frames: optional
+headers, zero or more response messages, and a final frame with `end_of_stream` and trailers,
+or with `error`. `abort` cancels a call from the calling side. Messages are the method's
+request and response protobufs, serialized; the frames never parse them.
+
+There is no service here: these frames carry other services' calls.
+*/
+
+// One frame on the socket: part of a call a peer made, or part of its answer.
+message SocketFrame {
+  // Which half of a call this frame belongs to.
+  oneof kind {
+    // A frame from the calling peer.
+    SocketRequest request = 1;
+
+    // A frame from the called peer.
+    SocketResponse response = 2;
+  }
+}
+
+// A calling-side frame.
+message SocketRequest {
+  // The call this frame belongs to. Odd when the dialing peer called, even when the accepting peer did.
+  int32 stream_id = 1;
+
+  // One serialized request message.
+  google.protobuf.BytesValue message = 2;
+
+  // Present on a call's first frame only: which method, with what metadata.
+  CallInit call_init = 3;
+
+  // The caller has sent its last request message.
+  bool end_of_stream = 4;
+
+  // The caller abandons the call.
+  bool abort = 5;
+}
+
+// A called-side frame.
+message SocketResponse {
+  // The call this frame answers.
+  int32 stream_id = 1;
+
+  // One serialized response message.
+  google.protobuf.BytesValue message = 2;
+
+  // Response headers, on the first response frame.
+  SocketMetadata headers = 3;
+
+  // The call is complete; no further frames for this stream id.
+  bool end_of_stream = 4;
+
+  // The call failed. Implies `end_of_stream`.
+  SocketError error = 5;
+
+  // Response trailers, on the final frame.
+  SocketMetadata trailers = 6;
+}
+
+// What a call's first frame names.
+message CallInit {
+  // The fully-qualified service name, e.g. `surmap.v1.SurveyService`.
+  google.protobuf.StringValue service_name = 1;
+
+  // The method name within the service.
+  google.protobuf.StringValue method_name = 2;
+
+  // The caller's deadline for the whole call, in milliseconds.
+  google.protobuf.Int32Value timeout_ms = 3;
+
+  // Request metadata, delivered to the handler as request headers.
+  SocketMetadata metadata = 4;
+}
+
+// Headers, trailers or request metadata.
+message SocketMetadata {
+  // The entries, in the order they were written.
+  repeated SocketMetadataEntry entries = 1;
+}
+
+// One metadata key and its values.
+message SocketMetadataEntry {
+  // The key, lower-case. A `-bin` suffix marks binary values.
+  google.protobuf.StringValue key = 1;
+
+  // The values, as bytes.
+  repeated bytes values = 2;
+}
+
+// Why a call failed.
+message SocketError {
+  // The Connect error code, by its numeric value (`canceled` = 1 … `unauthenticated` = 16).
+  int32 code = 1;
+
+  // A human-readable message.
+  google.protobuf.StringValue message = 2;
+}
