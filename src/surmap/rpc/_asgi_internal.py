@@ -323,9 +323,7 @@ async def stream_response_body_chunks(
         raise error
 
 
-async def feed_live_requests(
-    live: _LiveRequestStream, requests: AsyncIterable[Message]
-) -> None:
+async def feed_live_requests(live: _LiveRequestStream, requests: AsyncIterable[Message]) -> None:
     async for item in requests:
         live.push(encode_stream_request(item), end=False)
     live.finish()

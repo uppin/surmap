@@ -65,8 +65,6 @@ def unary_request_body_for_verify() -> bytes | None:
     return _unary_request_body.get()
 
 
-
-
 class FrameSocket(Protocol):
     """The socket a peer runs over: binary frames in, binary frames out."""
 

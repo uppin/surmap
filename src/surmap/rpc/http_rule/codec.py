@@ -404,9 +404,7 @@ def encode_stream_result(binding: HttpBinding, message: Message) -> bytes:
     return _dumps({"result": _response_value(binding, message)}) + b"\n"
 
 
-def _status(
-    code: Code, message: str, details: Iterable[object] = ()
-) -> dict[str, object]:
+def _status(code: Code, message: str, details: Iterable[object] = ()) -> dict[str, object]:
     return {
         "code": grpc_code_number(code),
         "message": message,
@@ -428,15 +426,11 @@ def _encode_status_details(details: Iterable[object]) -> list[object]:
     return encoded
 
 
-def encode_stream_error(
-    code: Code, message: str, details: Iterable[object] = ()
-) -> bytes:
+def encode_stream_error(code: Code, message: str, details: Iterable[object] = ()) -> bytes:
     """The final NDJSON line of a failed stream: `{"error": <status>}`."""
     return _dumps({"error": _status(code, message, details)}) + b"\n"
 
 
-def encode_error(
-    code: Code, message: str, details: Iterable[object] = ()
-) -> tuple[int, bytes]:
+def encode_error(code: Code, message: str, details: Iterable[object] = ()) -> tuple[int, bytes]:
     """`(HTTP status, google.rpc.Status JSON body)`."""
     return http_status_for(code), _dumps(_status(code, message, details))

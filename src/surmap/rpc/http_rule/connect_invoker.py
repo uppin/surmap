@@ -150,11 +150,7 @@ class ConnectAppInvoker:
 def _call_headers(
     method: MethodDescriptor, headers: Mapping[str, str], content_type: str
 ) -> dict[str, str]:
-    forwarded = {
-        name: value
-        for name, value in headers.items()
-        if name.lower() not in _HOP_BY_HOP
-    }
+    forwarded = {name: value for name, value in headers.items() if name.lower() not in _HOP_BY_HOP}
     return {
         "content-type": content_type,
         "connect-protocol-version": "1",
@@ -189,7 +185,6 @@ def _scope(
         "server": None,
         "extensions": {},
     }
-
 
 
 def _envelope(flags: int, payload: bytes) -> bytes:

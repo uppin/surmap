@@ -44,6 +44,8 @@ _WRAPPER_TYPES = frozenset(
         "BytesValue",
     )
 )
+
+
 class HttpRuleConfigError(ValueError):
     """A rule that cannot be served: bad template, unknown field, conflict, unsupported kind."""
 

@@ -149,9 +149,7 @@ def test_a_multi_segment_variable_keeps_encoded_slashes(path: str, decoded: str)
 
 
 def test_fully_decode_reserved_expansion_decodes_slashes_in_a_multi_segment_variable() -> None:
-    template = PathTemplate.parse(
-        "/v1/files/{name=**}", fully_decode_reserved_expansion=True
-    )
+    template = PathTemplate.parse("/v1/files/{name=**}", fully_decode_reserved_expansion=True)
     assert template.match("/v1/files/a%2Fb/c") == {"name": "a/b/c"}
 
 

@@ -36,6 +36,8 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 
 [tool.ruff]
+# Generated protobuf bindings are produced by scripts/gen_socket_rpc.py.
+extend-exclude = ["src/surmap/transport/v1/socket_rpc_pb2.py", "src/surmap/transport/v1/socket_rpc_pb2.pyi"]
 line-length = 100
 target-version = "py311"
 src = ["src", "tests"]

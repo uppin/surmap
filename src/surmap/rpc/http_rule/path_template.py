@@ -60,9 +60,7 @@ class Variable:
 class PathTemplate:
     """A parsed template; `match` gives each variable's decoded value by dotted field path."""
 
-    def __init__(
-        self, template: str, *, fully_decode_reserved_expansion: bool = False
-    ) -> None:
+    def __init__(self, template: str, *, fully_decode_reserved_expansion: bool = False) -> None:
         self.template = template
         self._fully_decode_reserved_expansion = fully_decode_reserved_expansion
         segments, variables, verb = _parse(template)

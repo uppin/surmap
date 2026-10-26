@@ -46,9 +46,7 @@ class RecordingBrick:
         self.calls: list[RecordedCall] = []
 
     def _record(self, method_name: str, request: Message, ctx: Any) -> None:
-        self.calls.append(
-            RecordedCall(method_name, request, dict(ctx.request_headers.items()))
-        )
+        self.calls.append(RecordedCall(method_name, request, dict(ctx.request_headers.items())))
 
     @property
     def brick(self) -> Brick:
