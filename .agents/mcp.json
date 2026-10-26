@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "git": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "git-mcp-server"
+      ]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ]
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "chrome-devtools-mcp@latest"
+      ]
+    },
+    "github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ]
+    }
+  }
+}
