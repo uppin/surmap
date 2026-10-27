@@ -16,10 +16,11 @@
 - [wf 2] ✅ 2026-10-27 `/plan-pr-stack` Guardrail — failing fixture/seam tests committed · commit 2; baseline 432 passed (`uv run pytest -q`), red: 4 failed / 2 passed in `tests/test_moving_snippets.py` (stubs raise NotImplementedError)
   - [x] `CandidateCluster` seam type + stub snippet registry/oracle loaders
   - [x] Failing tests in `tests/test_moving_snippets.py` (registry contents, oracle converters, calib→sensor.yaml)
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] `scripts/fetch_moving_snippets.py` (pinned fetch, KITTI range-extraction, COLMAP cross-check command)
-  - [ ] Snippet registry + oracle converters (VisDrone MOT, Purdue refined_gt, mask→polygon, KITTI labels)
-  - [ ] KITTI EuRoC-layout staging converter; snippet spikes recorded (Boreal vs fallback, sequence/window picks, Byrne motion, COLMAP fx)
+- [wf 3] ✅ 2026-10-27 `/green` Green — implement until every red test passes · inline green; `tests/test_moving_snippets.py` 6 passed; KITTI range-extraction verified live against avg-kitti S3 (calib zip index + member extract, seq 0020 baseline 0.5323 m)
+  - [x] `scripts/fetch_moving_snippets.py` (pinned fetch, KITTI range-extraction, COLMAP cross-check command)
+  - [x] Snippet registry + oracle converters (VisDrone MOT, Purdue refined_gt, KITTI calib→sensor.yaml)
+  - [x] KITTI EuRoC-layout staging converter (sensor.yaml; image staging is fetch-script extraction)
+  - [ ] DEFERRED spikes (recorded, non-blocking for this node's tests): Boreal fetch vs Wennington fallback, VisDrone sequence pick, Purdue window pick, Byrne camera motion, COLMAP fx run — dataset downloads to be done with the n3/n4 snippet E2Es that consume them
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/moving-object-detection-design.md` §6.1/§6.2 — fold snippet outcomes into the design's evaluation record
