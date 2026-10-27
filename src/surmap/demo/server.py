@@ -26,6 +26,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 from PIL import Image
 
@@ -37,6 +38,9 @@ from surmap.demo.datasets import (
     load_calibration,
     scaled_sensor_yaml,
 )
+from surmap.detection.detector import CoralDetector, decode_rgb
+from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
+from surmap.detection.source import CoralDetectionSource, DetectionSource
 from surmap.slam.sidecar import SidecarRtabmapBackend
 from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
 from surmap.types import StereoFramePair, Vec3
@@ -94,6 +98,7 @@ class DemoPlayer:
         start_index: int = 0,
         with_rtabmap: bool = True,
         stereo: StereoReconstructor | None = None,
+        detection_source: DetectionSource | None = None,
     ) -> None:
         if fps <= 0:
             raise ValueError("fps must be positive")
@@ -105,6 +110,7 @@ class DemoPlayer:
         self._start_index = start_index
         self._with_rtabmap = with_rtabmap
         self._stereo = stereo if stereo is not None else StereoReconstructor()
+        self._detection_source = detection_source
 
     def _backend(self) -> SidecarRtabmapBackend:
         prepared = self._prepared
@@ -167,6 +173,28 @@ class DemoPlayer:
                     },
                     jpeg=left_jpeg,
                 )
+                if self._detection_source is not None:
+                    # A separate event, keyed by frame_id — detections
+                    # are not attached to the frame event; the page
+                    # joins them by frame_id like a wire client would.
+                    rgb = decode_rgb(FrameImage(DISPLAY_WIDTH, DISPLAY_HEIGHT, "mjpeg", left_jpeg))
+                    tracked = self._detection_source.detect_tracked(index + 1, rgb)
+                    yield DemoEvent(
+                        "detections",
+                        {
+                            "frame_id": index + 1,
+                            "t_ns": t_ns,
+                            "objects": [
+                                {
+                                    "label": detection.label,
+                                    "score": round(detection.score, 2),
+                                    "track_id": detection.track_id,
+                                    "box": [round(value, 1) for value in detection.box_xyxy],
+                                }
+                                for detection in tracked
+                            ],
+                        },
+                    )
                 # Server-side pacing: one frame interval per frame,
                 # however long processing took — never a catch-up burst.
                 remaining = 1.0 / self._fps - (time.monotonic() - frame_started)
@@ -251,7 +279,8 @@ _PAGE = """<!DOCTYPE html>
       <span class="dot" style="background:#ff5a3c"></span> near &nbsp;
       <span class="dot" style="background:#ffb03a"></span> mid &nbsp;
       <span class="dot" style="background:#2fd4c4"></span> far
-      &nbsp;— projected stereo detections, sized by depth
+      &nbsp;— projected stereo detections, sized by depth.
+      Yellow boxes: tracked objects from the separate detections stream.
     </p>
   </div>
   <aside>
@@ -268,7 +297,21 @@ const view = document.getElementById('view').getContext('2d');
 const playback = document.getElementById('playback');
 const rtab = document.getElementById('rtab');
 let frames = 0, started = performance.now(), lastPoints = 0;
+let latestDetections = null;
 const source = new EventSource('/stream');
+function drawBoxes() {{
+  if (!latestDetections) return;
+  view.strokeStyle = '#ffd23c'; view.lineWidth = 1.6;
+  view.fillStyle = '#ffd23c'; view.font = '11px system-ui';
+  for (const object of latestDetections.objects) {{
+    const [x1, y1, x2, y2] = object.box;
+    view.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    view.fillText(`${{object.label}} #${{object.track_id}}`, x1 + 2, Math.max(10, y1 - 3));
+  }}
+}}
+source.addEventListener('detections', (event) => {{
+  latestDetections = JSON.parse(event.data);
+}});
 source.addEventListener('frame', (event) => {{
   const data = JSON.parse(event.data);
   const image = new Image();
@@ -281,6 +324,7 @@ source.addEventListener('frame', (event) => {{
       view.arc(point.x, point.y, point.d < 1.5 ? 2.2 : 1.4, 0, Math.PI * 2);
       view.fill();
     }}
+    drawBoxes();
     URL.revokeObjectURL(image.src);
   }};
   image.src = 'data:image/jpeg;base64,' + data.image_b64;
@@ -338,6 +382,15 @@ class _DemoHttpServer(ThreadingHTTPServer):
     stream_lock: threading.Lock
 
 
+def coral_detection_source(model_dir: Path, model: str = DEFAULT_PROFILE) -> CoralDetectionSource:
+    """The real Coral detector+tracker (CPU twin) for the demo."""
+    profile = MODEL_PROFILES[model]
+    detector = CoralDetector(
+        model_dir / profile.file_for(use_edgetpu=False), model_dir / "coco_labels.txt"
+    )
+    return CoralDetectionSource(detector)
+
+
 def make_demo_server(
     prepared: PreparedDataset,
     *,
@@ -347,6 +400,8 @@ def make_demo_server(
     max_frames: int = 0,
     start_index: int = 0,
     with_rtabmap: bool = True,
+    coral_model_dir: Path | None = None,
+    coral_model: str = DEFAULT_PROFILE,
 ) -> ThreadingHTTPServer:
     """The demo HTTP server (not yet serving); caller serves/closes it."""
     options: dict[str, object] = {
@@ -354,6 +409,9 @@ def make_demo_server(
         "max_frames": max_frames,
         "start_index": start_index,
         "with_rtabmap": with_rtabmap,
+        "detection_source": (
+            coral_detection_source(coral_model_dir, coral_model) if coral_model_dir else None
+        ),
     }
     server = _DemoHttpServer((host, port), _DemoHandler)
     server.prepared = prepared

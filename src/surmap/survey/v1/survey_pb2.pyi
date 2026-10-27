@@ -135,6 +135,34 @@ class Cm5Response(_message.Message):
     video: VideoFrameOut
     def __init__(self, points: _Optional[_Union[PointBatch, _Mapping[str, _Any]]] = ..., video: _Optional[_Union[VideoFrameOut, _Mapping[str, _Any]]] = ...) -> None: ...
 
+class ObjectDetection(_message.Message):
+    __slots__ = ("label", "score", "box", "track_id")
+    LABEL_FIELD_NUMBER: _ClassVar[int]
+    SCORE_FIELD_NUMBER: _ClassVar[int]
+    BOX_FIELD_NUMBER: _ClassVar[int]
+    TRACK_ID_FIELD_NUMBER: _ClassVar[int]
+    label: str
+    score: float
+    box: Box
+    track_id: int
+    def __init__(self, label: _Optional[str] = ..., score: _Optional[float] = ..., box: _Optional[_Union[Box, _Mapping[str, _Any]]] = ..., track_id: _Optional[int] = ...) -> None: ...
+
+class FrameDetections(_message.Message):
+    __slots__ = ("frame_id", "t_ns", "detections")
+    FRAME_ID_FIELD_NUMBER: _ClassVar[int]
+    T_NS_FIELD_NUMBER: _ClassVar[int]
+    DETECTIONS_FIELD_NUMBER: _ClassVar[int]
+    frame_id: int
+    t_ns: int
+    detections: _containers.RepeatedCompositeFieldContainer[ObjectDetection]
+    def __init__(self, frame_id: _Optional[int] = ..., t_ns: _Optional[int] = ..., detections: _Optional[_Iterable[_Union[ObjectDetection, _Mapping[str, _Any]]]] = ...) -> None: ...
+
+class DetectionResponse(_message.Message):
+    __slots__ = ("detections",)
+    DETECTIONS_FIELD_NUMBER: _ClassVar[int]
+    detections: FrameDetections
+    def __init__(self, detections: _Optional[_Union[FrameDetections, _Mapping[str, _Any]]] = ...) -> None: ...
+
 class StationStreamConfig(_message.Message):
     __slots__ = ("calibration", "analysis_mode", "concept_prompts")
     CALIBRATION_FIELD_NUMBER: _ClassVar[int]

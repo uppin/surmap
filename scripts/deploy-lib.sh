@@ -3,7 +3,7 @@
 # Sourced by deploy-cm5.sh / deploy-station.sh; not run directly.
 #
 # deploy_component <service> <module> <source-dir> <ssh-target> \
-#                  [remote-dir] [port] [ssh-port]
+#                  [remote-dir] [port] [ssh-port] [server-args]
 #
 # Sequence: rsync the source to the remote dir, install dependencies
 # there, render + install the systemd unit, then restart the service
@@ -12,6 +12,7 @@
 deploy_component() {
     service="$1"; module="$2"; source_dir="$3"; ssh_target="$4"
     remote_dir="${5:-/opt/surmap}"; port="$6"; ssh_port="${7:-22}"
+    server_args="${8:-}"
 
     if [ ! -d "$source_dir" ]; then
         echo "deploy: source dir not found: $source_dir" >&2
@@ -27,7 +28,7 @@ deploy_component() {
 
     echo "deploy: installing and restarting $service on $ssh_target"
     ssh -p "$ssh_port" "$ssh_target" \
-        "SERVICE='$service' MODULE='$module' REMOTE_DIR='$remote_dir' PORT='$port' bash -s" <<'REMOTE'
+        "SERVICE='$service' MODULE='$module' REMOTE_DIR='$remote_dir' PORT='$port' SERVER_ARGS='$server_args' bash -s" <<'REMOTE'
 set -eu
 cd "$REMOTE_DIR"
 if command -v uv >/dev/null 2>&1; then
@@ -39,6 +40,7 @@ fi
 sudo useradd --system --home-dir "$REMOTE_DIR" --no-create-home surmap 2>/dev/null || true
 sudo chown -R surmap:surmap "$REMOTE_DIR"
 sed -e "s|@INSTALL_DIR@|$REMOTE_DIR|g" -e "s|@PORT@|$PORT|g" -e "s|@MODULE@|$MODULE|g" \
+    -e "s|@SERVER_ARGS@|$SERVER_ARGS|g" \
     "deploy/systemd/$SERVICE.service" | sudo tee "/etc/systemd/system/$SERVICE.service" >/dev/null
 sudo systemctl daemon-reload
 sudo systemctl enable "$SERVICE" >/dev/null

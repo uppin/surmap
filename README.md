@@ -74,6 +74,27 @@ and is never started, stopped, or removed by SurMap.
 native bindings, and tests/simulation otherwise use
 `surmap.slam.InMemorySlamBackend`.
 
+Object detection note: the on-board detector is a Coral Edge TPU
+model behind `surmap.detection` — a Meta model was spiked first and
+rejected on evidence (`docs/coral-edge-tpu-model-spike.md`), so the
+detector is Coral-native EfficientDet-Lite0 INT8 by default, with
+`ssd-mobilenet-v2` and `ssdlite-mobiledet` as alternative profiles
+(`surmap.detection.MODEL_PROFILES`). Prepare artifacts with
+`uv run python scripts/fetch_coral_model.py` (pinned SHA-256; the
+Edge-TPU artifact runs on the CM5's Coral board, its CPU twin proves
+the same network in CI). Detections travel on their own wire stream
+(`Cm5SurveyService.StreamDetections`, keyed by `frame_id`, never
+attached to survey frames); tracked objects also surface as survey
+object points (designations ≥ 100). Choose the model at deploy time:
+
+```bash
+scripts/deploy-cm5.sh <source-dir> <ssh-target> [remote-dir] [port] [ssh-port] \
+    --model ssdlite-mobiledet [--coral-cpu]
+```
+
+or at process level with `--detector coral --coral-model <profile>
+--coral-model-dir <dir> [--coral-edgetpu]`.
+
 ## In scope now
 
 - Capture synchronized stereo frames and GPS checkpoints on-board.

@@ -129,6 +129,29 @@ message Cm5Response {
   }
 }
 
+// One detected object in one frame, from the on-board detector.
+message ObjectDetection {
+  string label = 1;
+  double score = 2;
+  Box box = 3;
+  // The persistent track this detection belongs to, when tracking ran.
+  optional int64 track_id = 4;
+}
+
+// All detections for one analyzed frame, on the detections stream.
+message FrameDetections {
+  // The frame_id the requester assigned to the analyzed frame.
+  int64 frame_id = 1;
+  // The analyzed frame's timestamp, nanoseconds.
+  int64 t_ns = 2;
+  repeated ObjectDetection detections = 3;
+}
+
+// One server message on the CM5 detections stream.
+message DetectionResponse {
+  FrameDetections detections = 1;
+}
+
 // First station client message: calibration, analysis mode, SAM prompts.
 message StationStreamConfig {
   StereoCalibration calibration = 1;
@@ -172,6 +195,12 @@ message StationResponse {
 // requested video channels out.
 service Cm5SurveyService {
   rpc StreamSurvey(stream Cm5Request) returns (stream Cm5Response);
+  // Detections on their own stream, deliberately not attached to
+  // survey output frames: the detector runs on its own cadence (it
+  // may analyze fewer frames than the survey stream outputs), and
+  // each message joins to its frame by frame_id. Same input shape
+  // as StreamSurvey; only channel-0 frames are analyzed.
+  rpc StreamDetections(stream Cm5Request) returns (stream DetectionResponse);
 }
 
 // Base station: the same frames in, SAM detections out.

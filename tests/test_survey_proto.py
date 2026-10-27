@@ -11,12 +11,17 @@ def test_both_survey_services_are_bidirectional_streams() -> None:
     # Given the generated bindings for surmap.survey.v1
     pool = descriptor_pool.Default()
 
-    # Then both services exist and stream in both directions
+    # Then both services exist and stream in both directions; the CM5
+    # service carries the survey stream plus the separate detections
+    # stream (detections are keyed by frame_id, never attached to
+    # survey output frames)
     for name in ("surmap.survey.v1.Cm5SurveyService", "surmap.survey.v1.StationSamService"):
         service = pool.FindServiceByName(name)
-        (method,) = service.methods
-        assert method.client_streaming
-        assert method.server_streaming
+        for method in service.methods:
+            assert method.client_streaming
+            assert method.server_streaming
+    cm5 = pool.FindServiceByName("surmap.survey.v1.Cm5SurveyService")
+    assert [method.name for method in cm5.methods] == ["StreamSurvey", "StreamDetections"]
 
 
 def test_cm5_request_opens_with_config_then_carries_frames() -> None:
@@ -78,6 +83,25 @@ def test_station_detections_are_keyed_by_the_assigned_frame_id() -> None:
     assert detection.label == "car"
     assert detection.track_id == 7
     assert [(p.x, p.y) for p in detection.mask_polygon] == [(1.0, 1.0)]
+
+
+def test_cm5_detections_are_keyed_by_frame_id_with_tracks() -> None:
+    message = survey_pb2.FrameDetections(
+        frame_id=9,
+        t_ns=123,
+        detections=[
+            survey_pb2.ObjectDetection(
+                label="chair",
+                score=0.5,
+                box=survey_pb2.Box(x_min=1.0, y_min=2.0, x_max=30.0, y_max=40.0),
+                track_id=4,
+            )
+        ],
+    )
+    (detection,) = message.detections
+    assert message.frame_id == 9
+    assert detection.track_id == 4
+    assert detection.box.x_max == 30.0
 
 
 def test_analysis_modes_cover_every_frame_and_best_effort_drop() -> None:

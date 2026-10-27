@@ -17,6 +17,9 @@ import argparse
 import asyncio
 from pathlib import Path
 
+from surmap.detection.detector import CoralDetector
+from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
+from surmap.detection.source import CoralDetectionSource, DetectionSource
 from surmap.rpc.description import Closeable, ServerDescription
 from surmap.rpc.hosts.hypercorn import HypercornHost
 from surmap.rpc.routes import health_routes
@@ -52,16 +55,36 @@ def build_description(
     stereo: StereoReconstructor | None = None,
     *,
     use_stereo: bool = True,
+    detections: DetectionSource | None = None,
 ) -> ServerDescription[None]:
     """The CM5 server's description: survey service plus health routes."""
     if stereo is None and use_stereo:
         stereo = StereoReconstructor()
     closeables: tuple[Closeable, ...] = (_BackendCloseable(slam),) if slam is not None else ()
     return ServerDescription(
-        services=(cm5_service_module(slam, objects, stereo),),
+        services=(cm5_service_module(slam, objects, stereo, detections),),
         http_routes=health_routes(lambda: False),
         closeables=lambda _ctx: closeables,
     )
+
+
+def coral_source(
+    model_dir: Path, *, model: str = DEFAULT_PROFILE, use_edgetpu: bool = False
+) -> CoralDetectionSource:
+    """The Coral detector+tracker for the detections stream.
+
+    `model_dir` is prepared by `scripts/fetch_coral_model.py`; `model`
+    is a profile from `surmap.detection.MODEL_PROFILES`. The Edge TPU
+    artifact needs the delegate library on a Coral board; everywhere
+    else the CPU twin of the same network is used.
+    """
+    profile = MODEL_PROFILES[model]
+    detector = CoralDetector(
+        model_dir / profile.file_for(use_edgetpu=use_edgetpu),
+        model_dir / "coco_labels.txt",
+        edgetpu_delegate="libedgetpu.so.1" if use_edgetpu else None,
+    )
+    return CoralDetectionSource(detector)
 
 
 def sidecar_backend(
@@ -120,7 +143,32 @@ def main(argv: list[str] | None = None) -> None:
         help="borrow this reusable RTAB-Map container instead of starting owned ones "
         "(default: $SURMAP_RTABMAP_SHARED_CONTAINER; never stopped or removed)",
     )
+    parser.add_argument("--detector", choices=("none", "coral"), default="none")
+    parser.add_argument(
+        "--coral-model",
+        choices=sorted(MODEL_PROFILES),
+        default=DEFAULT_PROFILE,
+        help="detector model profile (see surmap.detection.MODEL_PROFILES)",
+    )
+    parser.add_argument(
+        "--coral-model-dir",
+        type=Path,
+        default=None,
+        help="model dir prepared by scripts/fetch_coral_model.py",
+    )
+    parser.add_argument(
+        "--coral-edgetpu",
+        action="store_true",
+        help="use the Edge-TPU artifact + delegate (needs a Coral board)",
+    )
     args = parser.parse_args(argv)
+    detections: DetectionSource | None = None
+    if args.detector == "coral":
+        if args.coral_model_dir is None:
+            parser.error("--detector coral requires --coral-model-dir")
+        detections = coral_source(
+            args.coral_model_dir, model=args.coral_model, use_edgetpu=args.coral_edgetpu
+        )
     description = None
     if args.slam_backend == "sidecar":
         if args.calibration_dir is None:
@@ -130,7 +178,10 @@ def main(argv: list[str] | None = None) -> None:
                 args.calibration_dir, args.rtabmap_image, args.rtabmap_shared_container
             ),
             use_stereo=False,
+            detections=detections,
         )
+    elif detections is not None:
+        description = build_description(detections=detections)
     try:
         asyncio.run(serve(args.host, args.port, description))
     except KeyboardInterrupt:

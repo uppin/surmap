@@ -26,6 +26,33 @@ def test_deployment_restarts_the_systemd_service_and_requires_it_active() -> Non
     assert lib.index("systemctl restart") < lib.index("systemctl is-active")
 
 
+def test_cm5_deploy_can_choose_the_detector_model_profile() -> None:
+    cm5 = _script("deploy-cm5.sh")
+    lib = _script("deploy-lib.sh")
+    unit = (ROOT / "deploy/systemd/surmap-cm5.service").read_text(encoding="utf-8")
+    # The CLI option validates against the profile registry names and
+    # renders the choice into the systemd unit's server args
+    assert "--model" in cm5 and "--coral-cpu" in cm5
+    for profile in ("efficientdet-lite0", "ssd-mobilenet-v2", "ssdlite-mobiledet"):
+        assert profile in cm5
+    assert "fetch_coral_model.py" in cm5
+    assert "--detector coral --coral-model $MODEL" in cm5
+    assert "--coral-edgetpu" in cm5
+    assert "SERVER_ARGS" in lib and "@SERVER_ARGS@" in lib
+    assert "@SERVER_ARGS@" in unit
+
+
+def test_cm5_deploy_rejects_an_unknown_model_without_touching_ssh() -> None:
+    script = ROOT / "scripts" / "deploy-cm5.sh"
+    result = subprocess.run(
+        [str(script), "/tmp", "user@invalid", "/opt/surmap", "8080", "22", "--model", "bogus"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "unknown model profile" in result.stderr
+
+
 def test_the_deploy_scripts_are_executable_and_parse() -> None:
     for name in ("deploy-cm5.sh", "deploy-station.sh", "deploy-lib.sh"):
         path = ROOT / "scripts" / name

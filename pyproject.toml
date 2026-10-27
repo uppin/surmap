@@ -9,6 +9,7 @@ description = "Passive drone survey: stereo + RTAB-Map static map + on-board obj
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "ai-edge-litert>=2.3.0",
     "connectrpc==0.12.1",
     "googleapis-common-protos>=1.70",
     "hypercorn>=0.17",

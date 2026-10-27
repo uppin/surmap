@@ -12,3 +12,6 @@ sessions/
 
 # Prepared by scripts/fetch_rtabmap_fixture.py (generated, uncommitted)
 tests/fixtures/euroc_v101_rtabmap/
+
+# Prepared by scripts/fetch_coral_model.py (generated, uncommitted)
+tests/fixtures/coral_model/

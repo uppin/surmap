@@ -162,3 +162,31 @@ def test_player_paces_frames_and_closes_its_backend(tmp_path: Path) -> None:
     assert all(event.jpeg for event in events)
     with pytest.raises(ValueError, match="fps"):
         DemoPlayer(prepared, fps=0, with_rtabmap=False)  # type: ignore[arg-type]
+
+
+def test_player_emits_detections_as_a_separate_frame_keyed_event(tmp_path: Path) -> None:
+    from typing import Any
+
+    from surmap.detection.tracker import TrackedDetection
+
+    class StubSource:
+        def detect_tracked(self, frame_id: int, rgb: Any) -> tuple[TrackedDetection, ...]:
+            return (TrackedDetection("car", 0.9, (1.0, 2.0, 30.0, 40.0), 7, frame_id),)
+
+    prepared = _prepared_tiny(tmp_path)
+    player = DemoPlayer(
+        prepared,  # type: ignore[arg-type]
+        fps=50.0,
+        with_rtabmap=False,
+        detection_source=StubSource(),
+    )
+    events = list(player.events())
+    # Detections are their own events carrying frame_id — never a
+    # field riding on the frame events
+    assert [event.kind for event in events] == ["frame", "detections", "frame", "detections"]
+    detections = events[1]
+    assert detections.data["frame_id"] == 1
+    objects = detections.data["objects"]
+    assert isinstance(objects, list)
+    assert objects[0]["track_id"] == 7
+    assert "objects" not in events[0].data

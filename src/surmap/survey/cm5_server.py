@@ -18,6 +18,8 @@ from collections.abc import AsyncIterable, AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
+from surmap.detection.detector import decode_rgb
+from surmap.detection.source import DetectionSource
 from surmap.geometry import to_map_frame
 from surmap.rpc.compose import Brick
 from surmap.rpc.description import ServiceModule
@@ -188,10 +190,65 @@ async def stream_survey(
                 yield response
 
 
+async def stream_detections(
+    requests: AsyncIterable[survey_pb2.Cm5Request],
+    source: DetectionSource | None,
+) -> AsyncIterator[survey_pb2.DetectionResponse]:
+    """Serve the detections stream: channel-0 frames in, detections out.
+
+    A separate stream from `StreamSurvey` by design: the detector
+    runs on its own cadence, so detection messages are never attached
+    to survey output frames — each carries its `frame_id` (and
+    `t_ns`) for the client to join against the frames it sent. One
+    message is yielded per analyzed frame, including frames with no
+    detections; a server with no detection source configured rejects
+    the stream.
+    """
+    if source is None:
+        raise ValueError("no detection source configured on this CM5 server")
+    config_seen = False
+    async for request in requests:
+        if not config_seen:
+            if request.WhichOneof("kind") != "config":
+                raise ValueError("first request must be config")
+            config_seen = True
+            continue
+        if request.WhichOneof("kind") != "frame":
+            continue
+        frame = request.frame
+        if frame.channel != 0:
+            continue
+        rgb = decode_rgb(FrameImage(frame.width, frame.height, _encoding_name(frame), frame.data))
+        tracked = await asyncio.to_thread(source.detect_tracked, frame.frame_id, rgb)
+        yield survey_pb2.DetectionResponse(
+            detections=survey_pb2.FrameDetections(
+                frame_id=frame.frame_id,
+                t_ns=frame.t_ns,
+                detections=[
+                    survey_pb2.ObjectDetection(
+                        label=detection.label,
+                        score=detection.score,
+                        box=survey_pb2.Box(
+                            x_min=detection.box_xyxy[0],
+                            y_min=detection.box_xyxy[1],
+                            x_max=detection.box_xyxy[2],
+                            y_max=detection.box_xyxy[3],
+                        ),
+                        track_id=detection.track_id,
+                    )
+                    for detection in tracked
+                ],
+            )
+        )
+    if not config_seen:
+        raise ValueError("first request must be config")
+
+
 def cm5_service_module(
     slam: SlamBackend | None = None,
     objects: ObjectPointSource | None = None,
     stereo: StereoReconstructor | None = None,
+    detections: DetectionSource | None = None,
 ) -> ServiceModule[Any]:
     """The `surmap.rpc` service module mounting `Cm5SurveyService`."""
     default_slam: SlamBackend = slam if slam is not None else InMemorySlamBackend()
@@ -212,7 +269,17 @@ def cm5_service_module(
             ):
                 yield response
 
-        return (Brick(methods={"StreamSurvey": handler}),)
+        effective_detections: DetectionSource | None = (
+            getattr(ctx, "detections", None) or detections
+        )
+
+        async def detections_handler(
+            requests: AsyncIterable[survey_pb2.Cm5Request], _ctx: Any
+        ) -> AsyncIterator[survey_pb2.DetectionResponse]:
+            async for response in stream_detections(requests, effective_detections):
+                yield response
+
+        return (Brick(methods={"StreamSurvey": handler, "StreamDetections": detections_handler}),)
 
     return ServiceModule(
         descriptor=survey_pb2.DESCRIPTOR.services_by_name["Cm5SurveyService"],

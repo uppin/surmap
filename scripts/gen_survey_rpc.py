@@ -4,7 +4,10 @@ The generated module is checked in at
 `src/surmap/survey/v1/survey_pb2.py`. Regenerate it after editing
 `proto/surmap/survey/v1/survey.proto`:
 
-    uv run --with grpcio-tools python scripts/gen_survey_rpc.py
+    uv run --with grpcio-tools==1.73.1 python scripts/gen_survey_rpc.py
+
+The grpcio-tools version is pinned: its protoc must not emit gencode
+newer than the project's protobuf runtime (`protobuf>=6.33,<7`).
 """
 
 from __future__ import annotations
