@@ -38,6 +38,23 @@ CI (`.github/workflows/ci.yml`) runs ruff, mypy (strict), and pytest
 on Python 3.11 and 3.12 for every push to `main` and every pull
 request.
 
+## Demo
+
+```bash
+uv run python scripts/demo.py            # downloads+caches EuRoC, serves the demo
+# open http://127.0.0.1:8765/ in a browser
+```
+
+The demo plays a recorded dataset as real-time video with the stereo
+reconstructor's scene points overlaid as depth-coloured detections,
+then builds the final RTAB-Map map from the same frames and draws it
+top-down. Datasets are registry entries in `surmap.demo.datasets`
+(`--list-datasets`): the first run downloads and SHA-256-verifies
+the zip into the cache (`~/.cache/surmap/demo-datasets`, override
+`--cache-dir`/`$SURMAP_DEMO_CACHE_DIR`); later runs download nothing.
+Useful flags: `--frames N`, `--start I`, `--fps F`, `--no-rtabmap`,
+`--prepare-only`. Add a dataset by adding one registry entry.
+
 RTAB-Map note: RTAB-Map has no official PyPI package, and no host —
 local or CI — may install it. The real backend is
 `surmap.slam.SidecarRtabmapBackend`: it stages streamed stereo pairs
