@@ -152,6 +152,54 @@ message DetectionResponse {
   FrameDetections detections = 1;
 }
 
+enum MovingVerdict {
+  MOVING_VERDICT_UNKNOWN = 0;
+  MOVING_VERDICT_RIGID_MOVER = 1;
+  MOVING_VERDICT_OSCILLATING = 2;
+}
+
+enum IdentitySource {
+  IDENTITY_SOURCE_DETECTOR = 0;
+  IDENTITY_SOURCE_AREA_ALLOCATED = 1;
+}
+
+// Live moving-area observation (design: moving-object-detection),
+// published as soon as stage 2 computes it. Keypoints never appear
+// here; flush-time snapshots are MovingObjectSnapshot.
+message MovingArea {
+  int64 frame_id = 1;
+  int64 t_ns = 2;
+  repeated Point2 polygon = 3;
+  double depth_min_m = 4;
+  double depth_max_m = 5;
+  int32 dynamic_point_count = 6;
+  int64 area_track_id = 7;
+  MovingVerdict verdict = 8;
+  int64 verdict_version = 9;
+}
+
+// Flush-time snapshot for a graduated track: map-frame keypoints
+// for one buffered observation.
+message MovingObjectSnapshot {
+  int64 frame_id = 1;
+  int64 t_ns = 2;
+  int64 area_track_id = 3;
+  int64 object_track_id = 4;
+  IdentitySource identity_source = 5;
+  MovingVerdict verdict = 6;
+  repeated Point3 keypoints = 7;
+  Point3 centroid = 8;
+  Point3 velocity = 9;
+}
+
+// One server message on the CM5 moving-areas stream.
+message MovingAreasResponse {
+  oneof payload {
+    MovingArea area = 1;
+    MovingObjectSnapshot snapshot = 2;
+  }
+}
+
 // First station client message: calibration, analysis mode, SAM prompts.
 message StationStreamConfig {
   StereoCalibration calibration = 1;
@@ -201,6 +249,10 @@ service Cm5SurveyService {
   // each message joins to its frame by frame_id. Same input shape
   // as StreamSurvey; only channel-0 frames are analyzed.
   rpc StreamDetections(stream Cm5Request) returns (stream DetectionResponse);
+  // Moving areas on their own stream: the area pipeline runs at its
+  // own, slower cadence and may lag the other streams; every message
+  // joins to its frame by frame_id. Same input shape as StreamSurvey.
+  rpc StreamMovingAreas(stream Cm5Request) returns (stream MovingAreasResponse);
 }
 
 // Base station: the same frames in, SAM detections out.
