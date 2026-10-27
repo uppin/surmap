@@ -574,6 +574,17 @@ throughout.
   areas still logged for offline analysis. The static pipeline is
   never in the list.
 
+**As built (2026-10-27, n6).** `surmap.moving.governance`
+implements the counters, the caps (2 M voxels, 32 areas, buffer
+cap with least-coherent-first eviction) and the four-step
+ladder, unit-tested at the API level. Two honest gaps: the
+governor is not yet invoked by the running handler, and no
+CM5-profile budget table has been measured — the §2 numbers
+remain design budgets until the replay in
+`src/surmap/docs/todo/2026-10-27-moving-governor-wiring-cm5-replay.md`
+runs. The stream is not enabled by default on-board until
+that record closes.
+
 ## 6. Evaluation plan
 
 Thresholds in step 3 are hypotheses until measured on recorded
