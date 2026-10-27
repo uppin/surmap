@@ -8,16 +8,16 @@
 
 ## Workflow
 
-- [wf 1] ✅ 2026-10-27 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file
+- [wf 1] ✅ 2026-10-27 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file @ `555892f`
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/` — neither exists; package never analyzed, noted in discovery
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Stub API — `.proto` contract + designation helper signatures (`TODO(pr-1)`)
-  - [ ] Create failing acceptance tests
-  - [ ] Run acceptance tests (verify they fail)
-  - [ ] TDD Red — write failing unit/integration tests
+- [wf 2] ✅ 2026-10-27 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 10 tests red: proto tests fail on missing `survey_pb2` bindings, helper tests on `NotImplementedError` stubs (commit 2)
+  - [x] Stub API — `.proto` contract + designation helper signatures (`TODO(pr-1)`)
+  - [x] Create failing acceptance tests
+  - [x] Run acceptance tests (verify they fail)
+  - [x] TDD Red — write failing unit/integration tests
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Generate and check in `survey_pb2` bindings + generation script
   - [ ] Implement designation helpers
@@ -129,7 +129,7 @@ assert the designation mapping and its validation errors.
 
 ## Stack Context
 
-**Stack**: Survey streaming · slug **`#survey-stream`** — this PR is **1 of 5** · #pending
+**Stack**: Survey streaming · slug **`#survey-stream`** — this PR is **1 of 5** · [#6](https://github.com/uppin/surmap/pull/6)
 **Branch**: `pr-1-survey-proto` · **Base**: `main`
 **Successor**: `pr-2-cm5-point-emitter`
 **Kind**: Feature · behaviour-adds — `(Type: Feature, Behaviour: adds)`
