@@ -57,10 +57,16 @@ def test_reconstruction_finds_the_tabletop_scene_in_a_real_pair() -> None:
     assert all(0.2 <= p.z <= 8.0 for p in points)
 
 
-def test_identical_frames_have_no_disparity_and_yield_no_points() -> None:
-    # Given the same image on both channels (zero baseline geometry)
+def test_a_featureless_pair_yields_no_points() -> None:
+    # Given a smooth gradient on both channels — no texture to match.
+    # (An identical *textured* photo is not used here: repetitive texture
+    # legitimately self-matches at shifted positions, so it cannot
+    # distinguish a broken matcher from a working one.)
+    gradient = bytes(
+        value for _row in range(48) for col in range(64) for value in (col * 4, col * 4, col * 4)
+    )
+    frame = FrameImage(64, 48, "raw_rgb", gradient)
     rig = load_rig()
-    frame = load_frame("left")
 
     # Then nothing can be triangulated
     assert StereoReconstructor().reconstruct(frame, frame, rig) == ()

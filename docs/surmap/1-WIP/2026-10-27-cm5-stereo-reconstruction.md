@@ -16,11 +16,11 @@
   - [x] Stub API — `surmap.survey.stereo` signatures (`TODO(cm5-stereo)`)
   - [x] Create failing acceptance tests (fixture e2e + unit)
   - [x] Run acceptance tests (verify they fail)
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Add numpy + Pillow deps
-  - [ ] Decode + align + block-match + back-project
-  - [ ] Wire into `stream_survey` and the CM5 entrypoint default
-  - [ ] Acceptance: fixture e2e asserts detections present
+- [wf 3] ✅ 2026-10-27 `/green` Green — implement until every red test passes · 403 passed (all 10 fixture frames stream batches, 4,187 points after dedup); mypy/Ruff clean
+  - [x] Add numpy + Pillow deps
+  - [x] Decode + align + block-match + back-project
+  - [x] Wire into `stream_survey` and the CM5 entrypoint default
+  - [x] Acceptance: fixture e2e asserts detections present
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/architecture.md` §10 — real stereo source named

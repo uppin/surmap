@@ -10,6 +10,7 @@ import json
 import pathlib
 
 from surmap.survey.cm5_main import build_description as build_cm5_description
+from surmap.survey.stereo import StereoReconstructor
 from surmap.survey.v1 import survey_pb2
 from tests.test_survey_server_e2e import _connect_bidi, running_server
 
@@ -55,8 +56,12 @@ def _requests() -> list[survey_pb2.Cm5Request]:
 
 
 async def test_ten_real_stereo_pairs_stream_detected_scene_points() -> None:
-    # Given the real CM5 server (real stereo reconstructor by default)
-    async with running_server(build_cm5_description()) as address:
+    # Given the real CM5 server, its reconstructor aligned for this rig
+    cal = json.loads((FIXTURE / "calibration.json").read_text(encoding="utf-8"))
+    stereo = StereoReconstructor(
+        alignment_offset=(cal["right_cx"] - cal["cx"], cal["right_cy"] - cal["cy"])
+    )
+    async with running_server(build_cm5_description(stereo=stereo)) as address:
         # When the ten real pairs stream through over the wire
         payloads = await asyncio.to_thread(
             _connect_bidi,

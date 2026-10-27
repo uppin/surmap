@@ -17,6 +17,7 @@ from collections.abc import AsyncIterable, AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
+from surmap.geometry import to_map_frame
 from surmap.rpc.compose import Brick
 from surmap.rpc.description import ServiceModule
 from surmap.slam.base import SlamBackend
@@ -24,6 +25,7 @@ from surmap.slam.fake import InMemorySlamBackend
 from surmap.survey.designations import object_designation, video_designation
 from surmap.survey.object_points import InMemoryObjectPointSource, ObjectPointSource
 from surmap.survey.points import IncrementalPointEmitter
+from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
 from surmap.survey.v1 import survey_pb2
 from surmap.types import StereoFramePair
 
@@ -34,6 +36,15 @@ class Cm5Context:
 
     slam: SlamBackend
     objects: ObjectPointSource
+    stereo: StereoReconstructor | None = None
+
+
+def _encoding_name(frame: survey_pb2.RawVideoFrame) -> str:
+    if frame.encoding == survey_pb2.FRAME_ENCODING_MJPEG:
+        return "mjpeg"
+    if frame.encoding == survey_pb2.FRAME_ENCODING_RAW_RGB:
+        return "raw_rgb"
+    return "unsupported"
 
 
 async def stream_survey(
@@ -41,6 +52,7 @@ async def stream_survey(
     slam: SlamBackend,
     objects: ObjectPointSource,
     emitter: IncrementalPointEmitter | None = None,
+    stereo: StereoReconstructor | None = None,
 ) -> AsyncIterator[survey_pb2.Cm5Response]:
     """Serve one CM5 survey stream: config first, then per-channel frames."""
     if emitter is None:
@@ -79,7 +91,38 @@ async def stream_survey(
         result = slam.process_frame(pair)
         if result.pose is None:
             continue
-        scene = emitter.emit(1, result.static_points)
+        scene_points = list(result.static_points)
+        if stereo is not None:
+            calibration = config.calibration
+            if calibration.focal_length_px > 0 and calibration.baseline_m > 0:
+                rig = StereoRig(
+                    fx=calibration.focal_length_px,
+                    fy=calibration.focal_length_px,
+                    cx=calibration.cx,
+                    cy=calibration.cy,
+                    baseline_m=calibration.baseline_m,
+                )
+                left_frame, right_frame = channels[0], channels[1]
+                try:
+                    camera_points = stereo.reconstruct(
+                        FrameImage(
+                            left_frame.width,
+                            left_frame.height,
+                            _encoding_name(left_frame),
+                            left_frame.data,
+                        ),
+                        FrameImage(
+                            right_frame.width,
+                            right_frame.height,
+                            _encoding_name(right_frame),
+                            right_frame.data,
+                        ),
+                        rig,
+                    )
+                except ValueError:
+                    camera_points = ()
+                scene_points.extend(to_map_frame(point, result.pose) for point in camera_points)
+        scene = emitter.emit(1, scene_points)
         if scene:
             yield survey_pb2.Cm5Response(
                 points=survey_pb2.PointBatch(
@@ -108,6 +151,7 @@ async def stream_survey(
 def cm5_service_module(
     slam: SlamBackend | None = None,
     objects: ObjectPointSource | None = None,
+    stereo: StereoReconstructor | None = None,
 ) -> ServiceModule[Any]:
     """The `surmap.rpc` service module mounting `Cm5SurveyService`."""
     default_slam: SlamBackend = slam if slam is not None else InMemorySlamBackend()
@@ -118,11 +162,14 @@ def cm5_service_module(
     def bricks(ctx: Any) -> tuple[Brick, ...]:
         effective_slam: SlamBackend = getattr(ctx, "slam", None) or default_slam
         effective_objects: ObjectPointSource = getattr(ctx, "objects", None) or default_objects
+        effective_stereo: StereoReconstructor | None = getattr(ctx, "stereo", None) or stereo
 
         async def handler(
             requests: AsyncIterable[survey_pb2.Cm5Request], _ctx: Any
         ) -> AsyncIterator[survey_pb2.Cm5Response]:
-            async for response in stream_survey(requests, effective_slam, effective_objects):
+            async for response in stream_survey(
+                requests, effective_slam, effective_objects, stereo=effective_stereo
+            ):
                 yield response
 
         return (Brick(methods={"StreamSurvey": handler}),)

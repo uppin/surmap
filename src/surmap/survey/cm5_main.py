@@ -1,9 +1,10 @@
 """CM5 server process: `python -m surmap.survey.cm5_main`.
 
 Mounts `Cm5SurveyService` (n4) plus health routes on a real socket.
-Until hardware adapters land, the served SLAM backend and object-point
-source are the in-memory ones — this process proves the wire and the
-deployment, not RTAB-Map or Coral output.
+Scene points are real: the stereo reconstructor turns the streamed
+pairs into points. Pose and object points still come from the
+in-memory adapters until RTAB-Map and the Coral tracker land behind
+their ports.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from surmap.rpc.routes import health_routes
 from surmap.slam.base import SlamBackend
 from surmap.survey.cm5_server import cm5_service_module
 from surmap.survey.object_points import ObjectPointSource
+from surmap.survey.stereo import StereoReconstructor
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8080
@@ -25,10 +27,15 @@ DEFAULT_PORT = 8080
 def build_description(
     slam: SlamBackend | None = None,
     objects: ObjectPointSource | None = None,
+    stereo: StereoReconstructor | None = None,
 ) -> ServerDescription[None]:
     """The CM5 server's description: survey service plus health routes."""
     return ServerDescription(
-        services=(cm5_service_module(slam, objects),),
+        services=(
+            cm5_service_module(
+                slam, objects, stereo if stereo is not None else StereoReconstructor()
+            ),
+        ),
         http_routes=health_routes(lambda: False),
     )
 
