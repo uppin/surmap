@@ -196,31 +196,17 @@ Use `gh api`, not `gh pr edit --title` (Projects-classic GraphQL fault in some  
 **Skip merged PRs** — their titles are already commits on `master`, and editing the PR page only
 suggests history was corrected when it was not.
 
-### Revise the stack's epic — MANDATORY
+### Record the new node in the wave records — MANDATORY
 
-The stack's epic issue (label `overstack-epic`, linked from every PR's `## Stack` block) is what
-overstack reads, and a new PR it does not list is invisible to it. In this run, edit only the
-fenced DAG block, per `pr-stack` skill § *The epic must be correct*:
+No epic issue is created for a stack: topology is the `gh stack` object + PR bases; waves/edges live in each changeset's Stack Context and PR body's Stack block. In this run:
 
-0. **Record the epic in this PR's changeset** — `## Stack Context → Epic`, read from a sibling PR's
-   `## Stack` block (its absence is the first sign the stack has no epic). Do this **before** the
-   commit above so it ships in it; if the commit and push already happened, make a new commit and
-   push it — never leave the edit only in the worktree, never amend.
-0b. **Write this PR's `## Stack` block** into its description (`**Kind:**`, wave line, epic link,
-   with the `gh api -X PATCH` above): `issue sync` takes every node's kind from that line and
-   refuses the whole sync for a PR without it.
-1. **Add the node** (`n<new-K>`, branch, PR number, title, `**Kind:**`) and the **line edge** from
-   the tail.
-2. **Add a `kind: dependency` edge for each predecessor whose *behaviour* this layer needs**
-   (not for a stub-level need — wave assignment ignores `level`, so it would push the node up a wave). A layer with no such need is **wave 1** —
-   no dependency edge, however high it sits. Never add one by default just because it is on top: that
-   is how a stack collapses into a chain.
-3. Renumbered titles (the step above) are mirrored in the block.
-4. Run `roadmap-cli issue sync <slug>`, then check the waves derived from the block against this PR's
-   `Wave k of m`.
-
-No epic on the stack: say so in the report and offer `/plan-pr-stack`'s epic step — never skip
-silently.
+0. **Record this PR's wave in its changeset** — `## Stack Context` (`### Green wave`), read from a sibling PR's
+   `## Stack` block. Do this **before** the commit above so it ships in it; if the commit and push already happened, make a new commit and push it — never leave the edit only in the worktree, never amend.
+0b. **Write this PR's `## Stack` block** into its description (`**Kind:**`, wave line), with the `gh api -X PATCH` above.
+1. **Add the node** (`n<new-K>`, branch, PR number, title, `**Kind:**`) to the affected changesets' Stack Context and PR bodies' Stack blocks.
+2. **Add a dependency edge for each predecessor whose *behaviour* this layer needs** (not for a stub-level need). A layer with no such need is **wave 1**, however high it sits. Never add one by default just because it is on top: that is how a stack collapses into a chain.
+3. Renumbered titles (the step above) are mirrored in those records.
+4. Verify `gh stack view` and check the recorded waves against this PR's `Wave k of m`.
 
 ## Step 4: Report
 
@@ -229,7 +215,7 @@ Print `gh stack view` and state:
 - the new branch and its base (tail / named parent)
 - the new **draft** PR URL
 - the stack topology (predecessor → this PR)
-- the **epic** URL and the edges added to it (or that the stack has none)
+- the wave and edges recorded in this PR's changeset Stack Context and PR body's Stack block
 - this PR's **green wave**, and whether it is startable now or waits on a predecessor's behaviour
 - any `⚠` on the stack — do not cascade-rebase (`gh stack sync`) from this worktree to “clean it
   up” unless the user asked; `/pr-stack-rebase` is the per-branch fix

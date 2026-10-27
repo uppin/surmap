@@ -14,9 +14,13 @@ OBJECT_DESIGNATION_BASE = 100
 
 def video_designation(channel: int) -> int:
     """The designation of the echoed video frame for `channel` (0 or 1)."""
-    raise NotImplementedError("TODO(pr-1): implement video_designation")
+    if channel not in (0, 1):
+        raise ValueError(f"channel must be 0 or 1, got {channel}")
+    return 2 + channel
 
 
 def object_designation(track_id: int) -> int:
     """The designation of the points belonging to tracked object `track_id`."""
-    raise NotImplementedError("TODO(pr-1): implement object_designation")
+    if track_id < 0:
+        raise ValueError(f"track_id must be non-negative, got {track_id}")
+    return OBJECT_DESIGNATION_BASE + track_id

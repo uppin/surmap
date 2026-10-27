@@ -18,11 +18,11 @@
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Generate and check in `survey_pb2` bindings + generation script
-  - [ ] Implement designation helpers
-  - [ ] Remove overstack references from `.agents/` stack docs (see Decisions)
-  - [ ] Acceptance: proto descriptor tests pass
+- [wf 3] ✅ 2026-10-27 `/green` Green — implement until every red test passes · 369 passed (`uv run pytest -q`), mypy clean (75 files), ruff clean, `grep -rn overstack .agents/` empty
+  - [x] Generate and check in `survey_pb2` bindings + generation script
+  - [x] Implement designation helpers
+  - [x] Remove overstack references from `.agents/` stack docs (see Decisions)
+  - [x] Acceptance: proto descriptor tests pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/connectrpc.md` — note the survey service bindings and regen command

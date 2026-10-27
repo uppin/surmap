@@ -437,12 +437,9 @@ run moves straight to the next layer. **CI verdicts after a push are `/merge-pr-
 do not poll, do not wait, do not read check states on the new SHA.** Every push starts that PR's CI
 in the background, which is the point: by merge time, the runs are warm or finished.
 
-**Epic sync at wave boundaries:** at the end of Wave 2 — and before handing off to
-`/merge-pr-stack` — run `overstack issue sync <stack-slug>` so the epic's DAG block reflects what
-the fix pass actually changed (branches moved, fixes landed). The machine-managed block updates;
-the surrounding prose stays byte-for-byte. See the `pr-stack` skill § *Epic issues — the DAG's
-home*. If the CLI is unavailable, note the missed sync in the tmp record — the merge command's
-Wave 4 reckoning catches it.
+**Wave-record check at wave boundaries:** at the end of Wave 2 — and before handing off to
+`/merge-pr-stack` — verify `gh stack view` and each PR's `## Stack` block and changeset Stack Context reflect what
+the fix pass actually changed (branches moved, fixes landed). No epic issue is created for a stack: topology is the `gh stack` object + PR bases; waves/edges live in each changeset's Stack Context and PR body's Stack block. See the `pr-stack` skill § *No epic issue — topology and waves*.
 
 Mechanically this is `/pr-stack-rebase` **cascade mode with a fix step inserted per layer** — reuse
 its Step 4 mechanics (backup branch, recorded pre-rebase tips, `--onto` for rewritten parents, union

@@ -247,69 +247,14 @@ What GitHub still does **not** do for you, registered or not:
 - Make a successor's CI meaningful for `master`. Checks build the head merged into **its own base**,
   so green CI on PRₖ says nothing about `master` until PRₖ is retargeted onto it.
 
-### Epic issues — the DAG's home
+### No epic issue — topology and waves
 
-Each planned stack gets one **epic GitHub issue** — the stack's whole-scope
-prose plus the **DAG block**: a fenced ```yaml block carrying the sentinel
-`schema: overstack-dag/1` and the stack's nodes, line edges, dependency
-edges, waves, and positions — all in node numbers. Three writers, one
-discipline:
+No epic issue is created for a stack: topology is the `gh stack` object + PR bases; waves/edges live in each changeset's Stack Context and PR body's Stack block.
 
-- **The planning flow creates it** — `/plan-pr-stack` opens the epic at the
-  pass-1 checkpoint (every PR submitted), via the `surmap`
-  binary's `issue create` command, and stamps the epic's URL into every PR
-  body's `## Stack` block.
-- **overstack keeps it current** — `overstack issue sync` at wave boundaries
-  during `/fix-pr-stack` and `/merge-pr-stack`, so the block reflects reality
-  during landing.
-- **The overstack frontends read it** — the graph view, detail panel, CLI,
-  and MCP discover a stack's DAG from the epic (plus `gh stack`/PR bases for
-  topology).
-
-Rules:
-
-- **GitHub stays the source of truth** — the stack object + PR bases for
-  topology, the epic for the DAG/waves; overstack's model is a projection,
-  never a second registry that can drift.
-- **The DAG block is machine-managed** — updates replace only the fenced
-  block and preserve the surrounding human prose byte-for-byte.
-- **The epic is born current** — emitted from the settled plan (waves, line,
-  edges), not reconstructed after the fact.
-
-#### The epic must be correct, and every command that changes the stack revises it
-
-An epic with only `kind: line` edges **renders as a linear chain with no waves**: overstack derives
-waves from `kind: dependency` edges alone (`assign_waves` — a node with no incoming dependency edge
-is wave 1), and the line edges only record the branch bases. Wave and dependency text in the epic
-prose or in PR bodies is not read by overstack. So "the epic is correct" is a checkable property:
-
-- **Every dependency edge in the plan is a `kind: dependency` edge in the block**, one per
-  `n_a → n_b` that the plan says gates a wave. A stub-level dependency (compile only) is **not**
-  written as a dependency edge: `assign_waves` ignores `level` and would push the node a wave up. A stack with more than one wave and **zero** dependency edges is wrong.
-- **Deriving the waves from the block reproduces the plan**: the same wave count, the same members,
-  the same line, matching every PR body's `Wave k of m`.
-- **Nodes carry the PR's current number, title and kind**; line edges match the PR bases.
-
-**Known tooling gap:** `overstack issue create` and `issue sync` build the graph from the open PRs
-(line edges only) and `sync` merely carries over dependency edges already in the block. Neither can
-*originate* a dependency edge. Until the CLI accepts them, add them by editing **only the fenced
-block** of the epic body (prose untouched), then run `issue sync <slug>` (`uv run pytest -q
-surmap run-cli issue sync <slug>` — no `--` before `issue`: the script is `cargo run --` already, and a second `--` makes clap reject the subcommand) so the serializer
-normalises the block, then check the three properties above — `run-cli view <slug>` prints the waves overstack derives. State in the report that this was done
-by hand and why.
-
-**Commands that change the stack must revise the epic in the same run, and verify it before they
-report done** — not leave it to the next wave-boundary sync:
-
-| Command | What changes in the epic |
-|---|---|
-| `/plan-pr-stack` | Created at the pass-1 checkpoint; **revised at the completion gate** — pass 2 can move PRs between waves, retitle, or add ground-softening nodes |
-| `/add-to-pr-stack` | A new node, its line edge from the tail, its dependency edges, every title's `N` |
-| `/split-pr-to-stack` | A new node B2, B1/B2's line edges, dependency edges of B moved to the right slice, every title's `N` |
-| `/repoint`, `/squash-pr` (successor repoint) | Line edges (new base) |
-| `/fix-pr-stack`, `/merge-pr-stack` | Merged nodes dropped / marked, at each wave boundary (`issue sync`) |
-
-`/pr-stack-rebase` and `/follow-up-branch` change no topology and leave the epic alone.
+- **GitHub stays the source of truth** — the `gh stack` object + PR bases for topology.
+- **Waves and dependency edges** are recorded in each changeset's `## Stack Context` (`### Green wave`) and mirrored in each PR body's `## Stack` block; the two stay in sync.
+- **Every command that changes the stack revises those records in the same run** — a new, split, repointed, fixed, or merged node updates the affected changesets' Stack Context and PR bodies' Stack blocks, verified against `gh stack view` before reporting done.
+- `/pr-stack-rebase` and `/follow-up-branch` change no topology and leave the wave records alone.
 
 ### Adding a layer — `/add-to-pr-stack`
 
@@ -956,10 +901,6 @@ Structure:
 **Stack**: <stack name> · slug **`#<stack-slug>`** — this PR is **k of n** ·
 [#<pr>](https://github.com/<org>/<repo>/pull/<pr>)
 **Branch**: `pr-k-<slug>` · **Base**: `pr-<k-1>-<slug>` (or `origin/master` for the bottom PR)
-**Epic**: [#<epic>](https://github.com/<org>/<repo>/issues/<epic>) — the stack's DAG home; this node is
-`n<k>` in its block. `#pending` until `/plan-pr-stack` opens the epic (Step 5's 3b), back-filled in
-pass 2 (Step 6g). A changeset without it is incomplete: a later command that changes the stack
-finds the epic here.
 **Successor**: `pr-<k+1>-<slug>` — or `none — top of stack`. This PR's own GitHub URL is recorded
 here after submit. Do **not** stamp a successor URL by editing a predecessor's changeset.
 **Kind**: <kind> · behaviour-<adds|changes|preserves> — the `(Type, Behaviour)` pair from the header

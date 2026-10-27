@@ -133,10 +133,7 @@ the user **opt in** to repointing each onto the new base:
 
 - **Opt in** → run `/repoint <new-base>` for each chosen successor (changes base via REST API +
   restacks). Do this **after** the squash-merge landed, so the merged commit drops out of each
-  successor's diff. If the squashed PR belonged to a stack with an epic, run
-  `roadmap-cli issue sync <slug>` afterwards so the merged node leaves the DAG block — after deleting from the fenced block every dependency edge
-  that has the merged node as an endpoint (`issue sync` re-adds stored dependency edges, and a dangling
-  one makes the next read reject the block).
+  successor's diff. If the squashed PR belonged to a stack, update the successors' changeset Stack Context and PR bodies' `## Stack` blocks afterwards so the merged node leaves the wave records — removing every dependency edge that has the merged node as an endpoint. No epic issue is created for a stack: topology is the `gh stack` object + PR bases; waves/edges live in each changeset's Stack Context and PR body's Stack block.
 - **Decline (or no successors chosen)** → leave those successors as-is. The branch still has open
   references, so it MUST NOT be deleted (skip 4b for it).
 

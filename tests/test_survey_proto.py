@@ -1,4 +1,7 @@
+from typing import cast
+
 from google.protobuf import descriptor_pool
+from google.protobuf.descriptor import Descriptor
 from google.protobuf.message_factory import GetMessageClass
 
 from surmap.survey.v1 import survey_pb2
@@ -46,7 +49,7 @@ def test_a_point_batch_round_trips_with_its_designation() -> None:
     )
 
     # When the batch crosses the wire
-    parsed = GetMessageClass(batch.DESCRIPTOR)()
+    parsed = cast(survey_pb2.PointBatch, GetMessageClass(cast(Descriptor, batch.DESCRIPTOR))())
     parsed.ParseFromString(batch.SerializeToString())
 
     # Then the designation and points survive intact
