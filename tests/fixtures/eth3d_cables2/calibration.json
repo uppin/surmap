@@ -1,0 +1,73 @@
+{
+ "source": "ETH3D SLAM cables_2 (https://www.eth3d.net/slam_datasets)",
+ "image_width": 640,
+ "fx": 628.9904537381586,
+ "fy": 628.9904537381586,
+ "cx": 307.139107958387,
+ "cy": 161.4858286112996,
+ "right_cx": 332.70726288746954,
+ "right_cy": 226.15323871293586,
+ "baseline_m": 0.089831538498402,
+ "frames": [
+  {
+   "index": 0,
+   "timestamp": "11873.252219",
+   "left": "left_000.jpg",
+   "right": "right_000.jpg"
+  },
+  {
+   "index": 1,
+   "timestamp": "11873.620854",
+   "left": "left_001.jpg",
+   "right": "right_001.jpg"
+  },
+  {
+   "index": 2,
+   "timestamp": "11873.989489",
+   "left": "left_002.jpg",
+   "right": "right_002.jpg"
+  },
+  {
+   "index": 3,
+   "timestamp": "11874.358124",
+   "left": "left_003.jpg",
+   "right": "right_003.jpg"
+  },
+  {
+   "index": 4,
+   "timestamp": "11874.726758",
+   "left": "left_004.jpg",
+   "right": "right_004.jpg"
+  },
+  {
+   "index": 5,
+   "timestamp": "11875.095393",
+   "left": "left_005.jpg",
+   "right": "right_005.jpg"
+  },
+  {
+   "index": 6,
+   "timestamp": "11875.464028",
+   "left": "left_006.jpg",
+   "right": "right_006.jpg"
+  },
+  {
+   "index": 7,
+   "timestamp": "11875.832663",
+   "left": "left_007.jpg",
+   "right": "right_007.jpg"
+  },
+  {
+   "index": 8,
+   "timestamp": "11876.201298",
+   "left": "left_008.jpg",
+   "right": "right_008.jpg"
+  },
+  {
+   "index": 9,
+   "timestamp": "11876.569933",
+   "left": "left_009.jpg",
+   "right": "right_009.jpg"
+  }
+ ]
+}

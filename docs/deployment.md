@@ -56,10 +56,11 @@ Both serve `/health/is_alive` next to their Connect service.
 
 ## Current limitation
 
-The deployed processes serve their **in-memory adapters** today: the
-CM5 server uses `InMemorySlamBackend` + `InMemoryObjectPointSource`
-(no RTAB-Map points, no Coral objects) and the station uses
-`InMemorySamDetector` (no detections). The entrypoints and deployment
-prove the wire, the service lifecycle, and the restart path; swapping
-in the hardware adapters is a code change behind the existing ports,
-not a deployment change.
+The CM5 server's scene points are **real**: its stereo reconstructor
+turns streamed pairs into points. What is still simulated on the CM5
+is the pose (`InMemorySlamBackend`, identity pose until RTAB-Map
+lands behind `SlamBackend`) and object points
+(`InMemoryObjectPointSource`, none until the Coral tracker lands).
+The station still serves `InMemorySamDetector` (no detections until a
+SAM adapter lands). Swapping those adapters in is a code change
+behind the existing ports, not a deployment change.

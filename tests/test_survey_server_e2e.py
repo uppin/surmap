@@ -8,7 +8,7 @@ import json
 import struct
 import urllib.error
 import urllib.request
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 
 import pytest
@@ -39,7 +39,7 @@ def _frame_message(message: Message) -> bytes:
     return struct.pack(">BI", 0, len(payload)) + payload
 
 
-def _connect_bidi(address: str, path: str, requests: list[Message]) -> list[bytes]:
+def _connect_bidi(address: str, path: str, requests: Sequence[Message]) -> list[bytes]:
     """POST framed Connect stream messages; return framed response payloads."""
     body = b"".join(_frame_message(request) for request in requests)
     connection = http.client.HTTPConnection(address, timeout=10)

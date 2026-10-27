@@ -12,6 +12,8 @@ dependencies = [
     "connectrpc==0.12.1",
     "googleapis-common-protos>=1.70",
     "hypercorn>=0.17",
+    "numpy>=2.4.6",
+    "pillow>=13.0.0",
     "protobuf>=6.33,<7",
     # connectrpc 0.12.1 imports protobuf.wkt.api_pb, removed after
     # protobuf-py 0.5.0; see docs/connectrpc.md before bumping.
