@@ -38,12 +38,18 @@ CI (`.github/workflows/ci.yml`) runs ruff, mypy (strict), and pytest
 on Python 3.11 and 3.12 for every push to `main` and every pull
 request.
 
-RTAB-Map note: RTAB-Map has no official PyPI package, so it is not a
-pip/uv dependency. `surmap.slam.RtabmapBackend` loads the binding
-module provided by a system RTAB-Map build (or the ROS 2 `rtabmap`
-packages) at runtime and raises `RtabmapUnavailable` with install
-guidance when it is absent. Tests and simulation use
-`surmap.slam.InMemorySlamBackend` instead.
+RTAB-Map note: RTAB-Map has no official PyPI package, and no host —
+local or CI — may install it. The real backend is
+`surmap.slam.SidecarRtabmapBackend`: it stages streamed stereo pairs
+as a EuRoC-style dataset and runs the pinned RTAB-Map Docker image
+(`rtabmap-euroc_dataset` + `rtabmap-export`) over it, returning
+RTAB-Map's optimized poses and assembled cloud at end of stream. Run
+`uv run python scripts/fetch_rtabmap_fixture.py` to pull the pinned
+image and cut the EuRoC V1_01 test subset; the CM5 server selects the
+sidecar with `--slam-backend sidecar --calibration-dir <dataset>`.
+`surmap.slam.RtabmapBackend` remains for a host that does provide
+native bindings, and tests/simulation otherwise use
+`surmap.slam.InMemorySlamBackend`.
 
 ## In scope now
 

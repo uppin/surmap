@@ -13,6 +13,7 @@ pair — scene batch (designation 1) before object batches.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterable, AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -20,14 +21,14 @@ from typing import Any
 from surmap.geometry import to_map_frame
 from surmap.rpc.compose import Brick
 from surmap.rpc.description import ServiceModule
-from surmap.slam.base import SlamBackend
+from surmap.slam.base import FrameResult, SlamBackend
 from surmap.slam.fake import InMemorySlamBackend
 from surmap.survey.designations import object_designation, video_designation
 from surmap.survey.object_points import InMemoryObjectPointSource, ObjectPointSource
 from surmap.survey.points import IncrementalPointEmitter
 from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
 from surmap.survey.v1 import survey_pb2
-from surmap.types import StereoFramePair
+from surmap.types import StereoFramePair, Vec3
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,44 @@ def _encoding_name(frame: survey_pb2.RawVideoFrame) -> str:
     return "unsupported"
 
 
+def _point_responses(
+    result: FrameResult,
+    pair: StereoFramePair,
+    scene_points: list[Vec3],
+    objects: ObjectPointSource,
+    emitter: IncrementalPointEmitter,
+) -> list[survey_pb2.Cm5Response]:
+    """Scene batch (designation 1) then object batches for one result."""
+    responses: list[survey_pb2.Cm5Response] = []
+    scene = emitter.emit(1, scene_points)
+    if scene:
+        responses.append(
+            survey_pb2.Cm5Response(
+                points=survey_pb2.PointBatch(
+                    designation=1,
+                    frame_id=result.frame_id,
+                    t_ns=result.t_ns,
+                    points=[survey_pb2.Point3(x=p.x, y=p.y, z=p.z) for p in scene],
+                )
+            )
+        )
+    for obs in objects.points_for_pair(pair, result.pose):
+        designation = object_designation(obs.track_id)
+        fresh = emitter.emit(designation, obs.points)
+        if fresh:
+            responses.append(
+                survey_pb2.Cm5Response(
+                    points=survey_pb2.PointBatch(
+                        designation=designation,
+                        frame_id=obs.frame_id,
+                        t_ns=obs.t_ns,
+                        points=[survey_pb2.Point3(x=p.x, y=p.y, z=p.z) for p in fresh],
+                    )
+                )
+            )
+    return responses
+
+
 async def stream_survey(
     requests: AsyncIterable[survey_pb2.Cm5Request],
     slam: SlamBackend,
@@ -59,6 +98,7 @@ async def stream_survey(
         emitter = IncrementalPointEmitter()
     config: survey_pb2.Cm5StreamConfig | None = None
     pending: dict[int, dict[int, survey_pb2.RawVideoFrame]] = {}
+    pairs: dict[int, StereoFramePair] = {}
     async for request in requests:
         if config is None:
             if request.WhichOneof("kind") != "config":
@@ -80,14 +120,19 @@ async def stream_survey(
             continue
         t_ns = channels[0].t_ns
         pending.pop(frame.frame_id)
-        # Refs are identifiers only; frame data stays in the messages.
+        # Refs are identifiers; the bytes travel on the pair so
+        # backends that consume images (e.g. the RTAB-Map sidecar)
+        # can stage them without a second channel.
         pair = StereoFramePair(
             frame_id=frame.frame_id,
             t_ns=t_ns,
             left_ref=f"frame-{frame.frame_id}-left",
             right_ref=f"frame-{frame.frame_id}-right",
             calibration_id=config.calibration.calibration_id,
+            left_data=channels[0].data,
+            right_data=channels[1].data,
         )
+        pairs[frame.frame_id] = pair
         result = slam.process_frame(pair)
         if result.pose is None:
             continue
@@ -122,30 +167,25 @@ async def stream_survey(
                 except ValueError:
                     camera_points = ()
                 scene_points.extend(to_map_frame(point, result.pose) for point in camera_points)
-        scene = emitter.emit(1, scene_points)
-        if scene:
-            yield survey_pb2.Cm5Response(
-                points=survey_pb2.PointBatch(
-                    designation=1,
-                    frame_id=result.frame_id,
-                    t_ns=result.t_ns,
-                    points=[survey_pb2.Point3(x=p.x, y=p.y, z=p.z) for p in scene],
-                )
-            )
-        for obs in objects.points_for_pair(pair, result.pose):
-            designation = object_designation(obs.track_id)
-            fresh = emitter.emit(designation, obs.points)
-            if fresh:
-                yield survey_pb2.Cm5Response(
-                    points=survey_pb2.PointBatch(
-                        designation=designation,
-                        frame_id=obs.frame_id,
-                        t_ns=obs.t_ns,
-                        points=[survey_pb2.Point3(x=p.x, y=p.y, z=p.z) for p in fresh],
-                    )
-                )
+        for response in _point_responses(result, pair, scene_points, objects, emitter):
+            yield response
     if config is None:
         raise ValueError("first request must be config")
+    # Batch backends (the RTAB-Map sidecar) only know their poses and
+    # points once the whole stream is staged: flush them now, on this
+    # still-open stream, so their scene/object batches arrive too.
+    flush = getattr(slam, "flush", None)
+    if callable(flush):
+        for result in await asyncio.to_thread(flush):
+            if result.pose is None:
+                continue
+            flushed_pair = pairs.get(result.frame_id)
+            if flushed_pair is None:
+                continue
+            for response in _point_responses(
+                result, flushed_pair, list(result.static_points), objects, emitter
+            ):
+                yield response
 
 
 def cm5_service_module(

@@ -39,6 +39,11 @@ class StereoFramePair:
     left_ref: str
     right_ref: str
     calibration_id: str
+    # Image payloads when the producer has them in hand (e.g. streamed
+    # over the wire); file-backed producers leave these empty and the
+    # refs name readable image files instead.
+    left_data: bytes = b""
+    right_data: bytes = b""
 
 
 @dataclass(frozen=True)
