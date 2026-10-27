@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import struct
 import subprocess
@@ -57,26 +58,73 @@ class ZipEntry:
     local_offset: int
 
 
-def zip_index(url: str) -> dict[str, ZipEntry]:
-    """Central-directory index of a remote zip, fetched by range requests."""
-    total = _size(url)
-    tail = _range(url, max(0, total - 65557), total - 1)
-    eocd = tail.rfind(b"PK\x05\x06")
-    if eocd < 0:
-        raise ValueError(f"{url}: no zip end-of-central-directory")
-    cd_size, cd_offset = struct.unpack_from("<II", tail, eocd + 12)
-    directory = _range(url, cd_offset, cd_offset + cd_size - 1)
+def _zip64_extra(extra: bytes) -> tuple[int, ...]:
+    """Values from a zip64 extended-information extra field (tag 0x0001)."""
+    pos = 0
+    while pos + 4 <= len(extra):
+        tag, size = struct.unpack_from("<HH", extra, pos)
+        if tag == 0x0001:
+            body = extra[pos + 4 : pos + 4 + size]
+            return struct.unpack(f"<{len(body) // 8}Q", body[: len(body) // 8 * 8])
+        pos += 4 + size
+    return ()
+
+
+def parse_central_directory(directory: bytes) -> dict[str, ZipEntry]:
+    """Parse central-directory bytes, honouring zip64 extra fields."""
     entries: dict[str, ZipEntry] = {}
     pos = 0
     while pos < len(directory) - 4 and directory[pos : pos + 4] == b"PK\x01\x02":
         fields = struct.unpack_from("<HHHHHHIIIHHHHHII", directory, pos + 4)
-        method, comp_size = fields[3], fields[7]
+        method = fields[3]
+        comp_size, uncomp_size = fields[7], fields[8]
         name_len, extra_len, comment_len = fields[9], fields[10], fields[11]
         local_offset = fields[15]
+        extra = directory[pos + 46 + name_len : pos + 46 + name_len + extra_len]
+        if uncomp_size == 0xFFFFFFFF or comp_size == 0xFFFFFFFF or local_offset == 0xFFFFFFFF:
+            zip64 = _zip64_extra(extra)
+            cursor = 0
+            if uncomp_size == 0xFFFFFFFF:
+                uncomp_size, cursor = zip64[cursor], cursor + 1
+            if comp_size == 0xFFFFFFFF:
+                comp_size, cursor = zip64[cursor], cursor + 1
+            if local_offset == 0xFFFFFFFF:
+                local_offset = zip64[cursor]
         name = directory[pos + 46 : pos + 46 + name_len].decode()
         entries[name] = ZipEntry(name, method, comp_size, local_offset)
         pos += 46 + name_len + extra_len + comment_len
     return entries
+
+
+def _central_directory_range(url: str, total: int, tail: bytes, tail_base: int) -> tuple[int, int]:
+    """(offset, size) of the central directory, via EOCD or zip64 EOCD."""
+    eocd = tail.rfind(b"PK\x05\x06")
+    if eocd >= 0:
+        cd_size, cd_offset = struct.unpack_from("<II", tail, eocd + 12)
+        if cd_size != 0xFFFFFFFF and cd_offset != 0xFFFFFFFF:
+            return cd_offset, cd_size
+    locator = tail.rfind(b"PK\x06\x07")
+    if locator < 0:
+        raise ValueError(f"{url}: no zip end-of-central-directory (classic or zip64)")
+    z64_offset = struct.unpack_from("<Q", tail, locator + 8)[0]
+    if z64_offset >= tail_base:
+        record = tail[z64_offset - tail_base : z64_offset - tail_base + 56]
+    else:
+        record = _range(url, z64_offset, z64_offset + 55)
+    if record[:4] != b"PK\x06\x06":
+        raise ValueError(f"{url}: bad zip64 end-of-central-directory")
+    cd_size, cd_offset = struct.unpack_from("<QQ", record, 40)
+    return cd_offset, cd_size
+
+
+def zip_index(url: str) -> dict[str, ZipEntry]:
+    """Central-directory index of a remote zip, fetched by range requests."""
+    total = _size(url)
+    tail_base = max(0, total - 65557)
+    tail = _range(url, tail_base, total - 1)
+    cd_offset, cd_size = _central_directory_range(url, total, tail, tail_base)
+    directory = _range(url, cd_offset, cd_offset + cd_size - 1)
+    return parse_central_directory(directory)
 
 
 def extract_member(url: str, entry: ZipEntry, target: Path) -> str:
@@ -191,15 +239,36 @@ def main() -> int:
     if not args.sequence:
         parser.error("KITTI fetch needs --sequence")
     first, last = (int(part) for part in (args.frames or "0-149").split("-"))
-    index = zip_index(spec.source_url)
     out = cache_dir() / spec.snippet_id / args.sequence
+    manifest: dict[str, object] = {
+        "snippet_id": spec.snippet_id,
+        "sequence": args.sequence,
+        "frames": [first, last],
+        "files": {},
+    }
+    files: dict[str, str] = {}
     fetched = 0
-    for name, entry in sorted(index.items()):
-        if f"/{args.sequence}/" not in name and not name.startswith(f"{args.sequence}/"):
-            continue
-        fetched += 1
-        digest = extract_member(spec.source_url, entry, out / Path(name).name)
-        print(f"{name} sha256={digest}")
+    # Both stereo channels: image_02 (left) and image_03 (right).
+    channel_zips = {
+        "image_02": spec.source_url,
+        "image_03": spec.source_url.replace("image_2.zip", "image_3.zip"),
+    }
+    for channel, zip_url in channel_zips.items():
+        index = zip_index(zip_url)
+        for name, entry in sorted(index.items()):
+            if f"/{args.sequence}/" not in name:
+                continue
+            stem = Path(name).stem
+            if not stem.isdigit() or not first <= int(stem) <= last:
+                continue
+            target = out / channel / Path(name).name
+            digest = extract_member(zip_url, entry, target)
+            files[f"{channel}/{Path(name).name}"] = digest
+            fetched += 1
+            print(f"{channel}/{name} sha256={digest}")
+    manifest["files"] = files
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(f"fetched {fetched} members for sequence {args.sequence} frames {first}-{last}")
     return 0 if fetched else 1
 

@@ -21,6 +21,7 @@
   - [x] Snippet registry + oracle converters (VisDrone MOT, Purdue refined_gt, KITTI calib→sensor.yaml)
   - [x] KITTI EuRoC-layout staging converter (sensor.yaml; image staging is fetch-script extraction)
   - [ ] DEFERRED spikes (recorded, non-blocking for this node's tests): Boreal fetch vs Wennington fallback, VisDrone sequence pick, Purdue window pick, Byrne camera motion, COLMAP fx run — dataset downloads to be done with the n3/n4 snippet E2Es that consume them
+  - [x] Review fix (post-green): zip64 central-directory parsing (the 15 GB KITTI image zips returned 0 entries), --frames filter actually applied, both image_02/image_03 channels fetched, SHA-256 manifest written; hermetic zip64 fixture test added
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/moving-object-detection-design.md` §6.1/§6.2 — fold snippet outcomes into the design's evaluation record

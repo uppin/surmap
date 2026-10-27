@@ -64,6 +64,45 @@ def test_purdue_refined_gt_rows_become_oracle_boxes() -> None:
     assert boxes[0].width == 24.0
 
 
+def _fetch_module():  # type: ignore[no-untyped-def]
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "fetch_moving_snippets.py"
+    spec = importlib.util.spec_from_file_location("fetch_moving_snippets", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["fetch_moving_snippets"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_central_directory_parser_handles_zip64_extra() -> None:
+    """The KITTI image zips are zip64: sizes/offsets live in extra fields."""
+    import struct
+
+    fetch = _fetch_module()
+    name = b"training/image_02/0020/0000000001.png"
+    extra = struct.pack("<HHQQQ", 0x0001, 24, 700_000, 650_000, 5_000_000_000)
+    record = (
+        b"PK\x01\x02"
+        + struct.pack(
+            "<HHHHHHIIIHHHHHII",
+            20, 45, 0, 8, 0, 0, 0,
+            0xFFFFFFFF, 0xFFFFFFFF,
+            len(name), len(extra), 0, 0, 0, 0, 0xFFFFFFFF,
+        )
+        + name
+        + extra
+    )
+    entries = fetch.parse_central_directory(record)
+    entry = entries[name.decode()]
+    assert entry.method == 8
+    assert entry.compressed_size == 650_000
+    assert entry.local_offset == 5_000_000_000
+
+
 def test_kitti_calib_becomes_euroc_sensor_yaml() -> None:
     yaml_text = kitti_sensor_yaml(KITTI_CALIB, width=1242, height=375)
     assert "resolution: [1242, 375]" in yaml_text
