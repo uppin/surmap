@@ -246,6 +246,26 @@ by a layer-memory counter in §5), with **LRU eviction outside a
 config, and hitting the cap evicts farthest-first, never silently
 grows.
 
+**As built (2026-10-27, n3).** `surmap.moving.differencing`
+implements the log-odds layer (dwell increment 0.6/frame, three
+frames to join; candidate penalty −0.5; lazy decay 0.03/frame,
+so absorbed ghosts expire in ~80 unobserved frames) and the
+τ(Z, θ̂) test as an own/neighbour-voxel fast path plus a
+coarse-gated chunked-numpy exact stage: ~0.018 s per 4 k-point
+frame on the dense-surface workload (the first implementation
+took 15.2 s); the adversarial sparse-layer worst case measures
+~0.15 s and is carried as a known bound for the CM5 profile.
+Clustering is grid-hash connected components in map space (the
+design's image-space connectivity is equivalent at this
+sampling). Areas are convex hulls in the points' frame with
+centroid association gated at max(25, 2.5 × extent); the
+handler publishes live `MovingArea` messages on
+`StreamMovingAreas`. Two recorded deviations: the velocity gate
+on absorption is realized as cluster-level candidate penalty
+rather than per-point image displacement, and τ's depth is the
+map-frame range until runtime VO supplies camera-frame depth
+(OQ1).
+
 ### Step 2 — Moving areas: mask → polygon → area tracks
 
 1. Project candidate clusters back into the current image;
