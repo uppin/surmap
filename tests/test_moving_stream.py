@@ -12,6 +12,7 @@ from collections.abc import AsyncIterable
 from surmap.moving.placement import AREA_TRACK_ID_BASE
 from surmap.slam.base import FrameResult
 from surmap.survey.cm5_server import stream_moving_areas
+from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
 from surmap.survey.v1 import survey_pb2
 from surmap.types import Pose, StereoFramePair, Vec3
 
@@ -24,13 +25,13 @@ def _mover(frame_index: int) -> tuple[Vec3, ...]:
     )
 
 
-class FakeStereo:
+class FakeStereo(StereoReconstructor):
     """Returns the static grid plus a mover cluster moving in +x."""
 
     def __init__(self) -> None:
         self.calls = 0
 
-    def reconstruct(self, left: object, right: object, rig: object) -> tuple[Vec3, ...]:
+    def reconstruct(self, left: FrameImage, right: FrameImage, rig: StereoRig) -> tuple[Vec3, ...]:
         index = self.calls
         self.calls += 1
         if index == 0:
