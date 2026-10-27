@@ -112,3 +112,16 @@ layer, motion-first, semantics-second.
 **Command:** `uv run pytest -q tests/test_moving_differencing.py` and the EuRoC replay E2E (env-flagged)
 **Before:** baseline 432 passed on n1; on this branch 7 failed in `tests/test_moving_differencing.py` plus inherited n2 red (4) — all NotImplementedError from stubs
 **After:** tests pass; EuRoC yields zero graduated areas; full gates green (`pytest`, `mypy`, `ruff`)
+
+## Post-green review fixes (2026-10-27)
+
+- Hot path rewritten: own/neighbour voxel fast path, coarse-gated
+  chunked numpy exact stage, grid-hash clustering. Dense-surface
+  workload (40k-voxel layer, 4k points, movers minority):
+  ~0.018 s/frame on the dev host vs 15.2 s for the first
+  implementation. Adversarial sparse-layer case (98% miss rate,
+  not a stereo workload): ~0.15 s on this host — recorded as the
+  known worst case, to be re-measured in the CM5 profile (n6).
+- Log-odds now real: dwell-gated `observe_frame` (3 frames to
+  join), candidate penalty in `difference`, lazy per-frame decay
+  so absorbed ghosts expire (~80 frames unobserved in tests).

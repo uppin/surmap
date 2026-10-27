@@ -48,6 +48,51 @@ def test_noise_sized_cluster_is_filtered() -> None:
     assert layer.difference(1, 0, _grid(9.0, 9.0, n=5)) == ()
 
 
+def test_dwell_needs_several_frames_to_join_the_layer() -> None:
+    layer = StaticLayer(CONFIG)
+    point = Vec3(1.0, 1.0, 5.0)
+    layer.observe_frame([point])
+    assert not layer.is_occupied(point)
+    layer.observe_frame([point])
+    assert not layer.is_occupied(point)
+    layer.observe_frame([point])
+    assert layer.is_occupied(point)
+
+
+def test_absorbed_ghost_decays_away() -> None:
+    layer = StaticLayer(CONFIG)
+    ghost = Vec3(2.0, 2.0, 5.0)
+    layer.seed([ghost])
+    assert layer.is_occupied(ghost)
+    far = _grid(30.0, 30.0)
+    for frame in range(80):
+        layer.difference(frame, frame, far)
+    assert not layer.is_occupied(ghost)
+
+
+def test_differencing_is_within_frame_budget() -> None:
+    """Design budget: 5 Hz on one CM5 core; 4k points far under 200 ms.
+
+    Workload as designed: a dense surface layer (stereo points on
+    mapped surfaces), movers a minority of the frame. (A sparse
+    random layer turns the test into nearest-neighbour search
+    over empty space; that adversarial case measures ~0.15 s on
+    this host and is recorded in the changeset.)
+    """
+    import time
+
+    layer = StaticLayer(CONFIG)
+    layer.seed(Vec3(x * 0.1, y * 0.1, 0.0) for x in range(200) for y in range(200))
+    frame = [Vec3(x * 0.1, y * 0.1, 0.0) for x in range(0, 200, 3) for y in range(0, 200, 3)]
+    frame = frame[:3960] + list(_grid(10.0, 10.0))
+    layer.difference(0, 0, frame)  # warm-up
+    start = time.perf_counter()
+    clusters = layer.difference(1, 1, frame)
+    elapsed = time.perf_counter() - start
+    assert elapsed < 0.05, f"differencing took {elapsed:.3f}s for 4000 points"
+    assert len(clusters) == 1  # the mover grid, nothing else
+
+
 def test_min_area_scales_down_with_depth() -> None:
     assert min_area_px(20.0, CONFIG) < min_area_px(10.0, CONFIG)
     assert min_area_px(20.0, CONFIG) <= 60.0
