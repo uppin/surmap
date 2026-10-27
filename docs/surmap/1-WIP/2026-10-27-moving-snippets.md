@@ -13,9 +13,9 @@
   - [x] Cross-check `docs/todo/` and `docs/code-issues/` — none exist for `src/surmap` (recorded in discovery)
   - [x] Create/update PRD documentation — None — Infra, no user-visible behaviour delta; the design doc (n1) is the governing document
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-pr-stack` Guardrail — failing fixture/seam tests committed ·
-  - [ ] `CandidateCluster` seam type + stub snippet registry/oracle loaders
-  - [ ] Failing tests in `tests/test_moving_snippets.py` (registry contents, oracle converters, calib→sensor.yaml)
+- [wf 2] ✅ 2026-10-27 `/plan-pr-stack` Guardrail — failing fixture/seam tests committed · commit 2; baseline 432 passed (`uv run pytest -q`), red: 4 failed / 2 passed in `tests/test_moving_snippets.py` (stubs raise NotImplementedError)
+  - [x] `CandidateCluster` seam type + stub snippet registry/oracle loaders
+  - [x] Failing tests in `tests/test_moving_snippets.py` (registry contents, oracle converters, calib→sensor.yaml)
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] `scripts/fetch_moving_snippets.py` (pinned fetch, KITTI range-extraction, COLMAP cross-check command)
   - [ ] Snippet registry + oracle converters (VisDrone MOT, Purdue refined_gt, mask→polygon, KITTI labels)
@@ -31,7 +31,7 @@ State A below is distilled from it.
 
 ## Stack Context
 
-**Stack**: moving-object detection · slug **`#moving-objects`** — this PR is **2 of 6** · #pending
+**Stack**: moving-object detection · slug **`#moving-objects`** — this PR is **2 of 6** · [#19](https://github.com/uppin/surmap/pull/19)
 **Branch**: `pr-2-moving-snippets` · **Base**: `docs/moving-object-design` (n1, #17)
 **Successor**: `pr-3-moving-differencing`
 **Kind**: Infra · behaviour-preserves
@@ -114,5 +114,5 @@ which is EuRoC-format only.
 
 **Method:** V1-fail→pass — failing fixture tests (registry, converters, calib conversion), committed red, green at implementation
 **Command:** `uv run pytest -q tests/test_moving_snippets.py`
-**Before:** test file absent (recorded at pass 2 with the red run)
+**Before:** baseline 432 passed (2026-10-27, pass 2); red run 4 failed / 2 passed — failures are NotImplementedError from the n2 stubs
 **After:** all snippet tests pass; `uv run pytest -q`, `uv run mypy`, `uv run ruff check src tests` green
