@@ -89,9 +89,22 @@ def test_central_directory_parser_handles_zip64_extra() -> None:
         b"PK\x01\x02"
         + struct.pack(
             "<HHHHHHIIIHHHHHII",
-            20, 45, 0, 8, 0, 0, 0,
-            0xFFFFFFFF, 0xFFFFFFFF,
-            len(name), len(extra), 0, 0, 0, 0, 0xFFFFFFFF,
+            20,
+            45,
+            0,
+            8,
+            0,
+            0,
+            0,
+            0xFFFFFFFF,
+            0xFFFFFFFF,
+            len(name),
+            len(extra),
+            0,
+            0,
+            0,
+            0,
+            0xFFFFFFFF,
         )
         + name
         + extra
