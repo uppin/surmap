@@ -337,6 +337,24 @@ not constants of nature; they live in one config object next to
 feeds `surmap.motion.classify_motion` (extended, not replaced: its
 centroid-displacement test becomes one input among these).
 
+**As built (2026-10-27, n4).** `surmap.moving.classify` computes
+the deciding statistics per area track (`TrackMotionStats`:
+net/path, velocity coherence as mean-velocity over mean-speed,
+Welford area variance) and applies the table above with ≥5
+observations over ≥1 s; RIGID_MOVER and OSCILLATING are terminal
+and verdicts are versioned, so a decelerating car cannot flap
+the published verdict. Keypoints are FPS seeds from the dynamic
+candidates with PCA endpoints, given identity by the bounded LK
+tracker (`surmap.moving.keypoints`, 21×21 window, residual
+failure re-seeds), filtered by one ego-compensated
+constant-velocity Kalman filter; observations buffer in a 3 s
+ring (`surmap.moving.buffer`). The shipped thresholds are the
+untuned starting values: tuning on the §6.1 snippets is deferred
+(`src/surmap/docs/todo/2026-10-27-moving-snippet-acceptance-tuning.md`),
+and detector-track identity adoption in the handler is deferred
+(`src/surmap/docs/todo/2026-10-27-moving-detector-identity-adoption.md`)
+— snapshots carry area-allocated identities until then.
+
 ### Step 4 — Per-area analysis (only for rigid movers)
 
 Compute follows attention: this stage runs on at most a handful of
