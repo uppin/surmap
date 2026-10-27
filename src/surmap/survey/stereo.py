@@ -104,14 +104,38 @@ def _disparity_map(
     best = np.full((height, width), np.inf, dtype=np.float32)
     disparity = np.zeros((height, width), dtype=np.float32)
     padded_left = np.pad(left, half, mode="edge")
+    costs: list[NDArray[np.float32]] = []
     for d in range(2, max_disparity + 1):
         shifted = _shift_image(right, -d, 0)
         padded_right = np.pad(shifted, half, mode="edge")
         cost = _box_sum(np.abs(padded_left - padded_right), half) / float((2 * half + 1) ** 2)
         cost = cost[half : half + height, half : half + width]
+        costs.append(cost.astype(np.float32))
         better = cost < best
         best = np.where(better, cost, best)
         disparity = np.where(better, float(d), disparity)
+    # Subpixel refinement: parabolic interpolation of the cost
+    # curve around the integer minimum. Integer disparity at the
+    # downscaled matching resolution quantizes depth into shells
+    # metres apart at driving range; the parabola recovers the
+    # fractional part from the neighbouring costs.
+    if costs:
+        volume = np.stack(costs, axis=0)
+        index = np.clip((disparity - 2).astype(np.int64), 0, volume.shape[0] - 1)
+        centre = np.take_along_axis(volume, index[None], axis=0)[0]
+        minus = np.take_along_axis(
+            volume, np.clip(index - 1, 0, volume.shape[0] - 1)[None], axis=0
+        )[0]
+        plus = np.take_along_axis(volume, np.clip(index + 1, 0, volume.shape[0] - 1)[None], axis=0)[
+            0
+        ]
+        denom = minus - 2.0 * centre + plus
+        offset = np.where(
+            (index > 0) & (index < volume.shape[0] - 1) & (np.abs(denom) > 1e-9),
+            0.5 * (minus - plus) / np.where(np.abs(denom) > 1e-9, denom, 1.0),
+            0.0,
+        )
+        disparity = disparity + np.clip(offset, -1.0, 1.0).astype(np.float32)
     disparity = np.where(best < 20.0, disparity, 0.0)
     return disparity
 
@@ -127,12 +151,17 @@ class StereoReconstructor:
         stride: int = 2,
         max_points: int = 20_000,
         alignment_offset: tuple[float, float] = (0.0, 0.0),
+        match_width_px: int = 160,
     ) -> None:
         self._max_disparity = max_disparity
         self._min_depth_m = min_depth_m
         self._max_depth_m = max_depth_m
         self._stride = stride
         self._max_points = max_points
+        # Matching runs on frames downscaled to about this width;
+        # wider matching costs more but quantizes depth far less
+        # (depth shells shrink with the matching focal length).
+        self._match_width_px = max(1, match_width_px)
         # Right principal point minus left, in frame pixels: the shift
         # that rectifies this rig's pairs before matching.
         self._alignment_offset = alignment_offset
@@ -146,7 +175,7 @@ class StereoReconstructor:
         common_w = min(left_gray.shape[1], right_gray.shape[1])
         left_gray = left_gray[:common_h, :common_w]
         right_gray = right_gray[:common_h, :common_w]
-        scale = max(1, left_gray.shape[1] // 160)
+        scale = max(1, left_gray.shape[1] // self._match_width_px)
         small_left = left_gray[::scale, ::scale]
         small_right = right_gray[::scale, ::scale]
         offset_x, offset_y = self._alignment_offset

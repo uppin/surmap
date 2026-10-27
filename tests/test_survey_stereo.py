@@ -57,6 +57,53 @@ def test_reconstruction_finds_the_tabletop_scene_in_a_real_pair() -> None:
     assert all(0.2 <= p.z <= 8.0 for p in points)
 
 
+def _shifted_pair(
+    disparity_px: float, width: int = 320, height: int = 64
+) -> tuple[FrameImage, FrameImage]:
+    """Textured left frame and a right frame shifted by a fractional disparity."""
+    rng = np.random.default_rng(7)
+    # Blocky high-contrast texture: unambiguous to match, and the
+    # fractional shift still yields a smooth cost minimum.
+    blocks = rng.random((height // 4 + 2, (width + 64) // 4 + 2)).astype(np.float32)
+    texture = np.repeat(np.repeat(blocks, 4, axis=0), 4, axis=1)[:height, : width + 64]
+    kernel = np.ones(3, dtype=np.float32) / 3.0
+    texture = np.apply_along_axis(lambda row: np.convolve(row, kernel, mode="same"), 1, texture)
+    # The matcher pairs left[x] with right[x + d], so the right
+    # frame holds the left texture shifted by -disparity.
+    left = texture[:, 32 : 32 + width]
+    cols = np.arange(width, dtype=np.float64) + 32.0
+    right = np.stack(
+        [
+            np.interp(cols - disparity_px, np.arange(width + 64, dtype=np.float64), row)
+            for row in texture
+        ]
+    )
+
+    def frame(image: np.ndarray) -> FrameImage:
+        pixels = np.clip(image / max(float(image.max()), 1e-9) * 255.0, 0, 255).astype(np.uint8)
+        return FrameImage(
+            width, height, "raw_rgb", np.repeat(pixels[:, :, None], 3, axis=2).tobytes()
+        )
+
+    return frame(left), frame(right)
+
+
+def test_subpixel_disparity_recovers_a_fractional_disparity_depth() -> None:
+    # Given a fronto-parallel textured plane whose true disparity is
+    # fractional at the matching scale (12.5 px at half width), so an
+    # integer-disparity matcher lands on a depth shell ~4% off.
+    left, right = _shifted_pair(disparity_px=25.0)
+    rig = StereoRig(fx=100.0, fy=100.0, cx=160.0, cy=32.0, baseline_m=0.5)
+
+    # When the pair is reconstructed
+    points = StereoReconstructor(max_disparity=64, max_depth_m=10.0).reconstruct(left, right, rig)
+
+    # Then the median depth is the true 2.0 m, not the 1.92/2.08 m shell
+    assert len(points) > 200
+    depths = sorted(p.z for p in points)
+    assert depths[len(depths) // 2] == pytest.approx(2.0, abs=0.06)
+
+
 def test_a_featureless_pair_yields_no_points() -> None:
     # Given a smooth gradient on both channels — no texture to match.
     # (An identical *textured* photo is not used here: repetitive texture
