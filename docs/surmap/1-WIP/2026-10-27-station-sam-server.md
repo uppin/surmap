@@ -8,16 +8,16 @@
 
 ## Workflow
 
-- [wf 1] ✅ 2026-10-27 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file
+- [wf 1] ✅ 2026-10-27 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file @ `8beffa8`
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/` — neither exists
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Stub API — handler + brick factory signatures (`TODO(pr-5)`)
-  - [ ] Create failing acceptance tests
-  - [ ] Run acceptance tests (verify they fail)
-  - [ ] TDD Red — write failing unit/integration tests
+- [wf 2] ✅ 2026-10-27 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 4 tests red at import: `survey_pb2` bindings not yet generated (n1 stub state); after n1/n3 green they fail on this node's `NotImplementedError` stubs (commit 2). Baseline 359 green excluding inherited red files
+  - [x] Stub API — handler + brick factory signatures (`TODO(pr-5)`)
+  - [x] Create failing acceptance tests
+  - [x] Run acceptance tests (verify they fail)
+  - [x] TDD Red — write failing unit/integration tests
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Config-first stream; map `AnalysisMode` onto the gate
   - [ ] Answer admitted frames with `SamFrameDetections` keyed by `frame_id`
@@ -112,7 +112,7 @@ would collide with the PR that owns them.
 
 ## Stack Context
 
-**Stack**: Survey streaming · slug **`#survey-stream`** — this PR is **5 of 5** · #pending
+**Stack**: Survey streaming · slug **`#survey-stream`** — this PR is **5 of 5** · [#11](https://github.com/uppin/surmap/pull/11)
 **Branch**: `pr-5-station-sam-server` · **Base**: `pr-4-cm5-survey-server`
 **Successor**: none — top of stack
 **Kind**: Feature · behaviour-adds — `(Type: Feature, Behaviour: adds)`
