@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import ModuleType
+
 import pytest
 
 from surmap.moving.candidates import CandidateCluster
@@ -64,7 +66,7 @@ def test_purdue_refined_gt_rows_become_oracle_boxes() -> None:
     assert boxes[0].width == 24.0
 
 
-def _fetch_module():  # type: ignore[no-untyped-def]
+def _fetch_module() -> ModuleType:
     import importlib.util
     import sys
     from pathlib import Path
