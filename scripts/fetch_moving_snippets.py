@@ -144,6 +144,41 @@ def extract_member(url: str, entry: ZipEntry, target: Path) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def extract_span(url: str, entries: list[ZipEntry], out_dir: Path) -> dict[str, str]:
+    """Extract a contiguous run of members with chunked range fetches.
+
+    Sequence members sit contiguously in the zip, so one span
+    fetch (in 8 MB chunks) replaces hundreds of per-member
+    requests. Returns {member name: sha256}.
+    """
+    ordered = sorted(entries, key=lambda entry: entry.local_offset)
+    start = ordered[0].local_offset
+    end = max(entry.local_offset + entry.compressed_size + 1024 for entry in ordered)
+    buffer = bytearray()
+    cursor = start
+    while cursor <= end:
+        chunk_end = min(end, cursor + 8 * 1024 * 1024 - 1)
+        buffer.extend(_range(url, cursor, chunk_end))
+        cursor = chunk_end + 1
+    digests: dict[str, str] = {}
+    for entry in ordered:
+        offset = entry.local_offset - start
+        if bytes(buffer[offset : offset + 4]) != b"PK\x03\x04":
+            raise ValueError(f"{entry.name}: bad local header in span")
+        name_len, extra_len = struct.unpack_from("<HH", buffer, offset + 26)
+        data_start = offset + 30 + name_len + extra_len
+        raw = bytes(buffer[data_start : data_start + entry.compressed_size])
+        if entry.method == 8:
+            raw = zlib.decompress(raw, -15)
+        elif entry.method != 0:
+            raise ValueError(f"{entry.name}: unsupported compression {entry.method}")
+        target = out_dir / Path(entry.name).name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+        digests[entry.name] = hashlib.sha256(raw).hexdigest()
+    return digests
+
+
 def colmap_check(image_dir: Path, calib_file: Path) -> int:
     """Cross-check COLMAP-recovered fx against a shipped calibration (6.2)."""
     from surmap.moving.snippets import _projection
@@ -255,14 +290,18 @@ def main() -> int:
     }
     for channel, zip_url in channel_zips.items():
         index = zip_index(zip_url)
-        for name, entry in sorted(index.items()):
-            if f"/{args.sequence}/" not in name:
-                continue
-            stem = Path(name).stem
-            if not stem.isdigit() or not first <= int(stem) <= last:
-                continue
-            target = out / channel / Path(name).name
-            digest = extract_member(zip_url, entry, target)
+        selected = [
+            entry
+            for name, entry in sorted(index.items())
+            if name.startswith("training/")
+            and f"/{args.sequence}/" in name
+            and Path(name).stem.isdigit()
+            and first <= int(Path(name).stem) <= last
+        ]
+        if not selected:
+            continue
+        digests = extract_span(zip_url, selected, out / channel)
+        for name, digest in digests.items():
             files[f"{channel}/{Path(name).name}"] = digest
             fetched += 1
             print(f"{channel}/{name} sha256={digest}")
