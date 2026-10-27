@@ -13,9 +13,9 @@
   - [x] Cross-check `docs/todo/` and `docs/code-issues/` — none exist for `src/surmap`
   - [x] Create/update PRD documentation — design doc on n1 serves as PRD (recorded in plan)
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-pr-stack` Red — owned stubs + failing tests committed ·
-  - [ ] Stubs: `differencing.py` (`StaticLayer`, `tau`), `areas.py`, `config.py`
-  - [ ] Failing tests: fast-car cluster persistence (issue 1), dwell absorption, τ pose term, polygon cap, association gate
+- [wf 2] ✅ 2026-10-27 `/plan-pr-stack` Red — owned stubs + failing tests committed · commit 2; baseline 432 passed + inherited n2 red (4), this node red: 7 failed in `tests/test_moving_differencing.py` (NotImplementedError stubs)
+  - [x] Stubs: `differencing.py` (`StaticLayer`, `tau`), `areas.py`, `config.py`
+  - [x] Failing tests: fast-car cluster persistence (issue 1), dwell absorption, τ pose term, polygon cap, association gate
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Proto `StreamMovingAreas` + regenerated bindings; `stream_moving_areas` handler
   - [ ] Static layer + differencing; mask→polygon + area tracks
@@ -30,7 +30,7 @@ Full exploration: [2026-10-27-moving-differencing-initial-discovery.md](./2026-1
 
 ## Stack Context
 
-**Stack**: moving-object detection · slug **`#moving-objects`** — this PR is **3 of 6** · #pending
+**Stack**: moving-object detection · slug **`#moving-objects`** — this PR is **3 of 6** · [#21](https://github.com/uppin/surmap/pull/21)
 **Branch**: `pr-3-moving-differencing` · **Base**: `pr-2-moving-snippets`
 **Successor**: `pr-4-moving-classification`
 **Kind**: Feature · behaviour-adds
@@ -110,5 +110,5 @@ layer, motion-first, semantics-second.
 
 **Method:** V1-fail→pass — unit tests for layer/differencing/areas + EuRoC negative-control replay
 **Command:** `uv run pytest -q tests/test_moving_differencing.py` and the EuRoC replay E2E (env-flagged)
-**Before:** recorded at pass 2 with the red run
+**Before:** baseline 432 passed on n1; on this branch 7 failed in `tests/test_moving_differencing.py` plus inherited n2 red (4) — all NotImplementedError from stubs
 **After:** tests pass; EuRoC yields zero graduated areas; full gates green (`pytest`, `mypy`, `ruff`)
