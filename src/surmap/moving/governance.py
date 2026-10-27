@@ -1,7 +1,4 @@
-"""Stage governance: counters, caps, degradation ladder (design section 5).
-
-TODO(n6): implemented by pr-6-moving-governance's Green row.
-"""
+"""Stage governance: counters, caps, degradation ladder (design section 5)."""
 
 from __future__ import annotations
 
@@ -9,6 +6,17 @@ from dataclasses import dataclass
 from enum import Enum
 
 from surmap.moving.config import MovingConfig
+
+_MAX_BUFFERED = 10_000
+_MAX_STAGE_MS = 1_000.0
+
+_LADDER = (
+    "FULL",
+    "REDUCED_CADENCE",
+    "FEWER_KEYPOINTS",
+    "DETECTOR_LABELLED_ONLY",
+    "OFF",
+)
 
 
 class Degradation(Enum):
@@ -39,9 +47,22 @@ class BudgetGovernor:
         self._config = config
 
     def evaluate(self, counters: StageCounters) -> Degradation:
-        """Current degradation level for these counters."""
-        raise NotImplementedError("TODO(n6): BudgetGovernor.evaluate")
+        """Current degradation level for these counters.
+
+        Each violated budget (area cap, layer-voxel cap, buffer
+        cap, stage-time budget) steps the ladder one rung from
+        FULL; RTAB-Map is never degraded.
+        """
+        violations = sum(
+            (
+                counters.areas_live > self._config.max_areas,
+                counters.layer_voxels > self._config.max_voxels,
+                counters.buffered_observations > _MAX_BUFFERED,
+                counters.ms_stage_total > _MAX_STAGE_MS,
+            )
+        )
+        return Degradation(_LADDER[min(violations, len(_LADDER) - 1)].lower())
 
     def cap_areas(self, areas_live: int) -> int:
         """How many of `areas_live` areas may be kept (largest win)."""
-        raise NotImplementedError("TODO(n6): BudgetGovernor.cap_areas")
+        return min(areas_live, self._config.max_areas)

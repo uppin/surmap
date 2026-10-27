@@ -16,9 +16,9 @@
 - [wf 2] ✅ 2026-10-27 `/plan-pr-stack` Guardrail — failing governance tests + recorded baseline · commit 2; full-suite state on this branch: 434 passed / 24 failed, all 24 being the stack's recorded red tests (n2:4, n3:7, n4:7, n5:3, n6:3)
   - [x] Stub: `governance.py` (counters, caps, degradation ladder)
   - [x] Failing tests in `tests/test_moving_governance.py`; baseline test counts recorded
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Counters/caps/ladder wired to n3–n5 producers
-  - [ ] CM5-profile replay (EuRoC + KITTI, sidecar active) with recorded budget table
+- [wf 3] ✅ 2026-10-27 `/green` Green — implement until every red test passes · inline green; governance tests 3 passed; FULL stack-tip suite 458 passed, mypy+ruff clean
+  - [x] BudgetGovernor counters/caps/ladder implemented (producers are the n3-n5 stage APIs; governor aggregates their counters)
+  - [ ] DEFERRED: CM5-profile replay (EuRoC + KITTI, sidecar active) with recorded budget table — blocked on the handler-level integration deferred in n4/n5 (assembled pipeline in the stream handler); recorded here, before this feature is enabled by default on-board
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/moving-object-detection-design.md` §2/§5 — record measured budgets
