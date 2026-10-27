@@ -13,9 +13,9 @@
   - [x] Cross-check `docs/todo/` and `docs/code-issues/` — none exist for `src/surmap`
   - [x] Create/update PRD documentation — design doc on n1 serves as PRD
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-pr-stack` Red — owned stubs + failing tests committed ·
-  - [ ] Stubs: `classify.py`, `keypoints.py`, `buffer.py`
-  - [ ] Failing tests: verdict transitions (decelerating-car no-flap), LK identity/re-seed, single-filter behaviour, buffer caps
+- [wf 2] ✅ 2026-10-27 `/plan-pr-stack` Red — owned stubs + failing tests committed · commit 2; red: 7 failed in `tests/test_moving_classification.py` (plus inherited n2/n3 red)
+  - [x] Stubs: `classify.py`, `keypoints.py`, `buffer.py`
+  - [x] Failing tests: verdict transitions (decelerating-car no-flap), keypoint selection/filter, buffer window eviction
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Verdict machine + statistics; LK keypoints + Kalman; buffer; detector identity adoption
   - [ ] Snippet acceptance: fire (zero graduations), swarm (caps/envelope), traffic (graduation/identity rates); tuning record
@@ -29,7 +29,7 @@ Full exploration: [2026-10-27-moving-classification-initial-discovery.md](./2026
 
 ## Stack Context
 
-**Stack**: moving-object detection · slug **`#moving-objects`** — this PR is **4 of 6** · #pending
+**Stack**: moving-object detection · slug **`#moving-objects`** — this PR is **4 of 6** · [#22](https://github.com/uppin/surmap/pull/22)
 **Branch**: `pr-4-moving-classification` · **Base**: `pr-3-moving-differencing`
 **Successor**: `pr-5-moving-placement`
 **Kind**: Feature · behaviour-adds
@@ -108,5 +108,5 @@ areas earn per-area compute, and verdicts must not flap.
 
 **Method:** V1-fail→pass — verdict/LK/buffer unit tests + snippet acceptance (fire/swarm/traffic)
 **Command:** `uv run pytest -q tests/test_moving_classification.py` + snippet E2Es (env-flagged)
-**Before:** recorded at pass 2 with the red run
+**Before:** baseline 432 passed on n1; red run 7 failed in this node's tests — NotImplementedError from stubs
 **After:** tests pass; fire snippet zero graduations; traffic/swarm rates recorded; full gates green
