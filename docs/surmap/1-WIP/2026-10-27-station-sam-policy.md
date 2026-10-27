@@ -8,16 +8,16 @@
 
 ## Workflow
 
-- [wf 1] ✅ 2026-10-27 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file
+- [wf 1] ✅ 2026-10-27 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file @ `46fb80f`
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/` — neither exists
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Stub API — `SamDetector`, `AnalysisGate`, `InMemorySamDetector` signatures (`TODO(pr-3)`)
-  - [ ] Create failing acceptance tests
-  - [ ] Run acceptance tests (verify they fail)
-  - [ ] TDD Red — write failing unit/integration tests
+- [wf 2] ✅ 2026-10-27 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 4 tests red on `NotImplementedError` stubs (commit 2); baseline 359 green excluding inherited red files
+  - [x] Stub API — `SamDetector`, `AnalysisGate`, `InMemorySamDetector` signatures (`TODO(pr-3)`)
+  - [x] Create failing acceptance tests
+  - [x] Run acceptance tests (verify they fail)
+  - [x] TDD Red — write failing unit/integration tests
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Gate admits serially under `EVERY_FRAME`
   - [ ] Gate drops + counts under `BEST_EFFORT_DROP` when busy
@@ -111,7 +111,7 @@ would collide with the PR that owns them.
 
 ## Stack Context
 
-**Stack**: Survey streaming · slug **`#survey-stream`** — this PR is **3 of 5** · #pending
+**Stack**: Survey streaming · slug **`#survey-stream`** — this PR is **3 of 5** · [#9](https://github.com/uppin/surmap/pull/9)
 **Branch**: `pr-3-station-sam-policy` · **Base**: `pr-2-cm5-point-emitter`
 **Successor**: `pr-4-cm5-survey-server`
 **Kind**: Feature · behaviour-adds — `(Type: Feature, Behaviour: adds)`
