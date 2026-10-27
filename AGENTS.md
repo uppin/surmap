@@ -118,6 +118,14 @@ uv run pytest -q
 
 ## Git and PR ownership
 
+- **All work lands through a pull request. Never push to `main`.**
+  Every change — features, fixes, docs, this file — goes on a branch,
+  is pushed as that branch, and merges only via its PR (green CI,
+  review resolved; see the documentation cycle above). A direct push
+  to `main` is a process failure even when the change is correct: if
+  it happens, disclose it immediately and let the user decide whether
+  to keep it or move it into a PR retroactively. Landing on `main`
+  via a merged PR is the only exception.
 - Commits and PRs on this repo are authored as
   `uppin <mantas.indrasius@gmail.com>` (repo-local git config is
   already set). Open PRs with `gh` while authenticated as `uppin`.
