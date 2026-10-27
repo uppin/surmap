@@ -74,9 +74,11 @@ Three properties make this hard on our hardware specifically:
   batch poses; see §4 step 6 for the retrospective mechanism).
 - Dense per-pixel scene flow or learned motion segmentation
   on-board (station-class compute; §7 covers the station's role).
-- New wire types in the first implementation: moving areas are an
-  internal representation; only graduated objects cross the wire,
-  as today's `ObjectPoints`.
+- Attaching moving areas to survey or detection output frames.
+  The area pipeline runs at its own, slower cadence and may lag
+  arbitrarily behind both; areas travel on their **own stream**
+  (§4, wire contract), keyed by `frame_id`, never embedded in
+  another stream's messages.
 
 ## 2. Constraints and resource budget
 
@@ -110,7 +112,14 @@ Hard rules that follow from the budget:
 ## 3. Solution overview
 
 Motion first, semantics second — three stages, each bounded by the
-previous one:
+previous one. The whole pipeline feeds one dedicated wire stream,
+`Cm5SurveyService.StreamMovingAreas`, separate from both
+`StreamSurvey` (RTAB-Map's cadence) and `StreamDetections` (the
+detector's cadence): the area pipeline is slower than either and
+must never back-pressure them. Every message on it carries the
+`frame_id` (and `t_ns`) of the frame it was computed from, so a
+client joins areas to frames, detections, and poses after the
+fact — lag is expected and visible, never hidden.
 
 ```text
 stereo pairs ──► [1 static differencing] ──► dynamic candidate points
@@ -185,11 +194,15 @@ eviction outside a radius around the current pose).
    (≤ 64 vertices). The polygon lives in 2D image space — where
    contours are natural — with a depth range `[Z_min, Z_max]` and
    dynamic point count carried alongside, not a 3D hull.
-4. Emit `MovingArea { frame_id, t_ns, polygon, depth_range,
-   point_count }` internally, and associate areas across frames
-   into **area tracks** by mask IoU (≥ 0.2) or centroid distance,
-   reusing the IoU association discipline of the existing box
-   tracker. Area IDs are internal and never reused within a
+4. Publish `MovingArea { frame_id, t_ns, polygon, depth_range,
+   point_count, area_track_id }` on the moving-areas stream (wire
+   contract below) as soon as it is computed — which may be
+   several frames after the frame it describes; the `frame_id` is
+   the join key, and consumers must tolerate areas arriving late
+   and out of step with every other stream. Associate areas
+   across frames into **area tracks** by mask IoU (≥ 0.2) or
+   centroid distance, reusing the IoU association discipline of
+   the existing box tracker. Area IDs are never reused within a
    segment.
 
 Per area track, accumulate the motion statistics that stage 3
@@ -286,11 +299,48 @@ optimized poses exist):
 
 ### Step 7 — Publication
 
-Snapshots join the survey stream's object batches at flush time,
-through the same emitter and dedup as today's object points. The
-station receives nothing new to understand; its SAM 3.1 refinement
-(person landmarks, mask-exact boundaries) layers onto these tracks
-downstream.
+Keypoint snapshots are published on the moving-areas stream at
+flush time (same emitter/dedup discipline as the survey stream's
+object batches): one message per buffered observation, carrying
+that observation's original `frame_id`, its verdict, and its
+map-frame keypoints under the object's designation
+(`100 + track_id`). They arrive later than the live area messages
+for the same frames — that lag is inherent to batch poses and is
+why the stream is separate and frame-ID-keyed rather than merged
+into `StreamSurvey`. The station consumes area tracks and
+snapshots from this stream and layers its SAM 3.1 refinement
+(person landmarks, mask-exact boundaries) onto them downstream.
+
+### Wire contract — `StreamMovingAreas`
+
+A third BIDI method on `Cm5SurveyService`, added when this is
+implemented (one proto change, bindings regenerated):
+
+```proto
+rpc StreamMovingAreas(stream Cm5Request) returns (stream MovingAreaResponse);
+
+message MovingArea {
+  int64 frame_id = 1;        // the frame this area was computed FROM
+  int64 t_ns = 2;            // that frame's timestamp
+  repeated Point2 polygon = 3;
+  double depth_min_m = 4;
+  double depth_max_m = 5;
+  int32 dynamic_point_count = 6;
+  int64 area_track_id = 7;
+  MovingVerdict verdict = 8; // UNKNOWN | RIGID_MOVER | OSCILLATING
+  // Filled only for graduated tracks, at flush time (step 6):
+  repeated Point3 keypoints = 9;   // map frame
+  optional int64 object_track_id = 10;  // designation 100 + object_track_id
+}
+
+message MovingAreaResponse { MovingArea area = 1; }
+```
+
+Contract rules, mirroring the detections stream's: config first,
+only channel-0 frame pairs are analyzed, one message per computed
+area observation (frames may be skipped entirely under load —
+absence is reconcilable by `frame_id`), and no message is ever
+attached to a survey or detection response.
 
 ## 5. Resource governance (living next to RTAB-Map)
 
@@ -381,13 +431,14 @@ required for the on-board layer to be correct, only richer.
 ## 9. Implementation phasing (for the changeset plan)
 
 1. **Differencing + areas (steps 1–2)** with unit tests on
-   synthetic clouds and the EuRoC negative control E2E. No wire
-   change, nothing published yet — areas observable in tests/logs.
+   synthetic clouds and the EuRoC negative control E2E. Includes
+   the `StreamMovingAreas` proto + handler from the start — the
+   stream is the only publication surface this feature has.
 2. **Classification + keypoints + buffering (steps 3–5)** with
    tracker-statistic unit tests and the oscillation control.
 3. **Retrospective placement + publication (steps 6–7)** wired
-   into the sidecar flush and the survey stream, proven by the
-   positive-control E2E asserting real moving-object keypoint
+   into the sidecar flush and the moving-areas stream, proven by
+   the positive-control E2E asserting real moving-object keypoint
    snapshots under existing designations.
 4. **Resource governance (§5)** counters, caps, and the CM5-profile
    resource gate, before this is enabled by default on-board.
