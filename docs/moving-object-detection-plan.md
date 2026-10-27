@@ -8,34 +8,45 @@ node's changeset references the design section it implements.
 When the stack is cut, each node's changeset is created with its
 branch (per the pr-stack model) from the row in this plan; this
 document is then superseded by those changesets and is removed
-at the first node's wrap.
+at n2's wrap (n1's wrap carries the design only).
 
 ## Stack shape
 
-- **Stack slug:** `moving-objects` · 5 nodes · trunk `main`.
-- **Precondition:** PR #17 (design + this plan) merges first.
-  No stack branch is cut from the design branch.
+- **Stack slug:** `moving-objects` · 6 nodes · trunk `main`.
+- **n1 is PR #17 itself** — the design + this plan, already open
+  on branch `docs/moving-object-design`. It is the stack's
+  bottom node, not a precondition outside the stack: n2 is
+  based on its branch, and when #17 merges, GitHub restacks n2
+  onto `main`.
 - **Registration:** `gh stack` v0.3.0 is installed and verified
-  on this host. Pass 1 creates branches + changesets and runs
-  `gh stack submit --auto`; pass 2 adds each node's red commit
-  bottom-up; the completion gate is a cascade rebase with every
-  layer current.
+  on this host. When n2 is cut, the stack is registered with #17
+  adopted as the bottom (`gh stack init
+  docs/moving-object-design pr-2-moving-snippets …` →
+  `gh stack submit --auto`; a single-PR stack cannot be
+  registered before a second branch exists). Pass 2 adds each
+  node's red commit bottom-up; the completion gate is a cascade
+  rebase with every layer current.
 - **Branch / title convention:** branch `pr-<k>-<node-slug>`,
   title `feat(surmap): <delivered capability> (#moving-objects
-  <k>/5)` (type follows node kind; subject ≤ 100 chars including
-  the stack group).
+  <k>/6)` (type follows node kind; subject ≤ 100 chars including
+  the stack group). #17's title is already set; it is not
+  renumbered retroactively beyond this record.
 
 | Node | Branch | Title (delivered state) | Kind (Type · Behaviour) | Complexity |
 |---|---|---|---|---|
-| n1 | `pr-1-moving-snippets` | `chore(surmap): real-video snippet fixtures and candidate seam (#moving-objects 1/5)` | Infra · preserves | 3 — fetch/conversion adapters, integration tests, no behaviour change |
-| n2 | `pr-2-moving-differencing` | `feat(surmap): static-layer differencing and moving areas stream (#moving-objects 2/5)` | Feature · adds | 4 — proto/contract change, concurrency (5 Hz worker), one package |
-| n3 | `pr-3-moving-classification` | `feat(surmap): area verdicts, tracked keypoints and observation buffer (#moving-objects 3/5)` | Feature · adds | 4 — tracking/filter semantics, several owned symbols |
-| n4 | `pr-4-moving-placement` | `feat(surmap): map-frame moving-object snapshots at RTAB flush (#moving-objects 4/5)` | Feature · adds | 4 — sidecar integration, real-RTAB E2E |
-| n5 | `pr-5-moving-governance` | `chore(surmap): moving-area resource budgets and CM5 profile gate (#moving-objects 5/5)` | Infra · preserves | 3 — counters/caps around existing stages, recorded measurement |
+| n1 | `docs/moving-object-design` — **[#17](https://github.com/uppin/surmap/pull/17)** | `docs: moving-object detection design (CM5 edge budget)` (as opened) | Infra (docs) · preserves | 2 — design + plan documents only; verification is review + CI |
+| n2 | `pr-2-moving-snippets` | `chore(surmap): real-video snippet fixtures and candidate seam (#moving-objects 2/6)` | Infra · preserves | 3 — fetch/conversion adapters, integration tests, no behaviour change |
+| n3 | `pr-3-moving-differencing` | `feat(surmap): static-layer differencing and moving areas stream (#moving-objects 3/6)` | Feature · adds | 4 — proto/contract change, concurrency (5 Hz worker), one package |
+| n4 | `pr-4-moving-classification` | `feat(surmap): area verdicts, tracked keypoints and observation buffer (#moving-objects 4/6)` | Feature · adds | 4 — tracking/filter semantics, several owned symbols |
+| n5 | `pr-5-moving-placement` | `feat(surmap): map-frame moving-object snapshots at RTAB flush (#moving-objects 5/6)` | Feature · adds | 4 — sidecar integration, real-RTAB E2E |
+| n6 | `pr-6-moving-governance` | `chore(surmap): moving-area resource budgets and CM5 profile gate (#moving-objects 6/6)` | Infra · preserves | 3 — counters/caps around existing stages, recorded measurement |
 
-Green waves: **wave 1 = {n1, n2}** with the caveat recorded in
-n2's changeset (below), **wave 2 = {n3}**, **wave 3 = {n4, n5}**.
-Branch line is the waves concatenated: n1 → n2 → n3 → n4 → n5.
+Green waves: **wave 1 = {n1 (#17, open), n2}** — n3 can also
+*start* in wave 1 against n2's seam type, with its snippet
+assertions blocked-on-n2 as recorded in its changeset;
+**wave 2 = {n4}**, **wave 3 = {n5, n6}**.
+Branch line is the waves concatenated:
+n1 → n2 → n3 → n4 → n5 → n6.
 
 ## Shared ground rules (all nodes)
 
@@ -55,7 +66,7 @@ Branch line is the waves concatenated: n1 → n2 → n3 → n4 → n5.
 - Thresholds/config live in one home next to
   `surmap.motion.classify_motion` (design OQ4).
 
-## n1 — Snippet fixtures and the candidate seam (infra)
+## n2 — Snippet fixtures and the candidate seam (infra)
 
 **Delivers:** the evaluation ground every later node stands on,
 and no production behaviour.
@@ -91,7 +102,7 @@ Red step (V3): recorded before/after output of the fetch and
 conversion commands; harness smoke test asserting the seam type
 round-trips. **Greenable independently: yes.**
 
-## n2 — Differencing + moving areas (feature, design steps 1–2)
+## n3 — Differencing + moving areas (feature, design steps 1–2)
 
 Owned surface:
 
@@ -117,13 +128,13 @@ Inherited dependencies — do not implement here:
 
 | Symbol | Owned by | State here | This node does |
 |---|---|---|---|
-| `CandidateCluster` seam | n1 | real if n1 landed; stub type otherwise | consumes it; never redefines it |
-| Verdict/keypoint/snapshot logic | n3, n4 | absent | publishes areas with `UNKNOWN` verdict only; snapshot arm of the oneof stays unpopulated |
+| `CandidateCluster` seam | n2 | real if n2 landed; stub type otherwise | consumes it; never redefines it |
+| Verdict/keypoint/snapshot logic | n4, n5 | absent | publishes areas with `UNKNOWN` verdict only; snapshot arm of the oneof stays unpopulated |
 
 **Greenable independently: partly** — stage 1 + EuRoC negative
-control green alone; snippet stage-2 assertions need n1's
-fixtures, so those tests are written against n1's seam and are
-blocked-on-n1 until it lands (recorded, not hidden).
+control green alone; snippet stage-2 assertions need n2's
+fixtures, so those tests are written against n2's seam and are
+blocked-on-n2 until it lands (recorded, not hidden).
 
 Red tests first: static-layer dwell/absorption unit tests
 (fast-car voxel case from issue 1 as a named test), τ pose-term
@@ -132,7 +143,7 @@ tests, polygon/association tests, proto contract tests
 replay asserting zero rigid graduations (all areas `UNKNOWN`
 in this node), traffic-snippet stage-2 assertions.
 
-## n3 — Classification, keypoints, buffering (feature, steps 3–5)
+## n4 — Classification, keypoints, buffering (feature, steps 3–5)
 
 Owned surface:
 
@@ -150,9 +161,9 @@ Owned surface:
   `areas.py`/`classify.py` using existing
   `surmap.detection` tracker IDs.
 
-Inherited: areas + `UNKNOWN` verdicts from n2 (real behaviour —
-n3's tests drive them, so **greenable independently: no, needs
-n2 green**; that sequencing is the wave-2 placement).
+Inherited: areas + `UNKNOWN` verdicts from n3 (real behaviour —
+n4's tests drive them, so **greenable independently: no, needs
+n3 green**; that sequencing is the wave-2 placement).
 
 Red tests first: verdict-transition tests including the
 decelerating-car no-flap case; LK identity/re-seed tests;
@@ -161,7 +172,7 @@ graduations, deciding statistic recorded), swarm (area cap,
 envelope misses counted), traffic (graduated | annotated,
 identity-correct | graduated).
 
-## n4 — Retrospective placement + publication (feature, steps 6–7)
+## n5 — Retrospective placement + publication (feature, steps 6–7)
 
 Owned surface:
 
@@ -172,10 +183,10 @@ Owned surface:
   `cm5_server.py` / `SidecarRtabmapBackend` results; snapshot
   publication under `100 + track_id` with `identity_source`.
 - Static-layer re-seeding from each flush's RTAB cloud
-  (n2's `StaticLayer.refresh`).
+  (n3's `StaticLayer.refresh`).
 
-Inherited: buffer + verdicts from n3 (real behaviour needed —
-**greenable independently: no, needs n3 green**).
+Inherited: buffer + verdicts from n4 (real behaviour needed —
+**greenable independently: no, needs n4 green**).
 
 Red tests first: correction-distribution unit tests (known
 trajectory, bracketing keyframes); the §6.2 KITTI stereo E2E
@@ -186,7 +197,7 @@ annotated extent, streak measurement recorded. EuRoC negative
 control re-run end-to-end (still zero graduations, now with
 snapshots asserted absent).
 
-## n5 — Resource governance (infra, design §5)
+## n6 — Resource governance (infra, design §5)
 
 Owned surface:
 
@@ -197,12 +208,12 @@ Owned surface:
 - CM5-profile replay harness (4-core container limits, RTAB
   sidecar active) as an env-flagged E2E + recorded budget table.
 
-Inherited: counters' producers in n2–n4 (signatures pinned in
-those nodes' changesets; n5 aggregates, never re-instruments).
+Inherited: counters' producers in n3–n5 (signatures pinned in
+those nodes' changesets; n6 aggregates, never re-instruments).
 
 Verification (V3): before/after budget tables from a full
 EuRoC + KITTI replay in the CM5 profile; budgets in design §2
-are the pass line. **Greenable independently: no, needs n4** —
+are the pass line. **Greenable independently: no, needs n5** —
 it measures the assembled pipeline.
 
 ## Landing, risks, and deferred follow-ups
@@ -210,26 +221,27 @@ it measures the assembled pipeline.
 - **Landing:** bottom-up only, through the registered-stack
   path (`merge-async` per node, restack verified after each
   merge — successor shows only its own files). Each node merges
-  alone safely: n1 adds fixtures only; n2's stream is additive
-  and publishes `UNKNOWN` areas; n3/n4 complete the feature
-  behind the same stream; n5 only enforces budgets.
+  alone safely: n1 is docs only; n2 adds fixtures only; n3's
+  stream is additive and publishes `UNKNOWN` areas; n4/n5
+  complete the feature behind the same stream; n6 only
+  enforces budgets.
 - **Trunk-merge safety:** every node leaves
   `uv run pytest -q`, the demo, and deploy smoke paths working
   with the node alone merged. No production data involved.
 - **Risks carried openly:**
   - VisDrone fetch instability may keep the traffic snippet
-    nightly-only; the Commons fallback is the CI gate (n1 spike).
+    nightly-only; the Commons fallback is the CI gate (n2 spike).
   - KITTI range-extraction depends on `avg-kitti` S3 honouring
     range requests; fallback is a one-time full-zip fetch in the
-    local cache, never in CI (n1 spike).
+    local cache, never in CI (n2 spike).
   - RTAB pose quality on KITTI city driving (design OQ1, θ̂
-    estimate) is measured in n4, not assumed.
-  - Thresholds (design §4 step 3) are hypotheses until the n3
+    estimate) is measured in n5, not assumed.
+  - Thresholds (design §4 step 3) are hypotheses until the n4
     snippet tuning record exists; they are not tuned on the
     same snippets that assert them — tuning uses the first half
     of each snippet, assertions the second.
 - **Deferred, recorded in the design, not in this stack:**
   depth-zeroing masked replay into RTAB-Map (design OQ2,
-  follow-up changeset after n4 proves placement); station-side
+  follow-up changeset after n5 proves placement); station-side
   SAM 3.1 refinement of person tracks (§7); segment-boundary
   re-identification of movers (accepted identity split, §4).

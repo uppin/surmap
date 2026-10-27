@@ -822,17 +822,19 @@ verification rung):
 
 | Node | Delivers | Kind | Verification |
 |---|---|---|---|
-| n1 | **Snippet fixtures + harness skeleton**: fetch script (pinned URL/size/SHA-256 per snippet), oracle converters (VisDrone MOT, Purdue `refined_gt`, mask→polygon), the stage-2-seam test adapter, snippet manifests for traffic / fire / swarm per §6.1, **plus the KITTI stereo snippet per §6.2** (range-extraction fetch, calib→`sensor.yaml` converter, EuRoC-layout staging) and the **COLMAP calibration cross-check** on KITTI (host RTX/COLMAP, §6.2 gates); spike outcomes recorded (Boreal fetch verified or fallback adopted; VisDrone sequence and Purdue clip window chosen by annotation density; Byrne camera motion checked; KITTI sequence/window chosen by verified world motion) | infra, behaviour-preserving | V3 — fetch + conversion commands with recorded before/after output; harness runs on a synthetic cluster and asserts the seam type; COLMAP-vs-KITTI calibration comparison recorded |
-| n2 | **Differencing + areas (steps 1–2)** + `StreamMovingAreas` proto and handler from the start — the stream is the only publication surface this feature has | feature | V1 — synthetic-cloud unit tests, EuRoC negative-control E2E, traffic-snippet stage-2 assertions |
-| n3 | **Classification + keypoints + buffering (steps 3–5)**: verdict lifecycle, LK keypoints, one ego-compensated filter | feature | V1 — tracker-statistic unit tests; fire snippet (zero graduations), swarm snippet (caps, envelope misses), traffic snippet (graduation + identity rates) |
-| n4 | **Retrospective placement + publication (steps 6–7)** wired into the sidecar flush and the moving-areas stream | feature | V1 — the §6.2 KITTI stereo snippet run through the real `SidecarRtabmapBackend`: flush returns real poses/cloud, annotated movers graduate, snapshots land within annotated extent under existing designations (the only full-chain proof; §6.1 monocular snippets cannot provide it) |
-| n5 | **Resource governance (§5)** counters, caps, CM5-profile resource gate, before this is enabled by default on-board | infra | V3 — CM5-profile replay with recorded budget counters |
+| n1 | **This design + development plan** — PR #17 itself (`docs/moving-object-design`), the stack's bottom node; reviewed and merged first, successors restack onto `main` | docs, behaviour-preserving | review + CI on #17 |
+| n2 | **Snippet fixtures + harness skeleton**: fetch script (pinned URL/size/SHA-256 per snippet), oracle converters (VisDrone MOT, Purdue `refined_gt`, mask→polygon), the stage-2-seam test adapter, snippet manifests for traffic / fire / swarm per §6.1, **plus the KITTI stereo snippet per §6.2** (range-extraction fetch, calib→`sensor.yaml` converter, EuRoC-layout staging) and the **COLMAP calibration cross-check** on KITTI (host RTX/COLMAP, §6.2 gates); spike outcomes recorded (Boreal fetch verified or fallback adopted; VisDrone sequence and Purdue clip window chosen by annotation density; Byrne camera motion checked; KITTI sequence/window chosen by verified world motion) | infra, behaviour-preserving | V3 — fetch + conversion commands with recorded before/after output; harness runs on a synthetic cluster and asserts the seam type; COLMAP-vs-KITTI calibration comparison recorded |
+| n3 | **Differencing + areas (steps 1–2)** + `StreamMovingAreas` proto and handler from the start — the stream is the only publication surface this feature has | feature | V1 — synthetic-cloud unit tests, EuRoC negative-control E2E, traffic-snippet stage-2 assertions |
+| n4 | **Classification + keypoints + buffering (steps 3–5)**: verdict lifecycle, LK keypoints, one ego-compensated filter | feature | V1 — tracker-statistic unit tests; fire snippet (zero graduations), swarm snippet (caps, envelope misses), traffic snippet (graduation + identity rates) |
+| n5 | **Retrospective placement + publication (steps 6–7)** wired into the sidecar flush and the moving-areas stream | feature | V1 — the §6.2 KITTI stereo snippet run through the real `SidecarRtabmapBackend`: flush returns real poses/cloud, annotated movers graduate, snapshots land within annotated extent under existing designations (the only full-chain proof; §6.1 monocular snippets cannot provide it) |
+| n6 | **Resource governance (§5)** counters, caps, CM5-profile resource gate, before this is enabled by default on-board | infra | V3 — CM5-profile replay with recorded budget counters |
 
-Green waves: wave 1 = n1, n2 (n2's stage 1 needs only EuRoC;
-its stage 2 is specified against the seam type n1 pins, and n2
-is not greenable on snippet assertions until n1 lands — stated
-in its changeset, not discovered). Wave 2 = n3. Wave 3 = n4, n5.
-Branch line is the waves concatenated: n1 → n2 → n3 → n4 → n5.
+Green waves: wave 1 = n1 (#17), n2 — n3's stage 1 needs only
+EuRoC, its stage 2 is specified against the seam type n2 pins,
+and n3 is not greenable on snippet assertions until n2 lands
+(stated in its changeset, not discovered). Wave 2 = n4.
+Wave 3 = n5, n6. Branch line is the waves concatenated:
+n1 → n2 → n3 → n4 → n5 → n6.
 
 The full development plan — per-node owned surfaces, inherited
 dependencies, red tests, landing and risks — is in
