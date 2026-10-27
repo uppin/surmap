@@ -16,9 +16,8 @@
 - [wf 2] ✅ 2026-10-27 `/plan-pr-stack` Red — owned stubs + failing tests committed · commit 2; red: 3 failed in `tests/test_moving_placement.py` (plus inherited red)
   - [x] Stub: `placement.py` (correction distribution, snapshot construction)
   - [x] Failing tests: correction distribution on a known trajectory; snapshot designation/identity rules
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Placement + flush wiring in `stream_moving_areas`; static-layer re-seeding
-  - [ ] KITTI stereo E2E through real `SidecarRtabmapBackend`; EuRoC end-to-end (snapshots absent)
+- [wf 3] ✅ 2026-10-27 `/green` Green — implement until every red test passes · inline green; placement tests 3 passed, mypy+ruff clean. `distribute_correction`, `object_track_id`, `build_snapshot` implemented and unit-proven
+  - [ ] DEFERRED (blocked on assembled stream): flush wiring in `stream_moving_areas` + static-layer re-seeding at flush, and the KITTI stereo E2E through real `SidecarRtabmapBackend` — the handler currently runs stages 1-2 only (n3) with UNKNOWN verdicts; wiring snapshots requires verdict/keypoint/buffer integration into the handler (n4 deferred the same wiring). Recorded here as the named follow-up, not silently dropped
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/moving-object-detection-design.md` §6 — record KITTI placement results + streak measurement
