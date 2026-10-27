@@ -17,7 +17,7 @@
   - [x] Stub: `placement.py` (correction distribution, snapshot construction)
   - [x] Failing tests: correction distribution on a known trajectory; snapshot designation/identity rules
 - [wf 3] ✅ 2026-10-27 `/green` Green — implement until every red test passes · inline green; placement tests 3 passed, mypy+ruff clean. `distribute_correction`, `object_track_id`, `build_snapshot` implemented and unit-proven
-  - [ ] DEFERRED (blocked on assembled stream): flush wiring in `stream_moving_areas` + static-layer re-seeding at flush, and the KITTI stereo E2E through real `SidecarRtabmapBackend` — the handler currently runs stages 1-2 only (n3) with UNKNOWN verdicts; wiring snapshots requires verdict/keypoint/buffer integration into the handler (n4 deferred the same wiring). Recorded here as the named follow-up, not silently dropped
+  - [x] Flush wiring in `stream_moving_areas` + static-layer re-seeding at flush (post-green fix `677b931`), and the KITTI stereo E2E through real `SidecarRtabmapBackend` (`tests/test_moving_kitti_e2e.py`, this node): 8 RTAB keyframe poses over a 27.7 m trajectory, car-proximate candidate clusters on all 8 keyframes, graduated track with 44 snapshots, nearest snapshot 1.32 m from a labelled car. Findings recorded in Verification: RTAB's exported cloud is near-empty at driving depths (56 points), so the layer seeds from segment hit-counts; integer-disparity depth shells blocked differencing until subpixel refinement landed in PR #25
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/moving-object-detection-design.md` §6 — record KITTI placement results + streak measurement
@@ -110,6 +110,21 @@ camera-frame evidence.
 **Command:** `uv run pytest -q tests/test_moving_placement.py` + KITTI E2E (`SURMAP_REQUIRE_RTABMAP_E2E=1`)
 **Before:** baseline 432 passed on n1; red run 3 failed in this node's tests — NotImplementedError from stubs
 **After:** movers' snapshots within annotated extent; poses/cloud real; full gates green
+
+**KITTI stereo E2E (executed 2026-10-27, this node):**
+`SURMAP_REQUIRE_KITTI_E2E=1 uv run pytest -q -s tests/test_moving_kitti_e2e.py` → 1 passed in ~25 s.
+KITTI tracking 0020, frames 0–79 staged into the real sidecar: 8 keyframe poses,
+27.7 m trajectory, RTAB exported cloud = 56 points (near-empty at driving depths,
+independent of export max-depth/decimation — the design's "seed the layer from the
+RTAB cloud at flush" premise does not hold for this sidecar export; the E2E seeds
+from voxels observed by ≥2 keyframes instead). Posed keyframes reconstructed with
+`StereoReconstructor(match_width_px=400)` + subpixel disparity (PR #25; integer
+disparity shells 2–9 m wide at car range made static points unrepeatable across
+frames). Best labelled car carried 17 in-box stereo points; candidate clusters
+landed within 4 m of a labelled car on all 8 keyframes; one track graduated to
+RIGID_MOVER and produced 44 map-frame snapshots, the nearest 1.32 m from a
+labelled car centre. Streak measurement: not applicable to this export (no dense
+cloud to streak); recorded as an open item for the station-side cleanup path.
 
 ## Post-green review fix (2026-10-27)
 
