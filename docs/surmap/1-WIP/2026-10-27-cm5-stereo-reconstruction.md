@@ -12,10 +12,10 @@
   - [x] Record initial discovery (dataset + prototype verified by hand)
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Stub API — `surmap.survey.stereo` signatures (`TODO(cm5-stereo)`)
-  - [ ] Create failing acceptance tests (fixture e2e + unit)
-  - [ ] Run acceptance tests (verify they fail)
+- [wf 2] ✅ 2026-10-27 `/plan-red` Red — acceptance and failing lower-tier tests, committed · unit tests red on missing numpy dep + stubs; e2e red (no stereo wired into the stream yet)
+  - [x] Stub API — `surmap.survey.stereo` signatures (`TODO(cm5-stereo)`)
+  - [x] Create failing acceptance tests (fixture e2e + unit)
+  - [x] Run acceptance tests (verify they fail)
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Add numpy + Pillow deps
   - [ ] Decode + align + block-match + back-project
