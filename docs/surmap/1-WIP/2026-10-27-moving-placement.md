@@ -13,9 +13,9 @@
   - [x] Cross-check `docs/todo/` and `docs/code-issues/` — none exist for `src/surmap`
   - [x] Create/update PRD documentation — design doc on n1 serves as PRD
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-pr-stack` Red — owned stubs + failing tests committed ·
-  - [ ] Stub: `placement.py` (correction distribution, snapshot construction)
-  - [ ] Failing tests: correction distribution on a known trajectory; snapshot designation/identity rules
+- [wf 2] ✅ 2026-10-27 `/plan-pr-stack` Red — owned stubs + failing tests committed · commit 2; red: 3 failed in `tests/test_moving_placement.py` (plus inherited red)
+  - [x] Stub: `placement.py` (correction distribution, snapshot construction)
+  - [x] Failing tests: correction distribution on a known trajectory; snapshot designation/identity rules
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Placement + flush wiring in `stream_moving_areas`; static-layer re-seeding
   - [ ] KITTI stereo E2E through real `SidecarRtabmapBackend`; EuRoC end-to-end (snapshots absent)
@@ -29,7 +29,7 @@ Full exploration: [2026-10-27-moving-placement-initial-discovery.md](./2026-10-2
 
 ## Stack Context
 
-**Stack**: moving-object detection · slug **`#moving-objects`** — this PR is **5 of 6** · #pending
+**Stack**: moving-object detection · slug **`#moving-objects`** — this PR is **5 of 6** · [#23](https://github.com/uppin/surmap/pull/23)
 **Branch**: `pr-5-moving-placement` · **Base**: `pr-4-moving-classification`
 **Successor**: `pr-6-moving-governance`
 **Kind**: Feature · behaviour-adds
@@ -109,5 +109,5 @@ camera-frame evidence.
 
 **Method:** V1-fail→pass — placement unit tests + KITTI stereo E2E via real `SidecarRtabmapBackend`
 **Command:** `uv run pytest -q tests/test_moving_placement.py` + KITTI E2E (`SURMAP_REQUIRE_RTABMAP_E2E=1`)
-**Before:** recorded at pass 2 with the red run
+**Before:** baseline 432 passed on n1; red run 3 failed in this node's tests — NotImplementedError from stubs
 **After:** movers' snapshots within annotated extent; poses/cloud real; full gates green
