@@ -668,6 +668,18 @@ verdict lifecycle, and counters. Each snippet's expected-outcome
 block above is its acceptance test; a change to an expectation
 requires the same review as a change to the design.
 
+**Fetch outcomes (recorded 2026-10-27, stack `#moving-objects`
+n2).** The fetch tooling and the `CandidateCluster` seam are
+implemented (`scripts/fetch_moving_snippets.py`,
+`surmap.moving.snippets`); the KITTI stereo snippet of §6.2 is
+fully wired and live-verified (below). The three monocular
+datasets are not yet pinned: Boreal's Fairdata fetch is
+unverified (Wennington CC BY 3.0 is the fallback), VisDrone-MOT
+is distributed via Drive/Baidu only, and the Purdue window pick
+is unmade. Those spikes are recorded as deferred scope in
+`src/surmap/docs/todo/2026-10-27-moving-snippet-dataset-spikes.md`;
+they gate the snippet acceptance tests, not the seam.
+
 ### 6.2 Stereo snippet — the RTAB-Map chain (required)
 
 At least one snippet must carry **real stereo pairs and camera
@@ -707,6 +719,14 @@ annotated extent (the §6 range-gated metrics apply); the static
 cloud is asserted streak-checked against mover tracks as a
 recorded observation (the known §1 limitation until masked
 replay lands — measured, not hidden).
+
+**Fetch outcome (recorded 2026-10-27, n2).** Sequence 0020
+frames 0–119 are range-extracted from both 15 GB zips (zip64
+central directory + one contiguous span per sequence; `testing/`
+members share basenames and are filtered out), with calib and
+labels alongside and a SHA-256 manifest in the cache. The full
+chain outcome is recorded with the placement node (n5) and in
+`tests/test_moving_kitti_e2e.py`.
 
 Rejected stereo alternatives: EuRoC (already in-repo, but
 static — negative only); ETH3D (calibrated stereo, but the
