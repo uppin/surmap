@@ -163,7 +163,7 @@ class StaticLayer:
             + cfg.tau_depth_k * depths * depths / (cfg.focal_px * cfg.baseline_m)
             + cfg.tau_rotation_k * abs(theta_hat_rad) * depths
         )
-        margin = float(thresholds.max()) if len(thresholds) else 0.0
+        margin = float(np.max(thresholds)) if thresholds.size else 0.0
         lo = pts.min(axis=0) - margin
         hi = pts.max(axis=0) + margin
         occ = occ[np.all((occ >= lo) & (occ <= hi), axis=1)]
