@@ -6,6 +6,7 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from surmap.simulation.euroc_export import export_euroc_session
@@ -142,3 +143,35 @@ def test_checked_in_sitl_fixture_loads_without_gazebo() -> None:
     assert calibration.calibration_id == "gazebo-stereo-v1"
     assert calibration.baseline_m == 0.12
     assert len(gps) == 2
+
+
+def test_exported_session_is_readable_by_demo_calibration_loader(
+    tmp_path: Path,
+) -> None:
+    # Given a SITL capture exported to EuRoC (Machine 3 → SurMap contract)
+    from surmap.demo.datasets import DatasetSpec, PreparedDataset, load_calibration
+
+    frames, calibration, gps = load_sitl_capture(FIXTURE)
+    result = export_euroc_session(tmp_path / "session", frames, calibration, gps)
+    prepared = PreparedDataset(
+        spec=DatasetSpec(
+            dataset_id="sitl-tiny",
+            title="SITL tiny",
+            description="fixture export",
+            zip_url="https://example.invalid/sitl.zip",
+            zip_size_bytes=1,
+            zip_sha256="0" * 64,
+            official_url="https://example.invalid/",
+        ),
+        root=result.root,
+        timestamps_ns=tuple(frame.t_ns for frame in frames),
+    )
+
+    # When the demo calibration loader reads mav0 sensor.yaml
+    demo_cal = load_calibration(prepared)
+
+    # Then baseline and intrinsics match the capture (no sim-only fork)
+    assert demo_cal.width == 64
+    assert demo_cal.height == 48
+    assert demo_cal.fx == 50.0
+    assert demo_cal.baseline_m == pytest.approx(0.12, abs=1e-9)

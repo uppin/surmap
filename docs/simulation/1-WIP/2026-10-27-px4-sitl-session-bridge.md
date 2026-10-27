@@ -13,9 +13,11 @@
   - [x] Acceptance: capture dir → EuRoC mav0 with matching L/R `t_ns` PNGs
   - [x] Calibration `sensor.yaml` carries intrinsics, resolution, baseline
   - [x] GPS CSV written beside the EuRoC tree
-- [wf 3] ✅ 2026-10-27 `/green` Green — implement until every red test passes · `surmap.simulation` + CLI; 438 passed / 4 skipped; ruff + mypy clean
+- [wf 3] ✅ 2026-10-27 `/green` Green — implement until every red test passes · `surmap.simulation` + CLI + Harmonic stereo SDF + ROS2 dumper; demo `load_calibration` reads export
   - [x] `surmap.simulation` exporter + capture loader
   - [x] `scripts/export_sitl_session.py` + runbook
+  - [x] Preflight: Harmonic models lack stereo → `docs/simulation/gz/` + dump script
+  - [x] Park live ConnectRPC + GPS-on-wire as Future enhancement TODOs
 - [wf 4] ⬜ `/pr-wrap` Wrap — fold State B, delete 1-WIP, ready PR ·
   - [ ] Verification executed — result recorded
   - [ ] Architecture open decision notes Gazebo/PX4 SITL for WSL Machine 3

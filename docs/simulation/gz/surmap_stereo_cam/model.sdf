@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SurMap Machine 3 stereo rig for Gazebo Harmonic (gz-sim8).
+     Left / right cameras share update_rate; baseline_m = 0.07 along Y.
+     Topics (with ros_gz_bridge): typically
+       /world/<world>/model/<model>/link/camera_link/sensor/left_camera/image
+       .../right_camera/image
+     Intrinsics at 640x480, hfov 1.3962634 rad (~80°):
+       fx = fy ≈ 320 / tan(hfov/2) ≈ 381.36; cx=320, cy=240.
+-->
+<sdf version="1.9">
+  <model name="surmap_stereo_cam">
+    <pose>0 0 0 0 0 0</pose>
+    <self_collide>false</self_collide>
+    <static>false</static>
+    <link name="camera_link">
+      <inertial>
+        <pose>0 0 0 0 0 0</pose>
+        <mass>0.05</mass>
+        <inertia>
+          <ixx>0.00004</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.00004</iyy>
+          <iyz>0</iyz>
+          <izz>0.00004</izz>
+        </inertia>
+      </inertial>
+      <visual name="housing">
+        <geometry>
+          <box>
+            <size>0.02 0.09 0.04</size>
+          </box>
+        </geometry>
+      </visual>
+      <sensor name="left_camera" type="camera">
+        <gz_frame_id>camera_link</gz_frame_id>
+        <pose>0.02 0.035 0 0 0 0</pose>
+        <camera>
+          <horizontal_fov>1.3962634</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>300</far>
+          </clip>
+        </camera>
+        <always_on>1</always_on>
+        <update_rate>20</update_rate>
+        <visualize>true</visualize>
+      </sensor>
+      <sensor name="right_camera" type="camera">
+        <gz_frame_id>camera_link</gz_frame_id>
+        <pose>0.02 -0.035 0 0 0 0</pose>
+        <camera>
+          <horizontal_fov>1.3962634</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.05</near>
+            <far>300</far>
+          </clip>
+        </camera>
+        <always_on>1</always_on>
+        <update_rate>20</update_rate>
+        <visualize>true</visualize>
+      </sensor>
+    </link>
+  </model>
+</sdf>
