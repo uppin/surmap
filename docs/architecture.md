@@ -395,7 +395,12 @@ and requested video channels; `StationSamService` (GPU API) answers
 with SAM detection vectors keyed by the requester-assigned `frame_id`.
 Outputs are told apart by an int32 designation: `1` is the RTAB-Map
 static scene, `2`/`3` are video channels 0/1, and `100 + track_id`
-groups one tracked object's points.
+groups one tracked object's points. The Board API is served by
+`Cm5SurveyService.StreamSurvey` (`surmap.survey.cm5_server`): completed
+stereo pairs drive the `SlamBackend` port and an object-point source,
+and their points are streamed incrementally — spawned only, never
+resent at a position already sent — alongside the video channels the
+requester asked to see.
 
 ## 11. Deferred, explicitly
 
