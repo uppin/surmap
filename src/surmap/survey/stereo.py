@@ -49,7 +49,7 @@ def decode_grayscale(frame: FrameImage) -> NDArray[np.float32]:
         if len(frame.data) != expected:
             raise ValueError(f"raw_rgb frame has {len(frame.data)} bytes, expected {expected}")
         rgb = np.frombuffer(frame.data, dtype=np.uint8).reshape(frame.height, frame.width, 3)
-        return rgb.mean(axis=2, dtype=np.float32)
+        return np.asarray(rgb.mean(axis=2), dtype=np.float32)
     if frame.encoding == "mjpeg":
         try:
             with Image.open(io.BytesIO(frame.data)) as image:
@@ -68,7 +68,7 @@ def _shift_image(image: NDArray[np.float32], dx: int, dy: int) -> NDArray[np.flo
     src_y = slice(max(0, -dy), min(h, h - dy))
     dst_y = slice(max(0, dy), min(h, h + dy))
     out[dst_y, dst_x] = image[src_y, src_x]
-    return out
+    return np.asarray(out, dtype=np.float32)
 
 
 def _box_sum(image: NDArray[np.float32], half: int) -> NDArray[np.float32]:
