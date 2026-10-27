@@ -25,7 +25,7 @@ class SlowDetector:
         return (a_detection(),)
 
 
-def a_config(mode: int) -> survey_pb2.StationRequest:
+def a_config(mode: survey_pb2.AnalysisMode) -> survey_pb2.StationRequest:
     return survey_pb2.StationRequest(
         config=survey_pb2.StationStreamConfig(
             calibration=survey_pb2.StereoCalibration(calibration_id="cal-1", baseline_m=0.12),
