@@ -3,11 +3,17 @@
 
 No RTAB-Map (or any native build) may be installed on the host, in CI
 or locally: this script pulls the pinned RTAB-Map Docker image by
-digest, and cuts a small EuRoC V1_01_easy stereo subset (90 pairs at
-half resolution, sensor calibrations, and the IMU recording) out of
-the upstream sequence zip with HTTP range requests — the zip itself
-is never downloaded whole. Every extracted file is CRC-verified
-against the zip's central directory.
+digest, and prepares a small EuRoC V1_01_easy stereo subset (90 pairs
+at half resolution, sensor calibrations, and the IMU recording).
+
+The prepared subset is hosted as a GitHub release asset on this repo
+(`fixtures-euroc-v1`), because the upstream EuRoC host and its
+HuggingFace mirror rate-limit the range requests the original cut
+needed (HTTP 429 in CI). The asset is verified by SHA-256 before
+use. `--from-upstream` regenerates the subset from the upstream
+sequence zip with HTTP range requests — the zip itself is never
+downloaded whole, and every extracted file is CRC-verified against
+the zip's central directory; that is how a new asset is produced.
 
 The prepared fixture lands in `tests/fixtures/euroc_v101_rtabmap/`
 (git-ignored generated data; only the README next to it is committed):
@@ -19,12 +25,16 @@ The prepared fixture lands in `tests/fixtures/euroc_v101_rtabmap/`
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
 import re
+import shutil
 import struct
 import subprocess
 import sys
+import tarfile
+import tempfile
 import urllib.request
 import zlib
 from pathlib import Path
@@ -33,6 +43,16 @@ from PIL import Image
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = REPO_ROOT / "tests" / "fixtures" / "euroc_v101_rtabmap"
+
+# The prepared subset, hosted on this repo's releases so CI never
+# range-requests the rate-limited upstream hosts. Produced by running
+# this script with --from-upstream and uploading the tarball of the
+# output directory; verified by SHA-256 on every fetch.
+FIXTURE_ASSET_URL = (
+    "https://github.com/uppin/surmap/releases/download/fixtures-euroc-v1/euroc_v101_rtabmap.tar.gz"
+)
+FIXTURE_ASSET_SHA256 = "07963d35fd7bd15f0da9c99bf06c55c885e6a0edce513257e1344a3e1df2d244"
+FIXTURE_ASSET_SIZE = 4_070_141
 
 # The official EuRoC host (robotics.ethz.ch) serves this zip; the
 # HuggingFace mirror below carries a byte copy and supports the range
@@ -115,9 +135,29 @@ def _pull_image(image: str) -> None:
     subprocess.run(["docker", "pull", image], check=True)
 
 
-def prepare(output: Path, *, skip_docker: bool = False, image: str = PINNED_RTABMAP_IMAGE) -> Path:
-    if not skip_docker:
-        _pull_image(image)
+def _fetch_asset(output: Path) -> None:
+    """Download the prepared subset from this repo's release asset."""
+    with urllib.request.urlopen(FIXTURE_ASSET_URL, timeout=300) as response:
+        payload = bytes(response.read())
+    if len(payload) != FIXTURE_ASSET_SIZE:
+        raise RuntimeError(f"fixture asset size {len(payload)} != pinned {FIXTURE_ASSET_SIZE}")
+    digest = hashlib.sha256(payload).hexdigest()
+    if digest != FIXTURE_ASSET_SHA256:
+        raise RuntimeError(f"fixture asset SHA-256 {digest} != pinned {FIXTURE_ASSET_SHA256}")
+    with tempfile.TemporaryDirectory() as tmp:
+        staging = Path(tmp) / "extract"
+        staging.mkdir()
+        with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as archive:
+            archive.extractall(staging, filter="data")
+        extracted = staging / DEFAULT_OUTPUT.name
+        if not (extracted / "manifest.json").exists():
+            raise RuntimeError("fixture asset has no manifest.json")
+        if output.exists():
+            shutil.rmtree(output)
+        shutil.copytree(extracted, output)
+
+
+def _prepare_from_upstream(output: Path, image: str) -> None:
     entries = _zip_entries(EUROC_ZIP_URL, EUROC_ZIP_SIZE)
     cam0_names = sorted(
         name for name in entries if name.startswith("mav0/cam0/data/") and name.endswith(".png")
@@ -163,6 +203,21 @@ def prepare(output: Path, *, skip_docker: bool = False, image: str = PINNED_RTAB
         "rtabmap_image": image,
     }
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
+def prepare(
+    output: Path,
+    *,
+    skip_docker: bool = False,
+    image: str = PINNED_RTABMAP_IMAGE,
+    from_upstream: bool = False,
+) -> Path:
+    if not skip_docker:
+        _pull_image(image)
+    if from_upstream:
+        _prepare_from_upstream(output, image)
+    else:
+        _fetch_asset(output)
     return output
 
 
@@ -171,8 +226,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--image", default=PINNED_RTABMAP_IMAGE)
     parser.add_argument("--skip-docker", action="store_true", help="do not pull the sidecar image")
+    parser.add_argument(
+        "--from-upstream",
+        action="store_true",
+        help="cut the subset from the upstream EuRoC zip instead of the release asset",
+    )
     args = parser.parse_args(argv)
-    output = prepare(args.output, skip_docker=args.skip_docker, image=args.image)
+    output = prepare(
+        args.output,
+        skip_docker=args.skip_docker,
+        image=args.image,
+        from_upstream=args.from_upstream,
+    )
     print(f"EuRoC subset and RTAB-Map sidecar prepared under {output}")
     return 0
 
