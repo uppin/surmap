@@ -386,6 +386,17 @@ Decided by measured link bandwidth, which is still unknown.
 Both APIs are payload/data APIs.
 Adding any flight-command endpoint would be a scope change, not an extension.
 
+The wire contract for both is `surmap.survey.v1`
+(`proto/surmap/survey/v1/survey.proto`): two bidirectional ConnectRPC
+streams with the same input — a config message (stereo calibration,
+plus what the requester wants) followed by raw per-channel video frames.
+`Cm5SurveyService` (Board API) answers with designated point batches
+and requested video channels; `StationSamService` (GPU API) answers
+with SAM detection vectors keyed by the requester-assigned `frame_id`.
+Outputs are told apart by an int32 designation: `1` is the RTAB-Map
+static scene, `2`/`3` are video channels 0/1, and `100 + track_id`
+groups one tracked object's points.
+
 ## 11. Deferred, explicitly
 
 Revisit only after the passive pipeline works end to end on real footage:
