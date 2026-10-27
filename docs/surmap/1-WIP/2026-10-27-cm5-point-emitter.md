@@ -8,16 +8,16 @@
 
 ## Workflow
 
-- [wf 1] ✅ 2026-10-27 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file
+- [wf 1] ✅ 2026-10-27 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file @ `41d3bd8`
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/` — neither exists
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Stub API — `IncrementalPointEmitter` signatures (`TODO(pr-2)`)
-  - [ ] Create failing acceptance tests
-  - [ ] Run acceptance tests (verify they fail)
-  - [ ] TDD Red — write failing unit/integration tests
+- [wf 2] ✅ 2026-10-27 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 6 tests red on `NotImplementedError` stubs (commit 2); baseline 359 green excluding n1's inherited red files
+  - [x] Stub API — `IncrementalPointEmitter` signatures (`TODO(pr-2)`)
+  - [x] Create failing acceptance tests
+  - [x] Run acceptance tests (verify they fail)
+  - [x] TDD Red — write failing unit/integration tests
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] `emit` forwards spawn-only points per designation
   - [ ] `reset` clears the seen-set
@@ -105,7 +105,7 @@ would collide with the PR that owns them.
 
 ## Stack Context
 
-**Stack**: Survey streaming · slug **`#survey-stream`** — this PR is **2 of 5** · #pending
+**Stack**: Survey streaming · slug **`#survey-stream`** — this PR is **2 of 5** · [#7](https://github.com/uppin/surmap/pull/7)
 **Branch**: `pr-2-cm5-point-emitter` · **Base**: `pr-1-survey-proto`
 **Successor**: `pr-3-station-sam-policy`
 **Kind**: Feature · behaviour-adds — `(Type: Feature, Behaviour: adds)`
