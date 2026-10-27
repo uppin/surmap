@@ -31,8 +31,6 @@ class InMemoryObjectPointSource:
         self._observations = observations
         self.pairs: list[StereoFramePair] = []
 
-    def points_for_pair(
-        self, pair: StereoFramePair, pose: Pose | None
-    ) -> tuple[ObjectPoints, ...]:
+    def points_for_pair(self, pair: StereoFramePair, pose: Pose | None) -> tuple[ObjectPoints, ...]:
         self.pairs.append(pair)
         return self._observations
