@@ -18,12 +18,28 @@ class AnalysisMode(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     ANALYSIS_MODE_UNSPECIFIED: _ClassVar[AnalysisMode]
     ANALYSIS_MODE_EVERY_FRAME: _ClassVar[AnalysisMode]
     ANALYSIS_MODE_BEST_EFFORT_DROP: _ClassVar[AnalysisMode]
+
+class MovingVerdict(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    MOVING_VERDICT_UNKNOWN: _ClassVar[MovingVerdict]
+    MOVING_VERDICT_RIGID_MOVER: _ClassVar[MovingVerdict]
+    MOVING_VERDICT_OSCILLATING: _ClassVar[MovingVerdict]
+
+class IdentitySource(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    IDENTITY_SOURCE_DETECTOR: _ClassVar[IdentitySource]
+    IDENTITY_SOURCE_AREA_ALLOCATED: _ClassVar[IdentitySource]
 FRAME_ENCODING_UNSPECIFIED: FrameEncoding
 FRAME_ENCODING_MJPEG: FrameEncoding
 FRAME_ENCODING_RAW_RGB: FrameEncoding
 ANALYSIS_MODE_UNSPECIFIED: AnalysisMode
 ANALYSIS_MODE_EVERY_FRAME: AnalysisMode
 ANALYSIS_MODE_BEST_EFFORT_DROP: AnalysisMode
+MOVING_VERDICT_UNKNOWN: MovingVerdict
+MOVING_VERDICT_RIGID_MOVER: MovingVerdict
+MOVING_VERDICT_OSCILLATING: MovingVerdict
+IDENTITY_SOURCE_DETECTOR: IdentitySource
+IDENTITY_SOURCE_AREA_ALLOCATED: IdentitySource
 
 class Point3(_message.Message):
     __slots__ = ("x", "y", "z")
@@ -162,6 +178,58 @@ class DetectionResponse(_message.Message):
     DETECTIONS_FIELD_NUMBER: _ClassVar[int]
     detections: FrameDetections
     def __init__(self, detections: _Optional[_Union[FrameDetections, _Mapping[str, _Any]]] = ...) -> None: ...
+
+class MovingArea(_message.Message):
+    __slots__ = ("frame_id", "t_ns", "polygon", "depth_min_m", "depth_max_m", "dynamic_point_count", "area_track_id", "verdict", "verdict_version")
+    FRAME_ID_FIELD_NUMBER: _ClassVar[int]
+    T_NS_FIELD_NUMBER: _ClassVar[int]
+    POLYGON_FIELD_NUMBER: _ClassVar[int]
+    DEPTH_MIN_M_FIELD_NUMBER: _ClassVar[int]
+    DEPTH_MAX_M_FIELD_NUMBER: _ClassVar[int]
+    DYNAMIC_POINT_COUNT_FIELD_NUMBER: _ClassVar[int]
+    AREA_TRACK_ID_FIELD_NUMBER: _ClassVar[int]
+    VERDICT_FIELD_NUMBER: _ClassVar[int]
+    VERDICT_VERSION_FIELD_NUMBER: _ClassVar[int]
+    frame_id: int
+    t_ns: int
+    polygon: _containers.RepeatedCompositeFieldContainer[Point2]
+    depth_min_m: float
+    depth_max_m: float
+    dynamic_point_count: int
+    area_track_id: int
+    verdict: MovingVerdict
+    verdict_version: int
+    def __init__(self, frame_id: _Optional[int] = ..., t_ns: _Optional[int] = ..., polygon: _Optional[_Iterable[_Union[Point2, _Mapping[str, _Any]]]] = ..., depth_min_m: _Optional[float] = ..., depth_max_m: _Optional[float] = ..., dynamic_point_count: _Optional[int] = ..., area_track_id: _Optional[int] = ..., verdict: _Optional[_Union[MovingVerdict, str]] = ..., verdict_version: _Optional[int] = ...) -> None: ...
+
+class MovingObjectSnapshot(_message.Message):
+    __slots__ = ("frame_id", "t_ns", "area_track_id", "object_track_id", "identity_source", "verdict", "keypoints", "centroid", "velocity")
+    FRAME_ID_FIELD_NUMBER: _ClassVar[int]
+    T_NS_FIELD_NUMBER: _ClassVar[int]
+    AREA_TRACK_ID_FIELD_NUMBER: _ClassVar[int]
+    OBJECT_TRACK_ID_FIELD_NUMBER: _ClassVar[int]
+    IDENTITY_SOURCE_FIELD_NUMBER: _ClassVar[int]
+    VERDICT_FIELD_NUMBER: _ClassVar[int]
+    KEYPOINTS_FIELD_NUMBER: _ClassVar[int]
+    CENTROID_FIELD_NUMBER: _ClassVar[int]
+    VELOCITY_FIELD_NUMBER: _ClassVar[int]
+    frame_id: int
+    t_ns: int
+    area_track_id: int
+    object_track_id: int
+    identity_source: IdentitySource
+    verdict: MovingVerdict
+    keypoints: _containers.RepeatedCompositeFieldContainer[Point3]
+    centroid: Point3
+    velocity: Point3
+    def __init__(self, frame_id: _Optional[int] = ..., t_ns: _Optional[int] = ..., area_track_id: _Optional[int] = ..., object_track_id: _Optional[int] = ..., identity_source: _Optional[_Union[IdentitySource, str]] = ..., verdict: _Optional[_Union[MovingVerdict, str]] = ..., keypoints: _Optional[_Iterable[_Union[Point3, _Mapping[str, _Any]]]] = ..., centroid: _Optional[_Union[Point3, _Mapping[str, _Any]]] = ..., velocity: _Optional[_Union[Point3, _Mapping[str, _Any]]] = ...) -> None: ...
+
+class MovingAreasResponse(_message.Message):
+    __slots__ = ("area", "snapshot")
+    AREA_FIELD_NUMBER: _ClassVar[int]
+    SNAPSHOT_FIELD_NUMBER: _ClassVar[int]
+    area: MovingArea
+    snapshot: MovingObjectSnapshot
+    def __init__(self, area: _Optional[_Union[MovingArea, _Mapping[str, _Any]]] = ..., snapshot: _Optional[_Union[MovingObjectSnapshot, _Mapping[str, _Any]]] = ...) -> None: ...
 
 class StationStreamConfig(_message.Message):
     __slots__ = ("calibration", "analysis_mode", "concept_prompts")

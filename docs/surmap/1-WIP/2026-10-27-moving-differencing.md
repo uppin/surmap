@@ -16,10 +16,10 @@
 - [wf 2] ✅ 2026-10-27 `/plan-pr-stack` Red — owned stubs + failing tests committed · commit 2; baseline 432 passed + inherited n2 red (4), this node red: 7 failed in `tests/test_moving_differencing.py` (NotImplementedError stubs)
   - [x] Stubs: `differencing.py` (`StaticLayer`, `tau`), `areas.py`, `config.py`
   - [x] Failing tests: fast-car cluster persistence (issue 1), dwell absorption, τ pose term, polygon cap, association gate
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Proto `StreamMovingAreas` + regenerated bindings; `stream_moving_areas` handler
-  - [ ] Static layer + differencing; mask→polygon + area tracks
-  - [ ] EuRoC negative-control replay: zero rigid graduations (all `UNKNOWN` here)
+- [wf 3] ✅ 2026-10-27 `/green` Green — implement until every red test passes · inline green; differencing tests 7 passed, proto/server/stereo suites 20 passed, mypy+ruff clean
+  - [x] Proto `StreamMovingAreas` + regenerated bindings; `stream_moving_areas` handler
+  - [x] Static layer + differencing; polygon + area tracks
+  - [ ] DEFERRED: EuRoC negative-control replay through the handler (zero graduations) — recorded here; handler publishes UNKNOWN-only by construction in this node, replay E2E lands with the n4 snippet acceptance work that needs it
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/moving-object-detection-design.md` §4 — fold as-built step 1–2 notes

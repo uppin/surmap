@@ -21,7 +21,11 @@ def test_both_survey_services_are_bidirectional_streams() -> None:
             assert method.client_streaming
             assert method.server_streaming
     cm5 = pool.FindServiceByName("surmap.survey.v1.Cm5SurveyService")
-    assert [method.name for method in cm5.methods] == ["StreamSurvey", "StreamDetections"]
+    assert [method.name for method in cm5.methods] == [
+        "StreamSurvey",
+        "StreamDetections",
+        "StreamMovingAreas",
+    ]
 
 
 def test_cm5_request_opens_with_config_then_carries_frames() -> None:

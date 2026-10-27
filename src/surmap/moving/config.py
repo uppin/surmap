@@ -15,7 +15,7 @@ class MovingConfig:
 
     voxel_size_m: float = 0.05
     tau0_m: float = 0.15
-    tau_depth_k: float = 1.0
+    tau_depth_k: float = 0.05  # disparity sigma (px) scaling the Z^2/(f*B) term
     tau_rotation_k: float = 1.0
     focal_px: float = 230.0
     baseline_m: float = 0.11

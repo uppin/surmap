@@ -21,6 +21,7 @@ from typing import Any
 from surmap.detection.detector import decode_rgb
 from surmap.detection.source import DetectionSource
 from surmap.geometry import to_map_frame
+from surmap.moving.config import MovingConfig
 from surmap.rpc.compose import Brick
 from surmap.rpc.description import ServiceModule
 from surmap.slam.base import FrameResult, SlamBackend
@@ -244,6 +245,111 @@ async def stream_detections(
         raise ValueError("first request must be config")
 
 
+async def stream_moving_areas(
+    requests: AsyncIterable[survey_pb2.Cm5Request],
+    stereo: StereoReconstructor | None = None,
+    moving_config: MovingConfig | None = None,
+) -> AsyncIterator[survey_pb2.MovingAreasResponse]:
+    """Serve the moving-areas stream: stereo pairs in, areas out.
+
+    A separate stream by design (it lags the survey/detections
+    streams and joins by `frame_id`). Stages 1-2 only: areas are
+    published live with an UNKNOWN verdict; classification and
+    flush-time snapshots land in later stack nodes. The first
+    analyzed frame seeds the static layer (cold-start bootstrap);
+    later frames difference against it, and agreeing points extend
+    it under the layer's dwell discipline.
+    """
+    from surmap.moving.areas import AreaTracker, areas_from_clusters
+    from surmap.moving.differencing import StaticLayer
+
+    config: survey_pb2.Cm5StreamConfig | None = None
+    layer: StaticLayer | None = None
+    tracker: AreaTracker | None = None
+    pending: dict[int, dict[int, survey_pb2.RawVideoFrame]] = {}
+    async for request in requests:
+        if config is None:
+            if request.WhichOneof("kind") != "config":
+                raise ValueError("first request must be config")
+            config = request.config
+            base = moving_config or MovingConfig()
+            calibration = config.calibration
+            if calibration.focal_length_px > 0 and calibration.baseline_m > 0:
+                base = MovingConfig(
+                    **{
+                        **base.__dict__,
+                        "focal_px": calibration.focal_length_px,
+                        "baseline_m": calibration.baseline_m,
+                    }
+                )
+            layer = StaticLayer(base)
+            tracker = AreaTracker(base)
+            continue
+        if request.WhichOneof("kind") != "frame":
+            continue
+        frame = request.frame
+        channels = pending.setdefault(frame.frame_id, {})
+        channels[frame.channel] = frame
+        if 0 not in channels or 1 not in channels:
+            continue
+        pending.pop(frame.frame_id)
+        if stereo is None or layer is None or tracker is None:
+            continue
+        calibration = config.calibration
+        if calibration.focal_length_px <= 0 or calibration.baseline_m <= 0:
+            continue
+        rig = StereoRig(
+            fx=calibration.focal_length_px,
+            fy=calibration.focal_length_px,
+            cx=calibration.cx,
+            cy=calibration.cy,
+            baseline_m=calibration.baseline_m,
+        )
+        left_frame, right_frame = channels[0], channels[1]
+        try:
+            points = stereo.reconstruct(
+                FrameImage(
+                    left_frame.width,
+                    left_frame.height,
+                    _encoding_name(left_frame),
+                    left_frame.data,
+                ),
+                FrameImage(
+                    right_frame.width,
+                    right_frame.height,
+                    _encoding_name(right_frame),
+                    right_frame.data,
+                ),
+                rig,
+            )
+        except ValueError:
+            continue
+        sampled = points[:: max(1, len(points) // 4000)] if points else points
+        if layer.voxel_count == 0:
+            layer.seed(sampled)
+            continue
+        clusters = layer.difference(frame.frame_id, frame.t_ns, sampled)
+        candidate_ids = {id(point) for cluster in clusters for point in cluster.points}
+        for observation in areas_from_clusters(clusters):
+            track = tracker.update(observation)
+            yield survey_pb2.MovingAreasResponse(
+                area=survey_pb2.MovingArea(
+                    frame_id=frame.frame_id,
+                    t_ns=frame.t_ns,
+                    polygon=[survey_pb2.Point2(x=x, y=y) for x, y in observation.polygon],
+                    depth_min_m=observation.depth_min_m,
+                    depth_max_m=observation.depth_max_m,
+                    dynamic_point_count=observation.point_count,
+                    area_track_id=track.track_id,
+                    verdict=survey_pb2.MOVING_VERDICT_UNKNOWN,
+                    verdict_version=0,
+                )
+            )
+        layer.seed(point for point in sampled if id(point) not in candidate_ids)
+    if config is None:
+        raise ValueError("first request must be config")
+
+
 def cm5_service_module(
     slam: SlamBackend | None = None,
     objects: ObjectPointSource | None = None,
@@ -279,7 +385,21 @@ def cm5_service_module(
             async for response in stream_detections(requests, effective_detections):
                 yield response
 
-        return (Brick(methods={"StreamSurvey": handler, "StreamDetections": detections_handler}),)
+        async def moving_areas_handler(
+            requests: AsyncIterable[survey_pb2.Cm5Request], _ctx: Any
+        ) -> AsyncIterator[survey_pb2.MovingAreasResponse]:
+            async for response in stream_moving_areas(requests, stereo=effective_stereo):
+                yield response
+
+        return (
+            Brick(
+                methods={
+                    "StreamSurvey": handler,
+                    "StreamDetections": detections_handler,
+                    "StreamMovingAreas": moving_areas_handler,
+                }
+            ),
+        )
 
     return ServiceModule(
         descriptor=survey_pb2.DESCRIPTOR.services_by_name["Cm5SurveyService"],
