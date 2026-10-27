@@ -29,12 +29,12 @@ at n2's wrap (n1's wrap carries the design only).
 - **Branch / title convention:** branch `pr-<k>-<node-slug>`,
   title `feat(surmap): <delivered capability> (#moving-objects
   <k>/6)` (type follows node kind; subject ≤ 100 chars including
-  the stack group). #17's title is already set; it is not
-  renumbered retroactively beyond this record.
+  the stack group). #17's title carries `(#moving-objects 1/6)`
+  (set when the developer confirmed n1 is #17).
 
 | Node | Branch | Title (delivered state) | Kind (Type · Behaviour) | Complexity |
 |---|---|---|---|---|
-| n1 | `docs/moving-object-design` — **[#17](https://github.com/uppin/surmap/pull/17)** | `docs: moving-object detection design (CM5 edge budget)` (as opened) | Infra (docs) · preserves | 2 — design + plan documents only; verification is review + CI |
+| n1 | `docs/moving-object-design` — **[#17](https://github.com/uppin/surmap/pull/17)** | `docs: moving-object detection design (CM5 edge budget) (#moving-objects 1/6)` | Infra (docs) · preserves | 2 — design + plan documents only; verification is review + CI |
 | n2 | `pr-2-moving-snippets` | `chore(surmap): real-video snippet fixtures and candidate seam (#moving-objects 2/6)` | Infra · preserves | 3 — fetch/conversion adapters, integration tests, no behaviour change |
 | n3 | `pr-3-moving-differencing` | `feat(surmap): static-layer differencing and moving areas stream (#moving-objects 3/6)` | Feature · adds | 4 — proto/contract change, concurrency (5 Hz worker), one package |
 | n4 | `pr-4-moving-classification` | `feat(surmap): area verdicts, tracked keypoints and observation buffer (#moving-objects 4/6)` | Feature · adds | 4 — tracking/filter semantics, several owned symbols |
