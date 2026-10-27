@@ -28,3 +28,13 @@ the fetch script, with `SURMAP_REQUIRE_RTABMAP_E2E=1`).
 Proving run (manual, same pinned image/dataset): RTAB-Map 0.24.2
 tracked all 90 pairs, exported 5 optimized poses travelling ~0.8 m
 and a 14,874-point assembled cloud.
+
+Teardown is ownership-based: `close()` (also invoked by the server
+host's closeable when a CM5 server stops) removes only the exact
+containers that backend instance started and only a staging dir it
+created — never a sweep by image/prefix. With
+`SURMAP_RTABMAP_SHARED_CONTAINER` set, the backend instead borrows
+that reusable container via `docker exec`/`cp`, deletes only its own
+staging directory inside it, and never starts/stops/removes the
+shared container; the E2Es assert this with a real shared container
+left running after `close()`.

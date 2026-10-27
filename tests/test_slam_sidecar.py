@@ -39,6 +39,8 @@ class _FakeDocker:
 
     def __call__(self, argv: list[str]) -> None:
         self.calls.append(argv)
+        if argv[1:2] == ["rm"]:
+            return
         mounts = {}
         args = iter(range(len(argv)))
         for index in args:
@@ -99,6 +101,12 @@ def test_sidecar_flush_maps_poses_and_attaches_cloud_to_last(tmp_path: Path) -> 
     # timestamp, and the cloud rides on the last posed result
     assert len(runner.calls) == 2
     assert all(call[0] == "docker" and PINNED_RTABMAP_IMAGE in call for call in runner.calls)
+    # Containers are named under the backend's prefix and none are
+    # left live once they have exited
+    assert all(
+        call[call.index("--name") + 1].startswith(backend.container_prefix) for call in runner.calls
+    )
+    assert backend.live_containers == ()
     assert [result.frame_id for result in results] == [1, 2]
     assert results[0].static_points == ()
     assert len(results[1].static_points) == 2
@@ -107,6 +115,144 @@ def test_sidecar_flush_maps_poses_and_attaches_cloud_to_last(tmp_path: Path) -> 
     assert len(runner.calls) == 2
     backend.close()
     assert backend.closed
+
+
+def test_failed_sidecar_run_is_force_removed_on_close(tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+
+    def failing_runner(argv: list[str]) -> None:
+        calls.append(argv)
+        if argv[1:2] != ["rm"]:
+            raise SidecarError("simulated docker failure")
+
+    backend = SidecarRtabmapBackend(
+        cam0_yaml=CAM_YAML, cam1_yaml=CAM_YAML, runner=failing_runner, work_dir=tmp_path / "work"
+    )
+    backend.process_frame(_frame(1, 1_000_000_000))
+
+    # When the sidecar run fails mid-flight
+    with pytest.raises(SidecarError, match="simulated"):
+        backend.flush()
+
+    # Then the container stays registered until close() removes it by
+    # name, and close() is idempotent — nothing is left behind
+    (live,) = backend.live_containers
+    backend.close()
+    assert ["docker", "rm", "-f", live] in calls
+    assert backend.live_containers == ()
+    call_count = len(calls)
+    backend.close()
+    assert len(calls) == call_count
+
+
+def test_close_never_sweeps_a_reusable_foreign_container(tmp_path: Path) -> None:
+    # Given a daemon that also hosts a reusable RTAB-Map container
+    # (e.g. one the environment/developer keeps around) — represented
+    # by a name this backend did not start
+    calls: list[list[str]] = []
+
+    def failing_runner(argv: list[str]) -> None:
+        calls.append(argv)
+        if argv[1:2] != ["rm"]:
+            raise SidecarError("simulated docker failure")
+
+    backend = SidecarRtabmapBackend(
+        cam0_yaml=CAM_YAML, cam1_yaml=CAM_YAML, runner=failing_runner, work_dir=tmp_path / "work"
+    )
+    backend.process_frame(_frame(1, 1_000_000_000))
+    with pytest.raises(SidecarError, match="simulated"):
+        backend.flush()
+    backend.close()
+
+    # Then teardown issued exactly one removal — this backend's own
+    # container by exact name — and never enumerated containers (no
+    # `docker ps` sweep by prefix/image that could catch the reusable
+    # foreign one)
+    removals = [call for call in calls if call[1:2] == ["rm"]]
+    assert removals == [["docker", "rm", "-f", f"{backend.container_prefix}-dataset"]]
+    assert not any(call[1:2] == ["ps"] for call in calls)
+    assert not any("reusable" in part for call in calls for part in call)
+
+
+class _FakeSharedDocker:
+    """Pretends a reusable container answers `exec`/`cp` for RTAB-Map."""
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def __call__(self, argv: list[str]) -> None:
+        self.calls.append(argv)
+        if argv[1:2] == ["cp"] and ":" in argv[2]:  # copy exports back
+            out = Path(argv[3])
+            (out / "cloud_poses.txt").write_text(
+                "#timestamp x y z qx qy qz qw id\n1.0 0 0 0 0 0 0 1 1\n2.0 1 0 0 0 0 0 1 2\n",
+                encoding="utf-8",
+            )
+            (out / "cloud_cloud.ply").write_text(
+                "ply\nformat ascii 1.0\nelement vertex 1\nproperty float x\n"
+                "property float y\nproperty float z\nend_header\n1 2 3\n",
+                encoding="utf-8",
+            )
+
+
+def test_shared_container_is_borrowed_and_never_removed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given the SHARED environment variable names a reusable container
+    monkeypatch.setenv("SURMAP_RTABMAP_SHARED_CONTAINER", "reusable-rtabmap")
+    runner = _FakeSharedDocker()
+    backend = SidecarRtabmapBackend(
+        cam0_yaml=CAM_YAML, cam1_yaml=CAM_YAML, runner=runner, work_dir=tmp_path / "work"
+    )
+    assert backend.shared_container == "reusable-rtabmap"
+    backend.process_frame(_frame(1, 1_000_000_000))
+    backend.process_frame(_frame(2, 2_000_000_000))
+
+    # When the backend runs RTAB-Map through it and is closed
+    results = backend.flush()
+    calls_at_flush = list(runner.calls)
+    backend.close()
+
+    # Then the tools ran via exec/cp inside that container, its own
+    # staging directory inside the container was cleaned, and the
+    # container itself was never run/stopped/removed — close() issued
+    # no further Docker calls at all
+    assert [result.frame_id for result in results] == [1, 2]
+    assert len(results[1].static_points) == 1
+    assert backend.live_containers == ()
+    assert all(call[1:2] in (["exec"], ["cp"]) for call in calls_at_flush)
+    assert any(call[:4] == ["docker", "exec", "reusable-rtabmap", "rm"] for call in calls_at_flush)
+    assert not any(call[1:2] in (["run"], ["rm"], ["stop"], ["kill"]) for call in calls_at_flush)
+    assert runner.calls == calls_at_flush
+
+
+def test_shared_container_failure_still_cleans_only_its_staging_dir(tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+
+    def failing_shared_runner(argv: list[str]) -> None:
+        calls.append(argv)
+        if "rtabmap-euroc_dataset" in argv:
+            raise SidecarError("simulated tool failure")
+
+    backend = SidecarRtabmapBackend(
+        cam0_yaml=CAM_YAML,
+        cam1_yaml=CAM_YAML,
+        runner=failing_shared_runner,
+        work_dir=tmp_path / "work",
+        shared_container="reusable-rtabmap",
+    )
+    backend.process_frame(_frame(1, 1_000_000_000))
+    with pytest.raises(SidecarError, match="simulated"):
+        backend.flush()
+    backend.close()
+
+    # The only removal is `rm -rf` of this backend's staging dir
+    # inside the shared container — never the container itself
+    removals = [call for call in calls if "rm" in call]
+    assert len(removals) == 1
+    assert removals[0][:3] == ["docker", "exec", "reusable-rtabmap"]
+    assert removals[0][-1].startswith("/tmp/surmap-rtabmap-")
+    assert not any(call[1:2] in (["run"], ["rm"], ["stop"], ["kill"]) for call in calls)
 
 
 def test_cm5_entrypoint_builds_sidecar_from_a_calibration_dir(tmp_path: Path) -> None:

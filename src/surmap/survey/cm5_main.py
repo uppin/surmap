@@ -17,7 +17,7 @@ import argparse
 import asyncio
 from pathlib import Path
 
-from surmap.rpc.description import ServerDescription
+from surmap.rpc.description import Closeable, ServerDescription
 from surmap.rpc.hosts.hypercorn import HypercornHost
 from surmap.rpc.routes import health_routes
 from surmap.slam.base import SlamBackend
@@ -30,6 +30,22 @@ DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 8080
 
 
+class _BackendCloseable:
+    """Adapts a backend's sync `close()` to the host's async closeables.
+
+    Registered whenever a backend is supplied, so stopping the server
+    always tears the backend down — for the RTAB-Map sidecar that
+    force-removes any live container and deletes its staging dir,
+    even on a failed or interrupted stream.
+    """
+
+    def __init__(self, backend: SlamBackend) -> None:
+        self._backend = backend
+
+    async def close(self) -> None:
+        self._backend.close()
+
+
 def build_description(
     slam: SlamBackend | None = None,
     objects: ObjectPointSource | None = None,
@@ -40,16 +56,26 @@ def build_description(
     """The CM5 server's description: survey service plus health routes."""
     if stereo is None and use_stereo:
         stereo = StereoReconstructor()
+    closeables: tuple[Closeable, ...] = (_BackendCloseable(slam),) if slam is not None else ()
     return ServerDescription(
         services=(cm5_service_module(slam, objects, stereo),),
         http_routes=health_routes(lambda: False),
+        closeables=lambda _ctx: closeables,
     )
 
 
 def sidecar_backend(
-    calibration_dir: Path, image: str = PINNED_RTABMAP_IMAGE
+    calibration_dir: Path,
+    image: str = PINNED_RTABMAP_IMAGE,
+    shared_container: str | None = None,
 ) -> SidecarRtabmapBackend:
-    """The RTAB-Map sidecar backend calibrated from a EuRoC dataset dir."""
+    """The RTAB-Map sidecar backend calibrated from a EuRoC dataset dir.
+
+    `shared_container` (or the `SURMAP_RTABMAP_SHARED_CONTAINER`
+    environment variable when it is `None`) borrows a reusable
+    already-running container instead of starting owned ones; a
+    shared container is never stopped or removed by the backend.
+    """
     mav0 = calibration_dir / "mav0"
 
     def read(path: Path) -> str:
@@ -61,6 +87,7 @@ def sidecar_backend(
         imu_yaml=read(mav0 / "imu0" / "sensor.yaml"),
         imu_csv=read(mav0 / "imu0" / "data.csv"),
         image=image,
+        shared_container=shared_container,
     )
 
 
@@ -87,13 +114,21 @@ def main(argv: list[str] | None = None) -> None:
         help="EuRoC dataset dir holding mav0/{cam0,cam1,imu0} for the sidecar backend",
     )
     parser.add_argument("--rtabmap-image", default=PINNED_RTABMAP_IMAGE)
+    parser.add_argument(
+        "--rtabmap-shared-container",
+        default=None,
+        help="borrow this reusable RTAB-Map container instead of starting owned ones "
+        "(default: $SURMAP_RTABMAP_SHARED_CONTAINER; never stopped or removed)",
+    )
     args = parser.parse_args(argv)
     description = None
     if args.slam_backend == "sidecar":
         if args.calibration_dir is None:
             parser.error("--slam-backend sidecar requires --calibration-dir")
         description = build_description(
-            slam=sidecar_backend(args.calibration_dir, args.rtabmap_image),
+            slam=sidecar_backend(
+                args.calibration_dir, args.rtabmap_image, args.rtabmap_shared_container
+            ),
             use_stereo=False,
         )
     try:

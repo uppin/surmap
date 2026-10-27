@@ -16,12 +16,16 @@ import os
 import pathlib
 import re
 import shutil
+import subprocess
 import urllib.error
+import uuid
 
 import pytest
 
+from surmap.slam.sidecar import PINNED_RTABMAP_IMAGE
 from surmap.survey.cm5_main import build_description, sidecar_backend
 from surmap.survey.v1 import survey_pb2
+from surmap.types import StereoFramePair
 from tests.test_survey_server_e2e import _connect_bidi, _get_status, running_server
 
 FIXTURE = (
@@ -104,6 +108,84 @@ def _requests(manifest: dict[str, object]) -> list[survey_pb2.Cm5Request]:
     return requests
 
 
+def _leftover_containers(prefix: str) -> str:
+    """Names of any Docker containers (running or stopped) under `prefix`."""
+    return subprocess.run(
+        ["docker", "ps", "-a", "--filter", f"name={prefix}", "--format", "{{.Names}}"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    ).stdout.strip()
+
+
+async def test_a_failing_rtabmap_run_still_tears_down_server_and_sidecar() -> None:
+    _require_prepared()
+    backend = sidecar_backend(FIXTURE)
+    # Given a run that fails before any frame is streamed — note the
+    # test never closes the backend itself
+    address = ""
+    with pytest.raises(AssertionError):
+        async with running_server(build_description(slam=backend, use_stereo=False)) as running:
+            address = running
+            raise AssertionError("simulated failure")
+
+    # Then stopping the server closed the backend through its
+    # closeable: no containers, no staging dir, port refused
+    assert backend.closed
+    assert backend.live_containers == ()
+    assert not backend.work_dir.exists()
+    assert _leftover_containers(backend.container_prefix) == ""
+    with pytest.raises(urllib.error.URLError):
+        _get_status(address, "/health/is_alive")
+
+
+def _docker(*args: str) -> str:
+    return subprocess.run(
+        ["docker", *args], capture_output=True, text=True, timeout=120, check=True
+    ).stdout.strip()
+
+
+async def test_a_shared_container_is_borrowed_and_left_running() -> None:
+    manifest = _require_prepared()
+    # Given a reusable RTAB-Map container started outside the backend
+    # (as SURMAP_RTABMAP_SHARED_CONTAINER would point at in a dev env)
+    shared = f"surmap-shared-test-{uuid.uuid4().hex[:12]}"
+    _docker("run", "-d", "--name", shared, PINNED_RTABMAP_IMAGE, "sleep", "infinity")
+    backend = sidecar_backend(FIXTURE, shared_container=shared)
+    try:
+        assert backend.shared_container == shared
+        timestamps = manifest["frame_timestamps_ns"]
+        assert isinstance(timestamps, list)
+        for index, t_ns in enumerate(timestamps):
+            pair = StereoFramePair(
+                frame_id=index + 1,
+                t_ns=int(t_ns),
+                left_ref=str(FIXTURE / "mav0" / "cam0" / "data" / f"{t_ns}.jpg"),
+                right_ref=str(FIXTURE / "mav0" / "cam1" / "data" / f"{t_ns}.jpg"),
+                calibration_id="euroc-v1-01-sidecar",
+            )
+            backend.process_frame(pair)
+
+        # When RTAB-Map runs through the shared container and the
+        # backend is closed
+        results = await asyncio.to_thread(backend.flush)
+        backend.close()
+
+        # Then real RTAB-Map results arrived, and the shared container
+        # is untouched — still running, not garbage-collected
+        assert len(backend.trajectory()) >= 3
+        assert results and len(results[-1].static_points) > 10_000
+        assert backend.live_containers == ()
+        assert _docker("inspect", "-f", "{{.State.Running}}", shared) == "true"
+    finally:
+        backend.close()
+        # The test started the shared container, so the test — never
+        # the backend — tears it down
+        _docker("rm", "-f", shared)
+    assert _leftover_containers(shared) == ""
+
+
 async def test_euroc_pairs_stream_real_rtabmap_poses_and_points() -> None:
     manifest = _require_prepared()
     backend = sidecar_backend(FIXTURE)
@@ -122,9 +204,16 @@ async def test_euroc_pairs_stream_real_rtabmap_poses_and_points() -> None:
     finally:
         backend.close()
 
-    # Then the server is closed after the run
+    # Then everything the run started is torn down: the server port
+    # refuses connections (closed by running_server, which also closed
+    # the backend via its closeable), no sidecar container exists
+    # under the backend's name prefix, none is registered live, and
+    # the backend's staging directory is gone
     with pytest.raises(urllib.error.URLError):
         _get_status(address, "/health/is_alive")
+    assert backend.live_containers == ()
+    assert not backend.work_dir.exists()
+    assert _leftover_containers(backend.container_prefix) == ""
 
     responses = [survey_pb2.Cm5Response.FromString(p) for p in payloads]
     batches = [r.points for r in responses if r.WhichOneof("kind") == "points"]

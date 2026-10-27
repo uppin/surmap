@@ -14,15 +14,30 @@ whole run, so `process_frame` only stages a pair (pose `None`, no
 points) and the real poses/cloud arrive from `flush()`, called once
 the stream ends. The assembled cloud is attached to the last posed
 result; earlier posed results carry their pose only.
+
+Two ways to reach RTAB-Map, with opposite ownership:
+
+- Owned (default): `docker run` the pinned image per tool, under a
+  unique container name this instance records. `close()` removes
+  only those exact containers (plus its own staging dir).
+- Shared: when the environment variable
+  `SURMAP_RTABMAP_SHARED_CONTAINER` (or the `shared_container`
+  argument) names an already-running reusable container, the backend
+  borrows it — `docker cp` the dataset in, `docker exec` the tools,
+  `docker cp` the exports out, and delete only its own staging
+  directory inside the container. A shared container is never
+  started, stopped, or removed by this backend.
 """
 
 from __future__ import annotations
 
 import io
 import math
+import os
 import shutil
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Protocol
 
@@ -36,6 +51,11 @@ from surmap.types import Pose, StereoFramePair, Vec3
 PINNED_RTABMAP_IMAGE = (
     "introlab3it/rtabmap@sha256:14a58ac31565f0a0ab2421fa861f6fc43010e54345e13a6a1ccde32d3b0ffdb8"
 )
+
+# Environment variable naming a reusable, already-running RTAB-Map
+# container to borrow instead of starting owned ones. The SHARED
+# segment marks it as not ours: it is never garbage-collected.
+SHARED_CONTAINER_ENV = "SURMAP_RTABMAP_SHARED_CONTAINER"
 
 
 class SidecarError(RuntimeError):
@@ -142,12 +162,16 @@ class SidecarRtabmapBackend:
         image: str = PINNED_RTABMAP_IMAGE,
         runner: CommandRunner | None = None,
         work_dir: Path | None = None,
+        shared_container: str | None = None,
     ) -> None:
         self._cam0_yaml = cam0_yaml
         self._cam1_yaml = cam1_yaml
         self._imu_yaml = imu_yaml
         self._imu_csv = imu_csv
         self._image = image
+        if shared_container is None:
+            shared_container = os.environ.get(SHARED_CONTAINER_ENV, "").strip() or None
+        self._shared_container = shared_container
         self._runner: CommandRunner = runner if runner is not None else _subprocess_runner
         self._owns_work_dir = work_dir is None
         self._work_dir = (
@@ -158,7 +182,54 @@ class SidecarRtabmapBackend:
         self._frames: list[StereoFramePair] = []
         self._results: list[FrameResult] | None = None
         self._trajectory: list[Pose] = []
+        # Every sidecar container this instance starts gets a name
+        # under this unique prefix, purely so tests/operators can
+        # recognise them. Removal is ownership-based (exact names in
+        # `_live_containers`), never a prefix/image sweep — see close().
+        self._instance_id = uuid.uuid4().hex[:12]
+        self._container_prefix = f"surmap-rtabmap-{self._instance_id}"
+        self._live_containers: list[str] = []
         self.closed = False
+
+    @property
+    def work_dir(self) -> Path:
+        """Staging directory this backend owns (removed by `close()`)."""
+        return self._work_dir
+
+    @property
+    def container_prefix(self) -> str:
+        """Name prefix of every Docker container this backend starts."""
+        return self._container_prefix
+
+    @property
+    def live_containers(self) -> tuple[str, ...]:
+        """Sidecar containers started but not yet seen to exit."""
+        return tuple(self._live_containers)
+
+    @property
+    def shared_container(self) -> str | None:
+        """The borrowed reusable container, if in shared mode.
+
+        A shared container is not ours: it is never started, stopped,
+        or removed by this backend (see `close()`).
+        """
+        return self._shared_container
+
+    def _docker_run(self, suffix: str, mounts: list[str], command: list[str]) -> None:
+        name = f"{self._container_prefix}-{suffix}"
+        argv = ["docker", "run", "--rm", "--name", name]
+        for mount in mounts:
+            argv += ["-v", mount]
+        argv += [self._image, *command]
+        self._live_containers.append(name)
+        try:
+            self._runner(argv)
+        except BaseException:
+            # The container may still be running (killed client, CI
+            # timeout): keep it registered so close() removes it.
+            raise
+        else:
+            self._live_containers.remove(name)
 
     def _stage_image(self, frame: StereoFramePair, channel: int) -> None:
         data = frame.left_data if channel == 0 else frame.right_data
@@ -214,6 +285,60 @@ class SidecarRtabmapBackend:
             return best
         return None
 
+    def _run_shared(self) -> None:
+        """Run both RTAB-Map tools inside the shared container.
+
+        The dataset is copied into a staging directory unique to this
+        backend inside the container, and that directory — only that
+        directory — is deleted afterwards, success or failure. The
+        shared container itself is left exactly as found.
+        """
+        shared = self._shared_container
+        if shared is None:
+            raise SidecarError("_run_shared called without a shared container")
+        remote = f"/tmp/surmap-rtabmap-{self._instance_id}"
+        self._out.mkdir(parents=True, exist_ok=True)
+        try:
+            self._runner(["docker", "exec", shared, "mkdir", "-p", f"{remote}/out"])
+            self._runner(["docker", "cp", str(self._dataset), f"{shared}:{remote}/dataset"])
+            self._runner(
+                [
+                    "docker",
+                    "exec",
+                    shared,
+                    "rtabmap-euroc_dataset",
+                    "--output",
+                    f"{remote}/dataset",
+                    "--output_name",
+                    "rtabmap",
+                    f"{remote}/dataset",
+                ]
+            )
+            self._runner(
+                [
+                    "docker",
+                    "exec",
+                    shared,
+                    "rtabmap-export",
+                    "--cloud",
+                    "--poses",
+                    "--poses_format",
+                    "11",
+                    "--ascii",
+                    "--output_dir",
+                    f"{remote}/out",
+                    "--output",
+                    "cloud",
+                    f"{remote}/dataset/rtabmap.db",
+                ]
+            )
+            self._runner(["docker", "cp", f"{shared}:{remote}/out/.", str(self._out)])
+        finally:
+            try:
+                self._runner(["docker", "exec", shared, "rm", "-rf", remote])
+            except Exception:
+                pass  # best effort: only our staging dir is targeted
+
     def flush(self) -> list[FrameResult]:
         """Run RTAB-Map over the staged pairs; return posed results.
 
@@ -227,36 +352,29 @@ class SidecarRtabmapBackend:
             return []
         self._write_dataset_metadata()
         self._out.mkdir(parents=True, exist_ok=True)
+        if self._shared_container is not None:
+            self._run_shared()
+            return self._collect_results()
         dataset = str(self._dataset)
-        self._runner(
+        self._docker_run(
+            "dataset",
+            [f"{dataset}:/data"],
             [
-                "docker",
-                "run",
-                "--rm",
-                "-v",
-                f"{dataset}:/data",
-                self._image,
                 "rtabmap-euroc_dataset",
                 "--output",
                 "/data",
                 "--output_name",
                 "rtabmap",
                 "/data",
-            ]
+            ],
         )
         database = self._dataset / "rtabmap.db"
         if not database.is_file():
             raise SidecarError(f"RTAB-Map sidecar produced no database at {database}")
-        self._runner(
+        self._docker_run(
+            "export",
+            [f"{dataset}:/data:ro", f"{self._out}:/out"],
             [
-                "docker",
-                "run",
-                "--rm",
-                "-v",
-                f"{dataset}:/data:ro",
-                "-v",
-                f"{self._out}:/out",
-                self._image,
                 "rtabmap-export",
                 "--cloud",
                 "--poses",
@@ -268,8 +386,11 @@ class SidecarRtabmapBackend:
                 "--output",
                 "cloud",
                 "/data/rtabmap.db",
-            ]
+            ],
         )
+        return self._collect_results()
+
+    def _collect_results(self) -> list[FrameResult]:
         poses_file = self._out / "cloud_poses.txt"
         cloud_file = self._out / "cloud_cloud.ply"
         if not poses_file.is_file() or not cloud_file.is_file():
@@ -291,6 +412,34 @@ class SidecarRtabmapBackend:
         return list(self._trajectory)
 
     def close(self) -> None:
+        """Tear down only what this backend instance started.
+
+        Ownership, never sweeping: the only containers removed are
+        the exact names recorded in `live_containers` when this
+        instance issued `docker run` for them. Nothing is enumerated
+        by image, label, or name prefix. A shared container named by
+        `SURMAP_RTABMAP_SHARED_CONTAINER` is borrowed, never owned:
+        it does not appear in `live_containers`, and `close()` issues
+        no `docker rm`/`stop`/`kill` against it — it is left running
+        for its owner. Likewise the staging directory is deleted only
+        when this backend created it; a caller-supplied `work_dir`
+        stays.
+
+        Containers that exited normally already removed themselves
+        (`--rm`); any still registered as live — the run was killed,
+        timed out, or failed mid-flight — are force-removed by name.
+        Idempotent, and a later `close()` retries any removal that
+        failed the first time.
+        """
+        if self.closed and not self._live_containers:
+            return
         self.closed = True
+        for name in list(self._live_containers):
+            try:
+                self._runner(["docker", "rm", "-f", name])
+            except Exception:
+                pass  # best effort; a later close() retries it
+            else:
+                self._live_containers.remove(name)
         if self._owns_work_dir:
             shutil.rmtree(self._work_dir, ignore_errors=True)

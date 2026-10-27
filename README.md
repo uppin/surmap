@@ -47,6 +47,12 @@ RTAB-Map's optimized poses and assembled cloud at end of stream. Run
 `uv run python scripts/fetch_rtabmap_fixture.py` to pull the pinned
 image and cut the EuRoC V1_01 test subset; the CM5 server selects the
 sidecar with `--slam-backend sidecar --calibration-dir <dataset>`.
+Teardown is ownership-based: the backend removes only the containers
+it started (exact names, never a prefix/image sweep). To borrow a
+reusable already-running container instead, set
+`SURMAP_RTABMAP_SHARED_CONTAINER=<name>` (or
+`--rtabmap-shared-container`): it is driven via `docker exec`/`cp`
+and is never started, stopped, or removed by SurMap.
 `surmap.slam.RtabmapBackend` remains for a host that does provide
 native bindings, and tests/simulation otherwise use
 `surmap.slam.InMemorySlamBackend`.
