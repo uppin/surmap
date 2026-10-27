@@ -73,7 +73,9 @@ def _get_status(address: str, path: str) -> int:
 
 class _FakeSlam:
     def process_frame(self, frame: StereoFramePair) -> FrameResult:
-        return FrameResult(frame.frame_id, frame.t_ns, Pose(Vec3(0.0, 0.0, 0.0)), (Vec3(1.0, 2.0, 3.0),))
+        return FrameResult(
+            frame.frame_id, frame.t_ns, Pose(Vec3(0.0, 0.0, 0.0)), (Vec3(1.0, 2.0, 3.0),)
+        )
 
     def trajectory(self) -> list[Pose]:
         return []
@@ -92,8 +94,13 @@ def _cm5_requests() -> list[Message]:
     frames = [
         survey_pb2.Cm5Request(
             frame=survey_pb2.RawVideoFrame(
-                frame_id=1, t_ns=1_000_000, channel=channel, width=640, height=480,
-                encoding=survey_pb2.FRAME_ENCODING_MJPEG, data=b"f",
+                frame_id=1,
+                t_ns=1_000_000,
+                channel=channel,
+                width=640,
+                height=480,
+                encoding=survey_pb2.FRAME_ENCODING_MJPEG,
+                data=b"f",
             )
         )
         for channel in (0, 1)
@@ -106,7 +113,10 @@ async def test_the_cm5_server_answers_over_a_real_socket_and_closes_afterwards()
     async with running_server(build_cm5_description(slam=_FakeSlam())) as address:
         # When a client streams a pair over the wire
         payloads = await asyncio.to_thread(
-            _connect_bidi, address, "/surmap.survey.v1.Cm5SurveyService/StreamSurvey", _cm5_requests()
+            _connect_bidi,
+            address,
+            "/surmap.survey.v1.Cm5SurveyService/StreamSurvey",
+            _cm5_requests(),
         )
         responses = []
         for payload in payloads:
@@ -138,8 +148,13 @@ async def test_the_station_server_answers_over_a_real_socket_and_closes_afterwar
         )
         frame = survey_pb2.StationRequest(
             frame=survey_pb2.RawVideoFrame(
-                frame_id=42, t_ns=1_000_000, channel=0, width=640, height=480,
-                encoding=survey_pb2.FRAME_ENCODING_MJPEG, data=b"f",
+                frame_id=42,
+                t_ns=1_000_000,
+                channel=0,
+                width=640,
+                height=480,
+                encoding=survey_pb2.FRAME_ENCODING_MJPEG,
+                data=b"f",
             )
         )
         payloads = await asyncio.to_thread(

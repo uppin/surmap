@@ -12,9 +12,7 @@ def test_the_cm5_entrypoint_serves_the_survey_service_and_health() -> None:
     assert [m.descriptor.full_name for m in description.services] == [
         "surmap.survey.v1.Cm5SurveyService"
     ]
-    assert [(r.method, r.path) for r in description.http_routes] == [
-        ("GET", "/health/is_alive")
-    ]
+    assert [(r.method, r.path) for r in description.http_routes] == [("GET", "/health/is_alive")]
 
 
 def test_the_station_entrypoint_serves_the_sam_service_and_health() -> None:
@@ -22,6 +20,4 @@ def test_the_station_entrypoint_serves_the_sam_service_and_health() -> None:
     assert [m.descriptor.full_name for m in description.services] == [
         "surmap.survey.v1.StationSamService"
     ]
-    assert [(r.method, r.path) for r in description.http_routes] == [
-        ("GET", "/health/is_alive")
-    ]
+    assert [(r.method, r.path) for r in description.http_routes] == [("GET", "/health/is_alive")]

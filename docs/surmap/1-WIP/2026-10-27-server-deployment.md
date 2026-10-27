@@ -17,11 +17,11 @@
   - [x] Stub API — `build_description` in both entrypoint modules (`TODO(pr-6)`)
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] `cm5_main` / `station_main` entrypoints on `HypercornHost`
-  - [ ] `deploy-cm5.sh` / `deploy-station.sh` (source path + SSH target as CLI args) + `deploy-lib.sh`
-  - [ ] systemd units + `docs/deployment.md`
-  - [ ] Acceptance: entrypoint/script/e2e tests pass; real-socket e2es close their server on success and failure
+- [wf 3] ✅ 2026-10-27 `/green` Green — implement until every red test passes · 9/9 new tests pass; full suite 398 passed; ruff check+format and mypy clean; both `python -m` processes answered `/health/is_alive` 200 on real sockets and closed
+  - [x] `cm5_main` / `station_main` entrypoints on `HypercornHost`
+  - [x] `deploy-cm5.sh` / `deploy-station.sh` (source path + SSH target as CLI args) + `deploy-lib.sh`
+  - [x] systemd units + `docs/deployment.md`
+  - [x] Acceptance: entrypoint/script/e2e tests pass; real-socket e2es close their server on success and failure
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/architecture.md` §10 — deployment path named
