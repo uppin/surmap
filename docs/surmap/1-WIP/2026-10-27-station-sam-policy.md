@@ -18,11 +18,11 @@
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Gate admits serially under `EVERY_FRAME`
-  - [ ] Gate drops + counts under `BEST_EFFORT_DROP` when busy
-  - [ ] Fake detector returns configured detections
-  - [ ] Acceptance: policy tests pass
+- [wf 3] ✅ 2026-10-27 `/green` Green — implement until every red test passes · 4/4 policy tests pass (twice, no flake); 363 passed excluding predecessors' red files; ruff clean; mypy only 3 pre-existing `survey_pb2` errors in `tests/test_survey_proto.py` (n1)
+  - [x] Gate admits serially under `EVERY_FRAME`
+  - [x] Gate drops + counts under `BEST_EFFORT_DROP` when busy
+  - [x] Fake detector returns configured detections
+  - [x] Acceptance: policy tests pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
 

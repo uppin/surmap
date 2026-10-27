@@ -13,6 +13,7 @@ accept (counted) drops.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -63,13 +64,21 @@ class AnalysisGate:
 
     def __init__(self, mode: AnalysisMode) -> None:
         self._mode = mode
+        self._lock = asyncio.Lock()
         self.dropped = 0
 
     @asynccontextmanager
     async def slot(self) -> AsyncIterator[bool]:
         """`True` when the caller may analyze; `False` when the frame drops."""
-        raise NotImplementedError("TODO(pr-3): implement AnalysisGate.slot")
-        yield False  # unreachable; keeps the context-manager shape typed
+        if self._mode is AnalysisMode.BEST_EFFORT_DROP and self._lock.locked():
+            self.dropped += 1
+            yield False
+            return
+        await self._lock.acquire()
+        try:
+            yield True
+        finally:
+            self._lock.release()
 
 
 class InMemorySamDetector:
@@ -80,4 +89,5 @@ class InMemorySamDetector:
         self.frames: list[RawFrame] = []
 
     async def detect(self, frame: RawFrame) -> tuple[SamDetection, ...]:
-        raise NotImplementedError("TODO(pr-3): implement InMemorySamDetector.detect")
+        self.frames.append(frame)
+        return self._detections
