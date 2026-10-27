@@ -38,12 +38,41 @@ CI (`.github/workflows/ci.yml`) runs ruff, mypy (strict), and pytest
 on Python 3.11 and 3.12 for every push to `main` and every pull
 request.
 
-RTAB-Map note: RTAB-Map has no official PyPI package, so it is not a
-pip/uv dependency. `surmap.slam.RtabmapBackend` loads the binding
-module provided by a system RTAB-Map build (or the ROS 2 `rtabmap`
-packages) at runtime and raises `RtabmapUnavailable` with install
-guidance when it is absent. Tests and simulation use
-`surmap.slam.InMemorySlamBackend` instead.
+## Demo
+
+```bash
+uv run python scripts/demo.py            # downloads+caches EuRoC, serves the demo
+# open http://127.0.0.1:8765/ in a browser
+```
+
+The demo plays a recorded dataset as real-time video with the stereo
+reconstructor's scene points overlaid as depth-coloured detections,
+then builds the final RTAB-Map map from the same frames and draws it
+top-down. Datasets are registry entries in `surmap.demo.datasets`
+(`--list-datasets`): the first run downloads and SHA-256-verifies
+the zip into the cache (`~/.cache/surmap/demo-datasets`, override
+`--cache-dir`/`$SURMAP_DEMO_CACHE_DIR`); later runs download nothing.
+Useful flags: `--frames N`, `--start I`, `--fps F`, `--no-rtabmap`,
+`--prepare-only`. Add a dataset by adding one registry entry.
+
+RTAB-Map note: RTAB-Map has no official PyPI package, and no host —
+local or CI — may install it. The real backend is
+`surmap.slam.SidecarRtabmapBackend`: it stages streamed stereo pairs
+as a EuRoC-style dataset and runs the pinned RTAB-Map Docker image
+(`rtabmap-euroc_dataset` + `rtabmap-export`) over it, returning
+RTAB-Map's optimized poses and assembled cloud at end of stream. Run
+`uv run python scripts/fetch_rtabmap_fixture.py` to pull the pinned
+image and cut the EuRoC V1_01 test subset; the CM5 server selects the
+sidecar with `--slam-backend sidecar --calibration-dir <dataset>`.
+Teardown is ownership-based: the backend removes only the containers
+it started (exact names, never a prefix/image sweep). To borrow a
+reusable already-running container instead, set
+`SURMAP_RTABMAP_SHARED_CONTAINER=<name>` (or
+`--rtabmap-shared-container`): it is driven via `docker exec`/`cp`
+and is never started, stopped, or removed by SurMap.
+`surmap.slam.RtabmapBackend` remains for a host that does provide
+native bindings, and tests/simulation otherwise use
+`surmap.slam.InMemorySlamBackend`.
 
 ## In scope now
 

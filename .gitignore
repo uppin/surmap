@@ -9,3 +9,6 @@ build/
 surmap.db
 *.bag
 sessions/
+
+# Prepared by scripts/fetch_rtabmap_fixture.py (generated, uncommitted)
+tests/fixtures/euroc_v101_rtabmap/
