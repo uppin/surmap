@@ -404,7 +404,12 @@ requester asked to see. The GPU API is served by
 `StationSamService.StreamAnalysis` (`surmap.survey.station_server`):
 the same frames in, SAM detection vectors out, each repeating the
 requester-assigned `frame_id`; the stream's analysis mode decides
-whether frames queue (lag) or drop while the detector is busy.
+whether frames queue (lag) or drop while the detector is busy. Both
+servers run as processes (`python -m surmap.survey.cm5_main`,
+`python -m surmap.survey.station_main`) and deploy over SSH as systemd
+services — see `docs/deployment.md`. They serve their in-memory
+adapters until the hardware adapters (RTAB-Map, Coral, SAM 3.1) land
+behind the existing ports.
 
 ## 11. Deferred, explicitly
 
