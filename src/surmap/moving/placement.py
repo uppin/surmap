@@ -84,8 +84,10 @@ def distribute_correction(
             first_kf.pose.position.z + (chain_point.z - start_chain.z) + correction.z * fraction,
         )
         poses.append(
-            Pose(position, _nlerp(first_kf.pose.orientation_xyzw,
-                                   last_kf.pose.orientation_xyzw, fraction))
+            Pose(
+                position,
+                _nlerp(first_kf.pose.orientation_xyzw, last_kf.pose.orientation_xyzw, fraction),
+            )
         )
     return tuple(poses)
 
