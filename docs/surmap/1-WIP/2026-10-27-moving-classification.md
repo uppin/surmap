@@ -110,3 +110,10 @@ areas earn per-area compute, and verdicts must not flap.
 **Command:** `uv run pytest -q tests/test_moving_classification.py` + snippet E2Es (env-flagged)
 **Before:** baseline 432 passed on n1; red run 7 failed in this node's tests — NotImplementedError from stubs
 **After:** tests pass; fire snippet zero graduations; traffic/swarm rates recorded; full gates green
+
+## Post-green review fix (2026-10-27)
+
+- `TrackMotionStats` accumulator added: net/path, velocity
+  coherence and Welford area variance are now actually computed
+  from track observations and fed to `VerdictMachine` (before,
+  `AreaStats` was a dataclass nobody filled).

@@ -42,6 +42,36 @@ def test_sparse_evidence_stays_unknown_and_versions_only_on_change() -> None:
     assert graduated.version == first.version + 1
 
 
+def test_stats_accumulator_graduates_a_straight_mover() -> None:
+    from surmap.moving.classify import TrackMotionStats
+
+    stats = TrackMotionStats()
+    machine = VerdictMachine(CONFIG)
+    verdict = Verdict.UNKNOWN
+    for i in range(8):
+        area_stats = stats.update(1, i * 200_000_000, Vec3(0.5 * i, 0.0, 5.0), area=2.0)
+        verdict = machine.update(1, area_stats).verdict
+    assert area_stats.net_displacement_m == 3.5
+    assert area_stats.velocity_coherence > 0.99
+    assert verdict is Verdict.RIGID_MOVER
+
+
+def test_stats_accumulator_marks_oscillation() -> None:
+    from surmap.moving.classify import TrackMotionStats
+
+    stats = TrackMotionStats()
+    machine = VerdictMachine(CONFIG)
+    verdict = Verdict.UNKNOWN
+    for i in range(9):
+        x = 0.3 if i % 2 else -0.3
+        area_stats = stats.update(2, i * 200_000_000, Vec3(x, 0.0, 5.0), area=1.0 + i * 0.1)
+        verdict = machine.update(2, area_stats).verdict
+    assert area_stats.net_displacement_m < 0.35
+    assert area_stats.path_length_m > 4.0
+    assert area_stats.area_variance > 0.0
+    assert verdict is Verdict.OSCILLATING
+
+
 def test_select_keypoints_covers_extent_within_cap() -> None:
     points = tuple(Vec3(float(i), float(i % 3), 5.0) for i in range(100))
     chosen = select_keypoints(points, CONFIG)
