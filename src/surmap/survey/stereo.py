@@ -53,7 +53,8 @@ def decode_grayscale(frame: FrameImage) -> NDArray[np.float32]:
     if frame.encoding == "mjpeg":
         try:
             with Image.open(io.BytesIO(frame.data)) as image:
-                return np.asarray(image.convert("L"), dtype=np.float32)
+                gray: NDArray[np.float32] = np.asarray(image.convert("L"), dtype=np.float32)
+                return gray
         except Exception as exc:
             raise ValueError(f"undecodable mjpeg frame: {exc}") from exc
     raise ValueError(f"unsupported frame encoding: {frame.encoding}")
