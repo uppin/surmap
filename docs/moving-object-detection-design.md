@@ -20,11 +20,35 @@ point cloud of the scene that does not move. A survey product also
 needs the opposite layer — the things that *did* move while the
 drone flew over: vehicles driving through, people walking, a hand
 reaching into frame. Those moving objects must be detected,
-bounded, tracked over time, and represented in 3D, *without* their
-points ever contaminating the static map (a moving car accumulated
-into the static layer smears a streak of points across it) and
-without degrading RTAB-Map's pose estimate, which everything else
-is registered against.
+bounded, tracked over time, and represented in 3D — and they must
+not smear into the static product (a moving car accumulated into
+a static layer is a streak of points across it) nor degrade
+RTAB-Map's pose estimate, which everything else is registered
+against.
+
+**Scope honesty.** This design's own outputs are clean by
+construction: the on-board static layer (§4 step 1) is built
+under the dwell test, and moving objects are emitted only as
+separate keypoint snapshots, never accumulated into it. What this
+design does *not* by itself guarantee is RTAB-Map's exported
+cloud: RTAB-Map has no dynamic-object filtering of its dense
+output (its occupancy grid can ray-trace movers away, but the
+exported `cloud_map` does not), and this design feeds nothing
+back into RTAB-Map — so a mover's streak can still appear in
+RTAB's cloud, which is the primary product. Closing that gap is
+recorded as a concrete follow-up, not assumed away: the sidecar
+replays recorded segments at flush time, by which point the
+whole segment's stage-2 polygons exist; persisting per-frame
+polygons (a few hundred bytes each) lets the replay pre-zero
+depth at dynamic pixels before RTAB-Map sees the frames — with
+the default `Vis/DepthAsMask=true`, features and dense points
+are simply not extracted there, which is exactly how DOTMask
+cleans RTAB-Map output with detector masks (and it improves
+RTAB's poses in busy scenes as a side effect). The "sidecar
+cannot accept masks" limitation is a property of our wrapper,
+not of RTAB-Map; wiring polygon-masked replay is a follow-up
+changeset, and until it lands, static-cloud cleanup of mover
+streaks stays with the station.
 
 Three properties make this hard on our hardware specifically:
 
@@ -60,13 +84,17 @@ Three properties make this hard on our hardware specifically:
 - For areas classified as rigid movers, emit a sparse set of 3D
   keypoints per observation (not a dense cloud: a moving object's
   dense points are stale immediately, cost bandwidth and storage,
-  and add nothing over identifiable, re-findable points), lifted
+  and add nothing over tracked samples of the object's extent —
+  on-board keypoints have short-horizon LK identity, not semantic
+  re-identifiability; §4 step 4 is precise about this), lifted
   into the map frame once poses exist, under the object's existing
   wire designation (`100 + track_id`).
-- Keep the static pipeline pristine: moving-area evidence is
-  produced *alongside* RTAB-Map, never fed back into its internal
-  map; and if resources saturate, this feature degrades first
-  (see §5), never RTAB-Map.
+- Keep this feature's own outputs pristine and the static
+  pipeline untouched: moving-area evidence is produced
+  *alongside* RTAB-Map, never fed back into its internal map
+  (the depth-zeroing replay above is the deliberate, separately
+  reviewed exception); and if resources saturate, this feature
+  degrades first (see §5), never RTAB-Map.
 
 ### Non-goals
 
@@ -91,9 +119,9 @@ detector input 320×320 on the TPU.
 | Resource | Budget for this feature | Rationale |
 |---|---|---|
 | CPU | ≤ 1 core sustained, ≤ 25% of the SoC | RTAB-Map + capture + server own the rest |
-| RAM | ≤ 256 MB working set | Point buffers are ring-bounded (§4) |
+| RAM | ≤ 256 MB working set | Static layer capped at 2 M voxels + eviction radius (§4); buffers ring-bounded; a layer-memory counter enforces it (§5) |
 | Edge TPU | Shared with the survey detector; area stage adds no TPU work | Detector already runs there |
-| Latency | Area verdict within ≤ 2 s of segment end | Retrospective by design (§1) |
+| Latency | Live areas ≤ 1 s after their frame; snapshots ≤ 2 s **after the flush returns** | The 2 s bounds post-flush placement + publication only — it cannot include the multi-second flush itself |
 | Frame budget | Analysis at 5 Hz max, decimated from the 20 Hz stream | Motion statistics need ~1–3 s windows |
 
 Hard rules that follow from the budget:
@@ -143,6 +171,13 @@ polygons only — to say *what it is* and to extract its keypoints.
 A failure in an early stage produces ragged areas, not phantom
 objects: nothing reaches the map product without passing all three.
 
+One property worth stating plainly: stage 1 differences *depth
+geometry* against a 3D reference, so it is inherently immune to
+the illumination and shadow failures that plague
+appearance-based background subtraction on aerial footage — a
+moving shadow changes pixels, not point-to-layer distance, and
+never becomes a candidate.
+
 ## 4. Step by step
 
 ### Step 0 — Inputs already on the device (no new work)
@@ -155,13 +190,14 @@ design consumes those; it adds no new sensor or model.
 
 ### Step 1 — Static-map differencing → dynamic candidate points
 
-Maintain an **accumulated static layer** on-board: a voxel-hash set
-(voxel 0.05 m) of map-frame points that have been observed as
-static. It is seeded from RTAB-Map's exported cloud at each flush
-and extended between flushes by stereo points that agree with it
-(a point landing in an occupied voxel, observed in ≥ 3 distinct
-frames, joins the layer). RTAB's sparse keyframe cloud alone is
-*not* a sufficient reference — it never mapped most surfaces, and
+Maintain an **accumulated static layer** on-board: a voxel-hash
+of map-frame points that have been observed as static, with
+log-odds occupancy (OctoMap-style, with decay) rather than a
+binary "joined forever" set (§8 references). The layer is seeded
+from RTAB-Map's exported cloud at each flush; between flushes, a
+stereo point updates its voxel's log-odds only under the
+**dwell test** below. RTAB's sparse keyframe cloud alone is *not*
+a sufficient reference — it never mapped most surfaces, and
 "absent from RTAB's cloud" would flag the whole world as moving.
 
 For each analyzed frame (5 Hz):
@@ -172,23 +208,60 @@ For each analyzed frame (5 Hz):
    increment; refined retrospectively in step 6).
 2. A point is a **dynamic candidate** if its nearest static-layer
    voxel distance exceeds a noise-scaled threshold
-   `τ(Z) = τ₀ + k·Z²/(f·B)` — stereo depth error grows
-   quadratically with range, so the threshold must too.
-3. Candidates must persist: a voxel receiving candidates in ≥ 2 of
-   the last 3 analyzed frames is *hot*. Persistence kills depth
-   noise and single-frame stereo artifacts at almost no cost.
+   `τ(Z, θ̂) = τ₀ + k·Z²/(f·B) + k_r·θ̂·Z` — stereo depth error
+   grows quadratically with range, *and* a held-pose rotation
+   error `θ̂` maps to lateral world error `θ̂·Z` on the orthogonal
+   axis. `θ̂` is a runtime drift estimate (visual-odometry
+   correction magnitude at the last flush, decaying between
+   flushes; open question 1 owns measuring it). A threshold that
+   models only stereo error will flag depth edges wholesale
+   during drift bursts.
+3. Form **candidate clusters** by connected components over the
+   candidates (image-space connectivity on their projections).
+   Noise is filtered at the *cluster* level — a cluster needs
+   ≥ `min_cluster_points` (default 30) points — **never by
+   per-voxel recurrence**. A per-voxel "seen in ≥ 2 of last 3
+   frames" test is a speed filter that inverts the intended
+   semantics: at 5 Hz a car at 15 m/s moves 3 m per analyzed
+   frame (60× the 0.05 m voxel; a 4.5 m car occupies a voxel for
+   ~1.5 frames), so fast movers produce zero recurrent voxels
+   while slow drift artifacts recur happily. Persistence lives
+   in stage 2 instead: area-track association (IoU/centroid) is
+   motion-tolerant in a way voxel recurrence is not.
+   The mirror rule guards static-layer absorption: a stereo point
+   raises its voxel's static log-odds **only if it is slow** —
+   its image-space displacement since the previous analyzed frame
+   is below the velocity gate (i.e., it plausibly dwells). A
+   slow walker otherwise overlaps each voxel for ~2–3 frames and
+   is absorbed into the static layer, after which their mask
+   flickers as voxels alternately absorb and release them. With
+   log-odds decay, absorbed ghosts also expire instead of
+   haunting the layer for the segment.
 
 Cost: one voxel-hash lookup per sampled point — O(1), ~4 k lookups
-per analyzed frame. Memory: the static layer is capped (LRU voxel
-eviction outside a radius around the current pose).
+per analyzed frame. Memory: the static layer is hard-capped at
+**2 M voxels** (≈ 64–128 MB at realistic voxel-hash cost, counted
+by a layer-memory counter in §5), with **LRU eviction outside a
+40 m radius** around the current pose; the cap and radius are
+config, and hitting the cap evicts farthest-first, never silently
+grows.
 
 ### Step 2 — Moving areas: mask → polygon → area tracks
 
-1. Project hot voxels back into the current image; rasterize a
-   binary motion mask at analysis resolution (376×240).
+1. Project candidate clusters back into the current image;
+   rasterize a binary motion mask at analysis resolution (376×240).
 2. Clean the mask: drop connected components smaller than
-   `min_area_px` (default 150 px), fill holes by keeping each
-   component's filled contour.
+   `min_area_px(Z)` — the minimum scales with the component's
+   median depth, it is not a constant. A fixed 150 px minimum is a
+   hard detection cliff: at half resolution (fx ≈ 230 px) a person
+   subtends ~150–250 px at 15 m and is invisible by 25 m. The
+   minimum is set from the intended detection envelope instead:
+   `min_area_px(Z) = A_min(Z_ref)·(Z_ref/Z)²` with the envelope
+   stated as **persons to 20 m, vehicles to 40 m** (at 20 m a
+   person is ~110 px, so the floor there is ≤ 60 px; below that,
+   cluster-point count from step 1.3 is the real gate). The
+   envelope, not the pixel count, is the design commitment.
+   Fill holes by keeping each component's filled contour.
 3. Trace each component's contour and simplify with
    Douglas–Peucker (ε ≈ 2 px) → the area's **polygon**
    (≤ 64 vertices). The polygon lives in 2D image space — where
@@ -200,10 +273,20 @@ eviction outside a radius around the current pose).
    several frames after the frame it describes; the `frame_id` is
    the join key, and consumers must tolerate areas arriving late
    and out of step with every other stream. Associate areas
-   across frames into **area tracks** by mask IoU (≥ 0.2) or
-   centroid distance, reusing the IoU association discipline of
-   the existing box tracker. Area IDs are never reused within a
-   segment.
+   across frames into **area tracks**: gate on centroid distance
+   scaled by depth and implied velocity —
+   `gate(Z, v) = max(1.5 m, 1.25·|v|·Δt)` in map frame, with mask
+   IoU as a tie-breaker only. A fixed IoU ≥ 0.2 gate breaks for
+   fast movers for the same reason per-voxel recurrence did (a
+   15 m/s car at 5 Hz barely overlaps itself frame to frame).
+   Accepted failures, stated rather than silent: crossing movers
+   of similar size may **swap identities**, and a merged blob
+   (car + trailer, two people holding hands) is tracked as one
+   area until it splits, at which point the children start new
+   area tracks. Area IDs are never reused within a segment; a
+   mover crossing a segment (flush) boundary becomes a new area
+   track — and, if graduated, a new object track — in the next
+   segment, unless a future re-identification stage links them.
 
 Per area track, accumulate the motion statistics that stage 3
 decides on (all cheap, all per-area, updated incrementally):
@@ -245,32 +328,52 @@ polygons, cropped regions only.
    the moving object keeps the identity the survey stream already
    publishes. No overlap → label stays `unknown`; the object is
    still real (the sliding-crate case).
-2. **Keypoints.** Two kinds, in priority order:
-   - *Detector-supported:* the stereo points inside the polygon
-     whose depth belongs to the polygon's near depth cluster
-     (histogram peak within the area's depth range) — this removes
-     the background wall behind the object that a raw box includes.
-   - *Geometric selection:* from those points, farthest-point
-     sampling to ≤ 16 keypoints plus the PCA principal-axis
-     endpoints, giving even coverage and the object's extent.
-     Human-specific landmark models (hand/body pose) are
-     station-class compute and are *not* run on-board; the station
-     refines person tracks to skeletal keypoints downstream (§7).
-3. **Smoothing:** keypoint positions pass a One Euro filter in
-   image space before lifting (heavy smoothing at rest, minimal
-   during fast motion — the standard cure for landmark jitter on
-   volatile movers like hands), then a light constant-velocity
-   Kalman filter per keypoint in camera frame. When depth at a
-   keypoint is missing, sample the median disparity in a 5×5
-   window around its pixel; if still missing, the keypoint is
-   held from prediction for ≤ 3 frames, then dropped.
+2. **Keypoints, with temporal identity.** The keypoint pool is
+   the area's **dynamic candidate points themselves** (step 1) —
+   not "stereo points inside the polygon" re-clustered by depth:
+   the area's depth range already came from its dynamic points,
+   and re-clustering polygon points picks the wrong cluster
+   whenever the mover is partly behind foreground geometry. From
+   the candidates, farthest-point sampling selects ≤ 16 seeds
+   plus the PCA principal-axis endpoints (even coverage, object
+   extent). Seeds then acquire identity through a **bounded
+   Lucas–Kanade tracker**: each seed is tracked in a small window
+   (≤ 21×21 px, inside the polygon only, ≤ 18 tracks) across
+   analyzed frames; a seed whose LK residual fails is
+   re-seeded by FPS from the current candidates. Without this,
+   per-keypoint temporal filtering is meaningless — FPS re-sampled
+   from scratch each frame gives point #5 no relation to last
+   frame's point #5, and "held from prediction" has nothing to
+   hold. With LK identity, the same seed is the same surface point
+   until it demonstrably isn't.
+   Human-specific landmark models (hand/body pose) are
+   station-class compute and are *not* run on-board; the station
+   refines person tracks to skeletal keypoints downstream (§7).
+   Honest scope note: without descriptors (station work), on-board
+   keypoints are *tracked samples of the object's extent*, not
+   semantically re-identifiable correspondences; LK gives
+   short-horizon identity, not re-acquisition after occlusion.
+3. **One filter, in the right frame.** A single constant-velocity
+   Kalman filter per keypoint, run **ego-motion-compensated in
+   camera frame** (the held/VO pose increment is removed before
+   the update, so the filter sees object motion, not drone
+   motion). Not One Euro in image space followed by Kalman in
+   camera frame: two serial low-pass filters double the lag and
+   couple their tuning, and image-space smoothing mostly smooths
+   the drone's own translation. When depth at a keypoint is
+   missing, sample the median disparity in a 5×5 window around
+   its pixel; if still missing, the keypoint is held from the
+   filter's prediction for ≤ 3 frames, then dropped and
+   re-seeded.
 
 ### Step 5 — Buffering (the edge-device discipline)
 
 Per graduated area track, buffer a ring of observations:
 `{ t_ns, camera-frame keypoints (≤ 18 × Vec3), centroid,
-velocity }` — a few hundred bytes per observation, 3 s window,
-hard cap per track and globally. This buffer is the *only* state
+velocity, VO pose increment since the previous observation }` —
+a few hundred bytes per observation, 3 s window,
+hard cap per track and globally. The VO increments are what step
+6 distributes the keyframe correction over. This buffer is the *only* state
 stage 6 needs; raw frames and dense points are never retained for
 this feature. The buffer is also the degradation valve: under CPU
 or memory pressure it shrinks first (§5).
@@ -280,18 +383,37 @@ or memory pressure it shrinks first (§5).
 When the RTAB-Map sidecar flushes at segment end (the only moment
 optimized poses exist):
 
-1. Interpolate the pose at each buffered observation's `t_ns`
-   between the bracketing keyframe poses (linear translation,
-   slerp rotation).
+1. Place each buffered observation by **distributing the
+   keyframe correction over the stored VO increments**, not by
+   linear/slerp interpolation between keyframes. The step-5
+   buffer therefore also stores the frame-to-frame visual
+   odometry increments used at runtime. At flush, the correction
+   between the VO chain and the optimized keyframe poses at the
+   bracketing keyframes is distributed proportionally along the
+   chain (pose-graph-lite). Naive interpolation between ~1 s
+   keyframes under mid-segment acceleration `a` errs by up to
+   `a·Δt²/8` ≈ 25 cm — the same order as a person's extent, and
+   enough to fail the "within true extent" acceptance;
+   correction distribution over VO increments is an order of
+   magnitude better for the same buffer.
 2. Transform the buffered camera-frame keypoints into the map
-   frame; recompute the track verdict with these refined positions
-   (the runtime verdict used held poses; the published verdict
-   must not).
-3. Emit one `ObjectPoints` snapshot per observation — sparse
-   keypoints, existing type, existing designation
-   (`100 + track_id` from step 4.1 when a detector identity was
-   adopted; otherwise a track ID allocated in the same space).
-   Moving objects are emitted as timestamped snapshots, never
+   frame; recompute the track verdict with these refined
+   positions (the runtime verdict used held poses; the published
+   verdict must not — see the verdict lifecycle rules in the
+   wire contract: recomputation may only *confirm* a published
+   terminal verdict, never retract it).
+3. Emit one snapshot per observation — sparse keypoints, existing
+   designation (`100 + track_id` from step 4.1 when a detector
+   identity was adopted; otherwise a track ID allocated in the
+   same space). **Designation allocation is disjoint by
+   construction:** detector track IDs come from the detector's
+   tracker (monotonic from 1); area-allocated IDs come from a
+   separate allocator starting at a reserved offset
+   (`AREA_TRACK_ID_BASE = 1_000_000`), monotonic and never reused
+   within a deployment. The two spaces cannot collide, and the
+   `object_track_id` field in the snapshot message says which
+   space it came from via the `identity_source` field. Moving
+   objects are emitted as timestamped snapshots, never
    accumulated, exactly as the architecture already requires.
 4. Seed/refresh the accumulated static layer from the new RTAB
    cloud (step 1), and drop buffered evidence older than the
@@ -301,9 +423,12 @@ optimized poses exist):
 
 Keypoint snapshots are published on the moving-areas stream at
 flush time (same emitter/dedup discipline as the survey stream's
-object batches): one message per buffered observation, carrying
-that observation's original `frame_id`, its verdict, and its
-map-frame keypoints under the object's designation
+object batches) as a **different message type** from the live
+areas — `MovingObjectSnapshot`, not a second serving of
+`MovingArea` for the same `frame_id` with "keypoints present" as
+an implicit phase flag. One snapshot per buffered observation,
+carrying that observation's original `frame_id`, its verdict,
+and its map-frame keypoints under the object's designation
 (`100 + track_id`). They arrive later than the live area messages
 for the same frames — that lag is inherent to batch poses and is
 why the stream is separate and frame-ID-keyed rather than merged
@@ -317,8 +442,10 @@ A third BIDI method on `Cm5SurveyService`, added when this is
 implemented (one proto change, bindings regenerated):
 
 ```proto
-rpc StreamMovingAreas(stream Cm5Request) returns (stream MovingAreaResponse);
+rpc StreamMovingAreas(stream Cm5Request) returns (stream MovingAreasResponse);
 
+// Live observation, published as soon as stage 2 computes it.
+// One lifecycle: an area on one frame, keypoints never present.
 message MovingArea {
   int64 frame_id = 1;        // the frame this area was computed FROM
   int64 t_ns = 2;            // that frame's timestamp
@@ -328,13 +455,46 @@ message MovingArea {
   int32 dynamic_point_count = 6;
   int64 area_track_id = 7;
   MovingVerdict verdict = 8; // UNKNOWN | RIGID_MOVER | OSCILLATING
-  // Filled only for graduated tracks, at flush time (step 6):
-  repeated Point3 keypoints = 9;   // map frame
-  optional int64 object_track_id = 10;  // designation 100 + object_track_id
+  int64 verdict_version = 9; // increments on every verdict change
 }
 
-message MovingAreaResponse { MovingArea area = 1; }
+// Flush-time snapshot, published by step 6 for graduated tracks.
+// One lifecycle: map-frame keypoints for one buffered observation.
+message MovingObjectSnapshot {
+  int64 frame_id = 1;        // the buffered observation's frame
+  int64 t_ns = 2;
+  int64 area_track_id = 3;
+  int64 object_track_id = 4;         // designation 100 + object_track_id
+  IdentitySource identity_source = 5; // DETECTOR | AREA_ALLOCATED
+  MovingVerdict verdict = 6;          // final, confirmed at flush
+  repeated Point3 keypoints = 7;      // map frame
+  Point3 centroid = 8;
+  Point3 velocity = 9;                // map frame, m/s
+}
+
+message MovingAreasResponse {
+  oneof payload {
+    MovingArea area = 1;
+    MovingObjectSnapshot snapshot = 2;
+  }
+}
 ```
+
+**Verdict lifecycle (no flapping).** Verdicts are states with
+legal transitions, not a recomputed label: `UNKNOWN →
+RIGID_MOVER` and `UNKNOWN → OSCILLATING` are the only live
+transitions, and **both are terminal** once published — a track
+published as `RIGID_MOVER` is never later published as
+`OSCILLATING` (a vehicle decelerating at a stop line traverses
+exactly that evidence band). Each change increments
+`verdict_version`; consumers apply last-write-wins per
+`area_track_id` + highest version. The flush-time recomputation
+(step 6.2) may *confirm* the live verdict into the snapshot; if
+refined positions contradict a published terminal verdict, the
+snapshot is suppressed and the contradiction is logged as a
+tuning signal (§6) — a published verdict is never retracted.
+Tracks that never leave `UNKNOWN` publish areas only, never
+snapshots.
 
 Contract rules, mirroring the detections stream's: config first,
 only channel-0 frame pairs are analyzed, one message per computed
@@ -364,7 +524,12 @@ throughout.
   second) are the same metrics the demo already surfaces; the
   global caps in §2 are hard: exceeding the area cap keeps the
   largest areas; exceeding the buffer cap drops the oldest
-  observations of the least-coherent tracks first.
+  observations of the least-coherent tracks first. A dedicated
+  **layer-memory counter** tracks voxel count × per-voxel cost
+  against the 2 M-voxel cap from step 1 — at 0.05 m voxels, an
+  uncapped 100×100 m survey's ground plane alone is ~4 M voxels
+  (128–256 MB), the entire budget; the counter is what makes
+  "capped" a mechanism instead of an adjective.
 - **Degradation order.** Under sustained over-budget: (1) analysis
   cadence 5 Hz → 2 Hz; (2) keypoint count 16 → 8; (3) stage 4
   restricted to detector-labelled areas; (4) feature off,
@@ -378,17 +543,38 @@ data with known answers:
 
 - **Negative control — EuRoC V1_01 (already cached):** static
   room, moving camera. Every graduated area is a false positive.
-  Target: zero rigid-mover verdicts over the full sequence; total
-  dynamic-area coverage < 1% of frames.
+  Targets, stated as rates rather than one zero: **false-
+  graduation rate** (rigid-mover verdicts per minute, and per
+  class — vegetation/drift/shadow) ≈ 0 over the full sequence;
+  total dynamic-area coverage < 1% of frames; and **static-layer
+  purity**: the fraction of annotated mover points (where
+  annotations exist) that entered the static layer stays < 1% —
+  the metric for §1's core property, not just verdict counts.
+  Fidelity caveat: EuRoC is global-shutter, hardware-synced
+  stereo; it will *not* stress rolling-shutter or VO-drift
+  failure modes. If the production camera differs, a drift-burst
+  control (synthetic θ̂ injection) is required before the τ
+  pose term is trusted.
 - **Oscillation control — windy vegetation footage** (to add to
   the dataset registry): target: areas found, none graduated;
   net/path and coherence shown to be the deciding statistics.
 - **Positive control — a stereo sequence with real vehicles /
   pedestrians** (KITTI tracking subset is the natural registry
-  addition): target: ≥ 90% of annotated mover-seconds graduated
-  with the correct detector track identity where one exists;
-  keypoint snapshots within the object's true extent (checked
-  against box/mask annotations).
+  addition). Two separate rates, because one number would
+  conflate detector recall with pipeline graduation: **graduated
+  | annotated** ≥ 90% of annotated mover-seconds become rigid
+  movers, and **identity-correct | graduated-with-detector-track**
+  ≥ 95% of those carry the correct adopted `track_id` (adoption
+  needs an IoU ≥ 0.4 detector hit, so identity correctness is
+  conditioned on the detector having fired). Keypoint snapshots
+  within the object's true extent (checked against box/mask
+  annotations). **Metrics are gated by range**: at 30 m KITTI
+  disparities are 1–2 px, so τ(Z) balloons and candidates
+  explode — report graduation and purity in range bands
+  (0–10 / 10–20 / 20–40 m), and note KITTI is ground-level:
+  it does not exercise aerial/oblique projection sizes, so the
+  §4 detection envelope (persons to 20 m) needs an aerial control
+  before it is claimed, not just KITTI.
 - **Resource gate:** the CM5-profile run (4-core container limits
   approximating the CM5, RTAB sidecar active) stays within §2
   budgets for a full EuRoC replay.
@@ -413,20 +599,60 @@ required for the on-board layer to be correct, only richer.
    in that held pose inflates dynamic candidates. Is a lightweight
    frame-to-frame odometry increment needed on-board, or are
    segment lengths short enough? Measured by the EuRoC control.
-2. **Masking RTAB-Map's input.** Excluding dynamic areas from the
-   imagery RTAB-Map consumes would improve its poses in busy
-   scenes, but the dataset-tool sidecar cannot accept masks
-   (architecture §3.3 already records this). Revisit only if a
-   future RTAB integration exposes it; never silently assumed.
-3. **First-segment cold start.** Before the first flush there is
-   no RTAB seed; the static layer must bootstrap from stereo
-   self-agreement alone (≥ 3-frame persistence). Acceptable, but
-   the first segment's areas carry lower confidence by
-   construction and are labelled as such internally.
+   Its resolution feeds τ directly: the measured drift becomes
+   the `θ̂` term in step 1.2, and the VO increments it produces
+   are what step 6 distributes corrections over — this question
+   owns both.
+2. **Masking RTAB-Map's input (depth-zeroing replay).** RTAB-Map
+   *can* exclude dynamic pixels — zeroing depth there means, with
+   the default `Vis/DepthAsMask=true`, no features and no dense
+   points are extracted (the DOTMask precedent). Our sidecar
+   replays recorded segments at flush time, when the whole
+   segment's stage-2 polygons already exist, so persisting
+   per-frame polygons and pre-zeroing depth before replay is a
+   cheap follow-up changeset that kills mover streaks in RTAB's
+   exported cloud at the source and improves its poses in busy
+   scenes. It is *not* in this design's scope (this design feeds
+   nothing into RTAB-Map); it is recorded here so the limitation
+   is not mistaken for an RTAB-Map property — it is a property of
+   our wrapper. Until it lands, streak cleanup is station work.
+3. **First-segment cold start — a poison window, not just low
+   confidence.** Before the first flush there is no RTAB seed.
+   Bootstrapping the static layer from stereo self-agreement
+   absorbs anything slow enough to dwell — including walkers —
+   into the reference layer for the whole first segment: the
+   *layer itself* is wrong, not merely the verdicts' confidence.
+   Two options, to decide at implementation: (a) do not seed
+   until the first flush — no on-board moving-area detection in
+   segment 1, honest and simple; or (b) bootstrap with the dwell
+   test only and stamp every first-segment area `low_confidence`.
+   Option (a) is the default unless segment-1 coverage turns out
+   to matter.
 4. **Threshold ownership.** The step-3 thresholds and §2 budgets
    need one config home (`surmap.motion` alongside
    `classify_motion`'s) and one tuning record from §6's controls
    before they are treated as settled.
+
+### References (prior art this design stands on)
+
+- **ERASOR** (Lim et al., IEEE RA-L 2021,
+  [arXiv:2103.04316](https://arxiv.org/abs/2103.04316)) —
+  pseudo-occupancy ratio tests for building static maps from
+  dynamic scenes. Step 1 is a lighter-weight, streaming cousin;
+  ERASOR's documented failure modes (occlusion, incidence angle,
+  semi-static objects) are the same ones §4's dwell test, τ pose
+  term, and terminal verdicts are shaped by.
+- **OctoMap log-odds occupancy with decay** (Hornung et al.,
+  2013) — the standard answer to "joined the static layer,
+  never leaves": occupancy as evidence that accumulates *and*
+  expires. Step 1's layer uses it instead of a binary set, at
+  voxel-hash cost, without ray tracing (excluded by §2).
+- **RTAB-Map dynamic-object behaviour** — maintainer-confirmed:
+  the supported masking mechanism is zeroing depth at dynamic
+  pixels (`Vis/DepthAsMask`); `Grid/RayTracing` clears movers
+  from the occupancy grid but the exported `cloud_map` never
+  filters them. DOTMask demonstrates the depth-zeroing pattern
+  with detector masks. This is the basis for open question 2.
 
 ## 9. Implementation phasing (for the changeset plan)
 
