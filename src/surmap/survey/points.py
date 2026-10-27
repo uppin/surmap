@@ -22,8 +22,14 @@ class IncrementalPointEmitter:
 
     def emit(self, designation: int, points: Iterable[Vec3]) -> tuple[Vec3, ...]:
         """The points in `points` not yet sent under `designation`, in order."""
-        raise NotImplementedError("TODO(pr-2): implement IncrementalPointEmitter.emit")
+        fresh: list[Vec3] = []
+        for point in points:
+            key = (designation, point.x, point.y, point.z)
+            if key not in self._seen:
+                self._seen.add(key)
+                fresh.append(point)
+        return tuple(fresh)
 
     def reset(self) -> None:
         """Forget every sent position; the next emission starts fresh."""
-        raise NotImplementedError("TODO(pr-2): implement IncrementalPointEmitter.reset")
+        self._seen.clear()

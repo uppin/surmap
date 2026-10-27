@@ -18,10 +18,10 @@
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] `emit` forwards spawn-only points per designation
-  - [ ] `reset` clears the seen-set
-  - [ ] Acceptance: emitter tests pass
+- [wf 3] ✅ 2026-10-27 `/green` Green — implement until every red test passes · 6 emitter tests pass; 365 passed excluding n1's red files; ruff clean; mypy errors only n1's missing `survey_pb2`
+  - [x] `emit` forwards spawn-only points per designation
+  - [x] `reset` clears the seen-set
+  - [x] Acceptance: emitter tests pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
 
