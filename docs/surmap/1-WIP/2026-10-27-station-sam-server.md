@@ -18,11 +18,11 @@
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Config-first stream; map `AnalysisMode` onto the gate
-  - [ ] Answer admitted frames with `SamFrameDetections` keyed by `frame_id`
-  - [ ] Drop (no response) for frames the gate refuses under best-effort
-  - [ ] Acceptance: station stream tests pass
+- [wf 3] ✅ 2026-10-27 `/green` Green — implement until every red test passes · 4/4 station tests pass (twice, deterministic), 389 full suite pass; `station_server.py` clean under mypy strict + ruff (1 pre-existing mypy error in `tests/test_survey_station_server.py:32` and 1 pre-existing ruff error in `tests/test_survey_cm5_server.py:1`, both untouched by this PR)
+  - [x] Config-first stream; map `AnalysisMode` onto the gate
+  - [x] Answer admitted frames with `SamFrameDetections` keyed by `frame_id`
+  - [x] Drop (no response) for frames the gate refuses under best-effort
+  - [x] Acceptance: station stream tests pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/architecture.md` §10 — GPU API served by `StationSamService`
