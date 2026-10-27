@@ -174,8 +174,8 @@ Do not split until the user confirms:
 
 1. **What stays on B1** (bottom slice — independently mergeable, lands first).
 2. **What moves to B2** (top slice — based on B1).
-3. **Branch name for B2** — it **must** be `pr-<k>-<slug>` with `k` an integer: overstack finds a
-   stack's nodes by that pattern, so `<B>-2` or `pr-<k>b-<slug>` makes B2 invisible to the epic.
+3. **Branch name for B2** — it **must** be `pr-<k>-<slug>` with `k` an integer: the `gh stack` object and each changeset's node numbers find a
+   stack's nodes by that pattern, so `<B>-2` or `pr-<k>b-<slug>` makes B2 invisible to the stack.
    When B is the **top** of the stack, B2 is `pr-<K+1>-<slug>`. When B has successors there is no
    free integer between B and C: the successors' branches would have to be renamed too — a larger,
    consented operation, so stop and ask rather than pick a non-conforming name. **Keep B's branch
@@ -429,21 +429,16 @@ history was corrected when it was not.
 Subjects must state the delivery **as shipped** — never `red`, `stubs`, `WIP`, `phase N`. Everything
 after `: ` must be ≤ 100 characters including the trailing group.
 
-## Step 8b: Revise the stack's epic — MANDATORY
+## Step 8b: Revise the wave records — MANDATORY
 
-Before syncing: (1) **B2's changeset** gets the same `## Stack Context → Epic` link as B1's — commit
+Before syncing: (1) **B2's changeset** gets the same `## Stack Context` (`### Green wave`) as B1's — commit
 and push it (a new commit, never an amend) rather than leaving it in the worktree; (2) **B2's PR
-description** gets a `## Stack` block with `**Kind:**` — `issue sync` takes each node's kind from
-it and refuses the whole sync for a PR without one; (3) B2's branch must be `pr-<k>-<slug>` (see
-Step 2) or the sync cannot see it.
+description** gets a `## Stack` block with `**Kind:**`; (3) B2's branch must be `pr-<k>-<slug>` (see Step 2).
 
-The split adds node B2, changes B1's scope and moves every later `K/N`. If the stack has an epic
-issue (label `overstack-epic`, linked from each PR's `## Stack` block), update its fenced DAG block
-in this run, per `pr-stack` skill § *The epic must be correct*: the new node, B1→B2 and B2→C line
+The split adds node B2, changes B1's scope and moves every later `K/N`. No epic issue is created for a stack: topology is the `gh stack` object + PR bases; waves/edges live in each changeset's Stack Context and PR body's Stack block.
+Update the affected changesets' Stack Context and PR bodies' Stack blocks in this run: the new node, B1→B2 and B2→C line
 edges, **each dependency edge that pointed at or from B re-pointed to whichever slice actually
-carries the dependency**, and every renumbered title. Run `issue sync <slug>`, then verify the waves
-derived from the block still match the PRs' `Wave k of m`. Report the epic URL and what changed. No
-epic on a stack that should have one: say so and offer `/plan-pr-stack`'s 3b — never skip silently.
+carries the dependency**, and every renumbered title. Verify with `gh stack view` that the recorded waves still match the PRs' `Wave k of m`. Report what changed.
 
 ## Output
 

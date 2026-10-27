@@ -386,6 +386,31 @@ Decided by measured link bandwidth, which is still unknown.
 Both APIs are payload/data APIs.
 Adding any flight-command endpoint would be a scope change, not an extension.
 
+The wire contract for both is `surmap.survey.v1`
+(`proto/surmap/survey/v1/survey.proto`): two bidirectional ConnectRPC
+streams with the same input — a config message (stereo calibration,
+plus what the requester wants) followed by raw per-channel video frames.
+`Cm5SurveyService` (Board API) answers with designated point batches
+and requested video channels; `StationSamService` (GPU API) answers
+with SAM detection vectors keyed by the requester-assigned `frame_id`.
+Outputs are told apart by an int32 designation: `1` is the RTAB-Map
+static scene, `2`/`3` are video channels 0/1, and `100 + track_id`
+groups one tracked object's points. The Board API is served by
+`Cm5SurveyService.StreamSurvey` (`surmap.survey.cm5_server`): completed
+stereo pairs drive the `SlamBackend` port and an object-point source,
+and their points are streamed incrementally — spawned only, never
+resent at a position already sent — alongside the video channels the
+requester asked to see. The GPU API is served by
+`StationSamService.StreamAnalysis` (`surmap.survey.station_server`):
+the same frames in, SAM detection vectors out, each repeating the
+requester-assigned `frame_id`; the stream's analysis mode decides
+whether frames queue (lag) or drop while the detector is busy. Both
+servers run as processes (`python -m surmap.survey.cm5_main`,
+`python -m surmap.survey.station_main`) and deploy over SSH as systemd
+services — see `docs/deployment.md`. They serve their in-memory
+adapters until the hardware adapters (RTAB-Map, Coral, SAM 3.1) land
+behind the existing ports.
+
 ## 11. Deferred, explicitly
 
 Revisit only after the passive pipeline works end to end on real footage:

@@ -277,11 +277,9 @@ gh pr view <N+1> --json state,baseRefName,mergeable,changedFiles \
 
 Normally: `base=master`, `MERGEABLE`, and `changedFiles` is that PR's own count. Nothing to do.
 
-**Epic sync after each merge:** run `overstack issue sync <stack-slug>` so the epic's DAG block
-reflects what just landed (the merged node leaves the open graph; successors restack). The
-machine-managed block updates; the surrounding prose stays byte-for-byte. See the `pr-stack`
-skill § *Epic issues — the DAG's home*. If the CLI is unavailable, note the missed sync in the
-tmp record — Wave 4's reckoning catches it before the books close.
+**Wave-record check after each merge:** verify `gh stack view` and the successors' `## Stack` blocks and changeset Stack Context
+reflect what just landed (the merged node leaves the open graph; successors restack). No epic issue is created for a stack: topology is the `gh stack` object + PR bases; waves/edges live in each changeset's Stack Context and PR body's Stack block. See the `pr-stack`
+skill § *No epic issue — topology and waves*.
 
 **GitHub only restacks when the rebase is clean.** On a conflict it leaves the successor on a stale
 base — `CONFLICTING`, with a file count that includes every already-merged predecessor. Repair it:

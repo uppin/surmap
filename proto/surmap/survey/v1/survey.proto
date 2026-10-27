@@ -1,0 +1,180 @@
+syntax = "proto3";
+
+package surmap.survey.v1;
+
+/*
+Survey streaming: the wire contract for the CM5 (on-board) and the base
+station, from docs/architecture.md section 10.
+
+Both services are bidirectional streams with the same input shape: the
+client opens with a config message (calibration, plus what it wants),
+then sends raw video frames, one per channel per frame_id. The stereo
+rig has two fixed channels: 0 (left) and 1 (right).
+
+Outputs are told apart by an int32 designation, not by message type
+alone:
+
+    0        unspecified
+    1        RTAB-Map static-scene points
+    2        video channel 0 (left)
+    3        video channel 1 (right)
+    >= 100   one tracked object: 100 + track_id
+
+The CM5 streams points incrementally: a point is sent when it is spawned,
+and a point that still exists at a position already sent (for the same
+designation, in the same stream) is never resent.
+*/
+
+// How a raw frame's bytes are encoded.
+enum FrameEncoding {
+  FRAME_ENCODING_UNSPECIFIED = 0;
+  FRAME_ENCODING_MJPEG = 1;
+  FRAME_ENCODING_RAW_RGB = 2;
+}
+
+// How the station treats frames it cannot keep up with.
+enum AnalysisMode {
+  ANALYSIS_MODE_UNSPECIFIED = 0;
+  // Analyze every frame; the stream lags behind the sender if needed.
+  ANALYSIS_MODE_EVERY_FRAME = 1;
+  // Analyze only when the detector is free; frames in between are dropped.
+  ANALYSIS_MODE_BEST_EFFORT_DROP = 2;
+}
+
+// A point in the map frame.
+message Point3 {
+  double x = 1;
+  double y = 2;
+  double z = 3;
+}
+
+// A point in image pixel coordinates.
+message Point2 {
+  double x = 1;
+  double y = 2;
+}
+
+// An axis-aligned box in image pixel coordinates.
+message Box {
+  double x_min = 1;
+  double y_min = 2;
+  double x_max = 3;
+  double y_max = 4;
+}
+
+// Stereo calibration for the rig that produced the frames.
+message StereoCalibration {
+  // Which calibration produced the session (docs/architecture.md section 7).
+  string calibration_id = 1;
+  double focal_length_px = 2;
+  // Distance between the two lenses, in metres.
+  double baseline_m = 3;
+  // Principal point, in pixels.
+  double cx = 4;
+  double cy = 5;
+  uint32 width = 6;
+  uint32 height = 7;
+}
+
+// One raw video frame on one channel, as sent by the frame source.
+message RawVideoFrame {
+  // Assigned by the sender; responses that belong to this frame repeat it.
+  int64 frame_id = 1;
+  // Monotonic-clock timestamp on the sending machine, nanoseconds.
+  int64 t_ns = 2;
+  // 0 (left) or 1 (right); the rig has exactly two fixed channels.
+  int32 channel = 3;
+  uint32 width = 4;
+  uint32 height = 5;
+  FrameEncoding encoding = 6;
+  bytes data = 7;
+}
+
+// First CM5 client message: calibration, plus the video channels to echo back.
+message Cm5StreamConfig {
+  StereoCalibration calibration = 1;
+  // Channels (0 and/or 1) whose frames the requester also wants streamed.
+  repeated int32 video_channels = 2;
+}
+
+// One client message on the CM5 stream: config first, then frames.
+message Cm5Request {
+  oneof kind {
+    Cm5StreamConfig config = 1;
+    RawVideoFrame frame = 2;
+  }
+}
+
+// Newly spawned points under one designation, from one frame.
+message PointBatch {
+  // 1 for RTAB-Map scene points, >= 100 for one tracked object.
+  int32 designation = 1;
+  int64 frame_id = 2;
+  int64 t_ns = 3;
+  repeated Point3 points = 4;
+}
+
+// A video frame echoed back because its channel was requested.
+message VideoFrameOut {
+  // 2 for channel 0, 3 for channel 1.
+  int32 designation = 1;
+  RawVideoFrame frame = 2;
+}
+
+// One server message on the CM5 stream.
+message Cm5Response {
+  oneof kind {
+    PointBatch points = 1;
+    VideoFrameOut video = 2;
+  }
+}
+
+// First station client message: calibration, analysis mode, SAM prompts.
+message StationStreamConfig {
+  StereoCalibration calibration = 1;
+  AnalysisMode analysis_mode = 2;
+  // Optional concept prompts steering SAM (docs/architecture.md section 3.1).
+  repeated string concept_prompts = 3;
+}
+
+// One client message on the station stream: config first, then frames.
+message StationRequest {
+  oneof kind {
+    StationStreamConfig config = 1;
+    RawVideoFrame frame = 2;
+  }
+}
+
+// One SAM detection in one frame.
+message SamDetection {
+  string label = 1;
+  double score = 2;
+  Box box = 3;
+  // The segment outline, in pixel coordinates.
+  repeated Point2 mask_polygon = 4;
+  // The on-board track this detection belongs to, when known.
+  optional int64 track_id = 5;
+}
+
+// All SAM detections for one analyzed frame.
+message SamFrameDetections {
+  // The frame_id the requester assigned to the analyzed frame.
+  int64 frame_id = 1;
+  repeated SamDetection detections = 2;
+}
+
+// One server message on the station stream.
+message StationResponse {
+  SamFrameDetections detections = 1;
+}
+
+// On-board (CM5): frames and calibration in, designated points and
+// requested video channels out.
+service Cm5SurveyService {
+  rpc StreamSurvey(stream Cm5Request) returns (stream Cm5Response);
+}
+
+// Base station: the same frames in, SAM detections out.
+service StationSamService {
+  rpc StreamAnalysis(stream StationRequest) returns (stream StationResponse);
+}

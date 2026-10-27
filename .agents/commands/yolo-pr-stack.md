@@ -48,7 +48,7 @@ no row's command asks. A row that needs the developer's word **halts** ⛔ (the 
 
 ## Resume mode — a stack that is already partly done
 
-Run this command at a stack that already exists — the user gives an epic (`#<n>` or URL), a PR in the
+Run this command at a stack that already exists — the user gives a PR in the
 stack, the stack slug, or says "resume" while a stack branch is checked out — and it does **not**
 re-plan. It reads where every node actually stands and starts each node at the first stage it has not
 finished. Nothing that is already done is redone, and nothing is trusted that cannot be seen.
@@ -58,8 +58,8 @@ CI are the truth. If they disagree, the evidence wins and the final report names
 
 ### Step R1 — locate the stack and its edges
 
-`gh stack view` for topology; the epic's `kind: dependency` block and each node's changeset
-`### Green wave` for dependencies (the same source Dispatch uses); the changeset at each branch head
+`gh stack view` for topology; each node's changeset
+`### Green wave` and PR body's `## Stack` block for dependencies (the same source Dispatch uses); the changeset at each branch head
 (`git show origin/pr-<k>-<slug>:<path>`, or the wrapped docs if it is already gone from `1-WIP/`),
 and its `[wf]` rows. A branch with no registered stack is not a stack: stop and say so.
 
@@ -231,7 +231,7 @@ depend on the answer, and reports `❓ question` with the record's path. Its led
 and never answers it. The orchestrator then:
 
 1. **Reads the record** and decides with what the stage cannot see: the developer's interview
-   answers, the other nodes' changesets, the epic. It decides **Answered** (one of the stage's
+   answers, the other nodes' changesets and PR Stack blocks. It decides **Answered** (one of the stage's
    options) or **Refined** (options rewritten, its own recommendation picked).
 2. **Announces it** in one line, like a stage start:
    `❓ n3 #2402 [G] caption-store → refined: c) sidecar file — n5 reads the same store`.
@@ -268,9 +268,7 @@ A node is **ready** when all of these hold:
    free slot or a resumed blocker ever starts.
 3. **Every node it depends on has delivered its Green row.** The dependencies are the edges its
    changeset's `### Green wave` lists under what it waits on, in node numbers — the committed source,
-   current after 6g (6f can add or drop one). **Before each dispatch, compare them with the epic's
-   `kind: dependency` edges.** On a mismatch, correct the epic's fenced block now and run
-   `issue sync <slug>` (`pr-stack` skill § *The epic must be correct*), instead of waiting for Step 6h. Branch-line
+   current after 6g (6f can add or drop one). **Before each dispatch, compare them with `gh stack view` and the PR bodies' `## Stack` blocks.** On a mismatch, correct the changeset's Stack Context and PR body's Stack block now (`pr-stack` skill § *No epic issue — topology and waves*), instead of waiting for Step 6h. Branch-line
    neighbours that are not dependencies do not count. A dependency has delivered when its Green row
    is ✅ in its committed changeset with the head pushed. **While any dependency's `[G]` is queued, in progress, or being
    retried, this node waits, even with a free slot and a pushed red commit.** Its worktree is not

@@ -64,13 +64,7 @@ Contrast with `/merge`, which keeps a branch current with its **existing** base 
 10. **Re-check the registered stack**, if there is one: `gh stack view` should show this branch on its
     new parent with no `⚠`. A manual repoint can leave the stack object disagreeing with the branches;
     `gh stack sync` reconciles it.
-11. **Update the stack's epic**, if this branch belongs to one (its PR body's `## Stack` block links an
-    epic): the line edge into this node now comes from the new base (or from the trunk), and a
-    predecessor that merged is gone from the block. Run `roadmap-cli issue sync <slug>` and check the
-    epic's line edges match `gh stack view`. `issue sync` re-adds every stored dependency edge, so
-    **first delete from the fenced block each dependency edge whose endpoint is the merged node** —
-    a dangling edge makes the next epic read reject the whole block. See
-    `pr-stack` skill § *The epic must be correct*.
+11. **Update the wave records**, if this branch belongs to a stack: the line into this node now comes from the new base (or from the trunk). No epic issue is created for a stack: topology is the `gh stack` object + PR bases; waves/edges live in each changeset's Stack Context and PR body's Stack block. Update this PR's changeset Stack Context and PR body's `## Stack` block, and check them against `gh stack view`. See `pr-stack` skill § *No epic issue — topology and waves*.
 
 ## After Repoint
 

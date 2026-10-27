@@ -628,8 +628,7 @@ Those come in pass 2, as each PR's second commit.
   guesswork. Re-score it in commit 2 if
   the red step shows the node is bigger or smaller than planned.
 - **Every changeset MUST carry a `## Stack Context` section** (template in the `pr-stack` skill):
-  the stack name and **slug**, the **`Epic`** issue link (`#pending` in pass 1, filled in pass 2's
-  Step 6g once Step 5's 3b has opened it — same back-fill as the PR number), this PR's position
+  the stack name and **slug**, this PR's position
   `k of n`, its **`Kind`** (the resolved
   `(Type, Behaviour)` pair) and its **`Workflow`** — the preset name and the pass-2 route — plus a
   **`Workflow override`** line whenever the developer chose something other than the kind's
@@ -857,39 +856,11 @@ Every planned PR is now a one-commit draft on GitHub. Before pass 2 touches any 
    Use `gh api`, not `gh pr edit --title` (Projects-classic GraphQL fault in some  orgs). A title
    left wrong becomes a commit message on `master` that nobody can correct afterwards.
 
-   **3b. Open the stack's epic issue — the DAG's home (MANDATORY).** Every PR
-   now exists, so the settled plan can be emitted whole (see the `pr-stack`
-   skill § *Epic issues — the DAG's home*). Build the CLI, then run
-   `issue create` with the stack slug and trunk — **not** root `uv run pytest -q`
-   (that launches the Tauri app):
+   **3b. Record topology and waves — no epic issue.** No epic issue is created for a stack: topology is the `gh stack` object + PR bases; waves/edges live in each changeset's Stack Context and PR body's Stack block. Verify `gh stack view`
+   shows every PR on its planned base, and that every changeset's `## Stack Context` (`### Green wave`)
+   and every PR body's `## Stack` block record the same waves and dependency edges from the settled
+   plan. Never continue planning with a changeset or PR body whose wave lines disagree with `gh stack view`.
 
-   ```bash
-   uv run mypy
-   uv run pytest -q
-   ```
-
-   — which creates the GitHub epic issue (whole-scope prose + the canonical
-   DAG block, `schema: overstack-dag/1`, node numbers, waves, line, edges —
-   exactly the decomposition the user approved) and prints its URL. Then stamp
-   that URL into every PR body's `## Stack` block with the same `gh api -X
-   PATCH` from 4d, so every implementer sees the epic beside the wave lines.
-   The same URL goes into every changeset's `## Stack Context → Epic` (pass 2, Step 6g — the
-   changesets are already committed, so it rides in each PR's second commit).
-   If the CLI cannot be built or `gh` is not authenticated, **stop** and ask
-   the user — never hand-write the DAG block by hand into an issue (a
-   hand-written block is the stale-copy problem the epic exists to prevent),
-   and never continue planning without an epic URL stamped on every PR.
-   `issue create` takes each node's title from its PR and its kind from the PR body's `**Kind:**`
-   line (the `## Stack` block). When a PR is missing either, it refuses with exit 2 and names that
-   PR. Fix the PR's title or body and run it again.
-
-   **`issue create` emits line edges only — it cannot write a dependency edge.** A fresh epic is
-   therefore a linear chain with no waves, whatever the plan says. Immediately after creating it,
-   follow `pr-stack` skill § *The epic must be correct*: add one `kind: dependency` edge per plan
-   edge that gates a wave (not stub-level ones — `level` is ignored by wave assignment) to the fenced block only, run `issue sync <slug>`,
-   and verify that deriving the waves from the block reproduces the planned waves and line. Do not
-   report pass 1 until it does. The prose and the PR-body wave lines are not a substitute: overstack
-   reads only the block.
 4. **Delete the Step 2 whole-work discovery source** — every planned PR now has its
    `{slug}-initial-discovery.md`. Path:
    `docs/<area>/1-WIP/{YYYY-MM-DD}-{stack-work-name}-whole-work-initial-discovery.md`. It was never
@@ -1154,9 +1125,7 @@ equivalent work was 6c-bis / 6c-quater / 6c-quinquies.
   `## Stack Context` (replacing `#pending`), and any `Greenable independently?` **and `### Green
   wave`** refinement from 6f. The wave rows need **no renumbering**: they were written in node
   numbers, which have not changed. The `#pending` being replaced here is this PR's **own** GitHub
-  identity, not a sibling reference. **Also replace `## Stack Context → Epic`'s `#pending`** with
-  the epic URL Step 5's 3b stamped into the PR body — the second and last `#pending` in the
-  changeset; leaving it makes the changeset incomplete. Own files only — never a predecessor's changeset or PRD.
+  identity, not a sibling reference. Own files only — never a predecessor's changeset or PRD.
 - **Update this PR's description to match**, in this same step, with the `gh api -X PATCH` from 4d:
   the `## Stack` block's wave line, `Concurrent with:`, `Blocks:` — and the `Verification:` line if
   6c-route's work changed the rung (a V2 node that found a baseline gap and wrote a test for it is
@@ -1185,15 +1154,13 @@ equivalent work was 6c-bis / 6c-quater / 6c-quinquies.
 
 ## Completion gate
 
-### Step 6h: Revise the epic — MANDATORY
+### Step 6h: Reconcile the wave records — MANDATORY
 
-Pass 2 can change what the epic recorded at pass 1: a PR moved between waves (6f), a node added or
-split, a title corrected, a dependency found or dropped. Re-read the epic body and reconcile it with
-the final state **before** the gate reports: nodes (number, title, kind), line edges against the PR
-bases (`gh stack view`), **dependency edges against every changeset's `### Green wave` and each PR
-body's `Wave k of m`**, and the derived waves and line. Correct the fenced block only
-(`pr-stack` skill § *The epic must be correct*), run `issue sync <slug>`, and re-verify. Report in
-Step 9 either "epic matches the plan" or each edge changed and why.
+Pass 2 can change what pass 1 recorded: a PR moved between waves (6f), a node added or
+split, a title corrected, a dependency found or dropped. Reconcile each changeset's
+`## Stack Context` (`### Green wave`) and each PR body's `## Stack` block with the final state **before** the gate reports: nodes (number, title, kind), line against the PR
+bases (`gh stack view`), and dependency edges against every changeset's `### Green wave`. No epic issue is created for a stack: topology is the `gh stack` object + PR bases; waves/edges live in each changeset's Stack Context and PR body's Stack block.
+Report in Step 9 either "wave records match the plan" or each edge changed and why.
 
 ### Step 7: Restore the original branch — MANDATORY
 
@@ -1422,10 +1389,7 @@ Wave 4 executes the disposition chosen there.
 
 - **`gh stack` is required.** If it is not installed, stop and ask the user to install it. Never
   substitute plain `gh pr create` for a stack.
-- **Every stack this command plans carries an epic issue — the DAG's home** (Step 5's 3b): created
-  here from the settled plan, kept current by `overstack issue sync` at landing wave boundaries.
-  GitHub stays the source of truth: the stack object + PR bases for topology, the epic for the
-  DAG/waves.
+- **No epic issue is created for a stack: topology is the `gh stack` object + PR bases; waves/edges live in each changeset's Stack Context and PR body's Stack block.** (Step 5's 3b records them; every later stack command keeps them current.)
 - **Refuse a detached start.** `ORIGINAL_BRANCH` must be a named branch; if
   `git branch --show-current` is empty, stop.
 - **Cross-check `<package-dir>/docs/todo/`, every in-scope `<package-dir>/docs/code-issues/` and the open
@@ -1497,9 +1461,8 @@ Wave 4 executes the disposition chosen there.
   belongs in wave 1 and at the back of it.
 - **Every changeset carries `### Green wave` and every PR description carries the same wave line**,
   and the two stay in sync — including when pass 2 moves a PR between waves.
-- **The epic's block is the third copy of the waves, and the only one overstack reads.** Created at
-  Step 5's 3b with its dependency edges added, revised in Step 6h. A stack whose epic has only
-  `line` edges shows as a linear chain, whatever the PR bodies say.
+- **The changeset's `### Green wave` and the PR body's `## Stack` block are the two copies of the waves.** Created at
+  Step 5's 3b from the settled plan, revised in Step 6h, and kept in sync with `gh stack view`.
 - **Waves, concurrency, blocks and edges are written in node numbers** (`n1 … nN`), which exist from
   the moment the decomposition is settled. Never leave a PR-number slot to back-fill after submit. A
   PR number appears only where the dependency is on the **composition of an already-open PR**, and
@@ -1588,7 +1551,7 @@ Wave 4 executes the disposition chosen there.
           + PRD only when the kind warrants one → commit 1 (docs only)
         git push -u origin HEAD → gh stack submit --auto → retitle (<type> = the kind)
         → body: ## Stack block with Kind, Verification, **Wave k of m**, concurrent-with, blocks
-  → checkpoint: gh stack view (no ⚠), revise every title, open the epic issue (the DAG's home) + stamp its URL into every PR body, delete whole-work discovery, report
+  → checkpoint: gh stack view (no ⚠), revise every title, verify `gh stack view` + changeset/PR-body wave records, delete whole-work discovery, report
   → PASS 2 (per PR, in this worktree, in order PR₁ → PRₙ)
         git checkout pr-k → /pr-stack-rebase (single; picks up the predecessor's stubs)
         build + baseline → ROUTE BY KIND:
