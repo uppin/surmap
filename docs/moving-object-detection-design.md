@@ -833,3 +833,7 @@ its stage 2 is specified against the seam type n1 pins, and n2
 is not greenable on snippet assertions until n1 lands — stated
 in its changeset, not discovered). Wave 2 = n3. Wave 3 = n4, n5.
 Branch line is the waves concatenated: n1 → n2 → n3 → n4 → n5.
+
+The full development plan — per-node owned surfaces, inherited
+dependencies, red tests, landing and risks — is in
+[moving-object-detection-plan.md](moving-object-detection-plan.md).
