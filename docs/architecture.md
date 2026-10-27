@@ -400,7 +400,11 @@ groups one tracked object's points. The Board API is served by
 stereo pairs drive the `SlamBackend` port and an object-point source,
 and their points are streamed incrementally — spawned only, never
 resent at a position already sent — alongside the video channels the
-requester asked to see.
+requester asked to see. The GPU API is served by
+`StationSamService.StreamAnalysis` (`surmap.survey.station_server`):
+the same frames in, SAM detection vectors out, each repeating the
+requester-assigned `frame_id`; the stream's analysis mode decides
+whether frames queue (lag) or drop while the detector is busy.
 
 ## 11. Deferred, explicitly
 
