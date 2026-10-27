@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
+from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -53,8 +54,11 @@ def decode_grayscale(frame: FrameImage) -> NDArray[np.float32]:
     if frame.encoding == "mjpeg":
         try:
             with Image.open(io.BytesIO(frame.data)) as image:
-                gray: NDArray[np.float32] = np.asarray(image.convert("L"), dtype=np.float32)
-                return gray
+                # numpy 2.4 stubs type the PIL array interface as Any.
+                return cast(
+                    "NDArray[np.float32]",
+                    np.asarray(image.convert("L"), dtype=np.float32),
+                )
         except Exception as exc:
             raise ValueError(f"undecodable mjpeg frame: {exc}") from exc
     raise ValueError(f"unsupported frame encoding: {frame.encoding}")
@@ -77,12 +81,13 @@ def _box_sum(image: NDArray[np.float32], half: int) -> NDArray[np.float32]:
     padded = np.pad(image, half, mode="edge")
     integral = np.pad(padded, ((1, 0), (1, 0)), mode="constant").cumsum(0).cumsum(1)
     size = 2 * half + 1
-    return (
+    summed = (
         integral[size:, size:]
         - integral[:-size, size:]
         - integral[size:, :-size]
         + integral[:-size, :-size]
     )
+    return cast("NDArray[np.float32]", summed)
 
 
 def _disparity_map(
