@@ -16,9 +16,9 @@
 - [wf 2] ✅ 2026-10-27 `/plan-pr-stack` Red — owned stubs + failing tests committed · commit 2; red: 7 failed in `tests/test_moving_classification.py` (plus inherited n2/n3 red)
   - [x] Stubs: `classify.py`, `keypoints.py`, `buffer.py`
   - [x] Failing tests: verdict transitions (decelerating-car no-flap), keypoint selection/filter, buffer window eviction
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Verdict machine + statistics; LK keypoints + Kalman; buffer; detector identity adoption
-  - [ ] Snippet acceptance: fire (zero graduations), swarm (caps/envelope), traffic (graduation/identity rates); tuning record
+- [wf 3] ✅ 2026-10-27 `/green` Green — implement until every red test passes · inline green; classification tests 7 passed, mypy+ruff clean. LK implemented as bounded lk_track (numpy, 21x21 window, shift cap, None=re-seed)
+  - [x] Verdict machine + statistics; LK keypoints + Kalman; buffer
+  - [ ] DEFERRED: detector identity adoption wiring into stream_moving_areas, and snippet acceptance (fire/swarm/traffic) + tuning record — recorded here; they need the assembled stream wiring owned across n3/n5 and the dataset-download spikes deferred in n2
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/moving-object-detection-design.md` §4/§6 — record tuned thresholds + deciding statistics

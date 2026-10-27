@@ -1,7 +1,4 @@
-"""Stage 5: per-track observation buffer (design section 4 step 5).
-
-TODO(n4): implemented by pr-4-moving-classification's Green row.
-"""
+"""Stage 5: per-track observation buffer (design section 4 step 5)."""
 
 from __future__ import annotations
 
@@ -27,11 +24,17 @@ class ObservationBuffer:
     def __init__(self, window_ns: int = 3_000_000_000, max_per_track: int = 64) -> None:
         self._window_ns = window_ns
         self._max_per_track = max_per_track
+        self._tracks: dict[int, list[Observation]] = {}
 
     def add(self, track_id: int, observation: Observation) -> None:
         """Buffer one observation, evicting out-of-window ones."""
-        raise NotImplementedError("TODO(n4): ObservationBuffer.add")
+        entries = self._tracks.setdefault(track_id, [])
+        entries.append(observation)
+        cutoff = observation.t_ns - self._window_ns
+        entries[:] = [entry for entry in entries if entry.t_ns >= cutoff]
+        if len(entries) > self._max_per_track:
+            del entries[: len(entries) - self._max_per_track]
 
     def observations(self, track_id: int) -> tuple[Observation, ...]:
         """Buffered observations for a track, oldest first."""
-        raise NotImplementedError("TODO(n4): ObservationBuffer.observations")
+        return tuple(self._tracks.get(track_id, ()))
