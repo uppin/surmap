@@ -55,15 +55,21 @@ Its output is never fed back as a control signal.
 
 ### 2.3 Machine 3 — simulation
 
-- Hardware and software not yet chosen.
 - Purpose: develop and test the pipeline without flying — synthetic
   stereo pairs with known ground-truth geometry and GPS, plus replay of
   sessions recorded by machine 1.
 - Contract: whatever this machine produces must be indistinguishable in
   format from a recorded real session (§5), so base-station code cannot
   tell simulation from flight data.
-- Simulator candidates (Gazebo, Isaac Sim, a simple custom renderer,
-  pure rosbag/session replay) are explicitly not yet evaluated.
+- **Local / WSL path (chosen):** Gazebo Harmonic + ROS 2 Jazzy + PX4
+  SITL. Operators dump stereo + GPS into a SurMap capture directory;
+  `surmap.simulation` exports a EuRoC-style session the demo and
+  RTAB-Map sidecar already consume. SurMap stays passive — PX4 (or a
+  human) flies; no package publishes flight commands. Runbook:
+  [simulation/px4-sitl.md](simulation/px4-sitl.md).
+- Other simulator options (Isaac Sim, a custom renderer, pure
+  rosbag/session replay) and dedicated Machine 3 hardware remain open
+  if a different path is needed later.
 
 ### 2.4 Optional hardware: Raspberry Pi AI Camera
 
@@ -218,6 +224,11 @@ Multi-drone map merging is a later design problem.
 Produces synthetic `StereoFramePair` + `GpsCheckpoint` + ground-truth
 sessions in exactly the §5 formats, and replays real sessions.
 No other component may have a simulation-only code path.
+
+On the Gazebo/PX4 SITL path, the offline bridge is
+`surmap.simulation` (capture directory → EuRoC `mav0/` + GPS CSV) plus
+operator-side dump tooling under `scripts/ros2/` — not a live ROS 2
+dependency inside SurMap packages.
 
 ## 5. Data flow
 
@@ -443,7 +454,9 @@ Revisit only after the passive pipeline works end to end on real footage:
 - Models API provider; exact Meta Llama model ID; whether image crops
   are sent; labelling cost/latency budget per session.
 - Link drone ↔ base station (Wi-Fi / LTE / other) and its bandwidth.
-- Simulation machine: hardware and software (§2.3).
+- Simulation machine: Gazebo Harmonic + PX4 SITL is the local/WSL
+  Machine 3 path (§2.3); dedicated hardware and alternate simulators
+  (Isaac Sim, custom renderer, pure replay) still open if needed.
 - GPS receiver model; GPS checkpoint rate and sync procedure.
 - Depth: object-ROI depth is on-board by design (§3.3); whether full-frame
   depth is also computed on the CM5 or only on the base station depends

@@ -1,7 +1,7 @@
 # 2026-10-27 — Live ROS2 → ConnectRPC RawVideoFrame bridge
 
 **Category:** Future enhancement
-**Source:** `docs/simulation/1-WIP/2026-10-27-px4-sitl-session-bridge.md` (PR #18); plan §5
+**Source:** PX4 SITL session bridge (PR #18); `docs/simulation/px4-sitl.md`
 **Packages:** surmap
 **Consent:** n/a — future enhancement (explicitly deferred from first Machine 3 PR)
 **Status:** Open
