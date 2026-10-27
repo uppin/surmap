@@ -582,6 +582,89 @@ data with known answers:
 Each control becomes an E2E in the established pattern (recorded
 data in, semantic assertions out, everything torn down).
 
+### 6.1 Real-video snippet controls (short clips, known answers)
+
+The controls above are dataset-scale. For fast iteration and for
+failure modes no stereo dataset covers, the evaluation also uses
+**short real-video snippets**: 8–15 s of frames (decimated to the
+5 Hz analysis cadence, 376×240), each with a hand-verified oracle
+and a written expected outcome. Snippets are fetched, never
+committed as binaries — a fetch script in the established pattern
+(URL + size + SHA-256 pinned, cached, torn down) extracts the
+frame range; what is committed is the snippet manifest (source,
+license, frame range, hash) and the oracle annotations (small
+JSON), so CI replays byte-identical frames.
+
+**Stereo honesty — what a snippet can and cannot prove.** All
+three scenes below are *monocular*. They therefore cannot
+exercise stage 1 (stereo differencing against the static layer)
+or stage 6 (RTAB pose placement), and no snippet result may be
+quoted as evidence for those stages; the full-chain evidence
+remains EuRoC (negative) and the KITTI stereo sequence
+(positive). What snippets *do* exercise is production stages
+2–5, entered at their real seam: the stage-1 output type
+(candidate clusters with depth ranges) is synthesized from the
+oracle's boxes/masks by a test adapter — the same hexagonal-port
+discipline as the in-memory SLAM backend — and stages 2–5, the
+wire messages, verdict lifecycle, and resource counters run
+unmodified. A snippet failure is a stage 2–5 failure; a snippet
+pass says nothing about stereo.
+
+Candidate evaluation (checked 2026-10-27; HEAD requests and, for
+the Commons clips, extracted frames inspected):
+
+| Scene | Candidate | License | URL stability | Fit | Verdict |
+|---|---|---|---|---|---|
+| Traffic | VisDrone2019-MOT (Tianjin Univ.) | research-use terms, no redistribution | poor — official links are Google Drive / Baidu; the Ultralytics GitHub-release mirror carries only DET stills, not video | monocular, drone moving over streets, per-frame box + track-ID annotations, cars/pedestrians | **primary, local/nightly** — sequence picked by spike (below); fetch risk accepted outside CI gate |
+| Traffic | "Jane M. Byrne Interchange Traffic" (Wikimedia Commons) | CC BY-SA 4.0 | excellent — direct `upload.wikimedia.org` file, 31 s, 1080p | monocular aerial interchange; camera motion **unverified** (VP9 original resists seek-based frame checks; check after full download) | **CI fallback** — hand-annotated oracle; if the camera proves static, it still tests graduation, downgraded as an ego-motion control |
+| Traffic | UAVDT / Stanford Drone | various | poor — Drive links / request form | UAVDT fits; Stanford is a hovering camera | rejected (fetch friction; Stanford fails the moving-drone requirement) |
+| Forest fire | Boreal Forest Fire (Pesonen et al., *Sci. Data* 2025) | CC BY 4.0 | unverified — Fairdata DOI `10.23729/fd-72c6cf74-b8eb-3687-860dbf93a1ab94c9`; spike must confirm an unauthenticated fetch before adoption | monocular UAV over real prescribed boreal burns, 292 clips, human boxes + SAM smoke masks | **primary if fetch verifies** — only candidate that is actually an overhead forest fire with masks |
+| Forest fire | "Aerial video of Wennington wildfire, 2022" (Commons) | CC BY 3.0 | excellent — direct Commons file; original is 139 s / 418 MB, so the fetch pins a transcoded derivative, not the original | monocular drone aerial; frames at 12 s / 40 s inspected: active smoke/fire edge, burned ground, drifting plume, moving camera | **verified fallback** — hand-annotated smoke/fire polygons; grass/village fire, not forest canopy |
+| Forest fire | FLAME 2 (IEEE Dataport) / Hürtgenwald clip (Commons) | Dataport login / CC BY-SA 4.0 | poor / excellent | pile burns, not a big forest fire / distant smoke from ground level (frame inspected) | rejected on fit |
+| Drone swarm | Purdue UAV_Dataset (Li et al.) | BSD 3-Clause (stated on dataset page) | excellent — direct `engineering.purdue.edu` zips, unchanged since 2017 (`Videos.zip` 2.04 GB, annotations 0.95 MB; both HEAD-checked) | monocular GoPro on a *moving* UAV, up to 8 target UAVs against sky/ground, VATIC track annotations (v2) | **primary** — annotation ranking run for this plan: `Clip_50` (1,521 frames, 11 IDs, ≤5 simultaneous) and `Clip_28` (1,685 frames, 14 IDs, ≤5 simultaneous) are the densest; spike picks the 10 s window with most simultaneous targets |
+| Drone swarm | UAVSwarm (Wang et al. 2022) | paper-stated public | unverified — no stable direct link found from the paper | 72 sequences, 3–23 UAVs, annotated | backup if Purdue sky backgrounds prove too easy |
+
+Per-snippet oracle and expected outcome (asserted on the
+`StreamMovingAreas` messages, not on pixels):
+
+- **Traffic (rigid movers, fast).** Oracle: per-frame boxes +
+  track IDs (VisDrone MOT format converted once, or hand boxes
+  for the fallback). Expected: cars crossing the frame graduate
+  `RIGID_MOVER` (this is the issue-1 regression test — a snippet
+  car at frame-to-frame displacement ≫ voxel size must still
+  graduate, via cluster-level persistence); graduated |
+  annotated and identity-correct | graduated reported per §6;
+  identity swaps counted, not hidden. Pedestrians below the
+  §4 envelope at range are expected misses and are recorded as
+  envelope evidence.
+- **Forest fire (deformable, huge).** Oracle: smoke/fire
+  polygons per frame (Boreal masks rasterized to polygons, or
+  hand polygons for the fallback). Expected: areas *are*
+  published (change is real), **zero** `RIGID_MOVER`
+  graduations and zero keypoint snapshots over the whole clip;
+  verdicts terminate at `OSCILLATING` or stay `UNKNOWN`. The
+  plume's net drift is the trap for net/path — velocity
+  coherence and area stability must be the deciding statistics,
+  and the tuning record must say so. The fire polygon also
+  stress-tests the ≤64-vertex Douglas–Peucker cap and the area
+  caps in §5.
+- **Drone swarm (many, tiny, fast).** Oracle: Purdue `refined_gt`
+  tracks converted to boxes. Expected: simultaneous area tracks
+  never exceed the §2 area cap; targets meeting the detection
+  envelope graduate `RIGID_MOVER` with LK-held keypoints; the
+  many sub-envelope targets (a UAV at 100 m is a few pixels) are
+  *expected* misses — the assertion is that they produce no
+  phantom areas, no verdict flapping, and no static-layer
+  candidates, and the miss count is reported against the
+  envelope so the envelope claim stays honest.
+
+Snippet harness (one implementation, three fixtures): fetch →
+extract/decimate frames → build oracle candidate clusters at
+5 Hz → replay through stages 2–5 → assert stream messages,
+verdict lifecycle, and counters. Each snippet's expected-outcome
+block above is its acceptance test; a change to an expectation
+requires the same review as a change to the design.
+
 ## 7. What the station adds later (out of scope here)
 
 The base station (RTX GPU) can afford what the CM5 cannot: SAM 3.1
@@ -656,15 +739,20 @@ required for the on-board layer to be correct, only richer.
 
 ## 9. Implementation phasing (for the changeset plan)
 
-1. **Differencing + areas (steps 1–2)** with unit tests on
-   synthetic clouds and the EuRoC negative control E2E. Includes
-   the `StreamMovingAreas` proto + handler from the start — the
-   stream is the only publication surface this feature has.
-2. **Classification + keypoints + buffering (steps 3–5)** with
-   tracker-statistic unit tests and the oscillation control.
-3. **Retrospective placement + publication (steps 6–7)** wired
-   into the sidecar flush and the moving-areas stream, proven by
-   the positive-control E2E asserting real moving-object keypoint
-   snapshots under existing designations.
-4. **Resource governance (§5)** counters, caps, and the CM5-profile
-   resource gate, before this is enabled by default on-board.
+As a PR stack (node numbers are planning identity; each node
+carries its own changeset with kind, green wave, and
+verification rung):
+
+| Node | Delivers | Kind | Verification |
+|---|---|---|---|
+| n1 | **Snippet fixtures + harness skeleton**: fetch script (pinned URL/size/SHA-256 per snippet), oracle converters (VisDrone MOT, Purdue `refined_gt`, mask→polygon), the stage-2-seam test adapter, snippet manifests for traffic / fire / swarm per §6.1; spike outcomes recorded (Boreal fetch verified or fallback adopted; VisDrone sequence and Purdue clip window chosen by annotation density; Byrne camera motion checked) | infra, behaviour-preserving | V3 — fetch + conversion commands with recorded before/after output; harness runs on a synthetic cluster and asserts the seam type |
+| n2 | **Differencing + areas (steps 1–2)** + `StreamMovingAreas` proto and handler from the start — the stream is the only publication surface this feature has | feature | V1 — synthetic-cloud unit tests, EuRoC negative-control E2E, traffic-snippet stage-2 assertions |
+| n3 | **Classification + keypoints + buffering (steps 3–5)**: verdict lifecycle, LK keypoints, one ego-compensated filter | feature | V1 — tracker-statistic unit tests; fire snippet (zero graduations), swarm snippet (caps, envelope misses), traffic snippet (graduation + identity rates) |
+| n4 | **Retrospective placement + publication (steps 6–7)** wired into the sidecar flush and the moving-areas stream | feature | V1 — KITTI stereo positive-control E2E asserting real moving-object keypoint snapshots under existing designations (the only full-chain snippet-class proof; §6.1 snippets cannot provide it) |
+| n5 | **Resource governance (§5)** counters, caps, CM5-profile resource gate, before this is enabled by default on-board | infra | V3 — CM5-profile replay with recorded budget counters |
+
+Green waves: wave 1 = n1, n2 (n2's stage 1 needs only EuRoC;
+its stage 2 is specified against the seam type n1 pins, and n2
+is not greenable on snippet assertions until n1 lands — stated
+in its changeset, not discovered). Wave 2 = n3. Wave 3 = n4, n5.
+Branch line is the waves concatenated: n1 → n2 → n3 → n4 → n5.
