@@ -399,7 +399,11 @@ groups one tracked object's points. The Board API is served by
 `Cm5SurveyService.StreamSurvey` (`surmap.survey.cm5_server`): completed
 stereo pairs drive the `SlamBackend` port and an object-point source,
 and their points are streamed incrementally — spawned only, never
-resent at a position already sent — alongside the video channels the
+resent at a position already sent. Scene points are reconstructed
+from the pair's own frames by `surmap.survey.stereo` (decode,
+principal-point alignment, block matching, back-projection —
+numpy/Pillow, no native dependency), then placed in the map frame
+with the SLAM pose — alongside the video channels the
 requester asked to see. The GPU API is served by
 `StationSamService.StreamAnalysis` (`surmap.survey.station_server`):
 the same frames in, SAM detection vectors out, each repeating the
