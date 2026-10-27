@@ -8,20 +8,20 @@
 
 ## Workflow
 
-- [wf 1] ✅ 2026-10-27 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file
+- [wf 1] ✅ 2026-10-27 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file @ `02af5ce`
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/` — neither exists
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Stub API — `build_description` in both entrypoint modules (`TODO(pr-6)`)
-  - [ ] Create failing acceptance tests
-  - [ ] Run acceptance tests (verify they fail)
+- [wf 2] ✅ 2026-10-27 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 9 tests red: entrypoints on `NotImplementedError` stubs, deploy scripts/units absent (this commit)
+  - [x] Stub API — `build_description` in both entrypoint modules (`TODO(pr-6)`)
+  - [x] Create failing acceptance tests
+  - [x] Run acceptance tests (verify they fail)
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] `cm5_main` / `station_main` entrypoints on `HypercornHost`
   - [ ] `deploy-cm5.sh` / `deploy-station.sh` (source path + SSH target as CLI args) + `deploy-lib.sh`
   - [ ] systemd units + `docs/deployment.md`
-  - [ ] Acceptance: entrypoint/script tests pass; a local socket smoke of both servers
+  - [ ] Acceptance: entrypoint/script/e2e tests pass; real-socket e2es close their server on success and failure
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/architecture.md` §10 — deployment path named
@@ -87,7 +87,7 @@ commit no machine inventory.
 ## Verification
 
 **Method:** V1 fail→pass for entrypoints; V3 (deterministic inspection) for scripts/units, whose real target machines do not exist in CI
-**Command:** `uv run pytest -q tests/test_survey_entrypoints.py tests/test_deploy_scripts.py` and `bash -n scripts/deploy-cm5.sh scripts/deploy-station.sh scripts/deploy-lib.sh`
+**Command:** `uv run pytest -q tests/test_survey_entrypoints.py tests/test_deploy_scripts.py tests/test_survey_server_e2e.py` and `bash -n scripts/deploy-cm5.sh scripts/deploy-station.sh scripts/deploy-lib.sh`
 **Before:** tests fail (entrypoint modules missing / stubs); scripts absent
 **After:** tests pass; a local smoke serves `/health/is_alive` from both entrypoints on ephemeral ports
 
@@ -104,6 +104,7 @@ recorded in the Green row.
 ### surmap
 
 - **Integration**: `tests/test_survey_entrypoints.py` — both descriptions serve service + health
+- **E2E**: `tests/test_survey_server_e2e.py` — one real server (`HypercornHost`, ephemeral port) per server, started per test, exercised over a real socket (health GET + Connect BIDI stream), and stopped in a `finally` so it closes whether the test passes or fails; a post-close probe proves the port is shut
 - **Unit**: `tests/test_deploy_scripts.py` — usage guard, argument order, restart-last contract
 
 ## Inherited Dependencies — do not implement here
@@ -120,7 +121,7 @@ would collide with the PR that owns them.
 
 ## Stack Context
 
-**Stack**: Survey streaming · slug **`#survey-stream`** — this PR is **6 of 6** · #pending
+**Stack**: Survey streaming · slug **`#survey-stream`** — this PR is **6 of 6** · [#12](https://github.com/uppin/surmap/pull/12)
 **Branch**: `pr-6-server-deployment` · **Base**: `pr-5-station-sam-server`
 **Successor**: none — top of stack
 **Kind**: Feature · behaviour-adds — `(Type: Feature, Behaviour: adds)`

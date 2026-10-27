@@ -43,3 +43,4 @@ active before returning.
 - [ ] Both entrypoints build a description serving their service + health route.
 - [ ] Both deploy scripts refuse to run without source dir + SSH target (usage, exit 2).
 - [ ] A script's remote sequence installs the unit, daemon-reloads, restarts, and checks `is-active`.
+- [ ] Each server has a real-socket e2e: a real server process boundary (`HypercornHost` on an ephemeral port) is started, exercised over the wire, and closed after the run — on success and on failure alike.
