@@ -34,4 +34,5 @@ class InMemoryObjectPointSource:
     def points_for_pair(
         self, pair: StereoFramePair, pose: Pose | None
     ) -> tuple[ObjectPoints, ...]:
-        raise NotImplementedError("TODO(pr-4): implement InMemoryObjectPointSource")
+        self.pairs.append(pair)
+        return self._observations

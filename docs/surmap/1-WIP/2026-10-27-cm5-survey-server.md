@@ -18,11 +18,11 @@
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Pair frames by `frame_id`; run SLAM + object source per completed pair
-  - [ ] Stream emitter-filtered point batches (scene designation 1, objects per-object)
-  - [ ] Echo requested video channels under designations 2/3
-  - [ ] Acceptance: CM5 stream tests pass
+- [wf 3] ✅ 2026-10-27 `/green` Green — implement until every red test passes · 6 CM5 tests pass, 385 full suite pass, mypy clean; ruff clean on edited files (1 pre-existing F401 in tests/test_survey_cm5_server.py untouched)
+  - [x] Pair frames by `frame_id`; run SLAM + object source per completed pair
+  - [x] Stream emitter-filtered point batches (scene designation 1, objects per-object)
+  - [x] Echo requested video channels under designations 2/3
+  - [x] Acceptance: CM5 stream tests pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/architecture.md` §10 — Board API served by `Cm5SurveyService`
