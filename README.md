@@ -95,6 +95,17 @@ scripts/deploy-cm5.sh <source-dir> <ssh-target> [remote-dir] [port] [ssh-port] \
 or at process level with `--detector coral --coral-model <profile>
 --coral-model-dir <dir> [--coral-edgetpu]`.
 
+Station SAM note: the station's SAM 3.1 segmentation runs through
+ONNX Runtime behind the `SamDetector` port
+(`surmap.survey.sam3`): CUDA execution provider on the station GPU,
+CPU provider in tests — the same session and adapter code, with a
+tiny fake SAM3 ONNX model standing in for the weights in CI, so
+tests have no separate path. Select it with
+`python -m surmap.survey.station_main --detector sam3
+--sam3-model <sam3.1.onnx>`. The real checkpoint is license-gated;
+exporting it to the documented ONNX contract is a station
+provisioning step.
+
 ## In scope now
 
 - Capture synchronized stereo frames and GPS checkpoints on-board.
