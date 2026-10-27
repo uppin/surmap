@@ -110,3 +110,15 @@ camera-frame evidence.
 **Command:** `uv run pytest -q tests/test_moving_placement.py` + KITTI E2E (`SURMAP_REQUIRE_RTABMAP_E2E=1`)
 **Before:** baseline 432 passed on n1; red run 3 failed in this node's tests — NotImplementedError from stubs
 **After:** movers' snapshots within annotated extent; poses/cloud real; full gates green
+
+## Post-green review fix (2026-10-27)
+
+- Stream assembled in `stream_moving_areas`: verdicts from
+  `TrackMotionStats`/`VerdictMachine`, keypoint buffering for
+  rigid movers, dwell-gated layer extension (`observe_frame`),
+  and flush-time snapshots via `distribute_correction` when a
+  SLAM backend is present. Handler-level proof:
+  `tests/test_moving_stream.py` (fake stereo + batch fake SLAM;
+  areas graduate to RIGID_MOVER, snapshots land at flush under
+  area-allocated designations). Still deferred: the KITTI stereo
+  E2E through the real sidecar (needs the n2 dataset spikes).
