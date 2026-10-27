@@ -766,6 +766,32 @@ labels alongside and a SHA-256 manifest in the cache. The full
 chain outcome is recorded with the placement node (n5) and in
 `tests/test_moving_kitti_e2e.py`.
 
+**Chain outcome (recorded 2026-10-27, n5).** The E2E passes:
+80 staged frames yield 8 RTAB keyframe poses over a 27.7 m
+trajectory; car-proximate candidate clusters appear on all 8
+keyframes; a track graduates and its 44 map-frame snapshots
+land nearest 1.32 m from a labelled car centre (acceptance
+≤ 4 m). Two findings amend this section's expectations.
+First, RTAB's exported assembled cloud is near-empty at
+driving depths — 56 points for the segment, independent of
+export max-depth/decimation — so "differencing against an
+RTAB-seeded static layer" does not hold for the sidecar
+export: the E2E seeds the layer from voxels observed by ≥2
+keyframes (movers cross a voxel once), which is the dwell
+rule applied at segment level. Whether RTAB's sparse export
+is a sidecar-parameter issue or intrinsic to
+`rtabmap-euroc_dataset` at these depths is unrecorded either
+way — it is the first thing to check before relying on the
+exported cloud as the layer seed on-board. Second, integer
+disparity made static points unrepeatable across frames
+(depth shells 2–9 m wide at car range at the default matching
+width); subpixel disparity refinement and a wider matching
+width (PR #25) are prerequisites for stage 1 at driving
+range, not tuning details. The streak check against mover
+tracks is not applicable to this export (there is no dense
+cloud to streak); it remains an open recorded item for the
+station-side cleanup path.
+
 Rejected stereo alternatives: EuRoC (already in-repo, but
 static — negative only); ETH3D (calibrated stereo, but the
 earlier cables_2 attempt had ~95% of correspondences rejected
