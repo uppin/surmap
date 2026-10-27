@@ -8,16 +8,16 @@
 
 ## Workflow
 
-- [wf 1] ✅ 2026-10-27 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file
+- [wf 1] ✅ 2026-10-27 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file @ `4b7e4ad`
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/` — neither exists
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Stub API — handler, `ObjectPointSource` port, brick factory signatures (`TODO(pr-4)`)
-  - [ ] Create failing acceptance tests
-  - [ ] Run acceptance tests (verify they fail)
-  - [ ] TDD Red — write failing unit/integration tests
+- [wf 2] ✅ 2026-10-27 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 6 tests red at import: `survey_pb2` bindings not yet generated (n1 stub state); after n1 greens they fail on this node's `NotImplementedError` stubs (commit 2). Baseline 359 green excluding inherited red files
+  - [x] Stub API — handler, `ObjectPointSource` port, brick factory signatures (`TODO(pr-4)`)
+  - [x] Create failing acceptance tests
+  - [x] Run acceptance tests (verify they fail)
+  - [x] TDD Red — write failing unit/integration tests
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Pair frames by `frame_id`; run SLAM + object source per completed pair
   - [ ] Stream emitter-filtered point batches (scene designation 1, objects per-object)
@@ -117,7 +117,7 @@ would collide with the PR that owns them.
 
 ## Stack Context
 
-**Stack**: Survey streaming · slug **`#survey-stream`** — this PR is **4 of 5** · #pending
+**Stack**: Survey streaming · slug **`#survey-stream`** — this PR is **4 of 5** · [#10](https://github.com/uppin/surmap/pull/10)
 **Branch**: `pr-4-cm5-survey-server` · **Base**: `pr-3-station-sam-policy`
 **Successor**: `pr-5-station-sam-server`
 **Kind**: Feature · behaviour-adds — `(Type: Feature, Behaviour: adds)`
