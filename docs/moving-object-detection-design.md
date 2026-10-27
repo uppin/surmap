@@ -599,16 +599,19 @@ JSON), so CI replays byte-identical frames.
 three scenes below are *monocular*. They therefore cannot
 exercise stage 1 (stereo differencing against the static layer)
 or stage 6 (RTAB pose placement), and no snippet result may be
-quoted as evidence for those stages; the full-chain evidence
-remains EuRoC (negative) and the KITTI stereo sequence
-(positive). What snippets *do* exercise is production stages
-2–5, entered at their real seam: the stage-1 output type
-(candidate clusters with depth ranges) is synthesized from the
-oracle's boxes/masks by a test adapter — the same hexagonal-port
-discipline as the in-memory SLAM backend — and stages 2–5, the
-wire messages, verdict lifecycle, and resource counters run
-unmodified. A snippet failure is a stage 2–5 failure; a snippet
-pass says nothing about stereo.
+quoted as evidence for those stages. What they *do* exercise is
+production stages 2–5, entered at their real seam: the stage-1
+output type (candidate clusters with depth ranges) is
+synthesized from the oracle's boxes/masks by a test adapter —
+the same hexagonal-port discipline as the in-memory SLAM
+backend — and stages 2–5, the wire messages, verdict lifecycle,
+and resource counters run unmodified. A snippet failure is a
+stage 2–5 failure; a snippet pass says nothing about stereo.
+The full chain (stages 1–7 *with* RTAB-Map) is evidenced by the
+dedicated **stereo snippet in §6.2**, which is a hard
+requirement, not an optional extra: without it, nothing in the
+evaluation ever runs the design against the real sidecar
+except EuRoC, which has no movers.
 
 Candidate evaluation (checked 2026-10-27; HEAD requests and, for
 the Commons clips, extracted frames inspected):
@@ -664,6 +667,80 @@ extract/decimate frames → build oracle candidate clusters at
 verdict lifecycle, and counters. Each snippet's expected-outcome
 block above is its acceptance test; a change to an expectation
 requires the same review as a change to the design.
+
+### 6.2 Stereo snippet — the RTAB-Map chain (required)
+
+At least one snippet must carry **real stereo pairs and camera
+calibration**, converted into the EuRoC layout the sidecar
+consumes (`mav0/cam{0,1}` PNGs + `sensor.yaml` + IMU csv, the
+sidecar's existing stationary-IMU fallback covering snippets
+without IMU), and run through the **real
+`SidecarRtabmapBackend`** — Docker sidecar, own/shared-container
+rules, full teardown — not a mock. This is the only snippet
+that exercises stages 1–7 together: stereo reconstruction,
+differencing against an RTAB-seeded static layer, and map-frame
+keypoint snapshots after a real flush.
+
+**Pick: KITTI tracking (training split).** Stereo left/right
+colour pairs (`image_02`/`image_03`, rectified), per-sequence
+calibration (`P0`–`P3`; fx ≈ 721.5, baseline ≈ 0.54 m derived
+from `P3`−`P2`), and per-frame track labels with IDs for cars,
+pedestrians, cyclists — the mover oracle and the stereo input
+are the same snippet. License CC BY-NC-SA 3.0. Downloads are
+direct `s3.eu-central-1.amazonaws.com/avg-kitti` files, stable
+since 2018 (HEAD-checked 2026-10-27): calib 90 KB, labels
+2.3 MB, but images are two ~15 GB zips — so the fetch script
+must **range-extract only the chosen sequence's members** (zip
+central directory over HTTP range requests), never download
+30 GB for 15 s of video. Sequence pre-ranking from the label
+files (run for this plan): `0020` (837 frames, 70 long car
+tracks), `0009` (784 frames, 68), `0001` (426 frames, 65); the
+spike picks sequence + a 10–15 s window by verified *world*
+motion (parked rows inflate raw counts), decimates to 5 Hz,
+and derives `sensor.yaml` from that sequence's calib file
+(rectified input ⇒ zero distortion; resolution read from the
+PNGs, calibration scaled to the analysis resolution by the
+existing demo scaling helpers). Expected outcome: RTAB flush
+returns real poses and a non-empty cloud; annotated movers
+graduate and their flush-time snapshots land within the
+annotated extent (the §6 range-gated metrics apply); the static
+cloud is asserted streak-checked against mover tracks as a
+recorded observation (the known §1 limitation until masked
+replay lands — measured, not hidden).
+
+Rejected stereo alternatives: EuRoC (already in-repo, but
+static — negative only); ETH3D (calibrated stereo, but the
+earlier cables_2 attempt had ~95% of correspondences rejected
+by RTAB-Map — an RTAB-compatibility risk, not a data risk);
+TartanAir (synthetic; the snippet programme exists to escape
+synthetic-only evidence); DrivingStereo (real and calibrated,
+but no mover track labels — backup if KITTI labels prove
+unusable); Oxford RobotCar (application-gated download).
+
+**Calibration fallback — COLMAP on this host.** If a future
+stereo snippet arrives *without* usable calibration, calibrate
+it here before it is adopted: this host has an RTX 5060 Ti
+(16 GB, CUDA 13.2) and COLMAP 4.2.1 built with CUDA (both
+verified 2026-10-27). Procedure: extract left/right frames →
+COLMAP feature extraction (OPENCV model, one camera per
+channel, both channels in one database) → sequential matching →
+sparse reconstruction → per-channel intrinsics and the rig
+extrinsic from the joint reconstruction. Two gates before the
+calibration is written into `sensor.yaml`: (1) reprojection
+error < 1 px and, when a reference calibration exists,
+recovered fx within 2% of it — proven first on the KITTI
+snippet against its shipped calib, so the fallback is validated
+before it is ever needed; (2) **baseline scale**: COLMAP is
+up-to-scale and cannot observe the stereo baseline in metres,
+so scale must be fixed from a known reference (rig
+specification, a measured target in view, or a calibrated
+sibling sequence). A snippet with no scale reference is
+calibration-rejected — it is never run at a guessed baseline,
+because every depth, τ(Z), and extent assertion downstream
+would inherit the error. COLMAP calibrates; it does not
+synthesize a second camera — the monocular snippets in §6.1
+remain monocular and stage-2-seam-only no matter how well
+COLMAP reconstructs them.
 
 ## 7. What the station adds later (out of scope here)
 
@@ -745,10 +822,10 @@ verification rung):
 
 | Node | Delivers | Kind | Verification |
 |---|---|---|---|
-| n1 | **Snippet fixtures + harness skeleton**: fetch script (pinned URL/size/SHA-256 per snippet), oracle converters (VisDrone MOT, Purdue `refined_gt`, mask→polygon), the stage-2-seam test adapter, snippet manifests for traffic / fire / swarm per §6.1; spike outcomes recorded (Boreal fetch verified or fallback adopted; VisDrone sequence and Purdue clip window chosen by annotation density; Byrne camera motion checked) | infra, behaviour-preserving | V3 — fetch + conversion commands with recorded before/after output; harness runs on a synthetic cluster and asserts the seam type |
+| n1 | **Snippet fixtures + harness skeleton**: fetch script (pinned URL/size/SHA-256 per snippet), oracle converters (VisDrone MOT, Purdue `refined_gt`, mask→polygon), the stage-2-seam test adapter, snippet manifests for traffic / fire / swarm per §6.1, **plus the KITTI stereo snippet per §6.2** (range-extraction fetch, calib→`sensor.yaml` converter, EuRoC-layout staging) and the **COLMAP calibration cross-check** on KITTI (host RTX/COLMAP, §6.2 gates); spike outcomes recorded (Boreal fetch verified or fallback adopted; VisDrone sequence and Purdue clip window chosen by annotation density; Byrne camera motion checked; KITTI sequence/window chosen by verified world motion) | infra, behaviour-preserving | V3 — fetch + conversion commands with recorded before/after output; harness runs on a synthetic cluster and asserts the seam type; COLMAP-vs-KITTI calibration comparison recorded |
 | n2 | **Differencing + areas (steps 1–2)** + `StreamMovingAreas` proto and handler from the start — the stream is the only publication surface this feature has | feature | V1 — synthetic-cloud unit tests, EuRoC negative-control E2E, traffic-snippet stage-2 assertions |
 | n3 | **Classification + keypoints + buffering (steps 3–5)**: verdict lifecycle, LK keypoints, one ego-compensated filter | feature | V1 — tracker-statistic unit tests; fire snippet (zero graduations), swarm snippet (caps, envelope misses), traffic snippet (graduation + identity rates) |
-| n4 | **Retrospective placement + publication (steps 6–7)** wired into the sidecar flush and the moving-areas stream | feature | V1 — KITTI stereo positive-control E2E asserting real moving-object keypoint snapshots under existing designations (the only full-chain snippet-class proof; §6.1 snippets cannot provide it) |
+| n4 | **Retrospective placement + publication (steps 6–7)** wired into the sidecar flush and the moving-areas stream | feature | V1 — the §6.2 KITTI stereo snippet run through the real `SidecarRtabmapBackend`: flush returns real poses/cloud, annotated movers graduate, snapshots land within annotated extent under existing designations (the only full-chain proof; §6.1 monocular snippets cannot provide it) |
 | n5 | **Resource governance (§5)** counters, caps, CM5-profile resource gate, before this is enabled by default on-board | infra | V3 — CM5-profile replay with recorded budget counters |
 
 Green waves: wave 1 = n1, n2 (n2's stage 1 needs only EuRoC;
