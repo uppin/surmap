@@ -10,12 +10,12 @@
 
 - [wf 1] ✅ 2026-10-28 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file
 - [wf 2] ✅ 2026-10-28 `/plan-red` Red — acceptance and failing lower-tier tests, committed · collection error `ModuleNotFoundError: surmap.labelling` before the adapter existed
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] `LabelClient`, `ObjectLabel`, and `InMemoryLabelClient`
-  - [ ] `BasetenMuseLabelClient` posts the crop and parses `message.content`
-  - [ ] Missing `BASETEN_API_KEY` raises before any socket
-  - [ ] `reasoning_effort` is `low`; `reasoning_content` is not the label; no JSON mode
-  - [ ] Live test skipped unless `SURMAP_LIVE_BASETEN=1` and the key are set
+- [wf 3] ✅ 2026-10-28 `/green` Green — implement until every red test passes · 12 passed, 1 skipped in `tests/test_labelling_baseten_muse.py`
+  - [x] `LabelClient`, `ObjectLabel`, and `InMemoryLabelClient`
+  - [x] `BasetenMuseLabelClient` posts the crop and parses `message.content`
+  - [x] Missing `BASETEN_API_KEY` raises before any socket
+  - [x] `reasoning_effort` is `low`; `reasoning_content` is not the label; no JSON mode
+  - [x] Live test skipped unless `SURMAP_LIVE_BASETEN=1` and the key are set
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `HACKATHON.md` Baseten row — planned → client in tree; live call gated
