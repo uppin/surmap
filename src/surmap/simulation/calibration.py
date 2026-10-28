@@ -23,8 +23,11 @@ class StereoCalibrationSpec:
 def render_cam_sensor_yaml(spec: StereoCalibrationSpec, channel: int) -> str:
     """EuRoC-style camera `sensor.yaml` for cam0 (left) or cam1 (right).
 
-    Cameras sit on ±baseline/2 along body Y, matching the demo fixture
-    convention used by `SidecarRtabmapBackend` / `load_calibration`.
+    `T_BS` is in the EuRoC body frame (+X up, +Y right, +Z forward), the
+    frame `rtabmap-euroc_dataset` and the demo fixture use. The left eye
+    is therefore at Y = −baseline/2. Gazebo's model keeps that same eye
+    at Y = +baseline/2 because a Gazebo link is forward-left-up; the
+    export negates Y rather than moving the simulated camera.
     """
     if channel not in (0, 1):
         raise ValueError(f"channel must be 0 or 1, got {channel}")

@@ -50,6 +50,11 @@ Confirm in Gazebo that the airframe has **two** camera sensors
 | `baseline_m` | 0.07 |
 | Rate | 20 Hz |
 
+Gazebo's link frame is forward-left-up, so the left eye sits at **Y = +0.035**.
+The exported `T_BS` uses the EuRoC body frame (+X up, +Y right, +Z forward),
+the same sign as the demo fixture and real EuRoC `cam0`, so that eye is
+written at **Y = −baseline/2**. The two numbers are one camera.
+
 Prefer filling intrinsics from left `CameraInfo` when available
 (`dump_sitl_capture.py --left-info …`).
 

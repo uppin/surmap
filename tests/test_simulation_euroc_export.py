@@ -4,15 +4,25 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from pathlib import Path
 
 import pytest
 from PIL import Image
 
+from surmap.simulation.calibration import StereoCalibrationSpec, render_cam_sensor_yaml
 from surmap.simulation.euroc_export import export_euroc_session
 from surmap.simulation.sitl_capture import load_sitl_capture
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sitl_capture_tiny"
+
+
+def _translation(sensor_yaml: str) -> tuple[float, float, float]:
+    """Body-frame camera origin from an EuRoC `T_BS` data row."""
+    match = re.search(r"data: \[([^\]]+)\]", sensor_yaml)
+    assert match is not None
+    values = [float(part) for part in match.group(1).split(",")]
+    return values[3], values[7], values[11]
 
 
 def _write_tiny_capture(root: Path) -> Path:
@@ -91,6 +101,28 @@ def test_exporting_a_sitl_capture_writes_matching_euroc_stereo_pairs(
         assert image.size == (64, 48)
 
 
+def test_left_eye_is_on_negative_euroc_body_y() -> None:
+    # Given a 0.12 m rig, the same baseline the demo fixture uses
+    spec = StereoCalibrationSpec(
+        calibration_id="gazebo-stereo-v1",
+        width=64,
+        height=48,
+        fx=50.0,
+        fy=50.0,
+        cx=32.0,
+        cy=24.0,
+        baseline_m=0.12,
+    )
+
+    # When each eye's extrinsics are rendered
+    cam0 = render_cam_sensor_yaml(spec, 0)
+    cam1 = render_cam_sensor_yaml(spec, 1)
+
+    # Then the left eye is at −Y and the right eye at +Y (EuRoC +Y is right)
+    assert _translation(cam0) == pytest.approx((0.0, -0.06, 0.0))
+    assert _translation(cam1) == pytest.approx((0.0, 0.06, 0.0))
+
+
 def test_exported_sensor_yaml_carries_intrinsics_resolution_and_baseline(
     tmp_path: Path,
 ) -> None:
@@ -107,9 +139,9 @@ def test_exported_sensor_yaml_carries_intrinsics_resolution_and_baseline(
     assert "resolution: [64, 48]" in cam0_yaml
     assert "intrinsics: [50.0, 50.0, 32.0, 24.0]" in cam0_yaml
     assert "sensor_type: camera" in cam0_yaml
-    # Baseline appears as the Y translation difference between cam0 and cam1
-    assert "0.06" in cam0_yaml or "-0.06" in cam0_yaml
-    assert "0.06" in cam1_yaml or "-0.06" in cam1_yaml
+    # EuRoC body +Y is right, so the left eye (cam0) is at −baseline/2.
+    assert _translation(cam0_yaml)[1] == pytest.approx(-0.06)
+    assert _translation(cam1_yaml)[1] == pytest.approx(0.06)
     assert (result.root / "mav0" / "imu0" / "sensor.yaml").is_file()
     assert (result.root / "mav0" / "imu0" / "data.csv").is_file()
 

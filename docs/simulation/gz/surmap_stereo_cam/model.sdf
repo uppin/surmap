@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SurMap Machine 3 stereo rig for Gazebo Harmonic (gz-sim8).
      Left / right cameras share update_rate; baseline_m = 0.07 along Y.
+     Gazebo links are forward-left-up, so the left eye is at Y=+0.035.
+     The EuRoC export (calibration.py) stores that eye at Y=−0.035:
+     EuRoC body +Y points right. Do not flip these poses to match T_BS.
      Topics (with ros_gz_bridge): typically
        /world/<world>/model/<model>/link/camera_link/sensor/left_camera/image
        .../right_camera/image
