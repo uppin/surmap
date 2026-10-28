@@ -1,0 +1,4972 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fictional civilian earthquake-and-flood block for SurMap search and rescue.
+     Original SDF primitives and procedural textures. Not a real incident.
+     The world name matches the file PX4 opens: disaster_block.sdf.
+     Spherical coordinates are the PX4 SITL anchor so the compass matches.
+     Licences and the WSL2 launch are in docs/simulation/disaster-world.md. -->
+<sdf version="1.9">
+  <world name="disaster_block">
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic" />
+    <scene>
+      <grid>false</grid>
+      <ambient>0.48 0.50 0.52 1</ambient>
+      <background>0.53 0.70 0.90 1</background>
+      <shadows>true</shadows>
+    </scene>
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 500 0 0 0</pose>
+      <intensity>1.1</intensity>
+      <direction>0.35 0.42 -0.84</direction>
+      <diffuse>1.0 0.95 0.86 1</diffuse>
+      <specular>0.32 0.30 0.26 1</specular>
+      <attenuation>
+        <range>2000</range>
+        <constant>1</constant>
+        <linear>0</linear>
+        <quadratic>0</quadratic>
+      </attenuation>
+    </light>
+    <light name="fill" type="directional">
+      <cast_shadows>false</cast_shadows>
+      <intensity>0.35</intensity>
+      <direction>-0.55 -0.15 -0.82</direction>
+      <diffuse>0.62 0.70 0.84 1</diffuse>
+      <specular>0.04 0.04 0.05 1</specular>
+    </light>
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>47.397971057728974</latitude_deg>
+      <longitude_deg>8.546163739800146</longitude_deg>
+      <elevation>488</elevation>
+      <heading_deg>0</heading_deg>
+    </spherical_coordinates>
+    <model name="ground_plane">
+      <static>true</static>
+      <pose>0 0 0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <pose>0 0 -5 0 0 0</pose>
+          <geometry>
+            <box>
+              <size>100000 100000 10</size>
+            </box>
+          </geometry>
+        </collision>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+      </link>
+    </model>
+    <model name="helipad">
+      <static>true</static>
+      <pose>0.000000 0.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="pad">
+          <pose>0.000000 0.000000 0.025000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>4.000000 4.000000 0.040000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.7000 0.6600 1.0000</ambient>
+            <diffuse>0.7200 0.7000 0.6600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/concrete.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="h_left">
+          <pose>-0.450000 0.000000 0.050000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.180000 1.300000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="h_right">
+          <pose>0.450000 0.000000 0.050000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.180000 1.300000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="h_bar">
+          <pose>0.000000 0.000000 0.050000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.900000 0.180000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="terrain_dirt">
+      <static>true</static>
+      <pose>0.000000 0.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="tile_0">
+          <pose>-30.000000 -10.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_1">
+          <pose>-30.000000 10.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_2">
+          <pose>-30.000000 30.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_3">
+          <pose>-30.000000 50.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_4">
+          <pose>-30.000000 70.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_5">
+          <pose>-30.000000 90.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_6">
+          <pose>-30.000000 110.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_7">
+          <pose>-10.000000 -10.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_8">
+          <pose>-10.000000 10.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_9">
+          <pose>-10.000000 30.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_10">
+          <pose>-10.000000 50.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_11">
+          <pose>-10.000000 70.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_12">
+          <pose>-10.000000 90.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_13">
+          <pose>-10.000000 110.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_14">
+          <pose>10.000000 -10.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_15">
+          <pose>10.000000 10.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_16">
+          <pose>10.000000 30.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_17">
+          <pose>10.000000 50.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_18">
+          <pose>10.000000 70.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_19">
+          <pose>10.000000 90.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_20">
+          <pose>10.000000 110.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_21">
+          <pose>30.000000 -10.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_22">
+          <pose>30.000000 10.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_23">
+          <pose>30.000000 30.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_24">
+          <pose>30.000000 50.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_25">
+          <pose>30.000000 70.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_26">
+          <pose>30.000000 90.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="tile_27">
+          <pose>30.000000 110.000000 0.010000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>20.000000 20.000000 0.020000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.4000 0.4400 0.2800 1.0000</ambient>
+            <diffuse>0.4000 0.4400 0.2800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/dirt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="sidewalk_west_south">
+      <static>true</static>
+      <pose>-7.300000 33.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.000000 0.000000 0.030000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>2.400000 38.000000 0.040000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.7000 0.6600 1.0000</ambient>
+            <diffuse>0.7200 0.7000 0.6600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/concrete.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="sidewalk_west_north">
+      <static>true</static>
+      <pose>-7.300000 86.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.000000 0.000000 0.030000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>2.400000 36.000000 0.040000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.7000 0.6600 1.0000</ambient>
+            <diffuse>0.7200 0.7000 0.6600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/concrete.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="sidewalk_east_south">
+      <static>true</static>
+      <pose>7.300000 33.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.000000 0.000000 0.030000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>2.400000 38.000000 0.040000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.7000 0.6600 1.0000</ambient>
+            <diffuse>0.7200 0.7000 0.6600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/concrete.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="sidewalk_east_north">
+      <static>true</static>
+      <pose>7.300000 86.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.000000 0.000000 0.030000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>2.400000 36.000000 0.040000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.7000 0.6600 1.0000</ambient>
+            <diffuse>0.7200 0.7000 0.6600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/concrete.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="sidewalk_cross_south_west">
+      <static>true</static>
+      <pose>-22.000000 52.600000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.000000 0.000000 0.030000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>28.000000 2.200000 0.040000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.7000 0.6600 1.0000</ambient>
+            <diffuse>0.7200 0.7000 0.6600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/concrete.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="sidewalk_cross_north_west">
+      <static>true</static>
+      <pose>-22.000000 67.400000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.000000 0.000000 0.030000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>28.000000 2.200000 0.040000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.7000 0.6600 1.0000</ambient>
+            <diffuse>0.7200 0.7000 0.6600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/concrete.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="sidewalk_cross_south_east">
+      <static>true</static>
+      <pose>22.000000 52.600000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.000000 0.000000 0.030000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>28.000000 2.200000 0.040000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.7000 0.6600 1.0000</ambient>
+            <diffuse>0.7200 0.7000 0.6600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/concrete.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="sidewalk_cross_north_east">
+      <static>true</static>
+      <pose>22.000000 67.400000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.000000 0.000000 0.030000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>28.000000 2.200000 0.040000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.7000 0.6600 1.0000</ambient>
+            <diffuse>0.7200 0.7000 0.6600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/concrete.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="asphalt_avenue_mid">
+      <static>true</static>
+      <pose>0.000000 48.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.000000 0.000000 0.025000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>12.000000 12.000000 0.030000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1700 0.1700 0.1800 1.0000</ambient>
+            <diffuse>0.1700 0.1700 0.1800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/asphalt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="asphalt_avenue_after_cross">
+      <static>true</static>
+      <pose>0.000000 72.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.000000 0.000000 0.025000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>12.000000 12.000000 0.030000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1700 0.1700 0.1800 1.0000</ambient>
+            <diffuse>0.1700 0.1700 0.1800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/asphalt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="asphalt_avenue_far_north">
+      <static>true</static>
+      <pose>0.000000 96.500000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.000000 0.000000 0.025000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>12.000000 15.000000 0.030000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1700 0.1700 0.1800 1.0000</ambient>
+            <diffuse>0.1700 0.1700 0.1800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/asphalt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="asphalt_cross_intersection">
+      <static>true</static>
+      <pose>0.000000 60.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.000000 0.000000 0.025000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>12.000000 12.000000 0.030000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1700 0.1700 0.1800 1.0000</ambient>
+            <diffuse>0.1700 0.1700 0.1800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/asphalt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="asphalt_cross_east_approach">
+      <static>true</static>
+      <pose>9.000000 60.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.000000 0.000000 0.025000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>6.000000 12.000000 0.030000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1700 0.1700 0.1800 1.0000</ambient>
+            <diffuse>0.1700 0.1700 0.1800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/asphalt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="asphalt_cross_far_east">
+      <static>true</static>
+      <pose>30.000000 60.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.000000 0.000000 0.025000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>12.000000 12.000000 0.030000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1700 0.1700 0.1800 1.0000</ambient>
+            <diffuse>0.1700 0.1700 0.1800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/asphalt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="asphalt_cross_far_west">
+      <static>true</static>
+      <pose>-30.000000 60.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.000000 0.000000 0.025000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>12.000000 12.000000 0.030000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1700 0.1700 0.1800 1.0000</ambient>
+            <diffuse>0.1700 0.1700 0.1800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/asphalt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="asphalt_avenue_before_flood">
+      <static>true</static>
+      <pose>0.000000 26.500000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.000000 0.000000 0.025000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>12.000000 3.000000 0.030000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1700 0.1700 0.1800 1.0000</ambient>
+            <diffuse>0.1700 0.1700 0.1800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/asphalt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="avenue_south_clear">
+      <static>true</static>
+      <pose>0.000000 20.000000 0.000000 0.000000 0.000000 1.570796</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="pavement">
+          <pose>0.000000 0.000000 0.025000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>10.000000 12.000000 0.030000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1700 0.1700 0.1800 1.0000</ambient>
+            <diffuse>0.1700 0.1700 0.1800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/asphalt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="cross_west_clear">
+      <static>true</static>
+      <pose>-16.000000 60.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="pavement">
+          <pose>0.000000 0.000000 0.025000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>16.000000 12.000000 0.030000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1700 0.1700 0.1800 1.0000</ambient>
+            <diffuse>0.1700 0.1700 0.1800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/asphalt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="avenue_flood">
+      <static>true</static>
+      <pose>1.000000 35.000000 0.000000 0.000000 0.000000 1.570796</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="wet">
+          <pose>0.000000 0.000000 0.020000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>14.000000 8.000000 0.030000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.0900 0.1100 0.1200 1.0000</ambient>
+            <diffuse>0.0900 0.1100 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/asphalt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="water">
+          <pose>0.000000 0.000000 0.180000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>13.600000 7.400000 0.280000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1500 0.4800 0.5800 0.4800</ambient>
+            <diffuse>0.1500 0.4800 0.5800 0.4800</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="cross_east_debris">
+      <static>true</static>
+      <pose>18.000000 60.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="pavement">
+          <pose>0.000000 0.000000 0.025000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>12.000000 8.000000 0.030000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1700 0.1700 0.1800 1.0000</ambient>
+            <diffuse>0.1700 0.1700 0.1800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/asphalt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="pole">
+          <pose>0.000000 0.000000 0.450000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.1400</radius>
+              <length>11.0000</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.4200 0.3000 0.1600 1.0000</ambient>
+            <diffuse>0.4200 0.3000 0.1600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <collision name="pole">
+          <pose>0.000000 0.000000 0.450000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.1400</radius>
+              <length>11.0000</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name="block_0">
+          <pose>-1.400000 0.400000 0.350000 0.200000 0.100000 0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.900000 0.550000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="block_0">
+          <pose>-1.400000 0.400000 0.350000 0.200000 0.100000 0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.900000 0.550000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="block_1">
+          <pose>0.600000 -0.500000 0.550000 0.400000 -0.200000 0.800000</pose>
+          <geometry>
+            <box>
+              <size>1.800000 1.100000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="block_1">
+          <pose>0.600000 -0.500000 0.550000 0.400000 -0.200000 0.800000</pose>
+          <geometry>
+            <box>
+              <size>1.800000 1.100000 0.700000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="block_2">
+          <pose>1.500000 0.800000 0.280000 -0.300000 0.500000 0.200000</pose>
+          <geometry>
+            <box>
+              <size>1.100000 0.700000 0.450000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="block_2">
+          <pose>1.500000 0.800000 0.280000 -0.300000 0.500000 0.200000</pose>
+          <geometry>
+            <box>
+              <size>1.100000 0.700000 0.450000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="block_3">
+          <pose>-0.200000 1.100000 0.800000 0.600000 0.300000 1.100000</pose>
+          <geometry>
+            <box>
+              <size>0.900000 0.600000 0.500000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="block_3">
+          <pose>-0.200000 1.100000 0.800000 0.600000 0.300000 1.100000</pose>
+          <geometry>
+            <box>
+              <size>0.900000 0.600000 0.500000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="block_4">
+          <pose>2.200000 0.100000 0.220000 0.100000 0.800000 -0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.300000 0.800000 0.350000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="block_4">
+          <pose>2.200000 0.100000 0.220000 0.100000 0.800000 -0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.300000 0.800000 0.350000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="cone_0">
+          <pose>-2.200000 1.600000 0.280000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.1800</radius>
+              <length>0.5000</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.9500 0.4200 0.0600 1.0000</ambient>
+            <diffuse>0.9500 0.4200 0.0600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="cone_1">
+          <pose>2.400000 -1.500000 0.280000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.1800</radius>
+              <length>0.5000</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.9500 0.4200 0.0600 1.0000</ambient>
+            <diffuse>0.9500 0.4200 0.0600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="cone_2">
+          <pose>0.400000 2.200000 0.280000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.1800</radius>
+              <length>0.5000</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.9500 0.4200 0.0600 1.0000</ambient>
+            <diffuse>0.9500 0.4200 0.0600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="avenue_north_pole">
+      <static>true</static>
+      <pose>0.000000 84.000000 0.000000 0.000000 0.000000 1.570796</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="pavement">
+          <pose>0.000000 0.000000 0.025000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>10.000000 10.000000 0.030000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1700 0.1700 0.1800 1.0000</ambient>
+            <diffuse>0.1700 0.1700 0.1800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/asphalt.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="pole">
+          <pose>0.000000 0.000000 0.450000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.1400</radius>
+              <length>11.0000</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.4200 0.3000 0.1600 1.0000</ambient>
+            <diffuse>0.4200 0.3000 0.1600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <collision name="pole">
+          <pose>0.000000 0.000000 0.450000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.1400</radius>
+              <length>11.0000</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name="block_0">
+          <pose>-1.400000 0.400000 0.350000 0.200000 0.100000 0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.900000 0.550000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="block_0">
+          <pose>-1.400000 0.400000 0.350000 0.200000 0.100000 0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.900000 0.550000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="block_1">
+          <pose>0.600000 -0.500000 0.550000 0.400000 -0.200000 0.800000</pose>
+          <geometry>
+            <box>
+              <size>1.800000 1.100000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="block_1">
+          <pose>0.600000 -0.500000 0.550000 0.400000 -0.200000 0.800000</pose>
+          <geometry>
+            <box>
+              <size>1.800000 1.100000 0.700000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="block_2">
+          <pose>1.500000 0.800000 0.280000 -0.300000 0.500000 0.200000</pose>
+          <geometry>
+            <box>
+              <size>1.100000 0.700000 0.450000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="block_2">
+          <pose>1.500000 0.800000 0.280000 -0.300000 0.500000 0.200000</pose>
+          <geometry>
+            <box>
+              <size>1.100000 0.700000 0.450000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="block_3">
+          <pose>-0.200000 1.100000 0.800000 0.600000 0.300000 1.100000</pose>
+          <geometry>
+            <box>
+              <size>0.900000 0.600000 0.500000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="block_3">
+          <pose>-0.200000 1.100000 0.800000 0.600000 0.300000 1.100000</pose>
+          <geometry>
+            <box>
+              <size>0.900000 0.600000 0.500000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="block_4">
+          <pose>2.200000 0.100000 0.220000 0.100000 0.800000 -0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.300000 0.800000 0.350000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="block_4">
+          <pose>2.200000 0.100000 0.220000 0.100000 0.800000 -0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.300000 0.800000 0.350000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="cone_0">
+          <pose>-2.200000 1.600000 0.280000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.1800</radius>
+              <length>0.5000</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.9500 0.4200 0.0600 1.0000</ambient>
+            <diffuse>0.9500 0.4200 0.0600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="cone_1">
+          <pose>2.400000 -1.500000 0.280000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.1800</radius>
+              <length>0.5000</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.9500 0.4200 0.0600 1.0000</ambient>
+            <diffuse>0.9500 0.4200 0.0600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="cone_2">
+          <pose>0.400000 2.200000 0.280000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.1800</radius>
+              <length>0.5000</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.9500 0.4200 0.0600 1.0000</ambient>
+            <diffuse>0.9500 0.4200 0.0600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="survivor_standing_avenue_south">
+      <static>true</static>
+      <pose>-4.200000 24.000000 0.000000 0.000000 0.000000 -1.570796</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="leg_l">
+          <pose>0.000000 0.090000 0.450000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.140000 0.120000 0.900000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1000 0.1200 1.0000</ambient>
+            <diffuse>0.1000 0.1000 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="leg_r">
+          <pose>0.000000 -0.090000 0.450000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.140000 0.120000 0.900000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1000 0.1200 1.0000</ambient>
+            <diffuse>0.1000 0.1000 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="torso">
+          <pose>0.000000 0.000000 1.150000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.340000 0.220000 0.550000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9300 0.4000 0.0800 1.0000</ambient>
+            <diffuse>0.9300 0.4000 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="head">
+          <pose>0.000000 0.000000 1.580000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <sphere>
+              <radius>0.1300</radius>
+            </sphere>
+          </geometry>
+          <material>
+            <ambient>0.7800 0.6000 0.4600 1.0000</ambient>
+            <diffuse>0.7800 0.6000 0.4600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="arm_l">
+          <pose>0.000000 0.240000 1.120000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.100000 0.100000 0.500000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9300 0.4000 0.0800 1.0000</ambient>
+            <diffuse>0.9300 0.4000 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="arm_r">
+          <pose>0.000000 -0.240000 1.120000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.100000 0.100000 0.500000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9300 0.4000 0.0800 1.0000</ambient>
+            <diffuse>0.9300 0.4000 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <collision name="body">
+          <pose>0.000000 0.000000 0.900000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.450000 0.500000 1.800000</size>
+            </box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+    <model name="survivor_lying_flood_edge">
+      <static>true</static>
+      <pose>1.500000 43.500000 0.000000 0.000000 0.000000 1.570796</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="legs">
+          <pose>-0.550000 0.000000 0.160000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.700000 0.280000 0.160000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1000 0.1200 1.0000</ambient>
+            <diffuse>0.1000 0.1000 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="torso">
+          <pose>0.050000 0.000000 0.260000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.550000 0.360000 0.200000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.0900 0.0800 1.0000</ambient>
+            <diffuse>0.7200 0.0900 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="head">
+          <pose>0.480000 0.000000 0.280000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <sphere>
+              <radius>0.1200</radius>
+            </sphere>
+          </geometry>
+          <material>
+            <ambient>0.7800 0.6000 0.4600 1.0000</ambient>
+            <diffuse>0.7800 0.6000 0.4600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="arm_l">
+          <pose>0.050000 0.260000 0.200000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.450000 0.100000 0.100000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.0900 0.0800 1.0000</ambient>
+            <diffuse>0.7200 0.0900 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="arm_r">
+          <pose>0.050000 -0.260000 0.200000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.450000 0.100000 0.100000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.0900 0.0800 1.0000</ambient>
+            <diffuse>0.7200 0.0900 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <collision name="body">
+          <pose>-0.050000 0.000000 0.220000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.550000 0.350000</size>
+            </box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+    <model name="survivor_waving_plaza">
+      <static>true</static>
+      <pose>-2.500000 66.000000 0.000000 0.000000 0.000000 -1.570796</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="leg_l">
+          <pose>0.000000 0.090000 0.450000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.140000 0.120000 0.900000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1000 0.1200 1.0000</ambient>
+            <diffuse>0.1000 0.1000 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="leg_r">
+          <pose>0.000000 -0.090000 0.450000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.140000 0.120000 0.900000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1000 0.1200 1.0000</ambient>
+            <diffuse>0.1000 0.1000 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="torso">
+          <pose>0.000000 0.000000 1.150000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.340000 0.220000 0.550000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9500 0.7800 0.0800 1.0000</ambient>
+            <diffuse>0.9500 0.7800 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="head">
+          <pose>0.000000 0.000000 1.580000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <sphere>
+              <radius>0.1300</radius>
+            </sphere>
+          </geometry>
+          <material>
+            <ambient>0.7800 0.6000 0.4600 1.0000</ambient>
+            <diffuse>0.7800 0.6000 0.4600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="arm_l">
+          <pose>0.000000 0.240000 1.120000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.100000 0.100000 0.500000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9500 0.7800 0.0800 1.0000</ambient>
+            <diffuse>0.9500 0.7800 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="arm_r">
+          <pose>0.120000 -0.180000 1.550000 0.000000 -0.900000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.100000 0.100000 0.550000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9500 0.7800 0.0800 1.0000</ambient>
+            <diffuse>0.9500 0.7800 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <collision name="body">
+          <pose>0.000000 0.000000 0.900000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.450000 0.500000 1.800000</size>
+            </box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+    <model name="survivor_standing_collapse">
+      <static>true</static>
+      <pose>6.500000 56.000000 0.000000 0.000000 0.000000 3.141593</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="leg_l">
+          <pose>0.000000 0.090000 0.450000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.140000 0.120000 0.900000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1000 0.1200 1.0000</ambient>
+            <diffuse>0.1000 0.1000 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="leg_r">
+          <pose>0.000000 -0.090000 0.450000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.140000 0.120000 0.900000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1000 0.1200 1.0000</ambient>
+            <diffuse>0.1000 0.1000 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="torso">
+          <pose>0.000000 0.000000 1.150000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.340000 0.220000 0.550000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9300 0.4000 0.0800 1.0000</ambient>
+            <diffuse>0.9300 0.4000 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="head">
+          <pose>0.000000 0.000000 1.580000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <sphere>
+              <radius>0.1300</radius>
+            </sphere>
+          </geometry>
+          <material>
+            <ambient>0.7800 0.6000 0.4600 1.0000</ambient>
+            <diffuse>0.7800 0.6000 0.4600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="arm_l">
+          <pose>0.000000 0.240000 1.120000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.100000 0.100000 0.500000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9300 0.4000 0.0800 1.0000</ambient>
+            <diffuse>0.9300 0.4000 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="arm_r">
+          <pose>0.000000 -0.240000 1.120000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.100000 0.100000 0.500000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9300 0.4000 0.0800 1.0000</ambient>
+            <diffuse>0.9300 0.4000 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <collision name="body">
+          <pose>0.000000 0.000000 0.900000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.450000 0.500000 1.800000</size>
+            </box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+    <model name="survivor_lying_north_blockage">
+      <static>true</static>
+      <pose>-1.200000 74.000000 0.000000 0.000000 0.000000 1.570796</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="legs">
+          <pose>-0.550000 0.000000 0.160000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.700000 0.280000 0.160000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1000 0.1200 1.0000</ambient>
+            <diffuse>0.1000 0.1000 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="torso">
+          <pose>0.050000 0.000000 0.260000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.550000 0.360000 0.200000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.0900 0.0800 1.0000</ambient>
+            <diffuse>0.7200 0.0900 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="head">
+          <pose>0.480000 0.000000 0.280000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <sphere>
+              <radius>0.1200</radius>
+            </sphere>
+          </geometry>
+          <material>
+            <ambient>0.7800 0.6000 0.4600 1.0000</ambient>
+            <diffuse>0.7800 0.6000 0.4600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="arm_l">
+          <pose>0.050000 0.260000 0.200000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.450000 0.100000 0.100000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.0900 0.0800 1.0000</ambient>
+            <diffuse>0.7200 0.0900 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="arm_r">
+          <pose>0.050000 -0.260000 0.200000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.450000 0.100000 0.100000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.0900 0.0800 1.0000</ambient>
+            <diffuse>0.7200 0.0900 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <collision name="body">
+          <pose>-0.050000 0.000000 0.220000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.550000 0.350000</size>
+            </box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+    <model name="survivor_waving_east_corner">
+      <static>true</static>
+      <pose>10.000000 63.500000 0.000000 0.000000 0.000000 3.141593</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="leg_l">
+          <pose>0.000000 0.090000 0.450000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.140000 0.120000 0.900000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1000 0.1200 1.0000</ambient>
+            <diffuse>0.1000 0.1000 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="leg_r">
+          <pose>0.000000 -0.090000 0.450000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.140000 0.120000 0.900000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1000 0.1200 1.0000</ambient>
+            <diffuse>0.1000 0.1000 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="torso">
+          <pose>0.000000 0.000000 1.150000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.340000 0.220000 0.550000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9500 0.7800 0.0800 1.0000</ambient>
+            <diffuse>0.9500 0.7800 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="head">
+          <pose>0.000000 0.000000 1.580000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <sphere>
+              <radius>0.1300</radius>
+            </sphere>
+          </geometry>
+          <material>
+            <ambient>0.7800 0.6000 0.4600 1.0000</ambient>
+            <diffuse>0.7800 0.6000 0.4600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="arm_l">
+          <pose>0.000000 0.240000 1.120000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.100000 0.100000 0.500000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9500 0.7800 0.0800 1.0000</ambient>
+            <diffuse>0.9500 0.7800 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="arm_r">
+          <pose>0.120000 -0.180000 1.550000 0.000000 -0.900000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.100000 0.100000 0.550000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9500 0.7800 0.0800 1.0000</ambient>
+            <diffuse>0.9500 0.7800 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <collision name="body">
+          <pose>0.000000 0.000000 0.900000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.450000 0.500000 1.800000</size>
+            </box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+    <model name="building_sw_intact">
+      <static>true</static>
+      <pose>-18.000000 38.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="mass">
+          <pose>0.000000 0.000000 4.000000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>16.000000 20.000000 8.000000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5800 0.2800 0.2200 1.0000</ambient>
+            <diffuse>0.5800 0.2800 0.2200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/brick.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="mass">
+          <pose>0.000000 0.000000 4.000000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>16.000000 20.000000 8.000000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="roof">
+          <pose>0.000000 0.000000 8.120000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>16.500000 20.500000 0.240000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.7000 0.6600 1.0000</ambient>
+            <diffuse>0.7200 0.7000 0.6600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/concrete.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="win_0">
+          <pose>-7.000000 10.040000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_1">
+          <pose>-7.000000 -10.040000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_2">
+          <pose>-2.333333 10.040000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_3">
+          <pose>-2.333333 -10.040000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_4">
+          <pose>2.333333 10.040000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_5">
+          <pose>2.333333 -10.040000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_6">
+          <pose>7.000000 10.040000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_7">
+          <pose>7.000000 -10.040000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_8">
+          <pose>8.040000 -9.000000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_9">
+          <pose>-8.040000 -9.000000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_10">
+          <pose>8.040000 -5.400000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_11">
+          <pose>-8.040000 -5.400000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_12">
+          <pose>8.040000 -1.800000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_13">
+          <pose>-8.040000 -1.800000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_14">
+          <pose>8.040000 1.800000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_15">
+          <pose>-8.040000 1.800000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_16">
+          <pose>8.040000 5.400000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_17">
+          <pose>-8.040000 5.400000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_18">
+          <pose>8.040000 9.000000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_19">
+          <pose>-8.040000 9.000000 5.760000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_20">
+          <pose>-7.000000 10.040000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_21">
+          <pose>-7.000000 -10.040000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_22">
+          <pose>-2.333333 10.040000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_23">
+          <pose>-2.333333 -10.040000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_24">
+          <pose>2.333333 10.040000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_25">
+          <pose>2.333333 -10.040000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_26">
+          <pose>7.000000 10.040000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_27">
+          <pose>7.000000 -10.040000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_28">
+          <pose>8.040000 -9.000000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_29">
+          <pose>-8.040000 -9.000000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_30">
+          <pose>8.040000 -5.400000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_31">
+          <pose>-8.040000 -5.400000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_32">
+          <pose>8.040000 -1.800000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_33">
+          <pose>-8.040000 -1.800000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_34">
+          <pose>8.040000 1.800000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_35">
+          <pose>-8.040000 1.800000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_36">
+          <pose>8.040000 5.400000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_37">
+          <pose>-8.040000 5.400000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_38">
+          <pose>8.040000 9.000000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_39">
+          <pose>-8.040000 9.000000 3.040000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="building_se_remnant">
+      <static>true</static>
+      <pose>18.000000 37.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="mass">
+          <pose>0.000000 0.000000 2.300000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>12.000000 14.000000 4.600000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.7000 0.6600 1.0000</ambient>
+            <diffuse>0.7200 0.7000 0.6600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/concrete.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="mass">
+          <pose>0.000000 0.000000 2.300000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>12.000000 14.000000 4.600000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="roof">
+          <pose>0.000000 0.000000 4.720000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>12.500000 14.500000 0.240000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.7000 0.6600 1.0000</ambient>
+            <diffuse>0.7200 0.7000 0.6600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/concrete.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="win_0">
+          <pose>-5.000000 7.040000 2.530000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_1">
+          <pose>-5.000000 -7.040000 2.530000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_2">
+          <pose>0.000000 7.040000 2.530000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_3">
+          <pose>0.000000 -7.040000 2.530000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_4">
+          <pose>5.000000 7.040000 2.530000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_5">
+          <pose>5.000000 -7.040000 2.530000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_6">
+          <pose>6.040000 -6.000000 2.530000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_7">
+          <pose>-6.040000 -6.000000 2.530000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_8">
+          <pose>6.040000 -2.000000 2.530000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_9">
+          <pose>-6.040000 -2.000000 2.530000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_10">
+          <pose>6.040000 2.000000 2.530000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_11">
+          <pose>-6.040000 2.000000 2.530000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_12">
+          <pose>6.040000 6.000000 2.530000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_13">
+          <pose>-6.040000 6.000000 2.530000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="building_se_rubble">
+      <static>true</static>
+      <pose>15.000000 48.500000 0.000000 0.000000 0.000000 0.300000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="chunk_0">
+          <pose>-1.400000 0.400000 0.350000 0.200000 0.100000 0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.900000 0.550000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="chunk_0">
+          <pose>-1.400000 0.400000 0.350000 0.200000 0.100000 0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.900000 0.550000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="chunk_1">
+          <pose>0.600000 -0.500000 0.550000 0.400000 -0.200000 0.800000</pose>
+          <geometry>
+            <box>
+              <size>1.800000 1.100000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="chunk_1">
+          <pose>0.600000 -0.500000 0.550000 0.400000 -0.200000 0.800000</pose>
+          <geometry>
+            <box>
+              <size>1.800000 1.100000 0.700000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="chunk_2">
+          <pose>1.500000 0.800000 0.280000 -0.300000 0.500000 0.200000</pose>
+          <geometry>
+            <box>
+              <size>1.100000 0.700000 0.450000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="chunk_2">
+          <pose>1.500000 0.800000 0.280000 -0.300000 0.500000 0.200000</pose>
+          <geometry>
+            <box>
+              <size>1.100000 0.700000 0.450000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="chunk_3">
+          <pose>-0.200000 1.100000 0.800000 0.600000 0.300000 1.100000</pose>
+          <geometry>
+            <box>
+              <size>0.900000 0.600000 0.500000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="chunk_3">
+          <pose>-0.200000 1.100000 0.800000 0.600000 0.300000 1.100000</pose>
+          <geometry>
+            <box>
+              <size>0.900000 0.600000 0.500000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="chunk_4">
+          <pose>2.200000 0.100000 0.220000 0.100000 0.800000 -0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.300000 0.800000 0.350000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="chunk_4">
+          <pose>2.200000 0.100000 0.220000 0.100000 0.800000 -0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.300000 0.800000 0.350000</size>
+            </box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+    <model name="building_se_slab">
+      <static>true</static>
+      <pose>13.500000 50.500000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.400000 0.000000 1.350000 0.450000 0.300000 0.150000</pose>
+          <geometry>
+            <box>
+              <size>6.000000 3.200000 0.280000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.7000 0.6600 1.0000</ambient>
+            <diffuse>0.7200 0.7000 0.6600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/concrete.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="slab">
+          <pose>0.400000 0.000000 1.350000 0.450000 0.300000 0.150000</pose>
+          <geometry>
+            <box>
+              <size>6.000000 3.200000 0.280000</size>
+            </box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+    <model name="building_nw_intact">
+      <static>true</static>
+      <pose>-18.000000 84.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="mass">
+          <pose>0.000000 0.000000 2.200000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>16.000000 16.000000 4.400000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5800 0.2800 0.2200 1.0000</ambient>
+            <diffuse>0.5800 0.2800 0.2200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/brick.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="mass">
+          <pose>0.000000 0.000000 2.200000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>16.000000 16.000000 4.400000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="roof">
+          <pose>0.000000 0.000000 4.520000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>16.500000 16.500000 0.240000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.7000 0.6600 1.0000</ambient>
+            <diffuse>0.7200 0.7000 0.6600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/concrete.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <visual name="win_0">
+          <pose>-7.000000 8.040000 2.420000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_1">
+          <pose>-7.000000 -8.040000 2.420000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_2">
+          <pose>-2.333333 8.040000 2.420000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_3">
+          <pose>-2.333333 -8.040000 2.420000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_4">
+          <pose>2.333333 8.040000 2.420000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_5">
+          <pose>2.333333 -8.040000 2.420000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_6">
+          <pose>7.000000 8.040000 2.420000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_7">
+          <pose>7.000000 -8.040000 2.420000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.850000 0.060000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_8">
+          <pose>8.040000 -7.000000 2.420000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_9">
+          <pose>-8.040000 -7.000000 2.420000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_10">
+          <pose>8.040000 -2.333333 2.420000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_11">
+          <pose>-8.040000 -2.333333 2.420000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_12">
+          <pose>8.040000 2.333333 2.420000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_13">
+          <pose>-8.040000 2.333333 2.420000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_14">
+          <pose>8.040000 7.000000 2.420000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="win_15">
+          <pose>-8.040000 7.000000 2.420000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.060000 0.850000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1000 0.1600 0.2400 1.0000</ambient>
+            <diffuse>0.1000 0.1600 0.2400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <model name="building_nw_corner">
+      <static>true</static>
+      <pose>-10.500000 76.500000 0.000000 0.000000 0.000000 0.300000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="chunk_0">
+          <pose>-1.400000 0.400000 0.350000 0.200000 0.100000 0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.900000 0.550000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="chunk_0">
+          <pose>-1.400000 0.400000 0.350000 0.200000 0.100000 0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.900000 0.550000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="chunk_1">
+          <pose>0.600000 -0.500000 0.550000 0.400000 -0.200000 0.800000</pose>
+          <geometry>
+            <box>
+              <size>1.800000 1.100000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="chunk_1">
+          <pose>0.600000 -0.500000 0.550000 0.400000 -0.200000 0.800000</pose>
+          <geometry>
+            <box>
+              <size>1.800000 1.100000 0.700000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="chunk_2">
+          <pose>1.500000 0.800000 0.280000 -0.300000 0.500000 0.200000</pose>
+          <geometry>
+            <box>
+              <size>1.100000 0.700000 0.450000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="chunk_2">
+          <pose>1.500000 0.800000 0.280000 -0.300000 0.500000 0.200000</pose>
+          <geometry>
+            <box>
+              <size>1.100000 0.700000 0.450000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="chunk_3">
+          <pose>-0.200000 1.100000 0.800000 0.600000 0.300000 1.100000</pose>
+          <geometry>
+            <box>
+              <size>0.900000 0.600000 0.500000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="chunk_3">
+          <pose>-0.200000 1.100000 0.800000 0.600000 0.300000 1.100000</pose>
+          <geometry>
+            <box>
+              <size>0.900000 0.600000 0.500000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="chunk_4">
+          <pose>2.200000 0.100000 0.220000 0.100000 0.800000 -0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.300000 0.800000 0.350000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="chunk_4">
+          <pose>2.200000 0.100000 0.220000 0.100000 0.800000 -0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.300000 0.800000 0.350000</size>
+            </box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+    <model name="building_ne_rubble">
+      <static>true</static>
+      <pose>18.000000 84.000000 0.000000 0.000000 0.000000 0.300000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="chunk_0">
+          <pose>-1.400000 0.400000 0.350000 0.200000 0.100000 0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.900000 0.550000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="chunk_0">
+          <pose>-1.400000 0.400000 0.350000 0.200000 0.100000 0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.900000 0.550000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="chunk_1">
+          <pose>0.600000 -0.500000 0.550000 0.400000 -0.200000 0.800000</pose>
+          <geometry>
+            <box>
+              <size>1.800000 1.100000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="chunk_1">
+          <pose>0.600000 -0.500000 0.550000 0.400000 -0.200000 0.800000</pose>
+          <geometry>
+            <box>
+              <size>1.800000 1.100000 0.700000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="chunk_2">
+          <pose>1.500000 0.800000 0.280000 -0.300000 0.500000 0.200000</pose>
+          <geometry>
+            <box>
+              <size>1.100000 0.700000 0.450000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="chunk_2">
+          <pose>1.500000 0.800000 0.280000 -0.300000 0.500000 0.200000</pose>
+          <geometry>
+            <box>
+              <size>1.100000 0.700000 0.450000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="chunk_3">
+          <pose>-0.200000 1.100000 0.800000 0.600000 0.300000 1.100000</pose>
+          <geometry>
+            <box>
+              <size>0.900000 0.600000 0.500000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="chunk_3">
+          <pose>-0.200000 1.100000 0.800000 0.600000 0.300000 1.100000</pose>
+          <geometry>
+            <box>
+              <size>0.900000 0.600000 0.500000</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="chunk_4">
+          <pose>2.200000 0.100000 0.220000 0.100000 0.800000 -0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.300000 0.800000 0.350000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.5000 0.4200 0.3400 1.0000</ambient>
+            <diffuse>0.5000 0.4200 0.3400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/rubble.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="chunk_4">
+          <pose>2.200000 0.100000 0.220000 0.100000 0.800000 -0.400000</pose>
+          <geometry>
+            <box>
+              <size>1.300000 0.800000 0.350000</size>
+            </box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+    <model name="building_ne_slab">
+      <static>true</static>
+      <pose>16.000000 76.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="slab">
+          <pose>0.400000 0.000000 1.350000 0.700000 -0.200000 0.400000</pose>
+          <geometry>
+            <box>
+              <size>6.000000 3.200000 0.280000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.7000 0.6600 1.0000</ambient>
+            <diffuse>0.7200 0.7000 0.6600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+            <pbr>
+              <metal>
+                <albedo_map>disaster_block_materials/concrete.png</albedo_map>
+                <roughness>0.88</roughness>
+                <metalness>0</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+        <collision name="slab">
+          <pose>0.400000 0.000000 1.350000 0.700000 -0.200000 0.400000</pose>
+          <geometry>
+            <box>
+              <size>6.000000 3.200000 0.280000</size>
+            </box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+    <model name="car_parked_west">
+      <static>true</static>
+      <pose>-5.100000 50.000000 0.000000 0.000000 0.000000 1.570796</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="shell">
+          <pose>0.000000 0.000000 0.580000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>4.200000 1.750000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1300 0.3000 0.6400 1.0000</ambient>
+            <diffuse>0.1300 0.3000 0.6400 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="cabin">
+          <pose>-0.150000 0.000000 1.080000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>2.000000 1.550000 0.480000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1800 0.2800 0.3600 1.0000</ambient>
+            <diffuse>0.1800 0.2800 0.3600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="w_fl">
+          <pose>1.250000 0.820000 0.320000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.3200</radius>
+              <length>0.2200</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="w_fr">
+          <pose>1.250000 -0.820000 0.320000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.3200</radius>
+              <length>0.2200</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="w_rl">
+          <pose>-1.250000 0.820000 0.320000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.3200</radius>
+              <length>0.2200</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="w_rr">
+          <pose>-1.250000 -0.820000 0.320000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.3200</radius>
+              <length>0.2200</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <collision name="hull">
+          <pose>0.000000 0.000000 0.600000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>4.200000 1.800000 1.200000</size>
+            </box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+    <model name="car_parked_east">
+      <static>true</static>
+      <pose>4.700000 70.000000 0.000000 0.000000 0.000000 1.570796</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="shell">
+          <pose>0.000000 0.000000 0.580000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>4.200000 1.750000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.8800 0.8800 0.8600 1.0000</ambient>
+            <diffuse>0.8800 0.8800 0.8600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="cabin">
+          <pose>-0.150000 0.000000 1.080000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>2.000000 1.550000 0.480000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1800 0.2800 0.3600 1.0000</ambient>
+            <diffuse>0.1800 0.2800 0.3600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="w_fl">
+          <pose>1.250000 0.820000 0.320000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.3200</radius>
+              <length>0.2200</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="w_fr">
+          <pose>1.250000 -0.820000 0.320000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.3200</radius>
+              <length>0.2200</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="w_rl">
+          <pose>-1.250000 0.820000 0.320000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.3200</radius>
+              <length>0.2200</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="w_rr">
+          <pose>-1.250000 -0.820000 0.320000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.3200</radius>
+              <length>0.2200</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <collision name="hull">
+          <pose>0.000000 0.000000 0.600000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>4.200000 1.800000 1.200000</size>
+            </box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+    <model name="car_overturned">
+      <static>true</static>
+      <pose>12.000000 50.000000 1.050000 1.350000 0.000000 0.600000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="shell">
+          <pose>0.000000 0.000000 0.580000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>4.200000 1.750000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7200 0.0900 0.0800 1.0000</ambient>
+            <diffuse>0.7200 0.0900 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="cabin">
+          <pose>-0.150000 0.000000 1.080000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>2.000000 1.550000 0.480000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1800 0.2800 0.3600 1.0000</ambient>
+            <diffuse>0.1800 0.2800 0.3600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="w_fl">
+          <pose>1.250000 0.820000 0.320000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.3200</radius>
+              <length>0.2200</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="w_fr">
+          <pose>1.250000 -0.820000 0.320000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.3200</radius>
+              <length>0.2200</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="w_rl">
+          <pose>-1.250000 0.820000 0.320000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.3200</radius>
+              <length>0.2200</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="w_rr">
+          <pose>-1.250000 -0.820000 0.320000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.3200</radius>
+              <length>0.2200</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <collision name="hull">
+          <pose>0.000000 0.000000 0.600000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>4.200000 1.800000 1.200000</size>
+            </box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+    <model name="car_flooded">
+      <static>true</static>
+      <pose>2.400000 33.000000 0.000000 0.000000 0.000000 1.570796</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="shell">
+          <pose>0.000000 0.000000 0.580000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>4.200000 1.750000 0.700000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="cabin">
+          <pose>-0.150000 0.000000 1.080000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>2.000000 1.550000 0.480000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.1800 0.2800 0.3600 1.0000</ambient>
+            <diffuse>0.1800 0.2800 0.3600 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="w_fl">
+          <pose>1.250000 0.820000 0.320000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.3200</radius>
+              <length>0.2200</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="w_fr">
+          <pose>1.250000 -0.820000 0.320000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.3200</radius>
+              <length>0.2200</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="w_rl">
+          <pose>-1.250000 0.820000 0.320000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.3200</radius>
+              <length>0.2200</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="w_rr">
+          <pose>-1.250000 -0.820000 0.320000 1.570796 0.000000 0.000000</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.3200</radius>
+              <length>0.2200</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0700 0.0700 0.0800 1.0000</ambient>
+            <diffuse>0.0700 0.0700 0.0800 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <collision name="hull">
+          <pose>0.000000 0.000000 0.600000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>4.200000 1.800000 1.200000</size>
+            </box>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+    <model name="lane_markings">
+      <static>true</static>
+      <pose>0.000000 0.000000 0.000000 0.000000 0.000000 0.000000</pose>
+      <link name="link">
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <visual name="dash_0">
+          <pose>0.000000 16.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.160000 1.400000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_1">
+          <pose>0.000000 20.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.160000 1.400000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_2">
+          <pose>0.000000 24.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.160000 1.400000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_3">
+          <pose>0.000000 44.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.160000 1.400000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_4">
+          <pose>0.000000 48.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.160000 1.400000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_5">
+          <pose>0.000000 52.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.160000 1.400000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_6">
+          <pose>0.000000 56.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.160000 1.400000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_7">
+          <pose>0.000000 60.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.160000 1.400000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_8">
+          <pose>0.000000 64.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.160000 1.400000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_9">
+          <pose>0.000000 68.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.160000 1.400000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_10">
+          <pose>0.000000 72.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.160000 1.400000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_11">
+          <pose>0.000000 76.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.160000 1.400000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_12">
+          <pose>0.000000 92.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.160000 1.400000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_13">
+          <pose>0.000000 96.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.160000 1.400000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_14">
+          <pose>0.000000 100.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>0.160000 1.400000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_15">
+          <pose>-34.000000 60.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.160000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_16">
+          <pose>-30.000000 60.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.160000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_17">
+          <pose>-26.000000 60.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.160000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_18">
+          <pose>-22.000000 60.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.160000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_19">
+          <pose>-18.000000 60.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.160000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_20">
+          <pose>-14.000000 60.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.160000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_21">
+          <pose>-10.000000 60.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.160000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_22">
+          <pose>10.000000 60.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.160000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_23">
+          <pose>26.000000 60.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.160000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_24">
+          <pose>30.000000 60.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.160000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+        <visual name="dash_25">
+          <pose>34.000000 60.000000 0.055000 0.000000 0.000000 0.000000</pose>
+          <geometry>
+            <box>
+              <size>1.400000 0.160000 0.015000</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9000 0.7600 0.1200 1.0000</ambient>
+            <diffuse>0.9000 0.7600 0.1200 1.0000</diffuse>
+            <specular>0.0500 0.0500 0.0500 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>

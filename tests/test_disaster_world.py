@@ -15,6 +15,7 @@ import pytest
 
 from surmap.simulation.disaster_world import (
     DisasterGroundTruth,
+    MapEnu,
     ModelPose,
     PersonGroundTruth,
     RoadGroundTruth,
@@ -211,7 +212,9 @@ def test_albedo_maps_resolve_next_to_the_world_file() -> None:
     # Given albedo maps referenced by the world
     sdf_path = disaster_world_sdf()
     root = ET.fromstring(sdf_path.read_text(encoding="utf-8"))
-    maps = [node.text.strip() for node in root.iter("albedo_map") if node.text and node.text.strip()]
+    maps = [
+        node.text.strip() for node in root.iter("albedo_map") if node.text and node.text.strip()
+    ]
 
     # When each path is resolved beside the SDF
     # Then the brick, asphalt, concrete, rubble, and dirt textures are files
@@ -266,16 +269,23 @@ def _xy(record: PersonGroundTruth | RoadGroundTruth) -> tuple[float, float]:
 
 def assert_records_match_anchor(truth: DisasterGroundTruth) -> None:
     """Every stored fix equals the ENU offset of that point from the anchor."""
-    for record in (*truth.people, *truth.roads):
-        latitude_deg, longitude_deg, altitude_m = enu_to_wgs84(
-            record.map_enu.x_m,
-            record.map_enu.y_m,
-            record.map_enu.z_m,
-        )
-        assert record.latitude_deg == pytest.approx(latitude_deg, abs=1e-9)
-        assert record.longitude_deg == pytest.approx(longitude_deg, abs=1e-9)
-        assert record.altitude_m == pytest.approx(altitude_m, abs=1e-6)
-        assert record.map_enu.z_m == pytest.approx(0.0)
+    for person in truth.people:
+        _assert_fix(person.map_enu, person.latitude_deg, person.longitude_deg, person.altitude_m)
+    for road in truth.roads:
+        _assert_fix(road.map_enu, road.latitude_deg, road.longitude_deg, road.altitude_m)
+
+
+def _assert_fix(
+    map_enu: MapEnu,
+    latitude_deg: float,
+    longitude_deg: float,
+    altitude_m: float,
+) -> None:
+    expect_lat, expect_lon, expect_alt = enu_to_wgs84(map_enu.x_m, map_enu.y_m, map_enu.z_m)
+    assert latitude_deg == pytest.approx(expect_lat, abs=1e-9)
+    assert longitude_deg == pytest.approx(expect_lon, abs=1e-9)
+    assert altitude_m == pytest.approx(expect_alt, abs=1e-6)
+    assert map_enu.z_m == pytest.approx(0.0)
 
 
 def assert_models_sit_on_records(
@@ -283,15 +293,20 @@ def assert_models_sit_on_records(
     truth: DisasterGroundTruth,
 ) -> None:
     """Each scored id is a static model on the ground-truth pose."""
-    for record in (*truth.people, *truth.roads):
-        pose = poses[record.id]
-        assert pose.static is True
-        assert pose.x_m == pytest.approx(record.map_enu.x_m, abs=1e-3)
-        assert pose.y_m == pytest.approx(record.map_enu.y_m, abs=1e-3)
-        assert pose.z_m == pytest.approx(record.map_enu.z_m, abs=1e-3)
-        assert pose.roll_rad == pytest.approx(0.0, abs=1e-3)
-        assert pose.pitch_rad == pytest.approx(0.0, abs=1e-3)
-        assert pose.yaw_rad == pytest.approx(record.yaw_rad, abs=1e-3)
+    for person in truth.people:
+        _assert_pose(poses[person.id], person.map_enu, person.yaw_rad)
+    for road in truth.roads:
+        _assert_pose(poses[road.id], road.map_enu, road.yaw_rad)
+
+
+def _assert_pose(pose: ModelPose, map_enu: MapEnu, yaw_rad: float) -> None:
+    assert pose.static is True
+    assert pose.x_m == pytest.approx(map_enu.x_m, abs=1e-3)
+    assert pose.y_m == pytest.approx(map_enu.y_m, abs=1e-3)
+    assert pose.z_m == pytest.approx(map_enu.z_m, abs=1e-3)
+    assert pose.roll_rad == pytest.approx(0.0, abs=1e-3)
+    assert pose.pitch_rad == pytest.approx(0.0, abs=1e-3)
+    assert pose.yaw_rad == pytest.approx(yaw_rad, abs=1e-3)
 
 
 def assert_textures_exist(world_dir: Path, maps: list[str]) -> None:

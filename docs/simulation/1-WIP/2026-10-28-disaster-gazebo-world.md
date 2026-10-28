@@ -13,10 +13,10 @@
   - [x] Geodetic anchor, survivor poses, road kinds
   - [x] SDF poses match ground truth; textures resolve
   - [x] Survey plan is a 12 m lawnmower; launch script does not fly
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] `surmap.simulation.disaster_world` loads ground truth, poses, and the plan
-  - [ ] `disaster_block.sdf` scene, ground-truth JSON, QGC plan, procedural textures
-  - [ ] `scripts/launch_disaster_sitl.sh` symlinks the world and starts stereo SITL
+- [wf 3] ✅ 2026-10-28 `/green` Green — implement until every red test passes · 11 passed in `tests/test_disaster_world.py`
+  - [x] `surmap.simulation.disaster_world` loads ground truth, poses, and the plan
+  - [x] `disaster_block.sdf` scene, ground-truth JSON, QGC plan, procedural textures
+  - [x] `scripts/launch_disaster_sitl.sh` symlinks the world and starts stereo SITL
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/simulation/disaster-world.md` — scene, licences, ground truth, WSL2 launch
@@ -143,7 +143,7 @@ The hackathon demo needs the simulated drone to fly over a search-and-rescue sce
 **Method:** V1, fail→pass — acceptance tests for the scoring frame, SDF placement, and the survey plan
 **Command:** `uv run pytest -q tests/test_disaster_world.py`
 **Before:** `uv run pytest -q tests/test_disaster_world.py` — collection error, `ModuleNotFoundError: surmap.simulation.disaster_world` (2026-10-28, tests committed red)
-**After:** the test module passes, including the 100 m north/east anchor literals, the six survivors and five road segments, static SDF poses, texture paths, the 12 m lawnmower, and a launch script with no flight commands
+**After:** `uv run pytest -q tests/test_disaster_world.py` — 11 passed (2026-10-28). Full gate on the same tree: `ruff check`, `ruff format --check`, `mypy`, `pytest -q` — 460 passed, 4 skipped. `gz` is not installed on the agent VM (`apt-cache` has no `gz-*` packages); SDF 1.9 well-formedness is the XML parse in `test_world_sdf_is_harmonic_and_uses_the_px4_anchor`. No headless screenshot.
 
 Full `uv run ruff check src tests`, `uv run ruff format --check src tests`, `uv run mypy`, and `uv run pytest -q` stay green. Gazebo is not on this VM; SDF well-formedness is the XML parse in the test. A `gz sdf -k` or headless screenshot is recorded here only if the tool actually runs.
 
@@ -199,7 +199,11 @@ None at planning time. The new module is a loader, not a split of an existing fi
 
 ## Validation Results
 
-*(filled when the gates run)*
+- `uv run ruff check src tests` — passed
+- `uv run ruff format --check src tests` — passed
+- `uv run mypy` — passed (119 source files)
+- `uv run pytest -q` — 460 passed, 4 skipped
+- `uv run pytest -q tests/test_disaster_world.py` — 11 passed
 
 ## References
 

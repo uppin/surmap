@@ -1,0 +1,175 @@
+{
+  "world": "disaster_block",
+  "frame": "map_enu",
+  "description": "Fictional civilian earthquake-and-flood block for search-and-rescue scoring. Anchored at the PX4 SITL spherical origin. Not a real incident.",
+  "spherical_coordinates": {
+    "surface_model": "EARTH_WGS84",
+    "world_frame_orientation": "ENU",
+    "latitude_deg": 47.397971057728974,
+    "longitude_deg": 8.546163739800146,
+    "elevation_m": 488.0,
+    "heading_deg": 0.0
+  },
+  "people": [
+    {
+      "id": "survivor_standing_avenue_south",
+      "pose": "standing",
+      "map_enu_m": {
+        "x": -4.2,
+        "y": 24.0,
+        "z": 0.0
+      },
+      "yaw_rad": -1.5707963267948966,
+      "latitude_deg": 47.39818692660873,
+      "longitude_deg": 8.546108102861467,
+      "altitude_m": 488.0
+    },
+    {
+      "id": "survivor_lying_flood_edge",
+      "pose": "lying",
+      "map_enu_m": {
+        "x": 1.5,
+        "y": 43.5,
+        "z": 0.0
+      },
+      "yaw_rad": 1.5707963267948966,
+      "latitude_deg": 47.39836232007354,
+      "longitude_deg": 8.546183610135389,
+      "altitude_m": 488.0
+    },
+    {
+      "id": "survivor_waving_plaza",
+      "pose": "waving",
+      "map_enu_m": {
+        "x": -2.5,
+        "y": 66.0,
+        "z": 0.0
+      },
+      "yaw_rad": -1.5707963267948966,
+      "latitude_deg": 47.39856469714831,
+      "longitude_deg": 8.546130622574742,
+      "altitude_m": 488.0
+    },
+    {
+      "id": "survivor_standing_collapse",
+      "pose": "standing",
+      "map_enu_m": {
+        "x": 6.5,
+        "y": 56.0,
+        "z": 0.0
+      },
+      "yaw_rad": 3.141592653589793,
+      "latitude_deg": 47.39847475178175,
+      "longitude_deg": 8.546249844586198,
+      "altitude_m": 488.0
+    },
+    {
+      "id": "survivor_lying_north_blockage",
+      "pose": "lying",
+      "map_enu_m": {
+        "x": -1.2,
+        "y": 74.0,
+        "z": 0.0
+      },
+      "yaw_rad": 1.5707963267948966,
+      "latitude_deg": 47.398636653441564,
+      "longitude_deg": 8.546147843531953,
+      "altitude_m": 488.0
+    },
+    {
+      "id": "survivor_waving_east_corner",
+      "pose": "waving",
+      "map_enu_m": {
+        "x": 10.0,
+        "y": 63.5,
+        "z": 0.0
+      },
+      "yaw_rad": 3.141592653589793,
+      "latitude_deg": 47.39854221080667,
+      "longitude_deg": 8.546296208701765,
+      "altitude_m": 488.0
+    }
+  ],
+  "roads": [
+    {
+      "id": "avenue_south_clear",
+      "kind": "passable",
+      "passable": true,
+      "map_enu_m": {
+        "x": 0.0,
+        "y": 20.0,
+        "z": 0.0
+      },
+      "length_m": 10.0,
+      "width_m": 12.0,
+      "yaw_rad": 1.5707963267948966,
+      "latitude_deg": 47.3981509484621,
+      "longitude_deg": 8.546163739800146,
+      "altitude_m": 488.0
+    },
+    {
+      "id": "cross_west_clear",
+      "kind": "passable",
+      "passable": true,
+      "map_enu_m": {
+        "x": -16.0,
+        "y": 60.0,
+        "z": 0.0
+      },
+      "length_m": 16.0,
+      "width_m": 12.0,
+      "yaw_rad": 0.0,
+      "latitude_deg": 47.39851072992837,
+      "longitude_deg": 8.545951789557558,
+      "altitude_m": 488.0
+    },
+    {
+      "id": "avenue_flood",
+      "kind": "flooded",
+      "passable": false,
+      "map_enu_m": {
+        "x": 1.0,
+        "y": 35.0,
+        "z": 0.0
+      },
+      "length_m": 14.0,
+      "width_m": 8.0,
+      "yaw_rad": 1.5707963267948966,
+      "latitude_deg": 47.398285866511955,
+      "longitude_deg": 8.546176986690309,
+      "altitude_m": 488.0
+    },
+    {
+      "id": "cross_east_debris",
+      "kind": "blocked",
+      "passable": false,
+      "map_enu_m": {
+        "x": 18.0,
+        "y": 60.0,
+        "z": 0.0
+      },
+      "length_m": 12.0,
+      "width_m": 8.0,
+      "yaw_rad": 0.0,
+      "latitude_deg": 47.39851072992837,
+      "longitude_deg": 8.546402183823059,
+      "altitude_m": 488.0
+    },
+    {
+      "id": "avenue_north_pole",
+      "kind": "blocked",
+      "passable": false,
+      "map_enu_m": {
+        "x": 0.0,
+        "y": 84.0,
+        "z": 0.0
+      },
+      "length_m": 10.0,
+      "width_m": 10.0,
+      "yaw_rad": 1.5707963267948966,
+      "latitude_deg": 47.39872659880813,
+      "longitude_deg": 8.546163739800146,
+      "altitude_m": 488.0
+    }
+  ]
+}
