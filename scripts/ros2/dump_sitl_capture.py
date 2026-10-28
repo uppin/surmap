@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import math
 import sys
 import time
 from pathlib import Path
@@ -77,9 +76,21 @@ def _image_msg_to_png(msg: object, target: Path) -> None:
     image.save(target, format="PNG")
 
 
+def _import_sitl_dump() -> object:
+    """Load SurMap's dumper helpers from this checkout, without an install."""
+    repo_src = Path(__file__).resolve().parents[2] / "src"
+    entry = str(repo_src)
+    if repo_src.is_dir() and entry not in sys.path:
+        sys.path.insert(0, entry)
+    from surmap.simulation.sitl_dump import navsat_accuracy_m
+
+    return navsat_accuracy_m
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     _require_ros()
+    navsat_accuracy_m = _import_sitl_dump()
 
     import rclpy
     from rclpy.node import Node
@@ -134,8 +145,9 @@ def main(argv: list[str] | None = None) -> int:
 
         def _on_gps(self, msg: NavSatFix) -> None:
             t_ns = int(msg.header.stamp.sec) * 1_000_000_000 + int(msg.header.stamp.nanosec)
-            acc = float(msg.position_covariance[0]) if msg.position_covariance else 1.0
-            if not math.isfinite(acc) or acc <= 0.0:
+            if msg.position_covariance:
+                acc = navsat_accuracy_m(float(msg.position_covariance[0]))
+            else:
                 acc = 1.0
             gps_rows.append(
                 [t_ns, float(msg.latitude), float(msg.longitude), float(msg.altitude), acc]
