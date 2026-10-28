@@ -14,17 +14,17 @@
   - [x] Create/update PRD documentation
   - [x] Create changeset
   - [x] Build and baseline healthy (Step 7)
-- [wf 2] ✅ 2026-10-28 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 19 failed, NotImplementedError
+- [wf 2] ✅ 2026-10-28 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 19 failed @ `b27226f`, NotImplementedError
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] `build_snapshot` calls `classify_motion` and puts moving tracks only in `dynamic`
-  - [ ] Each landmark anchors to the nearest `GpsCheckpoint` by `t_ns` and stores signed `offset_ns`
-  - [ ] Origin is the earliest fix, or absent when there is no fix; lat/lon/alt are null without an origin
-  - [ ] Landmark carries stable `id`, map xyz, lat/lon/alt, label, description, `model_id`, motion, and optional `mask_points`
-  - [ ] `write_snapshot` writes UTF-8 JSON and `read_snapshot` round-trips it
-  - [ ] Acceptance: two checkpoints, static landmark with non-zero `offset_ns`, moving track only under `dynamic`
+- [wf 3] ✅ 2026-10-28 `/green` Green — implement until every red test passes · 19 passed in `tests/test_map_snapshot.py`; suite 487 passed, 5 skipped
+  - [x] `build_snapshot` calls `classify_motion` and puts moving tracks only in `dynamic`
+  - [x] Each landmark anchors to the nearest `GpsCheckpoint` by `t_ns` and stores signed `offset_ns`
+  - [x] Origin is the earliest fix, or absent when there is no fix; lat/lon/alt are null without an origin
+  - [x] Landmark carries stable `id`, map xyz, lat/lon/alt, label, description, `model_id`, motion, and optional `mask_points`
+  - [x] `write_snapshot` writes UTF-8 JSON and `read_snapshot` round-trips it
+  - [x] Acceptance: two checkpoints, static landmark with non-zero `offset_ns`, moving track only under `dynamic`
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/semantic-map-snapshot.md` — document the snapshot JSON schema, including stable `id` and optional `mask_points`
@@ -103,7 +103,7 @@ Tracks and GPS fixes exist as dataclasses. Motion classification exists. Nothing
 **Method:** V1-fail→pass — acceptance tests for the two-checkpoint static/moving split, the non-zero offset, and the read/write round-trip
 **Command:** `uv run pytest -q tests/test_map_snapshot.py`
 **Before:** `uv run pytest -q tests/test_map_snapshot.py` — 19 failed, `NotImplementedError` from `build_snapshot` / `read_snapshot` (module was absent at first collection: `ModuleNotFoundError: No module named 'surmap.map'`). Suite baseline on `65a2fd6`: 468 passed, 5 skipped.
-**After:** `tests/test_map_snapshot.py` passes, and `uv run pytest -q`, `uv run ruff check src tests`, `uv run ruff format --check src tests`, and `uv run mypy` are green.
+**After:** `uv run pytest -q tests/test_map_snapshot.py` — 19 passed. Full `uv run pytest -q` — 487 passed, 5 skipped. `uv run ruff check src tests`, `uv run ruff format --check src tests`, and `uv run mypy` clean on this green commit.
 
 ## Testing Plan
 
