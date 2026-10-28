@@ -9,10 +9,10 @@
 ## Workflow
 
 - [wf 1] ✅ 2026-10-28 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Geodetic anchor, survivor poses, road kinds
-  - [ ] SDF poses match ground truth; textures resolve
-  - [ ] Survey plan is a 12 m lawnmower; launch script does not fly
+- [wf 2] ✅ 2026-10-28 `/plan-red` Red — acceptance and failing lower-tier tests, committed · collection error, `disaster_world` missing
+  - [x] Geodetic anchor, survivor poses, road kinds
+  - [x] SDF poses match ground truth; textures resolve
+  - [x] Survey plan is a 12 m lawnmower; launch script does not fly
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] `surmap.simulation.disaster_world` loads ground truth, poses, and the plan
   - [ ] `disaster_block.sdf` scene, ground-truth JSON, QGC plan, procedural textures
@@ -142,7 +142,7 @@ The hackathon demo needs the simulated drone to fly over a search-and-rescue sce
 
 **Method:** V1, fail→pass — acceptance tests for the scoring frame, SDF placement, and the survey plan
 **Command:** `uv run pytest -q tests/test_disaster_world.py`
-**Before:** module `surmap.simulation.disaster_world` missing; collection fails on import
+**Before:** `uv run pytest -q tests/test_disaster_world.py` — collection error, `ModuleNotFoundError: surmap.simulation.disaster_world` (2026-10-28, tests committed red)
 **After:** the test module passes, including the 100 m north/east anchor literals, the six survivors and five road segments, static SDF poses, texture paths, the 12 m lawnmower, and a launch script with no flight commands
 
 Full `uv run ruff check src tests`, `uv run ruff format --check src tests`, `uv run mypy`, and `uv run pytest -q` stay green. Gazebo is not on this VM; SDF well-formedness is the XML parse in the test. A `gz sdf -k` or headless screenshot is recorded here only if the tool actually runs.
