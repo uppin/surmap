@@ -243,14 +243,6 @@ Machine 2 (ROS2):
          ─► semantic map (GPS-anchored, incrementally updated)
 ```
 
-Mask registration is `surmap.survey.mask_cloud.points_in_mask`. It keeps
-camera-frame cloud points whose pinhole projection falls inside a SAM
-polygon and inside the frame, drops points at or nearer than 5 cm, and
-transforms the survivors with the RTAB-Map pose (`to_map_frame`) when one
-is supplied. The result is a registration layer. It is not written into
-RTAB-Map. The `surmap_fuse` ROS2 node, including landmark provenance, is
-still the design above; this function is the projection that node performs.
-
 SAM 3.1 runs on one channel only.
 The second channel exists for depth; segmentation does not need it.
 
@@ -302,9 +294,7 @@ wall-clock anchor recorded once per session.
 - `frame_id`, `t_ns`
 - Per point: `xyz` in camera frame, `u`, `v`, source `frame_id`
 - The point ↔ pixel link is mandatory: it is what lets a 2D SAM mask
-  claim a set of 3D points. `points_in_mask` recovers that link by
-  projecting camera-frame `xyz` with the stereo rig, then keeps the
-  points whose pixel lies inside the mask polygon and the frame
+  claim a set of 3D points
 
 ### `Segment`
 
