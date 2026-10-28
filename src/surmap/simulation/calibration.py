@@ -28,6 +28,11 @@ def render_cam_sensor_yaml(spec: StereoCalibrationSpec, channel: int) -> str:
     is therefore at Y = −baseline/2. Gazebo's model keeps that same eye
     at Y = +baseline/2 because a Gazebo link is forward-left-up; the
     export negates Y rather than moving the simulated camera.
+
+    The rotation takes the camera optical frame (+X right, +Y down,
+    +Z forward) into that body frame — the same rotation real EuRoC
+    `cam0` uses, which the dataset tool already converts with
+    `opticalRotation()`. An identity block would roll the image by 90°.
     """
     if channel not in (0, 1):
         raise ValueError(f"channel must be 0 or 1, got {channel}")
@@ -38,8 +43,8 @@ def render_cam_sensor_yaml(spec: StereoCalibrationSpec, channel: int) -> str:
         "T_BS:\n"
         "  cols: 4\n"
         "  rows: 4\n"
-        "  data: [1.0, 0.0, 0.0, 0.0,\n"
-        f"         0.0, 1.0, 0.0, {y},\n"
+        "  data: [0.0, -1.0, 0.0, 0.0,\n"
+        f"         1.0, 0.0, 0.0, {y},\n"
         "         0.0, 0.0, 1.0, 0.0,\n"
         "         0.0, 0.0, 0.0, 1.0]\n"
         f"rate_hz: {spec.rate_hz}\n"

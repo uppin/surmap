@@ -17,11 +17,16 @@ from surmap.simulation.sitl_capture import load_sitl_capture
 FIXTURE = Path(__file__).parent / "fixtures" / "sitl_capture_tiny"
 
 
-def _translation(sensor_yaml: str) -> tuple[float, float, float]:
-    """Body-frame camera origin from an EuRoC `T_BS` data row."""
+def _t_bs(sensor_yaml: str) -> list[float]:
+    """Row-major 4×4 `T_BS` from an EuRoC camera `sensor.yaml`."""
     match = re.search(r"data: \[([^\]]+)\]", sensor_yaml)
     assert match is not None
-    values = [float(part) for part in match.group(1).split(",")]
+    return [float(part) for part in match.group(1).split(",")]
+
+
+def _translation(sensor_yaml: str) -> tuple[float, float, float]:
+    """Body-frame camera origin from an EuRoC `T_BS` data row."""
+    values = _t_bs(sensor_yaml)
     return values[3], values[7], values[11]
 
 
@@ -121,6 +126,29 @@ def test_left_eye_is_on_negative_euroc_body_y() -> None:
     # Then the left eye is at −Y and the right eye at +Y (EuRoC +Y is right)
     assert _translation(cam0) == pytest.approx((0.0, -0.06, 0.0))
     assert _translation(cam1) == pytest.approx((0.0, 0.06, 0.0))
+
+
+def test_camera_to_body_rotation_maps_the_optical_frame_into_euroc_body() -> None:
+    # Given any stereo rig (the rotation does not depend on the baseline)
+    spec = StereoCalibrationSpec(
+        calibration_id="gazebo-stereo-v1",
+        width=64,
+        height=48,
+        fx=50.0,
+        fy=50.0,
+        cx=32.0,
+        cy=24.0,
+        baseline_m=0.12,
+    )
+
+    # When cam0 extrinsics are rendered
+    values = _t_bs(render_cam_sensor_yaml(spec, 0))
+
+    # Then optical +X (right) / +Y (down) / +Z (forward) land on EuRoC
+    # +Y (right) / −X (down) / +Z (forward), the rotation real EuRoC cam0 uses
+    assert values[0:3] == pytest.approx((0.0, -1.0, 0.0))
+    assert values[4:7] == pytest.approx((1.0, 0.0, 0.0))
+    assert values[8:11] == pytest.approx((0.0, 0.0, 1.0))
 
 
 def test_exported_sensor_yaml_carries_intrinsics_resolution_and_baseline(
