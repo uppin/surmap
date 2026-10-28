@@ -10,15 +10,15 @@
 
 - [wf 1] ✅ 2026-10-28 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file
 - [wf 2] ✅ 2026-10-28 `/plan-red` Red — acceptance and failing lower-tier tests, committed · collection error, `surmap.survey.modal_sam` missing
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] `ModalSamSession` calls `MODAL_SAM_URL` and fails before a request when it is unset
-  - [ ] Fake endpoint masks become a `SamDetection` with a non-empty polygon via `Sam3Detector`
-  - [ ] `before_call("modal")` runs before the request and can block it
-  - [ ] `on_usage("modal", model, 0, 0, None)` and `on_gpu_seconds` record the remote elapsed time
-  - [ ] Remote `segment_payload` returns its own inference seconds
-  - [ ] App function kwargs: configurable GPU default `T4`, `timeout`, `scaledown_window` 60, `max_containers=1`, no `min_containers`
-  - [ ] `station_main` selects the Modal session with `--detector sam3-modal` or `--sam3-device modal`
-  - [ ] Importing the modules does not require the `modal` package
+- [wf 3] ✅ 2026-10-28 `/green` Green — implement until every red test passes · `tests/test_modal_sam.py` 13 passed
+  - [x] `ModalSamSession` calls `MODAL_SAM_URL` and fails before a request when it is unset
+  - [x] Fake endpoint masks become a `SamDetection` with a non-empty polygon via `Sam3Detector`
+  - [x] `before_call("modal")` runs before the request and can block it
+  - [x] `on_usage("modal", model, 0, 0, None)` and `on_gpu_seconds` record the remote elapsed time
+  - [x] Remote `segment_payload` returns its own inference seconds
+  - [x] App function kwargs: configurable GPU default `T4`, `timeout`, `scaledown_window` 60, `max_containers=1`, no `min_containers`
+  - [x] `station_main` selects the Modal session with `--detector sam3-modal` or `--sam3-device modal`
+  - [x] Importing the modules does not require the `modal` package
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `HACKATHON.md` — Modal row reworded; deploy, stop, and spend documented

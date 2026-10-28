@@ -32,9 +32,7 @@ from surmap.survey.station_main import StationConfigError, resolve_detector
 class _FixedSession:
     """A `Sam3Session` that returns one prepared mask."""
 
-    def __init__(
-        self, masks: NDArray[np.float32], scores: NDArray[np.float32]
-    ) -> None:
+    def __init__(self, masks: NDArray[np.float32], scores: NDArray[np.float32]) -> None:
         self._masks = masks
         self._scores = scores
 
