@@ -76,21 +76,21 @@ def _image_msg_to_png(msg: object, target: Path) -> None:
     image.save(target, format="PNG")
 
 
-def _import_sitl_dump() -> object:
+def _load_sitl_dump() -> object:
     """Load SurMap's dumper helpers from this checkout, without an install."""
+    import importlib
+
     repo_src = Path(__file__).resolve().parents[2] / "src"
     entry = str(repo_src)
     if repo_src.is_dir() and entry not in sys.path:
         sys.path.insert(0, entry)
-    from surmap.simulation.sitl_dump import navsat_accuracy_m
-
-    return navsat_accuracy_m
+    return importlib.import_module("surmap.simulation.sitl_dump")
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     _require_ros()
-    navsat_accuracy_m = _import_sitl_dump()
+    sitl_dump = _load_sitl_dump()
 
     import rclpy
     from rclpy.node import Node
@@ -146,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         def _on_gps(self, msg: NavSatFix) -> None:
             t_ns = int(msg.header.stamp.sec) * 1_000_000_000 + int(msg.header.stamp.nanosec)
             if msg.position_covariance:
-                acc = navsat_accuracy_m(float(msg.position_covariance[0]))
+                acc = sitl_dump.navsat_accuracy_m(float(msg.position_covariance[0]))
             else:
                 acc = 1.0
             gps_rows.append(
@@ -162,14 +162,9 @@ def main(argv: list[str] | None = None) -> int:
             self._try_pair()
 
         def _try_pair(self) -> None:
-            if not left_buf or not right_buf:
-                return
-            for lt in list(left_buf):
-                best_rt = min(right_buf, key=lambda rt: abs(rt - lt))
-                if abs(best_rt - lt) > args.pair_slop_ns:
-                    continue
-                pairs.append((lt, left_buf.pop(lt), right_buf.pop(best_rt)))
-                return
+            pair = sitl_dump.take_stereo_pair(left_buf, right_buf, slop_ns=args.pair_slop_ns)
+            if pair is not None:
+                pairs.append(pair)
 
     rclpy.init()
     node = Dumper()
