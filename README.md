@@ -106,7 +106,7 @@ tests have no separate path. Select it with
 `python -m surmap.survey.station_main --detector sam3
 --sam3-model <sam3.1.onnx>`. The real checkpoint is license-gated;
 exporting it to the documented ONNX contract is a station
-provisioning step. Nothing in this tree calls an API. Hackathon
+provisioning step. Nothing in this tree calls the Meta Model API. Hackathon
 inference for that checkpoint is planned as Meta Model API
 `sam-3.1`, with Modal as the GPU when the station runs the export
 itself ([HACKATHON.md](HACKATHON.md)).
@@ -197,12 +197,18 @@ Muse notes, checked 28 Oct 2026. Two different models, two APIs:
   OpenAI-compatible base URL is `https://inference.baseten.co/v1`.
   The public catalog slug is `meta-models/muse-spark-open`. The
   hackathon credit path uses `meta-models/muse-spark-open-1026`;
-  that dated slug is not in the public catalog, so confirm it with
-  `GET /v1/models` before a live call. Baseten's docs: reasoning is
-  always on (`reasoning_effort` `none` and `minimal` still run at
-  `low`; the default is `xhigh`); image, video, and audio input;
-  text output; no structured outputs (a `json_object` request is
-  accepted and not enforced). Sources:
+  that dated slug is not in the public catalog. Verified 28 Oct 2026
+  with `POST /v1/chat/completions`: the dated id returns an OpenAI
+  `chat.completion`. The answer is `choices[0].message.content`;
+  `reasoning_content` is reasoning and is not the label. The in-tree
+  client `surmap.labelling.BasetenMuseLabelClient` sends
+  `reasoning_effort: low` and does not request JSON mode. A live
+  test runs only when `SURMAP_LIVE_BASETEN=1` and `BASETEN_API_KEY`
+  are both set. The survey loop does not call the client yet.
+  Baseten's docs: reasoning is always on (`reasoning_effort` `none`
+  and `minimal` still run at `low`; the default is `xhigh`); image,
+  video, and audio input; text output; no structured outputs (a
+  `json_object` request is accepted and not enforced). Sources:
   [Model APIs](https://docs.baseten.co/inference/model-apis/overview),
   [Reasoning](https://docs.baseten.co/inference/model-apis/reasoning),
   [Vision](https://docs.baseten.co/inference/model-apis/vision),
@@ -273,10 +279,13 @@ Details, ROS2 layout, interfaces, and data contracts:
 - SAM 3.1 serving: Meta Model API `sam-3.1` versus the ONNX export on
   a Modal GPU (the in-tree adapter). Measured VRAM, resolution,
   keyframe rate, and video-mode versus per-image segmentation.
-- Muse calls: confirm Baseten accepts `meta-models/muse-spark-open-1026`
-  (the public catalog lists `meta-models/muse-spark-open`); labelling
-  cost and latency per session. Baseten does not constrain that model
-  to a JSON schema, so any label record is validated after the call.
+- Muse calls: `POST /v1/chat/completions` with
+  `meta-models/muse-spark-open-1026` was verified on 28 Oct 2026
+  (the public catalog still lists `meta-models/muse-spark-open`).
+  The labelling client is in tree and the live call is gated.
+  Cost and latency per session are still open, and the survey loop
+  does not call the client yet. Baseten does not constrain that model
+  to a JSON schema, so the client parses plain text after the call.
   The scene note uses Meta Model API `muse-spark-1.3` unless a newer
   hosted id is current at integration. Muse Wonder is out of scope.
 - Link between drone and base station (Wi-Fi / LTE / other), and
