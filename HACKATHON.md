@@ -33,12 +33,18 @@ run those weights yourself or call a hosted provider; Baseten is that
 provider here. Hosted Muse Spark (`muse-spark-1.3`) is the Model API
 model for the scene note. Muse Wonder is not used.
 
-Baseten, same check: Muse Spark Open always reasons (`reasoning_effort`
-`none` and `minimal` still run at `low`; default `xhigh`); it accepts
-image, video, and audio and returns text; it does not enforce
-structured outputs. Confirm `meta-models/muse-spark-open-1026` with
-`GET /v1/models` before a live call — the public catalog lists the
-undated slug.
+Baseten, checked 28 Oct 2026
+([Model APIs](https://docs.baseten.co/inference/model-apis/overview),
+[Reasoning](https://docs.baseten.co/inference/model-apis/reasoning),
+[Vision](https://docs.baseten.co/inference/model-apis/vision),
+[Audio](https://docs.baseten.co/inference/model-apis/audio)):
+Muse Spark Open always reasons (`reasoning_effort` `none` and
+`minimal` still run at `low`; default `xhigh`); it accepts image,
+video, and audio and returns text; it does not enforce structured
+outputs (a `json_object` request is accepted and not constrained).
+Confirm `meta-models/muse-spark-open-1026` with `GET /v1/models`
+before a live call — the public catalog lists the undated slug.
+Any label record is validated after the call.
 
 The geometric pipeline (stereo, Coral detection, RTAB-Map, the demo)
 does not use these credits.
