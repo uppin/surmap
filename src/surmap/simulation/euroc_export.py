@@ -10,6 +10,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from surmap.euroc import stationary_imu_csv
 from surmap.simulation.calibration import StereoCalibrationSpec, render_cam_sensor_yaml
 from surmap.types import GpsCheckpoint, StereoFramePair
 
@@ -50,7 +51,7 @@ def export_euroc_session(
     imu_dir = mav0 / "imu0"
     imu_dir.mkdir(parents=True, exist_ok=True)
     (imu_dir / "sensor.yaml").write_text("sensor_type: imu\n", encoding="utf-8")
-    (imu_dir / "data.csv").write_text(_stationary_imu_csv(frames), encoding="utf-8")
+    (imu_dir / "data.csv").write_text(stationary_imu_csv(frames), encoding="utf-8")
 
     if gps:
         gps_dir = mav0 / "gps0"
@@ -95,13 +96,3 @@ def _write_channel(
         )
     with Image.open(source) as image:
         image.convert("L").save(target, format="PNG")
-
-
-def _stationary_imu_csv(frames: Sequence[StereoFramePair]) -> str:
-    lines = [
-        "#timestamp [ns],w_RS_S_x [rad s^-1],w_RS_S_y [rad s^-1],"
-        "w_RS_S_z [rad s^-1],a_RS_S_x [m s^-2],a_RS_S_y [m s^-2],a_RS_S_z [m s^-2]"
-    ]
-    for frame in frames:
-        lines.append(f"{frame.t_ns},0.0,0.0,0.0,0.0,0.0,9.81")
-    return "\n".join(lines) + "\n"

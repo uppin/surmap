@@ -174,6 +174,27 @@ def test_exported_sensor_yaml_carries_intrinsics_resolution_and_baseline(
     assert (result.root / "mav0" / "imu0" / "data.csv").is_file()
 
 
+def test_exported_stationary_imu_is_200_hz_with_gravity_on_body_x(tmp_path: Path) -> None:
+    # Given a capture whose frames span 50 ms
+    capture = _write_tiny_capture(tmp_path / "capture")
+    frames, calibration, gps = load_sitl_capture(capture)
+
+    # When it is exported
+    result = export_euroc_session(tmp_path / "session", frames, calibration, gps)
+
+    # Then the IMU matches the sidecar's stationary recording:
+    # 200 Hz from the first stamp through the last, specific force on +X
+    # (EuRoC body +X is up), not one sample per frame on +Z.
+    text = (result.root / "mav0" / "imu0" / "data.csv").read_text(encoding="utf-8")
+    rows = [line for line in text.splitlines() if line and not line.startswith("#")]
+    assert rows[0].endswith(",0.0,0.0,0.0,9.81,0.0,0.0")
+    stamps = [int(row.split(",", 1)[0]) for row in rows]
+    assert stamps[0] == frames[0].t_ns
+    assert stamps[-1] == frames[-1].t_ns
+    assert stamps[1] - stamps[0] == 5_000_000
+    assert len(stamps) == 11
+
+
 def test_exported_session_includes_gps_checkpoints(tmp_path: Path) -> None:
     # Given a capture with two GPS rows
     capture = _write_tiny_capture(tmp_path / "capture")
