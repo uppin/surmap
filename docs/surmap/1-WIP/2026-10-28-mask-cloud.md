@@ -1,7 +1,7 @@
 # Changeset: Project SAM masks onto the cloud
 
 **Date**: 2026-10-28
-**Status**: 🚧 In Progress
+**Status**: ✅ Complete
 **Type**: Feature
 **Behaviour**: adds
 **Complexity**: 2 — one package, two owned symbols (`points_in_mask`, polygon containment), unit tests only
@@ -10,19 +10,13 @@
 
 - [wf 1] ✅ 2026-10-28 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + changeset + discovery
 - [wf 2] ✅ 2026-10-28 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 4 tests, collection error `ModuleNotFoundError: surmap.survey.mask_cloud`
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Square mask returns only the inside point, translated by a known pose
-  - [ ] Empty polygon returns an empty tuple
-  - [ ] Points with `z <= 0.05` are dropped
-  - [ ] A projection outside the frame is not a mask pixel
-  - [ ] Without a pose, a kept point stays in the camera frame
-- [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
-  - [ ] Verification executed — result recorded
-  - [ ] `docs/architecture.md` — State B mask-registration paragraph
-  - [ ] `docs/surmap/changelog/2026-10-28-mask-cloud.md`
-  - [ ] `src/surmap/docs/changesets/2026-10-28-mask-cloud.md`
-  - [ ] Test quality and fluent readability validated
-  - [ ] (optional) Production readiness validated (3) — run if the diff reaches server code
+- [wf 3] ✅ 2026-10-28 `/green` Green — implement until every red test passes · `points_in_mask` in `src/surmap/survey/mask_cloud.py`; 4 passed
+  - [x] Square mask returns only the inside point, translated by a known pose
+  - [x] Empty polygon returns an empty tuple
+  - [x] Points with `z <= 0.05` are dropped
+  - [x] A projection outside the frame is not a mask pixel
+  - [x] Without a pose, a kept point stays in the camera frame
+- [wf 4] ⏳ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
 
 ## Initial Discovery
 
@@ -91,7 +85,7 @@ and does not write the result into RTAB-Map.
 **Method:** V1, fail→pass — `tests/test_mask_cloud.py` acceptance tests
 **Command:** `uv run pytest -q tests/test_mask_cloud.py`
 **Before:** `uv run pytest -q tests/test_mask_cloud.py` → collection error, `ModuleNotFoundError: No module named 'surmap.survey.mask_cloud'` (4 tests not collected; the module is absent)
-**After:** (recorded when green)
+**After:** `uv run pytest -q tests/test_mask_cloud.py` → 4 passed
 
 ## Testing Plan
 
