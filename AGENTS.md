@@ -11,7 +11,7 @@ Design: [docs/architecture.md](docs/architecture.md).
 | Implementing or fixing anything (test-first) | [.agents/skills/tdd/SKILL.md](.agents/skills/tdd/SKILL.md) |
 | Writing or editing tests | [.agents/skills/fluent-tests/SKILL.md](.agents/skills/fluent-tests/SKILL.md) |
 | Starting, planning, resuming, or wrapping a change / PR | [.agents/skills/pr-lifecycle/SKILL.md](.agents/skills/pr-lifecycle/SKILL.md) |
-| Verifying Gazebo/PX4 SITL → EuRoC on the WSL host | [.cursor/skills/px4-sitl-test/SKILL.md](.cursor/skills/px4-sitl-test/SKILL.md) |
+| Verifying Gazebo/PX4 SITL → EuRoC on the WSL host | [.agents/skills/px4-sitl-test/SKILL.md](.agents/skills/px4-sitl-test/SKILL.md) |
 
 Do not restate these skills here or in changesets — reference them and
 follow them. Where this file and a skill disagree, the skill wins.
