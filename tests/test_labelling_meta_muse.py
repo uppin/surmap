@@ -217,9 +217,7 @@ def test_scene_note_defaults_reasoning_effort_to_low() -> None:
 def test_scene_note_reasoning_effort_is_configurable() -> None:
     # Given a caller that asks for a different effort
     transport = RecordingTransport(a_message("Debris across the road."))
-    client = MetaMuseSceneClient(
-        api_key=_API_KEY, transport=transport, reasoning_effort="minimal"
-    )
+    client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport, reasoning_effort="minimal")
 
     # When the note is requested
     client.note(("debris",), a_jpeg())

@@ -10,12 +10,12 @@
 
 - [wf 1] ✅ 2026-10-28 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file
 - [wf 2] ✅ 2026-10-28 `/plan-red` Red — acceptance and failing lower-tier tests, committed · collection error, `surmap.labelling` missing
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] `MetaMuseSceneClient.note` posts hosted `muse-spark-1.3` and returns message `output_text`
-  - [ ] JPEG goes out as an `input_image` data URL; `reasoning.effort` defaults to `low`
-  - [ ] Muse Wonder and Muse Spark Open ids are refused; the API key is not logged
-  - [ ] Live call is skipped unless `SURMAP_LIVE_META=1`
-  - [ ] HACKATHON.md Meta Model API scene-note cell names the client
+- [wf 3] ✅ 2026-10-28 `/green` Green — implement until every red test passes · 18 passed, 1 skipped (`SURMAP_LIVE_META` unset)
+  - [x] `MetaMuseSceneClient.note` posts hosted `muse-spark-1.3` and returns message `output_text`
+  - [x] JPEG goes out as an `input_image` data URL; `reasoning.effort` defaults to `low`
+  - [x] Muse Wonder and Muse Spark Open ids are refused; the API key is not logged
+  - [x] Live call is skipped unless `SURMAP_LIVE_META=1`
+  - [x] HACKATHON.md Meta Model API scene-note cell names the client
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] HACKATHON.md and README.md state the scene-note client
@@ -61,11 +61,11 @@ description of a mapped frame, from hosted Muse Spark, with no flight advice.
 
 ## Verification
 
-- `uv run ruff check src tests`
-- `uv run ruff format --check src tests`
-- `uv run mypy`
-- `uv run pytest -q`
-- The live test stays skipped unless `SURMAP_LIVE_META=1`.
+- `uv run ruff check src tests` — pass
+- `uv run ruff format --check src tests` — pass
+- `uv run mypy` — pass (strict)
+- `uv run pytest -q` — 486 passed, 6 skipped
+- The live test stays skipped unless `SURMAP_LIVE_META=1` (not set for this run).
 
 ## Decisions & Trade-offs
 
