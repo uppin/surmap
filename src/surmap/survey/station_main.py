@@ -9,8 +9,8 @@ ONNX Runtime — CUDA provider on the station GPU, CPU elsewhere:
         --sam3-model /models/sam3.1.onnx --sam3-device cuda
 
 `--detector sam3-modal`, or `--detector sam3 --sam3-device modal`,
-posts the same tensor to `MODAL_SAM_URL`. Deploy, stop, and the
-checkpoint steps are in `docs/modal-sam.md`.
+posts JPEG bytes and a text prompt to `MODAL_SAM_URL`. Deploy,
+stop, and the checkpoint steps are in `docs/modal.md`.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from pathlib import Path
 from surmap.rpc.description import ServerDescription
 from surmap.rpc.hosts.hypercorn import HypercornHost
 from surmap.rpc.routes import health_routes
-from surmap.survey.modal_sam import modal_sam_detector
+from surmap.survey.modal_sam import ModalSamDetector, modal_sam_detector
 from surmap.survey.sam import SamDetector
 from surmap.survey.sam3 import Sam3Detector, Sam3Unavailable, sam3_detector
 from surmap.survey.station_server import station_service_module
@@ -41,7 +41,7 @@ def resolve_detector(
     device: str,
     model: Path | None,
     label: str = "object",
-) -> Sam3Detector | None:
+) -> Sam3Detector | ModalSamDetector | None:
     """The detector for these flags, or ``None`` for the in-memory default.
 
     Modal does not read a local checkpoint. CPU and CUDA still require

@@ -1,58 +1,49 @@
-"""SAM 3.1 ONNX inference on a Modal GPU.
+"""SAM 3.1 on a Modal GPU, from the PyTorch checkpoint.
 
-The station posts an image tensor to ``MODAL_SAM_URL``. The remote app
-in ``surmap.survey.modal_sam_app`` runs the exported ONNX model on a
-GPU and returns ``masks``, ``scores``, and its own elapsed inference
-time. ``Sam3Detector`` post-processes that result the same way it does
-for a local CPU or CUDA session.
+The station posts JPEG or PNG bytes and a text prompt to
+``MODAL_SAM_URL``. The remote app ``surmap.survey.modal_sam_app``
+loads ``facebook/sam3.1`` (``sam3.1_multiplex.pt``) with the official
+``sam3`` image builder and returns boxes, polygons, scores, and its
+own GPU seconds. CI never imports ``modal``.
 
-The checkpoint is not in git. CI never imports ``modal`` and never
-needs a token. Deploy, stop, spend, the SAM License, and how to
-produce ``sam3.1.onnx`` are in ``docs/modal-sam.md``.
+Deploy, stop, the Hugging Face secret, and the Muse shared endpoint
+are in ``docs/modal.md``.
 
     uv run --with modal modal deploy src/surmap/survey/modal_sam_app.py
     uv run --with modal modal app stop surmap-sam
 
-``before_call``, ``on_usage``, and ``on_gpu_seconds`` accept either a
-plain callback or a ``surmap.usage.UsageLedger`` (duck-typed: this
-module does not import it). A ledger's ``check("modal")`` runs before
-the request. Its call records one zero-token usage line. Passing the
-ledger as ``on_gpu_seconds`` does not write a second line; GPU seconds
-are not a ledger field.
+The default GPU is an L4 (24 GB). A T4's 16 GB does not leave room
+for that checkpoint plus activations. ``before_call``, ``on_usage``,
+and ``on_gpu_seconds`` accept a plain callback or a
+``surmap.usage.UsageLedger`` without importing it.
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import io
 import json
 import math
 import os
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
 import numpy as np
 from numpy.typing import NDArray
+from PIL import Image
 
-from surmap.survey.sam3 import Sam3Detector, Sam3Unavailable
+from surmap.survey.sam import RawFrame, SamDetection
+from surmap.survey.sam3 import Sam3Unavailable, _mask_outline
 
 APP_NAME = "surmap-sam"
-DEFAULT_GPU = "T4"
-DEFAULT_TIMEOUT_S = 300
-DEFAULT_SCALEDOWN_S = 60
-MAX_CONTAINERS = 1
-VOLUME_NAME = "surmap-sam3"
-MODEL_DIR = "/models"
-MODEL_FILENAME = "sam3.1.onnx"
-REMOTE_PIP_PACKAGES = (
-    "fastapi[standard]",
-    "numpy>=2.0",
-    "pillow>=10",
-    "onnxruntime-gpu>=1.20",
-)
+DEFAULT_GPU = "L4"
+DEFAULT_PROMPT = "person"
+CHECK_IMAGE = "tests/fixtures/modal_sam/person.jpg"
 
 UsageHook = Callable[[str, str, int, int, int | None], None]
 GpuSecondsHook = Callable[[float], None]
@@ -78,17 +69,6 @@ class _CreditUse:
     t_unix: float
 
 
-def modal_function_kwargs(environ: Mapping[str, str] | None = None) -> dict[str, str | int]:
-    """GPU, timeout, idle window, and container cap for the remote function."""
-    env = os.environ if environ is None else environ
-    return {
-        "gpu": env.get("SURMAP_MODAL_GPU", DEFAULT_GPU),
-        "timeout": int(env.get("SURMAP_MODAL_TIMEOUT", str(DEFAULT_TIMEOUT_S))),
-        "scaledown_window": int(env.get("SURMAP_MODAL_SCALEDOWN_WINDOW", str(DEFAULT_SCALEDOWN_S))),
-        "max_containers": MAX_CONTAINERS,
-    }
-
-
 def resolve_modal_url(url: str | None) -> str:
     """Return a non-blank URL, or raise before any network call."""
     chosen = os.environ.get("MODAL_SAM_URL") if url is None else url
@@ -108,57 +88,74 @@ def usage_model_name(model: str | None) -> str:
     return f"{APP_NAME}/{gpu}"
 
 
-def resolve_input_size(size: tuple[int, int] | None) -> tuple[int, int]:
-    """Spatial size the detector resizes to. ``MODAL_SAM_INPUT`` is ``WxH``."""
-    if size is not None:
-        return (int(size[0]), int(size[1]))
-    raw = os.environ.get("MODAL_SAM_INPUT", "256x256").strip().lower().replace("*", "x")
-    parts = raw.split("x")
-    try:
-        if len(parts) == 1:
-            side = int(parts[0])
-            return (side, side)
-        if len(parts) == 2:
-            return (int(parts[0]), int(parts[1]))
-    except ValueError as exc:
-        raise Sam3Unavailable("MODAL_SAM_INPUT must look like 256x256") from exc
-    raise Sam3Unavailable("MODAL_SAM_INPUT must look like 256x256")
+def resolve_prompt(label: str) -> str:
+    """``MODAL_SAM_PROMPT`` wins, otherwise the station label, else ``person``."""
+    override = os.environ.get("MODAL_SAM_PROMPT", "").strip()
+    if override:
+        return override
+    if label.strip():
+        return label.strip()
+    return DEFAULT_PROMPT
 
 
-def encode_request(image: NDArray[np.float32]) -> bytes:
-    """JSON body for one NCHW float32 tensor."""
-    array = np.ascontiguousarray(image, dtype=np.float32)
+def encode_image_request(image: bytes, *, prompt: str, media_type: str) -> bytes:
+    """JSON body: one image and the text prompt."""
     payload = {
-        "shape": [int(dim) for dim in array.shape],
-        "data_b64": base64.b64encode(array.tobytes()).decode("ascii"),
+        "prompt": prompt,
+        "media_type": media_type,
+        "image_b64": base64.b64encode(image).decode("ascii"),
     }
     return json.dumps(payload).encode("utf-8")
 
 
-def decode_request(payload: dict[str, Any]) -> NDArray[np.float32]:
-    """Inverse of ``encode_request`` for the remote function."""
-    return _decode_array(payload, "shape", "data_b64", "image")
-
-
-def response_body(
-    masks: NDArray[np.float32],
+def pack_detections(
+    prompt: str,
+    masks: NDArray[np.float32] | NDArray[np.bool_],
+    boxes: NDArray[np.float32],
     scores: NDArray[np.float32],
+    *,
+    image_width: int,
+    image_height: int,
     inference_seconds: float,
 ) -> dict[str, Any]:
-    """JSON object the endpoint returns, including its own elapsed time."""
-    masks_array = np.ascontiguousarray(masks, dtype=np.float32)
-    scores_array = np.ascontiguousarray(scores, dtype=np.float32)
+    """Boxes and mask outlines in the image's pixel frame, plus GPU seconds."""
+    mask_stack = np.asarray(masks)
+    if mask_stack.ndim == 4 and mask_stack.shape[1] == 1:
+        mask_stack = mask_stack[:, 0]
+    if mask_stack.ndim == 2:
+        mask_stack = mask_stack[None, ...]
+    box_stack = np.asarray(boxes, dtype=np.float32).reshape(-1, 4)
+    score_stack = np.asarray(scores, dtype=np.float32).reshape(-1)
+    count = int(score_stack.shape[0])
+    mask_h = int(mask_stack.shape[1]) if mask_stack.ndim == 3 and mask_stack.shape[0] else 1
+    mask_w = int(mask_stack.shape[2]) if mask_stack.ndim == 3 and mask_stack.shape[0] else 1
+    scale_x = image_width / mask_w if mask_w else 1.0
+    scale_y = image_height / mask_h if mask_h else 1.0
+    detections: list[dict[str, Any]] = []
+    for index in range(count):
+        score = float(score_stack[index])
+        box = box_stack[index] if index < box_stack.shape[0] else np.zeros(4, dtype=np.float32)
+        polygon: tuple[tuple[float, float], ...] = ()
+        if mask_stack.ndim == 3 and index < mask_stack.shape[0]:
+            binary = np.asarray(mask_stack[index] >= 0.5)
+            polygon = _mask_outline(binary, scale_x, scale_y)
+        detections.append(
+            {
+                "label": prompt,
+                "score": score,
+                "box_xyxy": [float(value) for value in box],
+                "mask_polygon": [[point[0], point[1]] for point in polygon],
+            }
+        )
     return {
-        "masks_shape": [int(dim) for dim in masks_array.shape],
-        "masks_b64": base64.b64encode(masks_array.tobytes()).decode("ascii"),
-        "scores_shape": [int(dim) for dim in scores_array.shape],
-        "scores_b64": base64.b64encode(scores_array.tobytes()).decode("ascii"),
+        "prompt": prompt,
+        "detections": detections,
         "inference_seconds": float(inference_seconds),
     }
 
 
-def decode_response(raw: bytes) -> tuple[NDArray[np.float32], NDArray[np.float32], float]:
-    """Parse masks, scores, and remote inference seconds."""
+def parse_detections(raw: bytes) -> tuple[tuple[SamDetection, ...], float]:
+    """Turn the endpoint JSON into ``SamDetection`` values and GPU seconds."""
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -166,21 +163,22 @@ def decode_response(raw: bytes) -> tuple[NDArray[np.float32], NDArray[np.float32
     if not isinstance(payload, dict):
         raise Sam3Unavailable("Modal SAM response was not a JSON object")
     body = cast(dict[str, Any], payload)
-    masks = _decode_array(body, "masks_shape", "masks_b64", "masks")
-    scores = _decode_array(body, "scores_shape", "scores_b64", "scores")
-    if masks.ndim != 4 or masks.shape[0] != 1:
-        raise Sam3Unavailable("Modal SAM masks must have shape [1, N, H, W]")
-    if scores.ndim != 2 or scores.shape[0] != 1:
-        raise Sam3Unavailable("Modal SAM scores must have shape [1, N]")
-    if masks.shape[1] != scores.shape[1]:
-        raise Sam3Unavailable("Modal SAM masks and scores disagree on how many objects")
     seconds = body.get("inference_seconds")
     if isinstance(seconds, bool) or not isinstance(seconds, int | float):
         raise Sam3Unavailable("Modal SAM response is missing inference_seconds")
     elapsed = float(seconds)
     if elapsed < 0 or not math.isfinite(elapsed):
         raise Sam3Unavailable("Modal SAM inference_seconds is not a usable duration")
-    return masks, scores, elapsed
+    rows = body.get("detections")
+    if not isinstance(rows, list):
+        raise Sam3Unavailable("Modal SAM response is missing detections")
+    found: list[SamDetection] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise Sam3Unavailable("Modal SAM detection was not an object")
+        item = cast(dict[str, Any], row)
+        found.append(_detection(item))
+    return tuple(found), elapsed
 
 
 def post_json(url: str, body: bytes, *, timeout_s: float) -> bytes:
@@ -200,14 +198,14 @@ def post_json(url: str, body: bytes, *, timeout_s: float) -> bytes:
         raise Sam3Unavailable(f"Modal SAM endpoint request failed: {exc.reason}") from exc
 
 
-class ModalSamSession:
-    """``Sam3Session`` that calls the deployed Modal web endpoint."""
+class ModalSamDetector:
+    """``SamDetector`` that posts a frame and a text prompt to Modal."""
 
     def __init__(
         self,
         url: str | None = None,
         *,
-        input_size: tuple[int, int] | None = None,
+        prompt: str = DEFAULT_PROMPT,
         model: str | None = None,
         on_usage: UsageHook | _LedgerCheck | None = None,
         on_gpu_seconds: GpuSecondsHook | _LedgerCheck | None = None,
@@ -216,58 +214,131 @@ class ModalSamSession:
         timeout_s: float = 300.0,
     ) -> None:
         self._url = resolve_modal_url(url)
-        self._input_size = resolve_input_size(input_size)
+        self._prompt = prompt.strip() or DEFAULT_PROMPT
         self._model = usage_model_name(model)
         self._on_usage = _bind_usage(on_usage)
         self._on_gpu_seconds = _bind_gpu(on_gpu_seconds)
         self._before_call = _bind_before(before_call)
         self._poster = poster if poster is not None else _poster(timeout_s)
+        self.last_inference_seconds = 0.0
 
     @property
     def provider(self) -> str:
         return "modal"
 
     @property
-    def input_size(self) -> tuple[int, int]:
-        return self._input_size
+    def prompt(self) -> str:
+        return self._prompt
 
-    def run(
-        self, image_chw: NDArray[np.float32]
-    ) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
-        """POST one tensor. ``before_call('modal')`` may raise to block it."""
+    def segment(self, image: bytes, *, media_type: str = "image/jpeg") -> tuple[SamDetection, ...]:
+        """POST one image. ``before_call('modal')`` may raise to block it."""
         if self._before_call is not None:
             self._before_call("modal")
-        raw = self._poster(self._url, encode_request(image_chw))
-        masks, scores, elapsed = decode_response(raw)
+        raw = self._poster(
+            self._url,
+            encode_image_request(image, prompt=self._prompt, media_type=media_type),
+        )
+        detections, elapsed = parse_detections(raw)
+        self.last_inference_seconds = elapsed
         if self._on_usage is not None:
             self._on_usage("modal", self._model, 0, 0, None)
         if self._on_gpu_seconds is not None:
             self._on_gpu_seconds(elapsed)
-        return masks, scores
+        return detections
+
+    async def detect(self, frame: RawFrame) -> tuple[SamDetection, ...]:
+        """Segment one frame off the event loop."""
+        image, media_type = frame_image(frame)
+        return await asyncio.to_thread(self.segment, image, media_type=media_type)
 
 
 def modal_sam_detector(
     *,
-    label: str = "object",
+    label: str = DEFAULT_PROMPT,
     url: str | None = None,
-    input_size: tuple[int, int] | None = None,
     model: str | None = None,
     on_usage: UsageHook | _LedgerCheck | None = None,
     on_gpu_seconds: GpuSecondsHook | _LedgerCheck | None = None,
     before_call: BeforeCall | _LedgerCheck | None = None,
     poster: Poster | None = None,
-) -> Sam3Detector:
-    """A ``Sam3Detector`` whose session is the Modal endpoint."""
-    session = ModalSamSession(
+) -> ModalSamDetector:
+    """A detector whose text prompt is ``MODAL_SAM_PROMPT`` or ``label``."""
+    return ModalSamDetector(
         url,
-        input_size=input_size,
+        prompt=resolve_prompt(label),
         model=model,
         on_usage=on_usage,
         on_gpu_seconds=on_gpu_seconds,
         before_call=before_call,
         poster=poster,
     )
-    return Sam3Detector(session, label=label)
+
+
+def frame_image(frame: RawFrame) -> tuple[bytes, str]:
+    """JPEG or PNG bytes for a raw frame, re-encoded when the codec is neither."""
+    encoding = frame.encoding.lower()
+    if encoding in {"jpeg", "jpg", "mjpeg"}:
+        return frame.data, "image/jpeg"
+    if encoding == "png":
+        return frame.data, "image/png"
+    image = Image.open(io.BytesIO(frame.data)).convert("RGB")
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG")
+    return buffer.getvalue(), "image/jpeg"
+
+
+def run_modal_sam_check(
+    image: bytes,
+    *,
+    url: str | None = None,
+    prompt: str = DEFAULT_PROMPT,
+    poster: Poster | None = None,
+) -> tuple[SamDetection, ...]:
+    """One live or injected call. Prints detections and GPU seconds."""
+    detector = ModalSamDetector(url, prompt=prompt, poster=poster)
+    started = time.perf_counter()
+    detections = detector.segment(image, media_type=_media_type(image))
+    elapsed = time.perf_counter() - started
+    print(f"prompt: {prompt}")
+    print(f"inference_seconds: {detector.last_inference_seconds:.3f}")
+    print(f"round_trip_seconds: {elapsed:.3f}")
+    print(f"detections: {len(detections)}")
+    for detection in detections:
+        x0, y0, x1, y1 = detection.box_xyxy
+        print(
+            f"  {detection.label} score={detection.score:.3f} "
+            f"box=({x0:.1f},{y0:.1f},{x1:.1f},{y1:.1f}) "
+            f"polygon_points={len(detection.mask_polygon)}"
+        )
+    return detections
+
+
+def _media_type(image: bytes) -> str:
+    if image.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    return "image/jpeg"
+
+
+def _detection(item: dict[str, Any]) -> SamDetection:
+    label = item.get("label")
+    score = item.get("score")
+    box = item.get("box_xyxy")
+    polygon = item.get("mask_polygon", [])
+    if not isinstance(label, str) or not label:
+        raise Sam3Unavailable("Modal SAM detection is missing a label")
+    if isinstance(score, bool) or not isinstance(score, int | float):
+        raise Sam3Unavailable("Modal SAM detection is missing a score")
+    if not isinstance(box, list) or len(box) != 4:
+        raise Sam3Unavailable("Modal SAM detection box must be xyxy")
+    if not isinstance(polygon, list):
+        raise Sam3Unavailable("Modal SAM detection polygon must be a list")
+    points: list[tuple[float, float]] = []
+    for point in polygon:
+        if not isinstance(point, list) or len(point) != 2:
+            raise Sam3Unavailable("Modal SAM polygon point must be an x,y pair")
+        points.append((float(point[0]), float(point[1])))
+    xyxy = (float(box[0]), float(box[1]), float(box[2]), float(box[3]))
+    return SamDetection(label, float(score), xyxy, tuple(points))
 
 
 def _ledger_check(hook: object) -> Callable[[str], None] | None:
@@ -339,34 +410,3 @@ def _poster(timeout_s: float) -> Poster:
         return post_json(url, body, timeout_s=timeout_s)
 
     return send
-
-
-def _shape(value: Any, label: str) -> tuple[int, ...]:
-    if not isinstance(value, list) or not value:
-        raise Sam3Unavailable(f"Modal SAM {label} shape is missing")
-    dims: list[int] = []
-    for dim in value:
-        if isinstance(dim, bool) or not isinstance(dim, int) or dim < 1:
-            raise Sam3Unavailable(f"Modal SAM {label} shape is missing")
-        dims.append(dim)
-    return tuple(dims)
-
-
-def _decode_array(
-    payload: dict[str, Any], shape_key: str, data_key: str, label: str
-) -> NDArray[np.float32]:
-    shape = _shape(payload.get(shape_key), label)
-    data_raw = payload.get(data_key)
-    if not isinstance(data_raw, str):
-        raise Sam3Unavailable(f"Modal SAM {label} data is missing")
-    try:
-        raw = base64.b64decode(data_raw, validate=True)
-    except ValueError as exc:
-        raise Sam3Unavailable(f"Modal SAM {label} data is not base64") from exc
-    count = 1
-    for dim in shape:
-        count *= dim
-    if len(raw) != count * 4:
-        raise Sam3Unavailable(f"Modal SAM {label} data does not match its shape")
-    flat = np.frombuffer(raw, dtype=np.float32)
-    return np.array(flat, dtype=np.float32, copy=True).reshape(shape)
