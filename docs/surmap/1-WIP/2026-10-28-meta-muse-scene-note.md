@@ -9,7 +9,7 @@
 ## Workflow
 
 - [wf 1] ✅ 2026-10-28 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
+- [wf 2] ✅ 2026-10-28 `/plan-red` Red — acceptance and failing lower-tier tests, committed · collection error, `surmap.labelling` missing
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] `MetaMuseSceneClient.note` posts hosted `muse-spark-1.3` and returns message `output_text`
   - [ ] JPEG goes out as an `input_image` data URL; `reasoning.effort` defaults to `low`
