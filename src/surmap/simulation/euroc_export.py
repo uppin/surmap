@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,13 +29,19 @@ def export_euroc_session(
     calibration: StereoCalibrationSpec,
     gps: Sequence[GpsCheckpoint] = (),
 ) -> ExportResult:
-    """Stage stereo pairs + calibration (+ optional GPS) as EuRoC `mav0/`."""
+    """Stage stereo pairs + calibration (+ optional GPS) as EuRoC `mav0/`.
+
+    An existing `mav0/` is replaced. A re-export must not leave PNGs
+    from a previous frame list, because readers glob `camN/data`.
+    """
     if not frames:
         raise ValueError("cannot export an empty frame list")
 
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)
     mav0 = root / "mav0"
+    if mav0.exists():
+        shutil.rmtree(mav0)
 
     for channel in (0, 1):
         cam_dir = mav0 / f"cam{channel}"

@@ -195,6 +195,25 @@ def test_exported_stationary_imu_is_200_hz_with_gravity_on_body_x(tmp_path: Path
     assert len(stamps) == 11
 
 
+def test_reexporting_a_session_drops_pngs_from_the_previous_run(tmp_path: Path) -> None:
+    # Given a session that already holds a frame the new capture does not
+    capture = _write_tiny_capture(tmp_path / "capture")
+    frames, calibration, gps = load_sitl_capture(capture)
+    output = tmp_path / "session"
+    export_euroc_session(output, frames, calibration, gps)
+    stale = output / "mav0" / "cam0" / "data" / "999.png"
+    Image.new("L", (4, 4), 1).save(stale, format="PNG")
+
+    # When the same capture is exported again
+    export_euroc_session(output, frames, calibration, gps)
+
+    # Then only the capture's timestamps remain (a glob would otherwise
+    # treat the leftover PNG as an extra frame)
+    names = sorted(path.name for path in (output / "mav0" / "cam0" / "data").glob("*.png"))
+    assert names == ["1000000000.png", "1050000000.png"]
+    assert not stale.is_file()
+
+
 def test_exported_session_includes_gps_checkpoints(tmp_path: Path) -> None:
     # Given a capture with two GPS rows
     capture = _write_tiny_capture(tmp_path / "capture")

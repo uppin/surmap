@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
         "--output",
         type=Path,
         required=True,
-        help="Directory that will receive mav0/ (created if missing)",
+        help="Directory that will receive mav0/ (an existing mav0/ is replaced)",
     )
     args = parser.parse_args(argv)
 
