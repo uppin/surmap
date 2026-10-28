@@ -54,28 +54,6 @@ def _require_ros() -> None:
         ) from exc
 
 
-def _image_msg_to_png(msg: object, target: Path) -> None:
-    """Write a sensor_msgs/Image to PNG without cv_bridge."""
-    from PIL import Image as PilImage
-
-    encoding = str(getattr(msg, "encoding", "")).lower()
-    width = int(getattr(msg, "width"))
-    height = int(getattr(msg, "height"))
-    data = bytes(getattr(msg, "data"))
-    if encoding in ("rgb8", "bgr8"):
-        mode = "RGB"
-        raw = data
-        image = PilImage.frombytes(mode, (width, height), raw)
-        if encoding == "bgr8":
-            r, g, b = image.split()
-            image = PilImage.merge("RGB", (b, g, r))
-    elif encoding in ("mono8", "8uc1"):
-        image = PilImage.frombytes("L", (width, height), data)
-    else:
-        raise ValueError(f"unsupported image encoding {encoding!r} (use rgb8/bgr8/mono8)")
-    image.save(target, format="PNG")
-
-
 def _load_sitl_dump() -> object:
     """Load SurMap's dumper helpers from this checkout, without an install."""
     import importlib
@@ -188,8 +166,8 @@ def main(argv: list[str] | None = None) -> int:
         for frame_id, (t_ns, left_msg, right_msg) in enumerate(pairs):
             left_name = f"images/left_{frame_id:04d}.png"
             right_name = f"images/right_{frame_id:04d}.png"
-            _image_msg_to_png(left_msg, out / left_name)
-            _image_msg_to_png(right_msg, out / right_name)
+            sitl_dump.image_msg_to_png(left_msg, out / left_name)
+            sitl_dump.image_msg_to_png(right_msg, out / right_name)
             frames_out.write(
                 json.dumps(
                     {

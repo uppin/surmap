@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
+from types import SimpleNamespace
 
-from surmap.simulation.sitl_dump import navsat_accuracy_m, take_stereo_pair
+from PIL import Image
+
+from surmap.simulation.sitl_dump import image_msg_to_png, navsat_accuracy_m, take_stereo_pair
 
 
 def test_navsat_accuracy_is_the_square_root_of_the_reported_variance() -> None:
@@ -54,3 +58,43 @@ def test_stamps_within_the_slop_become_one_stereo_pair() -> None:
     assert pair == (1_000_000_000, "left", "right")
     assert left == {}
     assert right == {}
+
+
+def test_padded_mono8_rows_keep_only_the_pixels(tmp_path: Path) -> None:
+    # Given a 2×2 mono image whose rows are padded to 4 bytes
+    msg = SimpleNamespace(
+        encoding="mono8",
+        width=2,
+        height=2,
+        step=4,
+        data=bytes([1, 2, 9, 9, 3, 4, 9, 9]),
+    )
+    target = tmp_path / "frame.png"
+
+    # When the dumper writes a PNG
+    image_msg_to_png(msg, target)
+
+    # Then the padding bytes are not pixels
+    with Image.open(target) as image:
+        assert image.size == (2, 2)
+        assert list(image.get_flattened_data()) == [1, 2, 3, 4]
+
+
+def test_bgr8_rows_are_swapped_to_rgb_and_padding_is_dropped(tmp_path: Path) -> None:
+    # Given one BGR pixel padded out to a step of 4
+    msg = SimpleNamespace(
+        encoding="bgr8",
+        width=1,
+        height=1,
+        step=4,
+        data=bytes([10, 20, 30, 255]),
+    )
+    target = tmp_path / "frame.png"
+
+    # When the dumper writes a PNG
+    image_msg_to_png(msg, target)
+
+    # Then the pixel is RGB and the pad byte is gone
+    with Image.open(target) as image:
+        assert image.mode == "RGB"
+        assert list(image.get_flattened_data()) == [(30, 20, 10)]

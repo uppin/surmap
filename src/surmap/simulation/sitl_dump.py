@@ -8,9 +8,22 @@ capture rules can be tested with the rest of SurMap.
 from __future__ import annotations
 
 import math
-from typing import TypeVar
+from pathlib import Path
+from typing import Protocol, TypeVar
+
+from PIL import Image
 
 _T = TypeVar("_T")
+
+
+class _ImageMessage(Protocol):
+    """The `sensor_msgs/Image` fields the dumper reads."""
+
+    encoding: str
+    width: int
+    height: int
+    step: int
+    data: bytes
 
 
 def navsat_accuracy_m(variance_m2: float) -> float:
@@ -49,6 +62,47 @@ def take_stereo_pair(
             break
     _drop_stale_frames(left, right, slop_ns=slop_ns)
     return pair
+
+
+def image_msg_to_png(msg: _ImageMessage, target: Path) -> None:
+    """Write a `sensor_msgs/Image` to PNG without cv_bridge.
+
+    `step` is the row stride in bytes. When it is wider than the packed
+    pixels, the padding at the end of each row is dropped. A zero step
+    means the buffer is already packed.
+    """
+    encoding = str(msg.encoding).lower()
+    width = int(msg.width)
+    height = int(msg.height)
+    data = bytes(msg.data)
+    if encoding in ("rgb8", "bgr8"):
+        channels = 3
+        mode = "RGB"
+    elif encoding in ("mono8", "8uc1"):
+        channels = 1
+        mode = "L"
+    else:
+        raise ValueError(f"unsupported image encoding {encoding!r} (use rgb8/bgr8/mono8)")
+    step = int(getattr(msg, "step", 0) or 0)
+    packed = _pack_rows(data, width=width, height=height, channels=channels, step=step)
+    image = Image.frombytes(mode, (width, height), packed)
+    if encoding == "bgr8":
+        red, green, blue = image.split()
+        image = Image.merge("RGB", (blue, green, red))
+    image.save(target, format="PNG")
+
+
+def _pack_rows(data: bytes, *, width: int, height: int, channels: int, step: int) -> bytes:
+    row_bytes = width * channels
+    if step == 0 or step == row_bytes:
+        return data
+    if step < row_bytes:
+        raise ValueError(f"image step {step} is shorter than a packed row ({row_bytes})")
+    if len(data) < step * height:
+        raise ValueError(
+            f"image data has {len(data)} bytes, expected at least {step * height} for step {step}"
+        )
+    return b"".join(data[row * step : row * step + row_bytes] for row in range(height))
 
 
 def _drop_stale_frames(
