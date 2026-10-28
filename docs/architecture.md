@@ -84,7 +84,7 @@ use it. A non-Meta choice must name the gap it fills, here.
 | Job | Model | Meta? | Notes |
 |---|---|---|---|
 | Segmentation + video tracking (base) | SAM 3.1 | Yes | §3.1 |
-| Semantic labelling (API) | Meta Llama, newest available via the chosen Models API | Yes, preferred | §3.2 |
+| Semantic labelling (API) | Muse Spark Open `meta-models/muse-spark-open-1026` on Baseten | Yes | Per-object crops. Meta Model API does not host this model. Runbook: [HACKATHON.md](../HACKATHON.md). §3.2 |
 | Object detection (Edge TPU) | SSD MobileNet V2 or EfficientDet-Lite, Edge TPU-compiled `.tflite` | No | Meta publishes no Edge TPU detector; Coral requires Edge TPU-compiled TFLite. Final choice by CM5 benchmark |
 | Object tracking (on-board) | Lightweight box tracker (Kalman / IoU association) over detector output | No | Classical algorithm, not a learned model. SAM 3.1 also tracks, but on the base station, after the fact / downstream |
 | Pose and mapping | RTAB-Map | No | SLAM system, not a learned model; no Meta equivalent |
@@ -124,13 +124,20 @@ use it. A non-Meta choice must name the gap it fills, here.
   map position and GPS, neighbouring landmark labels.
 - Output: canonical semantic label, short description, confidence,
   and optionally concept phrases to re-prompt SAM 3.1 with.
-- Model choice: the newest Meta Llama model the chosen Models API
-  offers at integration time. The API provider and exact model ID are
-  open decisions; the exact model ID, provider, and prompt version are
-  recorded on every `Landmark` (§5) so labels stay reproducible.
-- Non-Meta fallback is permitted only if no Llama model on the API can
-  consume the needed input (e.g. image crops) at acceptable cost/latency;
-  that reason must be recorded here before use.
+- Model choice: per-object labels are Muse Spark Open,
+  `meta-models/muse-spark-open-1026`, through
+  `surmap.labelling.BasetenMuseLabelClient`. The client takes one JPEG
+  crop, the on-board coarse label, and the map-frame xyz, and returns
+  `ObjectLabel` (`label`, `description`, `confidence`, `model_id`,
+  `raw_text`). Reasoning text is stored beside the label and is not
+  part of `raw_text`. The station server does not call the client yet.
+  The key, the token cap, and the credit ledger are in
+  [HACKATHON.md](../HACKATHON.md). A scene-wide note on Meta Model API
+  is not called from this tree. `Landmark` (§5) still records the
+  provider and the exact model id that produced the label.
+- The provider is Baseten because Meta Model API does not host Muse
+  Spark Open, and those weights are what accept an image crop. The
+  model itself is Meta's.
 - The LLM labels what was observed. It makes no mission or flight
   decisions in this phase.
 
@@ -440,8 +447,9 @@ Revisit only after the passive pipeline works end to end on real footage:
 - SAM 3.1 on the RTX 5060 Ti: installed VRAM variant (8 vs 16 GB),
   measured throughput/VRAM, input resolution, keyframe rate,
   video-mode vs per-image mode.
-- Models API provider; exact Meta Llama model ID; whether image crops
-  are sent; labelling cost/latency budget per session.
+- Scene note on Meta Model API. Per-object labels are Baseten Muse
+  Spark Open `meta-models/muse-spark-open-1026`; the live-call gate and
+  credit limits are in [HACKATHON.md](../HACKATHON.md).
 - Link drone ↔ base station (Wi-Fi / LTE / other) and its bandwidth.
 - Simulation machine: hardware and software (§2.3).
 - GPS receiver model; GPS checkpoint rate and sync procedure.
