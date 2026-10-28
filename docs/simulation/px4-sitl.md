@@ -11,6 +11,10 @@ flight commands, offboard setpoints, or mission items.
 The host checklist (launch, bridge, dump, export, what to paste back)
 is [.agents/skills/px4-sitl-test/SKILL.md](../../.agents/skills/px4-sitl-test/SKILL.md).
 
+The demo scene is a fictional earthquake-and-flood block. One command
+starts this same stereo airframe in that world, and the scoring JSON
+and WSLg steps are in [disaster-world.md](disaster-world.md).
+
 ## Preflight (verified on this WSL host)
 
 | Piece | Status |
