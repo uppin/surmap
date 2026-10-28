@@ -9,7 +9,7 @@
 ## Workflow
 
 - [wf 1] ✅ 2026-10-28 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
+- [wf 2] ✅ 2026-10-28 `/plan-red` Red — acceptance and failing lower-tier tests, committed · collection error, `surmap.survey.modal_sam` missing
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] `ModalSamSession` calls `MODAL_SAM_URL` and fails before a request when it is unset
   - [ ] Fake endpoint masks become a `SamDetection` with a non-empty polygon via `Sam3Detector`
