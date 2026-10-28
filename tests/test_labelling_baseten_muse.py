@@ -313,6 +313,101 @@ def test_configured_max_tokens_is_the_cap_that_is_sent() -> None:
     assert payload(the_only_post(transport).body)["reasoning_effort"] == "low"
 
 
+def _clear_baseten_tuning(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SURMAP_BASETEN_REASONING_EFFORT", raising=False)
+    monkeypatch.delenv("SURMAP_BASETEN_MAX_TOKENS", raising=False)
+
+
+def test_unset_env_sends_low_effort_and_a_1024_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given no tuning env and a client that omits both settings
+    _clear_baseten_tuning(monkeypatch)
+    transport = RecordingTransport(
+        a_completion("label: car", reasoning=None, reasoning_tokens=None)
+    )
+    client = BasetenMuseLabelClient(api_key="test-key", transport=transport)
+
+    # When the crop is labelled
+    client.label(a_jpeg_crop(), "car", a_map_point())
+
+    # Then the request uses the per-object defaults
+    body = payload(the_only_post(transport).body)
+    assert body["reasoning_effort"] == "low"
+    assert body["max_tokens"] == 1024
+
+
+def test_env_overrides_reasoning_effort_and_the_token_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given env tuning and a client that omits both settings
+    _clear_baseten_tuning(monkeypatch)
+    monkeypatch.setenv("SURMAP_BASETEN_REASONING_EFFORT", "medium")
+    monkeypatch.setenv("SURMAP_BASETEN_MAX_TOKENS", "512")
+    transport = RecordingTransport(
+        a_completion("label: car", reasoning=None, reasoning_tokens=None)
+    )
+    client = BasetenMuseLabelClient(api_key="test-key", transport=transport)
+
+    # When the crop is labelled
+    client.label(a_jpeg_crop(), "car", a_map_point())
+
+    # Then the request uses the env values
+    body = payload(the_only_post(transport).body)
+    assert body["reasoning_effort"] == "medium"
+    assert body["max_tokens"] == 512
+
+
+def test_explicit_effort_and_cap_win_over_the_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given env tuning and a client that sets both arguments
+    monkeypatch.setenv("SURMAP_BASETEN_REASONING_EFFORT", "high")
+    monkeypatch.setenv("SURMAP_BASETEN_MAX_TOKENS", "2048")
+    transport = RecordingTransport(
+        a_completion("label: car", reasoning=None, reasoning_tokens=None)
+    )
+    client = BasetenMuseLabelClient(
+        api_key="test-key",
+        transport=transport,
+        reasoning_effort="low",
+        max_tokens=256,
+    )
+
+    # When the crop is labelled
+    client.label(a_jpeg_crop(), "car", a_map_point())
+
+    # Then the constructor arguments are what is sent
+    body = payload(the_only_post(transport).body)
+    assert body["reasoning_effort"] == "low"
+    assert body["max_tokens"] == 256
+
+
+def test_invalid_reasoning_effort_env_is_rejected_before_any_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given an effort env that is not low, medium, or high
+    monkeypatch.setenv("SURMAP_BASETEN_REASONING_EFFORT", "xhigh")
+    transport = RecordingTransport(a_completion("label: car"))
+
+    # When the client is built without an explicit effort
+    with pytest.raises(ValueError, match="reasoning_effort"):
+        BasetenMuseLabelClient(api_key="test-key", transport=transport)
+
+    # Then nothing is posted
+    assert transport.posts == []
+
+
+def test_invalid_max_tokens_env_is_rejected_before_any_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a token-cap env that is not a positive integer
+    _clear_baseten_tuning(monkeypatch)
+    monkeypatch.setenv("SURMAP_BASETEN_MAX_TOKENS", "many")
+    transport = RecordingTransport(a_completion("label: car"))
+
+    # When the client is built without an explicit cap
+    with pytest.raises(ValueError, match="SURMAP_BASETEN_MAX_TOKENS"):
+        BasetenMuseLabelClient(api_key="test-key", transport=transport)
+
+    # Then nothing is posted
+    assert transport.posts == []
+
+
 def test_reasoning_effort_cannot_claim_reasoning_is_off() -> None:
     # Given a transport that would fail the test if it were called
     transport = RecordingTransport(a_completion("label: car"))

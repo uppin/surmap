@@ -1,10 +1,10 @@
-# SurMap — hackathon credits
+# Credit usage and Baseten labels
 
 Civilian disaster-response survey. SurMap maps an area a team already
 flew; it does not fly the aircraft and it does not task it. Design of
-the pipeline is [docs/architecture.md](docs/architecture.md). This file
-is the credit runbook: which hosted model is called, how to turn a
-live call on, and how spend is recorded.
+the pipeline is [architecture.md](architecture.md). This note is the
+credit runbook: which hosted model the labelling client calls, how to
+turn a live call on, and how spend is recorded.
 
 ## Credits
 
@@ -20,7 +20,7 @@ scene note and is not called from this tree. Modal is not called.
 The geometric pipeline (stereo, Coral detection, RTAB-Map, the demo)
 does not use these credits.
 
-### Baseten Muse Spark Open labels
+## Baseten Muse Spark Open labels
 
 `surmap.labelling.BasetenMuseLabelClient` posts one chat completion:
 
@@ -32,8 +32,19 @@ does not use these credits.
 | Key | `BASETEN_API_KEY`, sent only as `Authorization: Bearer`. A missing or blank key raises `BasetenApiKeyMissing` before any socket |
 | Input | JPEG crop as an `image_url` data URL, plus the coarse detector label and map-frame xyz |
 | Output | `ObjectLabel`: `label`, `description`, `confidence` (`None` when the assistant text has no number), `model_id`, `raw_text` |
-| Reasoning | `reasoning_effort` defaults to `low`. The client does not send a flag that claims reasoning is off, and it does not use JSON mode. `choices[0].message.reasoning_content` is kept on `reasoning_text` and is not copied into `raw_text` or used as the label |
-| Cap | `max_tokens` defaults to `1024` (constructor argument). A trivial prompt can spend about 2200 reasoning tokens when the cap is left open |
+| Reasoning | `reasoning_effort` defaults to `low` because labels are per object and frequent. Allowed values are `low`, `medium`, and `high`. The client does not send a flag that claims reasoning is off, and it does not use JSON mode. `choices[0].message.reasoning_content` is kept on `reasoning_text` and is not copied into `raw_text` or used as the label |
+| Cap | `max_tokens` defaults to `1024`. A trivial prompt can spend about 2200 reasoning tokens when the cap is left open |
+
+A constructor argument wins. When the argument is omitted, the client
+reads the environment, then uses the default:
+
+| Variable | Values | Default |
+|---|---|---|
+| `SURMAP_BASETEN_REASONING_EFFORT` | `low`, `medium`, or `high` | `low` |
+| `SURMAP_BASETEN_MAX_TOKENS` | positive integer | `1024` |
+
+Anything else raises `ValueError` when the client is built, before a
+request is sent.
 
 `label:` in the assistant text is the label. With no such line, the
 first non-empty line is the label. A `confidence:` line wins over a
@@ -52,7 +63,7 @@ uv run pytest tests/test_labelling_baseten_muse.py -q
 The repository is public. Do not commit a key, a `.env` that holds
 one, or a usage log copied from a machine that has one.
 
-### Credit usage and limits
+## Credit usage and limits
 
 Shared ledger for every hosted call. Other agents pass an instance and
 use it as a callback; the method names below are the interface.

@@ -1,9 +1,11 @@
 """Per-object labels from Baseten Muse Spark Open.
 
 The live call is opt-in. Tests pass a transport and never open a socket.
-Reasoning stays on (``reasoning_effort`` defaults to ``low``); the client
-does not send a flag that claims it is off, and it does not ask for JSON
-mode. ``max_tokens`` caps the completion, including reasoning tokens.
+Reasoning stays on (``reasoning_effort`` defaults to ``low``, or
+``SURMAP_BASETEN_REASONING_EFFORT`` when set to low, medium, or high).
+The client does not send a flag that claims reasoning is off, and it
+does not ask for JSON mode. ``max_tokens`` caps the completion,
+including reasoning tokens (default 1024, or ``SURMAP_BASETEN_MAX_TOKENS``).
 """
 
 from __future__ import annotations
@@ -26,7 +28,9 @@ DEFAULT_MODEL_ID = "meta-models/muse-spark-open-1026"
 DEFAULT_REASONING_EFFORT = "low"
 DEFAULT_MAX_TOKENS = 1024
 _COMPLETIONS_URL = "https://inference.baseten.co/v1/chat/completions"
-_ALLOWED_EFFORT = frozenset({"low", "medium", "high", "xhigh"})
+_ALLOWED_EFFORT = frozenset({"low", "medium", "high"})
+_EFFORT_ENV = "SURMAP_BASETEN_REASONING_EFFORT"
+_MAX_TOKENS_ENV = "SURMAP_BASETEN_MAX_TOKENS"
 _SYSTEM_PROMPT = (
     "You label one object in a civilian disaster-survey photo. Reply in plain text, not JSON."
 )
@@ -74,24 +78,17 @@ class BasetenMuseLabelClient:
         model_id: str = DEFAULT_MODEL_ID,
         transport: ChatTransport | None = None,
         ledger: UsageLedger | None = None,
-        reasoning_effort: str = DEFAULT_REASONING_EFFORT,
-        max_tokens: int = DEFAULT_MAX_TOKENS,
+        reasoning_effort: str | None = None,
+        max_tokens: int | None = None,
         clock: Callable[[], float] | None = None,
         timeout_s: float = 120.0,
     ) -> None:
-        if reasoning_effort not in _ALLOWED_EFFORT:
-            raise ValueError(
-                "reasoning_effort must be low, medium, high, or xhigh; "
-                "Muse Spark Open cannot turn reasoning off"
-            )
-        if isinstance(max_tokens, bool) or max_tokens <= 0:
-            raise ValueError("max_tokens must be a positive integer")
         self._api_key = api_key
         self._model_id = model_id
         self._transport = transport
         self._ledger = ledger
-        self._reasoning_effort = reasoning_effort
-        self._max_tokens = max_tokens
+        self._reasoning_effort = _resolve_reasoning_effort(reasoning_effort)
+        self._max_tokens = _resolve_max_tokens(max_tokens)
         self._clock = time.time if clock is None else clock
         self._timeout_s = timeout_s
 
@@ -155,6 +152,39 @@ class BasetenMuseLabelClient:
             "reasoning_effort": self._reasoning_effort,
             "max_tokens": self._max_tokens,
         }
+
+
+def _resolve_reasoning_effort(explicit: str | None) -> str:
+    """Constructor argument wins. Otherwise ``SURMAP_BASETEN_REASONING_EFFORT``, else low."""
+    if explicit is not None:
+        raw = explicit
+    else:
+        raw = os.environ.get(_EFFORT_ENV, "").strip() or DEFAULT_REASONING_EFFORT
+    effort = raw.strip().lower()
+    if effort not in _ALLOWED_EFFORT:
+        raise ValueError(
+            "reasoning_effort must be low, medium, or high "
+            f"({_EFFORT_ENV}); Muse Spark Open cannot turn reasoning off"
+        )
+    return effort
+
+
+def _resolve_max_tokens(explicit: int | None) -> int:
+    """Constructor argument wins. Otherwise ``SURMAP_BASETEN_MAX_TOKENS``, else 1024."""
+    if explicit is not None:
+        if isinstance(explicit, bool) or explicit <= 0:
+            raise ValueError("max_tokens must be a positive integer")
+        return explicit
+    raw = os.environ.get(_MAX_TOKENS_ENV, "").strip()
+    if not raw:
+        return DEFAULT_MAX_TOKENS
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{_MAX_TOKENS_ENV} must be a positive integer, got {raw!r}") from exc
+    if value <= 0:
+        raise ValueError(f"{_MAX_TOKENS_ENV} must be a positive integer, got {raw!r}")
+    return value
 
 
 def _user_text(coarse_label: str, xyz: Vec3) -> str:
