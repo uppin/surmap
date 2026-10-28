@@ -9,7 +9,7 @@
 ## Workflow
 
 - [wf 1] ✅ 2026-10-28 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + changeset + discovery
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
+- [wf 2] ✅ 2026-10-28 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 4 tests, collection error `ModuleNotFoundError: surmap.survey.mask_cloud`
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Square mask returns only the inside point, translated by a known pose
   - [ ] Empty polygon returns an empty tuple
@@ -90,7 +90,7 @@ and does not write the result into RTAB-Map.
 
 **Method:** V1, fail→pass — `tests/test_mask_cloud.py` acceptance tests
 **Command:** `uv run pytest -q tests/test_mask_cloud.py`
-**Before:** (recorded on the red commit)
+**Before:** `uv run pytest -q tests/test_mask_cloud.py` → collection error, `ModuleNotFoundError: No module named 'surmap.survey.mask_cloud'` (4 tests not collected; the module is absent)
 **After:** (recorded when green)
 
 ## Testing Plan
