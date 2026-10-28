@@ -30,6 +30,12 @@ from surmap.labelling.meta_muse import (
 _API_KEY = "scene-note-test-key"
 
 
+@pytest.fixture(autouse=True)
+def _clear_scene_note_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SURMAP_META_REASONING_EFFORT", raising=False)
+    monkeypatch.delenv("SURMAP_META_MAX_OUTPUT_TOKENS", raising=False)
+
+
 def a_jpeg() -> bytes:
     buffer = io.BytesIO()
     Image.new("RGB", (8, 8), (120, 80, 40)).save(buffer, format="JPEG")
@@ -202,28 +208,277 @@ def test_a_single_string_is_not_treated_as_a_list_of_labels() -> None:
         client.note("debris", a_jpeg())
 
 
-def test_scene_note_defaults_reasoning_effort_to_low() -> None:
-    # Given the API default of high, which spent hundreds of reasoning tokens
+def test_scene_note_defaults_reasoning_effort_to_high() -> None:
+    # Given no effort override
     transport = RecordingTransport(a_message("Debris across the road."))
     client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport)
-
-    # When the note is requested with no effort override
-    client.note(("debris",), a_jpeg())
-
-    # Then the body asks for low effort
-    assert posted(transport)[2]["reasoning"] == {"effort": "low"}
-
-
-def test_scene_note_reasoning_effort_is_configurable() -> None:
-    # Given a caller that asks for a different effort
-    transport = RecordingTransport(a_message("Debris across the road."))
-    client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport, reasoning_effort="minimal")
 
     # When the note is requested
     client.note(("debris",), a_jpeg())
 
-    # Then that effort is what gets sent
-    assert posted(transport)[2]["reasoning"] == {"effort": "minimal"}
+    # Then the body asks for high effort
+    assert posted(transport)[2]["reasoning"] == {"effort": "high"}
+
+
+def test_scene_note_reasoning_effort_comes_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given the env selects medium
+    monkeypatch.setenv("SURMAP_META_REASONING_EFFORT", "medium")
+    transport = RecordingTransport(a_message("Debris across the road."))
+    client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport)
+
+    # When the note is requested
+    client.note(("debris",), a_jpeg())
+
+    # Then medium is what gets sent
+    assert posted(transport)[2]["reasoning"] == {"effort": "medium"}
+
+
+def test_constructor_reasoning_effort_overrides_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given the env says low and the constructor says high
+    monkeypatch.setenv("SURMAP_META_REASONING_EFFORT", "low")
+    transport = RecordingTransport(a_message("Debris across the road."))
+    client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport, reasoning_effort="HIGH")
+
+    # When the note is requested
+    client.note(("debris",), a_jpeg())
+
+    # Then the constructor value wins, normalized to the allowed spelling
+    assert posted(transport)[2]["reasoning"] == {"effort": "high"}
+
+
+def test_reasoning_effort_must_be_low_medium_or_high(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given an effort outside the allowed set
+    monkeypatch.setenv("SURMAP_META_REASONING_EFFORT", "minimal")
+
+    # When the client is constructed from that env, or with a bad argument
+    with pytest.raises(MetaMuseSceneError, match="low, medium, or high"):
+        MetaMuseSceneClient(api_key=_API_KEY, transport=UnusedTransport())
+    with pytest.raises(MetaMuseSceneError, match="low, medium, or high"):
+        MetaMuseSceneClient(api_key=_API_KEY, transport=UnusedTransport(), reasoning_effort="max")
+
+
+def test_scene_note_defaults_max_output_tokens_to_4096() -> None:
+    # Given no output cap
+    transport = RecordingTransport(a_message("Debris across the road."))
+    client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport)
+
+    # When the note is requested
+    client.note(("debris",), a_jpeg())
+
+    # Then the body caps visible output and reasoning at 4096
+    assert posted(transport)[2]["max_output_tokens"] == 4096
+
+
+def test_max_output_tokens_comes_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given the env sets a smaller cap
+    monkeypatch.setenv("SURMAP_META_MAX_OUTPUT_TOKENS", "128")
+    transport = RecordingTransport(a_message("Debris across the road."))
+    client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport)
+
+    # When the note is requested
+    client.note(("debris",), a_jpeg())
+
+    # Then that cap is what gets sent
+    assert posted(transport)[2]["max_output_tokens"] == 128
+
+
+def test_constructor_max_output_tokens_overrides_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given the env says 128 and the constructor says 64
+    monkeypatch.setenv("SURMAP_META_MAX_OUTPUT_TOKENS", "128")
+    transport = RecordingTransport(a_message("Debris across the road."))
+    client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport, max_output_tokens=64)
+
+    # When the note is requested
+    client.note(("debris",), a_jpeg())
+
+    # Then the constructor cap wins
+    assert posted(transport)[2]["max_output_tokens"] == 64
+
+
+def test_an_unreadable_max_output_token_env_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given an env value that is not an integer cap
+    monkeypatch.setenv("SURMAP_META_MAX_OUTPUT_TOKENS", "plenty")
+
+    # When the client is constructed
+    with pytest.raises(MetaMuseSceneError, match="at least 16"):
+        MetaMuseSceneClient(api_key=_API_KEY, transport=UnusedTransport())
+
+
+def test_scene_note_sends_max_output_tokens_when_capped() -> None:
+    # Given a cap of 64 tokens, counting visible output and reasoning
+    transport = RecordingTransport(a_message("Debris across the road."))
+    client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport, max_output_tokens=64)
+
+    # When the note is requested
+    client.note(("debris",), a_jpeg())
+
+    # Then the Responses body carries that cap
+    assert posted(transport)[2]["max_output_tokens"] == 64
+
+
+def test_max_output_tokens_below_16_is_refused() -> None:
+    # Given a cap under the API minimum of 16
+    # When the client is constructed
+    with pytest.raises(MetaMuseSceneError, match="16"):
+        MetaMuseSceneClient(api_key=_API_KEY, transport=UnusedTransport(), max_output_tokens=15)
+
+
+def test_before_call_sees_meta_and_can_block_the_request() -> None:
+    # Given a budget hook that refuses the provider
+    transport = RecordingTransport(a_message("Debris across the road."))
+    seen: list[str] = []
+
+    def before_call(provider: str) -> None:
+        seen.append(provider)
+        raise MetaMuseSceneError("blocked")
+
+    client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport, before_call=before_call)
+
+    # When the note is requested
+    with pytest.raises(MetaMuseSceneError, match="blocked") as raised:
+        client.note(("debris",), a_jpeg())
+
+    # Then the hook saw "meta", the request was not sent, and the key stayed out
+    assert seen == ["meta"]
+    assert transport.calls == []
+    assert _API_KEY not in str(raised.value)
+
+
+def test_on_usage_receives_token_counts_from_the_response() -> None:
+    # Given a response that reports input, output, and reasoning tokens
+    payload = a_message("Debris across the road.")
+    payload["usage"] = {
+        "input_tokens": 120,
+        "output_tokens": 40,
+        "output_tokens_details": {"reasoning_tokens": 11},
+    }
+    transport = RecordingTransport(payload)
+    seen: list[tuple[str, str, int, int, int | None]] = []
+
+    def on_usage(
+        provider: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        reasoning_tokens: int | None,
+    ) -> None:
+        seen.append((provider, model, input_tokens, output_tokens, reasoning_tokens))
+
+    client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport, on_usage=on_usage)
+
+    # When the note is requested
+    note = client.note(("debris",), a_jpeg())
+
+    # Then the ledger hook gets the Meta counts and the note is unchanged
+    assert note == "Debris across the road."
+    assert seen == [("meta", "muse-spark-1.3", 120, 40, 11)]
+
+
+def test_on_usage_leaves_reasoning_tokens_empty_when_the_detail_is_absent() -> None:
+    # Given usage without a reasoning breakdown
+    payload = a_message("Debris across the road.")
+    payload["usage"] = {"input_tokens": 10, "output_tokens": 4}
+    transport = RecordingTransport(payload)
+    seen: list[int | None] = []
+
+    def on_usage(
+        provider: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        reasoning_tokens: int | None,
+    ) -> None:
+        seen.append(reasoning_tokens)
+        assert provider == "meta"
+        assert model == "muse-spark-1.3"
+        assert (input_tokens, output_tokens) == (10, 4)
+
+    client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport, on_usage=on_usage)
+
+    # When the note is requested
+    client.note(("debris",), a_jpeg())
+
+    # Then reasoning tokens are absent rather than invented
+    assert seen == [None]
+
+
+def test_a_failed_request_does_not_report_usage() -> None:
+    # Given a transport that fails after the gate has run
+    events: list[str] = []
+
+    def before_call(provider: str) -> None:
+        events.append(provider)
+
+    def on_usage(
+        provider: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        reasoning_tokens: int | None,
+    ) -> None:
+        events.append(f"usage:{provider}:{model}:{input_tokens}:{output_tokens}:{reasoning_tokens}")
+
+    client = MetaMuseSceneClient(
+        api_key=_API_KEY,
+        transport=FailingTransport(),
+        before_call=before_call,
+        on_usage=on_usage,
+    )
+
+    # When the note is requested
+    with pytest.raises(MetaMuseSceneError, match="HTTP 401"):
+        client.note(("debris",), a_jpeg())
+
+    # Then the gate ran and no usage was reported
+    assert events == ["meta"]
+
+
+def test_hooks_run_around_the_request_and_skip_usage_when_it_is_missing() -> None:
+    # Given a response with no usage object
+    transport = RecordingTransport(a_message("Debris across the road."))
+    events: list[str] = []
+
+    def before_call(provider: str) -> None:
+        events.append(f"before:{provider}")
+
+    def on_usage(
+        provider: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        reasoning_tokens: int | None,
+    ) -> None:
+        events.append(f"usage:{provider}:{model}:{input_tokens}:{output_tokens}:{reasoning_tokens}")
+
+    class OrderingTransport:
+        def post_json(
+            self,
+            url: str,
+            headers: Mapping[str, str],
+            body: Mapping[str, object],
+        ) -> Mapping[str, object]:
+            events.append("post")
+            return transport.post_json(url, headers, body)
+
+    client = MetaMuseSceneClient(
+        api_key=_API_KEY,
+        transport=OrderingTransport(),
+        before_call=before_call,
+        on_usage=on_usage,
+    )
+
+    # When the note is requested
+    note = client.note(("debris",), a_jpeg())
+
+    # Then the gate runs before the post, and missing usage is not reported
+    assert note == "Debris across the road."
+    assert events == ["before:meta", "post"]
 
 
 def test_a_muse_wonder_id_is_refused_before_any_request() -> None:

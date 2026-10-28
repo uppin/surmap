@@ -7,13 +7,20 @@ used, and the open-weight Muse Spark slug belongs on Baseten, not here.
 
 The live request shape was checked on 2026-10-28: ``POST
 https://api.meta.ai/v1/responses`` with ``Authorization: Bearer
-$MODEL_API_KEY``. The API's default ``reasoning.effort`` is ``high``;
-this client sends ``low`` unless the caller picks another effort.
-Image input follows Meta's image-understanding guide: an
-``input_image`` part whose ``image_url`` is a ``data:`` URL string.
+$MODEL_API_KEY``. ``reasoning.effort`` defaults to ``high``. A
+constructor argument wins over ``SURMAP_META_REASONING_EFFORT``,
+which must be ``low``, ``medium``, or ``high``. ``max_output_tokens``
+defaults to 4096 (visible output plus reasoning) and
+``SURMAP_META_MAX_OUTPUT_TOKENS`` overrides that when the constructor
+omits a cap. Image input follows Meta's image-understanding guide:
+an ``input_image`` part whose ``image_url`` is a ``data:`` URL string.
 
 The key is read from ``MODEL_API_KEY`` (or the constructor) at call
 time. It is not written into the body, the error text, or ``repr``.
+``before_call("meta")`` runs after the request is built and may raise
+to block it. ``on_usage`` then receives
+``("meta", model, input_tokens, output_tokens, reasoning_tokens)``
+from the response ``usage`` object.
 """
 
 from __future__ import annotations
@@ -22,13 +29,21 @@ import base64
 import http.client
 import json
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol
 from urllib.parse import urlsplit, urlunsplit
 
 HOSTED_MUSE_SPARK_MODEL = "muse-spark-1.3"
 META_MODEL_API_BASE_URL = "https://api.meta.ai/v1"
-DEFAULT_REASONING_EFFORT = "low"
+DEFAULT_REASONING_EFFORT = "high"
+DEFAULT_MAX_OUTPUT_TOKENS = 4096
+_MIN_OUTPUT_TOKENS = 16
+_REASONING_EFFORTS = frozenset({"low", "medium", "high"})
+_REASONING_ENV = "SURMAP_META_REASONING_EFFORT"
+_MAX_OUTPUT_ENV = "SURMAP_META_MAX_OUTPUT_TOKENS"
+
+BeforeCall = Callable[[str], None]
+OnUsage = Callable[[str, str, int, int, int | None], None]
 
 _WONDER_ID = "muse-wonder"
 _OPEN_WEIGHT_ID = "meta-models/muse-spark-open-1026"
@@ -109,14 +124,20 @@ class MetaMuseSceneClient:
         transport: MetaMuseTransport | None = None,
         api_key: str | None = None,
         model: str = HOSTED_MUSE_SPARK_MODEL,
-        reasoning_effort: str = DEFAULT_REASONING_EFFORT,
+        reasoning_effort: str | None = None,
         base_url: str = META_MODEL_API_BASE_URL,
         timeout_s: float = 60.0,
+        before_call: BeforeCall | None = None,
+        on_usage: OnUsage | None = None,
+        max_output_tokens: int | None = None,
     ) -> None:
         self._model = _check_model(model)
-        self._reasoning_effort = _check_effort(reasoning_effort)
+        self._reasoning_effort = _resolve_reasoning_effort(reasoning_effort)
+        self._max_output_tokens = _resolve_max_output_tokens(max_output_tokens)
         self._url = _responses_url(base_url)
         self._api_key = api_key
+        self._before_call = before_call
+        self._on_usage = on_usage
         self._transport = (
             transport if transport is not None else UrllibMetaMuseTransport(timeout_s=timeout_s)
         )
@@ -132,22 +153,24 @@ class MetaMuseSceneClient:
             prompt=prompt,
             image_url=f"data:image/jpeg;base64,{encoded}",
             reasoning_effort=self._reasoning_effort,
+            max_output_tokens=self._max_output_tokens,
         )
-        payload = self._transport.post_json(
-            self._url,
-            {
-                "Authorization": f"Bearer {self._bearer_key()}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
-            body,
-        )
+        headers = {
+            "Authorization": f"Bearer {self._bearer_key()}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        if self._before_call is not None:
+            self._before_call("meta")
+        payload = self._transport.post_json(self._url, headers, body)
+        _notify_usage(payload, self._model, self._on_usage)
         return _scene_note_text(payload)
 
     def __repr__(self) -> str:
         return (
             f"MetaMuseSceneClient(model={self._model!r}, "
-            f"reasoning_effort={self._reasoning_effort!r})"
+            f"reasoning_effort={self._reasoning_effort!r}, "
+            f"max_output_tokens={self._max_output_tokens})"
         )
 
     def _bearer_key(self) -> str:
@@ -172,11 +195,38 @@ def _check_model(model: str) -> str:
     return cleaned
 
 
+def _resolve_reasoning_effort(explicit: str | None) -> str:
+    if explicit is not None:
+        return _check_effort(explicit)
+    return _check_effort(os.environ.get(_REASONING_ENV, DEFAULT_REASONING_EFFORT))
+
+
 def _check_effort(effort: str) -> str:
-    cleaned = effort.strip()
-    if not cleaned:
-        raise MetaMuseSceneError("reasoning effort is empty")
+    cleaned = effort.strip().casefold()
+    if cleaned not in _REASONING_EFFORTS:
+        raise MetaMuseSceneError("reasoning effort must be low, medium, or high")
     return cleaned
+
+
+def _resolve_max_output_tokens(explicit: int | None) -> int:
+    if explicit is not None:
+        return _check_max_output_tokens(explicit)
+    raw = os.environ.get(_MAX_OUTPUT_ENV)
+    if raw is None or not raw.strip():
+        return DEFAULT_MAX_OUTPUT_TOKENS
+    try:
+        parsed = int(raw.strip())
+    except ValueError as exc:
+        raise MetaMuseSceneError(
+            "SURMAP_META_MAX_OUTPUT_TOKENS must be an integer of at least 16"
+        ) from exc
+    return _check_max_output_tokens(parsed)
+
+
+def _check_max_output_tokens(value: int) -> int:
+    if isinstance(value, bool) or value < _MIN_OUTPUT_TOKENS:
+        raise MetaMuseSceneError("max_output_tokens must be at least 16")
+    return value
 
 
 def _responses_url(base_url: str) -> str:
@@ -218,6 +268,7 @@ def _request_body(
     prompt: str,
     image_url: str,
     reasoning_effort: str,
+    max_output_tokens: int,
 ) -> dict[str, object]:
     content: list[object] = [
         {"type": "input_text", "text": prompt},
@@ -229,7 +280,34 @@ def _request_body(
         "input": [message],
         "stream": False,
         "reasoning": {"effort": reasoning_effort},
+        "max_output_tokens": max_output_tokens,
     }
+
+
+def _notify_usage(payload: Mapping[str, object], model: str, on_usage: OnUsage | None) -> None:
+    if on_usage is None:
+        return
+    usage = payload.get("usage")
+    if not isinstance(usage, dict):
+        return
+    input_tokens = _token_count(usage.get("input_tokens"))
+    output_tokens = _token_count(usage.get("output_tokens"))
+    if input_tokens is None or output_tokens is None:
+        return
+    on_usage("meta", model, input_tokens, output_tokens, _reasoning_tokens(usage))
+
+
+def _reasoning_tokens(usage: Mapping[str, object]) -> int | None:
+    details = usage.get("output_tokens_details")
+    if not isinstance(details, dict):
+        return None
+    return _token_count(details.get("reasoning_tokens"))
+
+
+def _token_count(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
 
 
 def _scene_note_text(payload: Mapping[str, object]) -> str:

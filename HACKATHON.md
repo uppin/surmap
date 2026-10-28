@@ -25,7 +25,7 @@ have no client, no request, and no test.
 
 | Source | Job | Id, as documented 28 Oct 2026 | Status |
 |---|---|---|---|
-| [Meta Model API](https://dev.meta.ai/docs/models) | Scene note over the mapped area. SAM 3.1 boxes and masks | Hosted Muse Spark: `muse-spark-1.3`. SAM: `sam-3.1` via `POST /v1/responses`. Base URL: `https://api.meta.ai/v1` | Scene note shipped: `MetaMuseSceneClient` (`surmap.labelling.meta_muse`) posts `muse-spark-1.3` to `POST /v1/responses` with `Authorization: Bearer` from `MODEL_API_KEY` and `reasoning.effort` `low` (the API default is `high`). The JPEG is an `input_image` data URL. The note is `output_text` from `message` items only. The prompt is a civilian search-and-rescue description and asks for no flight advice. Live call: `SURMAP_LIVE_META=1`. SAM 3.1 on this API is still planned. |
+| [Meta Model API](https://dev.meta.ai/docs/models) | Scene note over the mapped area. SAM 3.1 boxes and masks | Hosted Muse Spark: `muse-spark-1.3`. SAM: `sam-3.1` via `POST /v1/responses`. Base URL: `https://api.meta.ai/v1` | Scene note shipped: `MetaMuseSceneClient` (`surmap.labelling.meta_muse`) posts `muse-spark-1.3` to `POST /v1/responses` with `Authorization: Bearer` from `MODEL_API_KEY`. `reasoning.effort` defaults to `high` (`SURMAP_META_REASONING_EFFORT`: `low`, `medium`, or `high`). `max_output_tokens` defaults to 4096 (`SURMAP_META_MAX_OUTPUT_TOKENS`, at least 16). A constructor argument wins over either env var. The JPEG is an `input_image` data URL. The note is `output_text` from `message` items only. The prompt is a civilian search-and-rescue description and asks for no flight advice. Live call: `SURMAP_LIVE_META=1`. SAM 3.1 on this API is still planned. |
 | [Baseten Model APIs](https://docs.baseten.co/inference/model-apis/overview) | Per-object semantic labels from Muse Spark Open (image crop, optional responder voice note) | Hackathon id `meta-models/muse-spark-open-1026`. Public catalog slug `meta-models/muse-spark-open`. Base URL `https://inference.baseten.co/v1` | Planned |
 | Modal | GPU for station-side SAM 3.1 inference behind the in-tree ONNX adapter | No Modal app in this repo | Planned |
 
@@ -33,8 +33,17 @@ Muse Spark Open is not on Meta Model API. Meta's models page says to
 run those weights yourself or call a hosted provider; Baseten is that
 provider here. Hosted Muse Spark (`muse-spark-1.3`) is the Model API
 model for the scene note. `MetaMuseSceneClient` sends
-`reasoning.effort` `low` because a trivial prompt at the API default
-(`high`) spent hundreds of reasoning tokens. Muse Wonder is not used.
+`reasoning.effort` `high` unless `SURMAP_META_REASONING_EFFORT` or
+the constructor sets `low` or `medium` (anything else is refused).
+`max_output_tokens` is 4096 unless `SURMAP_META_MAX_OUTPUT_TOKENS`
+or the constructor sets another integer of at least 16; the cap
+counts visible output and reasoning. Optional `before_call` is
+invoked with `"meta"` before the request and may raise to block it.
+Optional `on_usage` is invoked after a response that includes
+`usage`, with provider `"meta"`, the model id, `input_tokens`,
+`output_tokens`, and `output_tokens_details.reasoning_tokens` (or
+nothing for that last count when the detail is absent). Muse Wonder
+is not used.
 
 Baseten, checked 28 Oct 2026
 ([Model APIs](https://docs.baseten.co/inference/model-apis/overview),
