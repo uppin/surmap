@@ -375,20 +375,16 @@ async def test_a_session_stops_at_its_call_limit() -> None:
     assert detector.calls_made == 2
 
 
-def test_the_default_session_cap_is_two_hundred() -> None:
-    # Given a detector constructed without a call cap
+def test_the_default_session_cap_is_five_thousand(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given no env override
+    monkeypatch.delenv("SURMAP_META_SAM_MAX_CALLS", raising=False)
     detector = MetaSamDetector(api_key=FIXTURE_KEY, transport=RecordingTransport(a_response("")))
 
-    # Then the cap is the demo-replay default
+    # Then the cap is the generous default
     assert detector.max_calls_per_session == DEFAULT_MAX_CALLS_PER_SESSION
-    assert DEFAULT_MAX_CALLS_PER_SESSION == 200
-
-
-def test_a_model_id_containing_wonder_is_rejected() -> None:
-    # Given a model id that names a model this project does not use
-    # When a detector is constructed with it
-    with pytest.raises(ValueError, match="wonder"):
-        MetaSamDetector(api_key=FIXTURE_KEY, model="muse-wonder-1")
+    assert DEFAULT_MAX_CALLS_PER_SESSION == 5000
 
 
 async def test_a_missing_key_does_not_send(monkeypatch: pytest.MonkeyPatch) -> None:

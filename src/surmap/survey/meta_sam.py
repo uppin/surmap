@@ -15,8 +15,10 @@ https://dev.meta.ai/docs/protocols/responses) and against a text
 Responses call that returned ``output[]`` plus
 ``usage.input_tokens`` / ``usage.output_tokens``:
 
-* The model id defaults to ``sam-3.1`` and is configurable. An id
-  containing ``wonder`` is rejected.
+* The model id defaults to ``sam-3.1`` and is configurable. The only
+  rejected ids are those containing ``wonder-full`` or ``wonder_full``
+  (Muse Wonder Full is the uncovered credit). Other ids may contain
+  ``wonder``.
 * The body is a non-streaming Responses request: one user message
   with ``input_text`` (the prompt) and ``input_image`` (a base64
   data URL: the jpeg bytes for an mjpeg frame, a PNG for raw RGB),
@@ -48,10 +50,10 @@ Assumed, because a live ``sam-3.1`` response was not captured:
 reasoning_tokens)`` with provider ``meta``. `before_call` is invoked
 with ``meta`` after the session cap and the API key have been
 checked and before the request is counted or sent. It may raise to
-stop the call. `max_calls_per_session` (default 200) bounds one
-detector instance so a demo replay cannot call the API once per
-frame without limit. A failed send still counts. A blocked
-`before_call` does not.
+stop the call. `max_calls_per_session` (default 5000, or
+``SURMAP_META_SAM_MAX_CALLS`` when the argument is omitted) bounds
+one detector instance. A failed send still counts. A blocked
+`before_call` does not. An explicit argument wins over the env var.
 """
 
 from __future__ import annotations
@@ -65,6 +67,7 @@ import threading
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Protocol
 
 import numpy as np
@@ -83,7 +86,8 @@ from surmap.survey.sam3 import mask_outline
 
 DEFAULT_ENDPOINT = "https://api.meta.ai/v1/responses"
 DEFAULT_MODEL = "sam-3.1"
-DEFAULT_MAX_CALLS_PER_SESSION = 200
+DEFAULT_MAX_CALLS_PER_SESSION = 5000
+_UNCOVERED_MODEL_MARKERS = ("wonder-full", "wonder_full")
 DEFAULT_PROMPT = "object"
 
 UsageCallback = Callable[[str, str, int, int, int | None], None]
@@ -249,12 +253,10 @@ class MetaSamDetector:
         transport: MetaResponsesTransport | None = None,
         on_usage: UsageCallback | None = None,
         before_call: BeforeCall | None = None,
-        max_calls_per_session: int = DEFAULT_MAX_CALLS_PER_SESSION,
+        max_calls_per_session: int | None = None,
         score_threshold: float = 0.0,
         timeout_s: float = 60.0,
     ) -> None:
-        if max_calls_per_session < 1:
-            raise ValueError("max_calls_per_session must be at least 1")
         self._api_key = api_key
         self._model = _require_model(model)
         self._prompt = prompt
@@ -262,7 +264,7 @@ class MetaSamDetector:
         self._transport = transport if transport is not None else UrllibMetaTransport(timeout_s)
         self._on_usage = on_usage
         self._before_call = before_call
-        self._max_calls = max_calls_per_session
+        self._max_calls = _session_call_limit(max_calls_per_session)
         self._score_threshold = score_threshold
         self._calls = 0
         self._lock = threading.Lock()
@@ -319,9 +321,92 @@ class MetaSamDetector:
 
 def _require_model(model: str) -> str:
     stripped = model.strip()
-    if not stripped or "wonder" in stripped.casefold():
+    folded = stripped.casefold()
+    uncovered = any(marker in folded for marker in _UNCOVERED_MODEL_MARKERS)
+    if not folded or uncovered:
         raise ValueError(f"unsupported Meta model id: {model!r}")
     return stripped
+
+
+def _session_call_limit(explicit: int | None) -> int:
+    """Explicit argument, else ``SURMAP_META_SAM_MAX_CALLS``, else 5000."""
+    if explicit is not None:
+        limit = explicit
+    else:
+        raw = os.environ.get("SURMAP_META_SAM_MAX_CALLS")
+        if raw is None or raw.strip() == "":
+            limit = DEFAULT_MAX_CALLS_PER_SESSION
+        else:
+            try:
+                limit = int(raw, 10)
+            except ValueError as exc:
+                raise ValueError("SURMAP_META_SAM_MAX_CALLS must be a positive integer") from exc
+    if limit < 1:
+        raise ValueError("max_calls_per_session must be at least 1")
+    return limit
+
+
+class _RememberingTransport:
+    """Records the response body from one inner transport."""
+
+    def __init__(self, inner: MetaResponsesTransport) -> None:
+        self._inner = inner
+        self.body: Mapping[str, object] | None = None
+
+    def post(
+        self,
+        url: str,
+        headers: Mapping[str, str],
+        payload: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        body = self._inner.post(url, headers, payload)
+        self.body = body
+        return body
+
+
+def write_response_json(body: Mapping[str, object], path: Path, *, secret: str) -> None:
+    """Write a Responses body. The API key is replaced if it appears."""
+    text = json.dumps(body, indent=2)
+    if secret:
+        text = text.replace(secret, "[redacted]")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text + "\n", encoding="utf-8")
+
+
+def probe_sam(
+    frame: RawFrame,
+    *,
+    prompt: str,
+    output_path: Path,
+    api_key: str,
+    transport: MetaResponsesTransport | None = None,
+    model: str = DEFAULT_MODEL,
+) -> tuple[SamDetection, ...]:
+    """Send one frame, save the response JSON, and return detections.
+
+    The file is the parsed response object. The bearer token is not
+    written. A parse failure still saves the body when the request
+    returned one.
+    """
+    remembered = _RememberingTransport(transport or UrllibMetaTransport())
+    detector = MetaSamDetector(
+        api_key=api_key,
+        prompt=prompt,
+        model=model,
+        transport=remembered,
+        max_calls_per_session=1,
+    )
+    error: MetaSamError | None = None
+    detections: tuple[SamDetection, ...] = ()
+    try:
+        detections = asyncio.run(detector.detect(frame))
+    except MetaSamError as exc:
+        error = exc
+    if remembered.body is not None:
+        write_response_json(remembered.body, output_path, secret=api_key)
+    if error is not None:
+        raise error
+    return detections
 
 
 def _frame_image_data_url(frame: RawFrame) -> str:

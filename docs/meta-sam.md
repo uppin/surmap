@@ -17,8 +17,10 @@ detections = await detector.detect(frame)
 - Auth: `Authorization: Bearer <MODEL_API_KEY>`. The key is read from
   the constructor or from the environment at call time. It is not
   logged. An error string that contains the key is redacted.
-- Model id: `sam-3.1` by default (`model=`). Any id containing
-  `wonder` is rejected.
+- Model id: `sam-3.1` by default (`model=`). The only rejected ids
+  are those containing `wonder-full` or `wonder_full` (any case).
+  That is Muse Wonder Full, the uncovered credit. Other ids may
+  contain `wonder`.
 - Prompt: a short noun phrase (`prompt=`, default `object`). One
   concept per request, matching the SAM docs.
 - Image: an mjpeg frame is sent as its jpeg bytes. A raw RGB frame
@@ -28,9 +30,12 @@ detections = await detector.detect(frame)
 - Metadata (string values, as the docs require):
   `include_confidence=true`, `mask_encoding=one_bit`.
 - Each detector instance allows `max_calls_per_session` requests
-  (default 200). The next call raises `MetaSamCallLimit` and does
-  not touch the network. A send that fails still counts. A
-  `before_call` that raises does not.
+  (default 5000). Set `SURMAP_META_SAM_MAX_CALLS` to override that
+  default. An explicit `max_calls_per_session=` argument wins over
+  the env var. The next call past the cap raises `MetaSamCallLimit`
+  and does not touch the network. A send that fails still counts.
+  A `before_call` that raises does not. `before_call` stays in
+  front of every counted request.
 - `before_call("meta")` runs after the cap and the key check, before
   the request is counted.
 - `on_usage("meta", model, input_tokens, output_tokens, reasoning)`
@@ -81,6 +86,23 @@ The grammar itself (frame marker, inclusive box, base85 mask) is
 the documented one. The request's model id, URL, bearer auth, and
 `input_text` / `input_image` parts are the documented ones.
 
+## One live call from WSL
+
+From the repository root inside WSL. This sends one image
+(`scripts/fixtures/meta_sam_check.png`) with prompt `person`, prints
+the detections, and writes the response JSON to
+`tmp/meta-sam-last-response.json`. That path is gitignored. The API
+key is not printed. If the key string appears in the response, it is
+replaced with `[redacted]` in the file; the rest of the body is kept
+so the wire format can be checked.
+
+```bash
+SURMAP_LIVE_META=1 MODEL_API_KEY='paste-key-here' uv run python scripts/check_meta_sam.py
+```
+
+`--image` and `--prompt` override the defaults. The script does not
+call Meta unless both `SURMAP_LIVE_META=1` and `MODEL_API_KEY` are set.
+
 ## SAM cell for HACKATHON.md
 
 `HACKATHON.md` is not on `main`. When that table exists, the SAM
@@ -94,4 +116,4 @@ row should say:
   downloaded.
 - What this repo adds: the `SamDetector` mapping to `SamDetection`,
   the shared `mask_outline` polygon, `on_usage`, `before_call`, and
-  `max_calls_per_session` (default 200).
+  `max_calls_per_session` (default 5000, or `SURMAP_META_SAM_MAX_CALLS`).

@@ -106,12 +106,6 @@ use it. A non-Meta choice must name the gap it fills, here.
   detector's coarse labels (e.g. "car", "roof"), so the Coral's cheap
   detections steer SAM 3.1's expensive, precise segmentation, and SAM
   3.1's video identities give landmarks temporal consistency.
-- Hosted path, no local weights: `surmap.survey.meta_sam.MetaSamDetector`
-  posts one frame to Meta Model API `sam-3.1` (the id is configurable)
-  at `POST https://api.meta.ai/v1/responses`. The ONNX adapter in
-  `surmap.survey.sam3` is unchanged. Request shape, the session call
-  cap, and what is assumed about the JSON envelope:
-  [meta-sam.md](meta-sam.md).
 - RTX 5060 Ti sizing is unverified: Meta's throughput figures (32 fps
   video with multiplexing) are measured on an H100.
   Before committing, measure on the actual card: peak VRAM at the
