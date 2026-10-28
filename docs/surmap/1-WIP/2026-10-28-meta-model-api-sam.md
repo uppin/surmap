@@ -10,12 +10,12 @@
 
 - [wf 1] ✅ 2026-10-28 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file
 - [wf 2] ✅ 2026-10-28 `/plan-red` Red — acceptance and failing lower-tier tests · collection error, missing `surmap.survey.meta_sam`
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] `MetaSamDetector` posts the documented request and maps one box plus a mask to a `SamDetection` with a polygon
-  - [ ] No weight download and no separate GPU service; live call only behind `SURMAP_LIVE_META=1`
-  - [ ] `on_usage` and `before_call` hooks; `max_calls_per_session` default 200
-  - [ ] Model id configurable, default `sam-3.1`; ids containing `wonder` rejected
-  - [ ] `mask_outline` shared with the ONNX adapter
+- [wf 3] ✅ 2026-10-28 `/green` Green — implement until every red test passes · `tests/test_meta_sam.py` and `tests/test_sam3.py` green
+  - [x] `MetaSamDetector` posts the documented request and maps one box plus a mask to a `SamDetection` with a polygon
+  - [x] No weight download and no separate GPU service; live call only behind `SURMAP_LIVE_META=1`
+  - [x] `on_usage` and `before_call` hooks; `max_calls_per_session` default 200
+  - [x] Model id configurable, default `sam-3.1`; ids containing `wonder` rejected
+  - [x] `mask_outline` shared with the ONNX adapter
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/meta-sam.md` runbook, including the SAM cell text for `HACKATHON.md`
