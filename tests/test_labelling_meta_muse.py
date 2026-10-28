@@ -34,6 +34,7 @@ _API_KEY = "scene-note-test-key"
 def _clear_scene_note_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SURMAP_META_REASONING_EFFORT", raising=False)
     monkeypatch.delenv("SURMAP_META_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("SURMAP_META_MODEL", raising=False)
 
 
 def a_jpeg() -> bytes:
@@ -481,15 +482,54 @@ def test_hooks_run_around_the_request_and_skip_usage_when_it_is_missing() -> Non
     assert events == ["before:meta", "post"]
 
 
-def test_a_muse_wonder_id_is_refused_before_any_request() -> None:
-    # Given a Wonder id, which these credits do not cover
+def test_muse_wonder_is_allowed_and_the_default_stays_muse_spark() -> None:
+    # Given Muse Wonder, which the credits cover, and no model override
+    wonder = RecordingTransport(a_message("Debris across the road."))
+    default = RecordingTransport(a_message("Debris across the road."))
+    wonder_client = MetaMuseSceneClient(model="muse-wonder-1.0", api_key=_API_KEY, transport=wonder)
+    default_client = MetaMuseSceneClient(api_key=_API_KEY, transport=default)
+
+    # When each note is requested
+    wonder_client.note(("debris",), a_jpeg())
+    default_client.note(("debris",), a_jpeg())
+
+    # Then Wonder is sent as asked, and the default remains hosted Muse Spark
+    assert posted(wonder)[2]["model"] == "muse-wonder-1.0"
+    assert posted(default)[2]["model"] == "muse-spark-1.3"
+
+
+def test_the_model_comes_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given the env selects Muse Wonder
+    monkeypatch.setenv("SURMAP_META_MODEL", "muse-wonder-1.0")
+    transport = RecordingTransport(a_message("Debris across the road."))
+    client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport)
+
+    # When the note is requested
+    client.note(("debris",), a_jpeg())
+
+    # Then that id is what gets sent
+    assert posted(transport)[2]["model"] == "muse-wonder-1.0"
+
+
+def test_constructor_model_overrides_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given the env says Wonder and the constructor says Muse Spark
+    monkeypatch.setenv("SURMAP_META_MODEL", "muse-wonder-1.0")
+    transport = RecordingTransport(a_message("Debris across the road."))
+    client = MetaMuseSceneClient(model="muse-spark-1.3", api_key=_API_KEY, transport=transport)
+
+    # When the note is requested
+    client.note(("debris",), a_jpeg())
+
+    # Then the constructor id wins
+    assert posted(transport)[2]["model"] == "muse-spark-1.3"
+
+
+@pytest.mark.parametrize("model_id", ["muse-wonder-full", "muse-wonder_full", "Muse-Wonder-Full"])
+def test_muse_wonder_full_is_refused(model_id: str) -> None:
+    # Given a Muse Wonder Full id, which the credits do not cover
     # When the client is constructed
-    with pytest.raises(MetaMuseSceneError, match="Muse Wonder"):
-        MetaMuseSceneClient(
-            model="muse-wonder-1.0",
-            api_key=_API_KEY,
-            transport=UnusedTransport(),
-        )
+    with pytest.raises(MetaMuseSceneError, match="Wonder Full"):
+        MetaMuseSceneClient(model=model_id, api_key=_API_KEY, transport=UnusedTransport())
 
 
 def test_the_baseten_open_model_id_is_refused_on_this_api() -> None:

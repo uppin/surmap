@@ -25,7 +25,7 @@ have no client, no request, and no test.
 
 | Source | Job | Id, as documented 28 Oct 2026 | Status |
 |---|---|---|---|
-| [Meta Model API](https://dev.meta.ai/docs/models) | Scene note over the mapped area. SAM 3.1 boxes and masks | Hosted Muse Spark: `muse-spark-1.3`. SAM: `sam-3.1` via `POST /v1/responses`. Base URL: `https://api.meta.ai/v1` | Scene note shipped: `MetaMuseSceneClient` (`surmap.labelling.meta_muse`) posts `muse-spark-1.3` to `POST /v1/responses` with `Authorization: Bearer` from `MODEL_API_KEY`. `reasoning.effort` defaults to `high` (`SURMAP_META_REASONING_EFFORT`: `low`, `medium`, or `high`). `max_output_tokens` defaults to 4096 (`SURMAP_META_MAX_OUTPUT_TOKENS`, at least 16). A constructor argument wins over either env var. The JPEG is an `input_image` data URL. The note is `output_text` from `message` items only. The prompt is a civilian search-and-rescue description and asks for no flight advice. Live call: `SURMAP_LIVE_META=1`. SAM 3.1 on this API is still planned. |
+| [Meta Model API](https://dev.meta.ai/docs/models) | Scene note over the mapped area. SAM 3.1 boxes and masks | Hosted Muse Spark: `muse-spark-1.3` (default). `SURMAP_META_MODEL` or the constructor may select another covered id, including Muse Wonder (`muse-wonder-1.0`). Muse Wonder Full is refused. SAM: `sam-3.1` via `POST /v1/responses`. Base URL: `https://api.meta.ai/v1` | Scene note shipped: `MetaMuseSceneClient` (`surmap.labelling.meta_muse`) posts to `POST /v1/responses` with `Authorization: Bearer` from `MODEL_API_KEY`. Default model `muse-spark-1.3`. `reasoning.effort` defaults to `high` (`SURMAP_META_REASONING_EFFORT`: `low`, `medium`, or `high`). `max_output_tokens` defaults to 4096 (`SURMAP_META_MAX_OUTPUT_TOKENS`, at least 16). A constructor argument wins over the env vars. The JPEG is an `input_image` data URL. The note is `output_text` from `message` items only. The prompt is a civilian search-and-rescue description and asks for no flight advice. Live call: `SURMAP_LIVE_META=1`. SAM 3.1 on this API is still planned. |
 | [Baseten Model APIs](https://docs.baseten.co/inference/model-apis/overview) | Per-object semantic labels from Muse Spark Open (image crop, optional responder voice note) | Hackathon id `meta-models/muse-spark-open-1026`. Public catalog slug `meta-models/muse-spark-open`. Base URL `https://inference.baseten.co/v1` | Planned |
 | Modal | GPU for station-side SAM 3.1 inference behind the in-tree ONNX adapter | No Modal app in this repo | Planned |
 
@@ -42,8 +42,10 @@ invoked with `"meta"` before the request and may raise to block it.
 Optional `on_usage` is invoked after a response that includes
 `usage`, with provider `"meta"`, the model id, `input_tokens`,
 `output_tokens`, and `output_tokens_details.reasoning_tokens` (or
-nothing for that last count when the detail is absent). Muse Wonder
-is not used.
+nothing for that last count when the detail is absent). Credits
+cover the models on the Meta models page except Muse Wonder Full
+(ids matching `wonder-full` or `wonder_full`). This client refuses
+that id and the Baseten slug `meta-models/muse-spark-open-1026`.
 
 Baseten, checked 28 Oct 2026
 ([Model APIs](https://docs.baseten.co/inference/model-apis/overview),

@@ -2,8 +2,10 @@
 
 The station posts a mapped JPEG and the on-board labels to the Meta
 Model API Responses endpoint and reads back a search-and-rescue
-description. The prompt asks for no flight advice. Muse Wonder is not
-used, and the open-weight Muse Spark slug belongs on Baseten, not here.
+description. The prompt asks for no flight advice. The default model
+is hosted Muse Spark. ``SURMAP_META_MODEL`` or the constructor may
+select another covered id, including Muse Wonder. Muse Wonder Full
+and the Baseten slug ``meta-models/muse-spark-open-1026`` are refused.
 
 The live request shape was checked on 2026-10-28: ``POST
 https://api.meta.ai/v1/responses`` with ``Authorization: Bearer
@@ -41,11 +43,11 @@ _MIN_OUTPUT_TOKENS = 16
 _REASONING_EFFORTS = frozenset({"low", "medium", "high"})
 _REASONING_ENV = "SURMAP_META_REASONING_EFFORT"
 _MAX_OUTPUT_ENV = "SURMAP_META_MAX_OUTPUT_TOKENS"
+_MODEL_ENV = "SURMAP_META_MODEL"
 
 BeforeCall = Callable[[str], None]
 OnUsage = Callable[[str, str, int, int, int | None], None]
 
-_WONDER_ID = "muse-wonder"
 _OPEN_WEIGHT_ID = "meta-models/muse-spark-open-1026"
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost"})
 
@@ -123,7 +125,7 @@ class MetaMuseSceneClient:
         *,
         transport: MetaMuseTransport | None = None,
         api_key: str | None = None,
-        model: str = HOSTED_MUSE_SPARK_MODEL,
+        model: str | None = None,
         reasoning_effort: str | None = None,
         base_url: str = META_MODEL_API_BASE_URL,
         timeout_s: float = 60.0,
@@ -131,7 +133,7 @@ class MetaMuseSceneClient:
         on_usage: OnUsage | None = None,
         max_output_tokens: int | None = None,
     ) -> None:
-        self._model = _check_model(model)
+        self._model = _resolve_model(model)
         self._reasoning_effort = _resolve_reasoning_effort(reasoning_effort)
         self._max_output_tokens = _resolve_max_output_tokens(max_output_tokens)
         self._url = _responses_url(base_url)
@@ -181,16 +183,23 @@ class MetaMuseSceneClient:
         return stripped
 
 
+def _resolve_model(explicit: str | None) -> str:
+    if explicit is not None:
+        return _check_model(explicit)
+    raw = os.environ.get(_MODEL_ENV, "").strip()
+    if not raw:
+        return _check_model(HOSTED_MUSE_SPARK_MODEL)
+    return _check_model(raw)
+
+
 def _check_model(model: str) -> str:
     cleaned = model.strip()
     if not cleaned:
         raise MetaMuseSceneError("model id is empty")
-    lowered = cleaned.casefold()
-    if _WONDER_ID in lowered:
-        raise MetaMuseSceneError(
-            "Muse Wonder is not used for the scene note; the hosted model is muse-spark-1.3"
-        )
-    if lowered == _OPEN_WEIGHT_ID or lowered.startswith("meta-models/"):
+    folded = cleaned.casefold().replace("_", "-").replace(" ", "-")
+    if "wonder-full" in folded:
+        raise MetaMuseSceneError("Muse Wonder Full is not covered by these credits")
+    if folded == _OPEN_WEIGHT_ID or cleaned.casefold().startswith("meta-models/"):
         raise MetaMuseSceneError("Muse Spark Open is called on Baseten, not the Meta Model API")
     return cleaned
 
