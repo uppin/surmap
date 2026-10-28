@@ -55,6 +55,7 @@ TEXTURES = frozenset(
         "disaster_block_materials/concrete.png",
         "disaster_block_materials/rubble.png",
         "disaster_block_materials/dirt.png",
+        "disaster_block_materials/dust.png",
     }
 )
 
@@ -81,45 +82,50 @@ def test_one_hundred_metres_east_of_the_px4_anchor_shifts_longitude_only() -> No
     assert altitude_m == pytest.approx(PX4_ELEVATION_M, abs=1e-9)
 
 
-def test_survivors_stand_lie_and_wave_in_the_open_streets() -> None:
+def test_survivors_stand_lie_and_wave_on_the_street_the_rubble_and_a_roof() -> None:
     # Given the scoring contract for people the demo must find
     # When the ground-truth file is loaded
     people = {person.id: person for person in load_disaster_ground_truth().people}
 
-    # Then six figures cover standing, lying, and waving at these map points
-    assert len(people) == 6
+    # Then seven hi-vis figures cover the street, the flood edge, both mounds, and a roof
+    assert len(people) == 7
     standing_south = people["survivor_standing_avenue_south"]
     assert standing_south.pose == "standing"
-    assert _xy(standing_south) == (-4.2, 24.0)
+    assert _xyz(standing_south) == (-3.5, 16.0, 0.0)
     assert standing_south.yaw_rad == pytest.approx(-math.pi / 2)
 
     lying_flood = people["survivor_lying_flood_edge"]
     assert lying_flood.pose == "lying"
-    assert _xy(lying_flood) == (1.5, 43.5)
+    assert _xyz(lying_flood) == (-5.0, 54.0, 0.0)
     assert lying_flood.yaw_rad == pytest.approx(math.pi / 2)
 
-    waving_plaza = people["survivor_waving_plaza"]
-    assert waving_plaza.pose == "waving"
-    assert _xy(waving_plaza) == (-2.5, 66.0)
-    assert waving_plaza.yaw_rad == pytest.approx(-math.pi / 2)
+    waving_rubble = people["survivor_waving_on_rubble"]
+    assert waving_rubble.pose == "waving"
+    assert _xyz(waving_rubble) == (-4.0, 42.0, 2.2)
+    assert waving_rubble.yaw_rad == pytest.approx(-math.pi / 2)
 
-    standing_collapse = people["survivor_standing_collapse"]
-    assert standing_collapse.pose == "standing"
-    assert _xy(standing_collapse) == (6.5, 56.0)
-    assert standing_collapse.yaw_rad == pytest.approx(math.pi)
+    rooftop = people["survivor_standing_rooftop"]
+    assert rooftop.pose == "standing"
+    assert _xyz(rooftop) == (-14.0, 86.0, 3.4)
+    assert rooftop.yaw_rad == pytest.approx(math.pi / 2)
 
     lying_north = people["survivor_lying_north_blockage"]
     assert lying_north.pose == "lying"
-    assert _xy(lying_north) == (-1.2, 74.0)
+    assert _xyz(lying_north) == (-1.0, 72.0, 0.0)
     assert lying_north.yaw_rad == pytest.approx(math.pi / 2)
 
-    waving_east = people["survivor_waving_east_corner"]
-    assert waving_east.pose == "waving"
-    assert _xy(waving_east) == (10.0, 63.5)
-    assert waving_east.yaw_rad == pytest.approx(math.pi)
+    waving_plaza = people["survivor_waving_plaza"]
+    assert waving_plaza.pose == "waving"
+    assert _xyz(waving_plaza) == (-2.0, 64.0, 0.0)
+    assert waving_plaza.yaw_rad == pytest.approx(-math.pi / 2)
+
+    waving_ne = people["survivor_waving_northeast_rubble"]
+    assert waving_ne.pose == "waving"
+    assert _xyz(waving_ne) == (6.0, 76.0, 1.8)
+    assert waving_ne.yaw_rad == pytest.approx(math.pi)
 
 
-def test_roads_name_a_clear_lane_a_flood_and_two_blockages() -> None:
+def test_roads_name_a_clear_lane_a_wide_flood_and_rubble_blocking_the_streets() -> None:
     # Given the scoring contract for the street grid
     # When the ground-truth file is loaded
     roads = {road.id: road for road in load_disaster_ground_truth().roads}
@@ -128,8 +134,8 @@ def test_roads_name_a_clear_lane_a_flood_and_two_blockages() -> None:
     south = roads["avenue_south_clear"]
     assert south.kind == "passable"
     assert south.passable is True
-    assert _xy(south) == (0.0, 20.0)
-    assert south.length_m == pytest.approx(10.0)
+    assert _xy(south) == (0.0, 14.0)
+    assert south.length_m == pytest.approx(8.0)
     assert south.width_m == pytest.approx(12.0)
     assert south.yaw_rad == pytest.approx(math.pi / 2)
 
@@ -143,9 +149,9 @@ def test_roads_name_a_clear_lane_a_flood_and_two_blockages() -> None:
     flood = roads["avenue_flood"]
     assert flood.kind == "flooded"
     assert flood.passable is False
-    assert _xy(flood) == (1.0, 35.0)
-    assert flood.length_m == pytest.approx(14.0)
-    assert flood.width_m == pytest.approx(8.0)
+    assert _xy(flood) == (10.0, 38.0)
+    assert flood.length_m == pytest.approx(32.0)
+    assert flood.width_m == pytest.approx(36.0)
     assert flood.yaw_rad == pytest.approx(math.pi / 2)
 
     debris = roads["cross_east_debris"]
@@ -159,6 +165,20 @@ def test_roads_name_a_clear_lane_a_flood_and_two_blockages() -> None:
     assert pole.passable is False
     assert _xy(pole) == (0.0, 84.0)
     assert pole.yaw_rad == pytest.approx(math.pi / 2)
+
+    southwest = roads["rubble_mound_southwest"]
+    assert southwest.kind == "blocked"
+    assert southwest.passable is False
+    assert _xy(southwest) == (-6.0, 40.0)
+    assert southwest.length_m == pytest.approx(16.0)
+    assert southwest.width_m == pytest.approx(14.0)
+
+    northeast = roads["rubble_mound_northeast"]
+    assert northeast.kind == "blocked"
+    assert northeast.passable is False
+    assert _xy(northeast) == (8.0, 78.0)
+    assert northeast.length_m == pytest.approx(18.0)
+    assert northeast.width_m == pytest.approx(14.0)
 
 
 def test_each_scoring_fix_is_the_map_point_on_the_px4_anchor() -> None:
@@ -206,6 +226,37 @@ def test_world_sdf_is_harmonic_and_uses_the_px4_anchor() -> None:
     assert float(_child_text(spherical, "longitude_deg")) == pytest.approx(PX4_LONGITUDE_DEG)
     assert float(_child_text(spherical, "elevation")) == pytest.approx(PX4_ELEVATION_M)
     assert float(_child_text(spherical, "heading_deg")) == pytest.approx(0.0)
+
+
+def test_a_standing_survivor_is_about_one_point_seven_five_metres_tall() -> None:
+    # Given the street-level standing figure
+    root = ET.fromstring(disaster_world_sdf().read_text(encoding="utf-8"))
+    world = root.find("world")
+    assert world is not None
+    model = next(
+        item
+        for item in world.findall("model")
+        if item.get("name") == "survivor_standing_avenue_south"
+    )
+
+    # When the top of the unrotated visuals is measured from the feet
+    # Then the figure is about 1.75 m, human scale at the survey altitude
+    assert _figure_crown_m(model) == pytest.approx(1.75, abs=0.08)
+
+
+def test_smoke_columns_mark_both_collapses() -> None:
+    # Given the world SDF
+    root = ET.fromstring(disaster_world_sdf().read_text(encoding="utf-8"))
+    world = root.find("world")
+    assert world is not None
+    by_name = {item.get("name"): item for item in world.findall("model")}
+
+    # When the collapse markers are read
+    # Then each collapse has a column of smoke cylinders
+    for name in ("smoke_southeast", "smoke_northeast"):
+        column = by_name[name]
+        cylinders = [node for node in column.iter("cylinder")]
+        assert len(cylinders) >= 4
 
 
 def test_albedo_maps_resolve_next_to_the_world_file() -> None:
@@ -267,6 +318,30 @@ def _xy(record: PersonGroundTruth | RoadGroundTruth) -> tuple[float, float]:
     return (record.map_enu.x_m, record.map_enu.y_m)
 
 
+def _xyz(record: PersonGroundTruth) -> tuple[float, float, float]:
+    return (record.map_enu.x_m, record.map_enu.y_m, record.map_enu.z_m)
+
+
+def _figure_crown_m(model: ET.Element) -> float:
+    """Highest unrotated visual, metres above the model origin."""
+    crown = 0.0
+    for visual in model.iter("visual"):
+        pose_text = visual.findtext("pose")
+        if pose_text is None:
+            continue
+        parts = [float(part) for part in pose_text.split()]
+        roll, pitch, yaw = parts[3], parts[4], parts[5]
+        if abs(roll) > 0.2 or abs(pitch) > 0.2 or abs(yaw) > 0.2:
+            continue
+        box = visual.find("geometry/box/size")
+        sphere = visual.find("geometry/sphere/radius")
+        if box is not None and box.text is not None:
+            crown = max(crown, parts[2] + float(box.text.split()[2]) / 2.0)
+        if sphere is not None and sphere.text is not None:
+            crown = max(crown, parts[2] + float(sphere.text))
+    return crown
+
+
 def assert_records_match_anchor(truth: DisasterGroundTruth) -> None:
     """Every stored fix equals the ENU offset of that point from the anchor."""
     for person in truth.people:
@@ -285,7 +360,6 @@ def _assert_fix(
     assert latitude_deg == pytest.approx(expect_lat, abs=1e-9)
     assert longitude_deg == pytest.approx(expect_lon, abs=1e-9)
     assert altitude_m == pytest.approx(expect_alt, abs=1e-6)
-    assert map_enu.z_m == pytest.approx(0.0)
 
 
 def assert_models_sit_on_records(

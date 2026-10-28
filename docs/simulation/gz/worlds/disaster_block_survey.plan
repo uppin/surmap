@@ -7,10 +7,10 @@
   },
   "groundStation": "QGroundControl",
   "mission": {
-    "cruiseSpeed": 4.0,
+    "cruiseSpeed": 4,
     "firmwareType": 12,
     "globalPlanAltitudeMode": 1,
-    "hoverSpeed": 4.0,
+    "hoverSpeed": 4,
     "items": [
       {
         "AMSLAltAboveTerrain": null,

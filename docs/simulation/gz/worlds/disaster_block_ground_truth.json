@@ -15,79 +15,92 @@
       "id": "survivor_standing_avenue_south",
       "pose": "standing",
       "map_enu_m": {
-        "x": -4.2,
-        "y": 24.0,
+        "x": -3.5,
+        "y": 16.0,
         "z": 0.0
       },
       "yaw_rad": -1.5707963267948966,
-      "latitude_deg": 47.39818692660873,
-      "longitude_deg": 8.546108102861467,
+      "latitude_deg": 47.39811497031548,
+      "longitude_deg": 8.546117375684581,
       "altitude_m": 488.0
     },
     {
       "id": "survivor_lying_flood_edge",
       "pose": "lying",
       "map_enu_m": {
-        "x": 1.5,
-        "y": 43.5,
+        "x": -5.0,
+        "y": 54.0,
         "z": 0.0
       },
       "yaw_rad": 1.5707963267948966,
-      "latitude_deg": 47.39836232007354,
-      "longitude_deg": 8.546183610135389,
+      "latitude_deg": 47.398456762708435,
+      "longitude_deg": 8.546097505349337,
+      "altitude_m": 488.0
+    },
+    {
+      "id": "survivor_waving_on_rubble",
+      "pose": "waving",
+      "map_enu_m": {
+        "x": -4.0,
+        "y": 42.0,
+        "z": 2.2
+      },
+      "yaw_rad": -1.5707963267948966,
+      "latitude_deg": 47.39834882826855,
+      "longitude_deg": 8.5461107522395,
+      "altitude_m": 490.2
+    },
+    {
+      "id": "survivor_standing_rooftop",
+      "pose": "standing",
+      "map_enu_m": {
+        "x": -14.0,
+        "y": 86.0,
+        "z": 3.4
+      },
+      "yaw_rad": 1.5707963267948966,
+      "latitude_deg": 47.398744587881446,
+      "longitude_deg": 8.545978283337881,
+      "altitude_m": 491.4
+    },
+    {
+      "id": "survivor_lying_north_blockage",
+      "pose": "lying",
+      "map_enu_m": {
+        "x": -1.0,
+        "y": 72.0,
+        "z": 0.0
+      },
+      "yaw_rad": 1.5707963267948966,
+      "latitude_deg": 47.39861866436825,
+      "longitude_deg": 8.546150492909984,
       "altitude_m": 488.0
     },
     {
       "id": "survivor_waving_plaza",
       "pose": "waving",
       "map_enu_m": {
-        "x": -2.5,
-        "y": 66.0,
+        "x": -2.0,
+        "y": 64.0,
         "z": 0.0
       },
       "yaw_rad": -1.5707963267948966,
-      "latitude_deg": 47.39856469714831,
-      "longitude_deg": 8.546130622574742,
+      "latitude_deg": 47.398546708074996,
+      "longitude_deg": 8.546137246019823,
       "altitude_m": 488.0
     },
     {
-      "id": "survivor_standing_collapse",
-      "pose": "standing",
-      "map_enu_m": {
-        "x": 6.5,
-        "y": 56.0,
-        "z": 0.0
-      },
-      "yaw_rad": 3.141592653589793,
-      "latitude_deg": 47.39847475178175,
-      "longitude_deg": 8.546249844586198,
-      "altitude_m": 488.0
-    },
-    {
-      "id": "survivor_lying_north_blockage",
-      "pose": "lying",
-      "map_enu_m": {
-        "x": -1.2,
-        "y": 74.0,
-        "z": 0.0
-      },
-      "yaw_rad": 1.5707963267948966,
-      "latitude_deg": 47.398636653441564,
-      "longitude_deg": 8.546147843531953,
-      "altitude_m": 488.0
-    },
-    {
-      "id": "survivor_waving_east_corner",
+      "id": "survivor_waving_northeast_rubble",
       "pose": "waving",
       "map_enu_m": {
-        "x": 10.0,
-        "y": 63.5,
-        "z": 0.0
+        "x": 6.0,
+        "y": 76.0,
+        "z": 1.8
       },
       "yaw_rad": 3.141592653589793,
-      "latitude_deg": 47.39854221080667,
-      "longitude_deg": 8.546296208701765,
-      "altitude_m": 488.0
+      "latitude_deg": 47.39865464251488,
+      "longitude_deg": 8.546243221141117,
+      "altitude_m": 489.8
     }
   ],
   "roads": [
@@ -97,13 +110,13 @@
       "passable": true,
       "map_enu_m": {
         "x": 0.0,
-        "y": 20.0,
+        "y": 14.0,
         "z": 0.0
       },
-      "length_m": 10.0,
+      "length_m": 8.0,
       "width_m": 12.0,
       "yaw_rad": 1.5707963267948966,
-      "latitude_deg": 47.3981509484621,
+      "latitude_deg": 47.39809698124217,
       "longitude_deg": 8.546163739800146,
       "altitude_m": 488.0
     },
@@ -128,15 +141,15 @@
       "kind": "flooded",
       "passable": false,
       "map_enu_m": {
-        "x": 1.0,
-        "y": 35.0,
+        "x": 10.0,
+        "y": 38.0,
         "z": 0.0
       },
-      "length_m": 14.0,
-      "width_m": 8.0,
+      "length_m": 32.0,
+      "width_m": 36.0,
       "yaw_rad": 1.5707963267948966,
-      "latitude_deg": 47.398285866511955,
-      "longitude_deg": 8.546176986690309,
+      "latitude_deg": 47.398312850121926,
+      "longitude_deg": 8.546296208701765,
       "altitude_m": 488.0
     },
     {
@@ -149,7 +162,7 @@
         "z": 0.0
       },
       "length_m": 12.0,
-      "width_m": 8.0,
+      "width_m": 10.0,
       "yaw_rad": 0.0,
       "latitude_deg": 47.39851072992837,
       "longitude_deg": 8.546402183823059,
@@ -164,11 +177,43 @@
         "y": 84.0,
         "z": 0.0
       },
-      "length_m": 10.0,
-      "width_m": 10.0,
+      "length_m": 12.0,
+      "width_m": 12.0,
       "yaw_rad": 1.5707963267948966,
       "latitude_deg": 47.39872659880813,
       "longitude_deg": 8.546163739800146,
+      "altitude_m": 488.0
+    },
+    {
+      "id": "rubble_mound_southwest",
+      "kind": "blocked",
+      "passable": false,
+      "map_enu_m": {
+        "x": -6.0,
+        "y": 40.0,
+        "z": 0.0
+      },
+      "length_m": 16.0,
+      "width_m": 14.0,
+      "yaw_rad": 0.0,
+      "latitude_deg": 47.39833083919524,
+      "longitude_deg": 8.546084258459176,
+      "altitude_m": 488.0
+    },
+    {
+      "id": "rubble_mound_northeast",
+      "kind": "blocked",
+      "passable": false,
+      "map_enu_m": {
+        "x": 8.0,
+        "y": 78.0,
+        "z": 0.0
+      },
+      "length_m": 18.0,
+      "width_m": 14.0,
+      "yaw_rad": 0.0,
+      "latitude_deg": 47.39867263158819,
+      "longitude_deg": 8.54626971492144,
       "altitude_m": 488.0
     }
   ]

@@ -91,41 +91,42 @@ spherical-coordinate anchor, which is also PX4 home.
 
 | Place | Where |
 |---|---|
-| Helipad | origin. Visual only, so the spawn contact matches PX4's default ground |
-| Avenue | centre x = 0, about y = 14 to 104, 12 m wide |
+| Helipad | origin. Visual only, so the spawn contact matches PX4's default ground. Kept clear |
+| Avenue | centre x = 0, about y = 10 to 104, 12 m wide |
 | Cross street | centre y = 60, across the avenue |
-| Intact brick block | south-west, 8 m tall |
-| Partial collapse, rubble, tilted slab | south-east, remnant 4.6 m |
-| Low intact block | north-west, 4.4 m |
-| Rubble field and tilted slab | north-east |
-| Flood | south avenue, about y = 28 to 42 |
-| Debris and a fallen pole | east cross street, centre (18, 60) |
-| Fallen pole and rubble | north avenue, centre (0, 84) |
-| Parked cars | west curb near y = 50, east curb near y = 70 |
-| Overturned car | beside the south-east collapse |
-| Car in the flood | on the flooded avenue |
+| South-west ruin | pancaked floor plates, a partial wall, a slab tipped into the street |
+| South-east ruin | broken wall and floor standing in the flood |
+| North-west ruin | pancaked plates with one remaining roof |
+| Two rubble mounds | south-west mound spills east into the avenue; north-east mound spills across the north avenue. Each is dozens of rotated concrete blocks and beams |
+| Flood | muddy brown water, about 32 m north-south by 36 m east-west, centred near (10, 38). Covers the south avenue and the south-east building footprint. Planks, a beam, a crate and a tire float on it |
+| Smoke | columns at the south-east and north-east collapses: stacked grey translucent cylinders, a fire marker at the base, and a Harmonic particle emitter |
+| Debris | broken poles, drooping wires, planks and tires on the blocked roads, plus more loose on the open streets |
+| Cars | two at odd angles, one overturned, one partly buried in a dust mound, one sitting in the flood |
+| Ground | dry brown dirt. Ash-grey dust patches around each collapse, not a grass lawn |
 
-People stand in the open streets, in orange, red, or yellow, so they
-are not hidden behind a facade:
+People are about 1.75 m tall, orange or yellow, so they read against the grey rubble:
 
-| Id | Pose |
-|---|---|
-| `survivor_standing_avenue_south` | standing, south of the flood |
-| `survivor_lying_flood_edge` | lying, just north of the water |
-| `survivor_standing_collapse` | standing, west of the east debris |
-| `survivor_waving_plaza` | waving, north side of the crossing |
-| `survivor_waving_east_corner` | waving, just west of the east debris |
-| `survivor_lying_north_blockage` | lying, south of the north pole |
+| Id | Pose | Feet |
+|---|---|---|
+| `survivor_standing_avenue_south` | standing | dry approach, south of the flood |
+| `survivor_lying_flood_edge` | lying | dry edge just north of the water |
+| `survivor_waving_on_rubble` | waving | on the south-west mound, 2.2 m up |
+| `survivor_standing_rooftop` | standing | on the north-west roof, 3.4 m up |
+| `survivor_waving_plaza` | waving | open crossing |
+| `survivor_lying_north_blockage` | lying | south of the north blockage |
+| `survivor_waving_northeast_rubble` | waving | on the north-east mound, 1.8 m up |
 
 Roads the scorer should know:
 
 | Id | Kind | Passable for a ground vehicle |
 |---|---|---|
-| `avenue_south_clear` | passable | yes |
+| `avenue_south_clear` | passable | yes, the dry approach |
 | `cross_west_clear` | passable | yes |
-| `avenue_flood` | flooded | no |
+| `avenue_flood` | flooded | no. The wide muddy area |
 | `cross_east_debris` | blocked | no |
 | `avenue_north_pole` | blocked | no |
+| `rubble_mound_southwest` | blocked | no. Mound spilling into the avenue |
+| `rubble_mound_northeast` | blocked | no. Mound across the north avenue |
 
 The drone flies over all of these. "Passable" is about the road, not
 about the airframe.
@@ -136,7 +137,7 @@ about the airframe.
 
 Each person and each road above has:
 
-- `map_enu_m` — x east, y north, z up, metres, model origin on the ground
+- `map_enu_m` — x east, y north, z up, metres. z is the feet (0 on the street, higher on a mound or roof)
 - `latitude_deg`, `longitude_deg`, `altitude_m` — WGS84
 
 The world's spherical coordinates, and the JSON anchor, are the PX4
@@ -175,7 +176,8 @@ No Gazebo Fuel models. The world does not download anything at launch.
 | Asset | Source | Licence |
 |---|---|---|
 | Buildings, roads, water, rubble, slabs, poles, cones, cars, people | SDF box, sphere, and cylinder primitives in `docs/simulation/gz/worlds/disaster_block.sdf` | Original geometry written for this repo |
-| `disaster_block_materials/*.png` (brick, asphalt, concrete, rubble, dirt) | Original 256×256 procedural textures committed next to the world | Original; no upstream texture |
+| `disaster_block_materials/*.png` (brick, asphalt, concrete, rubble, dirt, dust) | Original 256×256 procedural textures committed next to the world. Dirt is dry brown; dust is ash grey around the collapses | Original; no upstream texture |
+| Smoke columns | Stacked translucent cylinders in the world, plus a `gz-sim-particle-emitter-system` plugin and a box emitter on each column | Original geometry. The plugin ships with Gazebo Harmonic; PX4's server config does not load it, so the cylinders are what an overview still shows if the emitter stays dark |
 | Physics step 0.004 s, gravity, magnetic field `6e-06 2.3e-05 -4.2e-05`, and the WGS84 anchor | Same numbers as [PX4-gazebo-models `worlds/default.sdf`](https://github.com/PX4/PX4-gazebo-models/blob/main/worlds/default.sdf) | PX4-gazebo-models is BSD-3-Clause. Copied so SITL's compass and home match the stock world. The scene around them is not from that file |
 
 Diffuse colours are set as well as the albedo maps, so a missing texture
