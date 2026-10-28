@@ -9,7 +9,7 @@
 ## Workflow
 
 - [wf 1] ✅ 2026-10-28 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests ·
+- [wf 2] ✅ 2026-10-28 `/plan-red` Red — acceptance and failing lower-tier tests · collection error, missing `surmap.survey.meta_sam`
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] `MetaSamDetector` posts the documented request and maps one box plus a mask to a `SamDetection` with a polygon
   - [ ] No weight download and no separate GPU service; live call only behind `SURMAP_LIVE_META=1`
