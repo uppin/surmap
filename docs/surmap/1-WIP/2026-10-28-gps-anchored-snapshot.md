@@ -14,10 +14,10 @@
   - [x] Create/update PRD documentation
   - [x] Create changeset
   - [x] Build and baseline healthy (Step 7)
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Acceptance tests written and failing for the right reason
-  - [ ] Unit/integration tests written and failing
-  - [ ] Tests committed with the changeset
+- [wf 2] ✅ 2026-10-28 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 19 failed, NotImplementedError
+  - [x] Acceptance tests written and failing for the right reason
+  - [x] Unit/integration tests written and failing
+  - [x] Tests committed with the changeset
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] `build_snapshot` calls `classify_motion` and puts moving tracks only in `dynamic`
   - [ ] Each landmark anchors to the nearest `GpsCheckpoint` by `t_ns` and stores signed `offset_ns`
@@ -102,7 +102,7 @@ Tracks and GPS fixes exist as dataclasses. Motion classification exists. Nothing
 
 **Method:** V1-fail→pass — acceptance tests for the two-checkpoint static/moving split, the non-zero offset, and the read/write round-trip
 **Command:** `uv run pytest -q tests/test_map_snapshot.py`
-**Before:** module absent; the new tests fail on missing implementation. Suite baseline on `65a2fd6`: 468 passed, 5 skipped.
+**Before:** `uv run pytest -q tests/test_map_snapshot.py` — 19 failed, `NotImplementedError` from `build_snapshot` / `read_snapshot` (module was absent at first collection: `ModuleNotFoundError: No module named 'surmap.map'`). Suite baseline on `65a2fd6`: 468 passed, 5 skipped.
 **After:** `tests/test_map_snapshot.py` passes, and `uv run pytest -q`, `uv run ruff check src tests`, `uv run ruff format --check src tests`, and `uv run mypy` are green.
 
 ## Testing Plan
