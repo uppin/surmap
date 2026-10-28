@@ -30,10 +30,11 @@ does not use these credits.
 |---|---|
 | Model | `meta-models/muse-spark-open-1026` |
 | Key | `BASETEN_API_KEY`, sent only as `Authorization: Bearer`. A missing or blank key raises `BasetenApiKeyMissing` before any socket |
-| Input | JPEG crop as an `image_url` data URL, plus the coarse detector label and map-frame xyz |
+| Input | JPEG crop as an `image_url` data URL, plus the detector's coarse label. The map-frame point is not sent; it is attached to `ObjectLabel.map_point` after the reply |
 | Output | `ObjectLabel`: `label`, `description`, `confidence` (`None` when the assistant text has no number), `model_id`, `raw_text` |
+| Prompt | Humanitarian search-and-rescue inventory for emergency responders after a natural disaster. Asks only for a short object label, one description sentence, and a confidence |
 | Reasoning | `reasoning_effort` defaults to `low` because labels are per object and frequent. Allowed values are `low`, `medium`, and `high`. The client does not send a flag that claims reasoning is off, and it does not use JSON mode. `choices[0].message.reasoning_content` is kept on `reasoning_text` and is not copied into `raw_text` or used as the label |
-| Cap | `max_tokens` defaults to `1024`. A trivial prompt can spend about 2200 reasoning tokens when the cap is left open |
+| Cap | `max_tokens` defaults to `4096`. A value below `2048` is rejected: a trivial prompt can spend about 2200 reasoning tokens before any label text. If `finish_reason` is `length` and the answer text is empty, the client retries once at double the cap, then raises `EmptyLabelError` with `finish_reason` and token counts. An empty label is never returned |
 
 A constructor argument wins. When the argument is omitted, the client
 reads the environment, then uses the default:
@@ -41,10 +42,14 @@ reads the environment, then uses the default:
 | Variable | Values | Default |
 |---|---|---|
 | `SURMAP_BASETEN_REASONING_EFFORT` | `low`, `medium`, or `high` | `low` |
-| `SURMAP_BASETEN_MAX_TOKENS` | positive integer | `1024` |
+| `SURMAP_BASETEN_MAX_TOKENS` | integer `>= 2048` | `4096` |
 
 Anything else raises `ValueError` when the client is built, before a
 request is sent.
+
+When `ledger` is omitted, the client uses a `UsageLedger()` so the call
+is appended to `~/.surmap/usage.jsonl` (or `SURMAP_USAGE_LOG`). Pass a
+ledger to write somewhere else or to enforce a budget.
 
 `label:` in the assistant text is the label. With no such line, the
 first non-empty line is the label. A `confidence:` line wins over a
@@ -102,9 +107,11 @@ limit. Names are upper-cased: `BASETEN`, `META`, `MODAL`.
 | `SURMAP_BUDGET_META_CALLS` / `SURMAP_BUDGET_META_TOKENS` | Same, for Meta |
 | `SURMAP_BUDGET_MODAL_CALLS` / `SURMAP_BUDGET_MODAL_TOKENS` | Same, for Modal |
 
-`BasetenMuseLabelClient` takes `ledger: UsageLedger | None`. When a
-ledger is passed it calls `ledger.check("baseten")` before the HTTP
-request and, after a response, calls the ledger with a `UsageRecord`.
+`BasetenMuseLabelClient` takes `ledger: UsageLedger | None`. Omitted,
+it builds a `UsageLedger()` aimed at the default log. It calls
+`ledger.check("baseten")` before each HTTP request, including the
+one retry after a length cutoff, and records a `UsageRecord` after
+each response.
 
 ```bash
 uv run python scripts/usage_report.py

@@ -5,7 +5,8 @@ Reasoning stays on (``reasoning_effort`` defaults to ``low``, or
 ``SURMAP_BASETEN_REASONING_EFFORT`` when set to low, medium, or high).
 The client does not send a flag that claims reasoning is off, and it
 does not ask for JSON mode. ``max_tokens`` caps the completion,
-including reasoning tokens (default 1024, or ``SURMAP_BASETEN_MAX_TOKENS``).
+including reasoning tokens (default 4096, floor 2048, or
+``SURMAP_BASETEN_MAX_TOKENS``). The map point is not sent to the model.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol, cast, runtime_checkable
 
 from surmap.types import Vec3
@@ -26,13 +27,17 @@ from surmap.usage import UsageLedger, UsageRecord
 
 DEFAULT_MODEL_ID = "meta-models/muse-spark-open-1026"
 DEFAULT_REASONING_EFFORT = "low"
-DEFAULT_MAX_TOKENS = 1024
+DEFAULT_MAX_TOKENS = 4096
+MIN_MAX_TOKENS = 2048
 _COMPLETIONS_URL = "https://inference.baseten.co/v1/chat/completions"
 _ALLOWED_EFFORT = frozenset({"low", "medium", "high"})
 _EFFORT_ENV = "SURMAP_BASETEN_REASONING_EFFORT"
 _MAX_TOKENS_ENV = "SURMAP_BASETEN_MAX_TOKENS"
 _SYSTEM_PROMPT = (
-    "You label one object in a civilian disaster-survey photo. Reply in plain text, not JSON."
+    "You are a humanitarian search-and-rescue mapping assistant. "
+    "After a natural disaster, you help emergency responders inventory "
+    "what is visible in one photo crop for a civilian map. "
+    "Reply in plain text, not JSON."
 )
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 
@@ -45,9 +50,34 @@ class BasetenRequestError(RuntimeError):
     """The chat-completions call failed or the body was not a completion."""
 
 
+class EmptyLabelError(RuntimeError):
+    """The model returned no label text. An empty string is not a successful label."""
+
+    def __init__(
+        self,
+        finish_reason: str | None,
+        input_tokens: int,
+        output_tokens: int,
+        reasoning_tokens: int | None,
+    ) -> None:
+        self.finish_reason = finish_reason
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.reasoning_tokens = reasoning_tokens
+        super().__init__(
+            "Baseten returned no label text "
+            f"(finish_reason={finish_reason}, prompt_tokens={input_tokens}, "
+            f"completion_tokens={output_tokens}, reasoning_tokens={reasoning_tokens})"
+        )
+
+
 @dataclass(frozen=True)
 class ObjectLabel:
-    """One crop's label. ``raw_text`` is assistant content, never the reasoning trace."""
+    """One crop's label. ``raw_text`` is assistant content, never the reasoning trace.
+
+    ``map_point`` is the caller's map-frame point, attached after the model
+    replies. It is not sent in the prompt.
+    """
 
     label: str
     description: str
@@ -55,6 +85,11 @@ class ObjectLabel:
     model_id: str
     raw_text: str
     reasoning_text: str | None = None
+    map_point: Vec3 | None = None
+    finish_reason: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    reasoning_tokens: int | None = None
 
 
 @runtime_checkable
@@ -86,38 +121,68 @@ class BasetenMuseLabelClient:
         self._api_key = api_key
         self._model_id = model_id
         self._transport = transport
-        self._ledger = ledger
+        self._ledger = ledger if ledger is not None else UsageLedger()
         self._reasoning_effort = _resolve_reasoning_effort(reasoning_effort)
         self._max_tokens = _resolve_max_tokens(max_tokens)
         self._clock = time.time if clock is None else clock
         self._timeout_s = timeout_s
 
     def label(self, jpeg: bytes, coarse_label: str, xyz: Vec3) -> ObjectLabel:
-        api_key = self._resolve_api_key()
-        if self._ledger is not None:
-            self._ledger.check("baseten")
-        body = json.dumps(self._payload(jpeg, coarse_label, xyz)).encode("utf-8")
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-        raw = self._transport_for_call().post(_COMPLETIONS_URL, headers, body)
-        response = _json_object(raw)
-        labelled = _object_label(response, requested_model=self._model_id)
-        if self._ledger is not None:
-            prompt_tokens, completion_tokens, reasoning_tokens = _usage_counts(response)
-            self._ledger(
-                UsageRecord(
-                    "baseten",
-                    labelled.model_id,
-                    prompt_tokens,
-                    completion_tokens,
-                    reasoning_tokens,
-                    self._clock(),
-                )
+        return self._label_once(
+            self._resolve_api_key(),
+            jpeg,
+            coarse_label,
+            xyz,
+            self._max_tokens,
+            allow_retry=True,
+        )
+
+    def _label_once(
+        self,
+        api_key: str,
+        jpeg: bytes,
+        coarse_label: str,
+        xyz: Vec3,
+        max_tokens: int,
+        *,
+        allow_retry: bool,
+    ) -> ObjectLabel:
+        self._ledger.check("baseten")
+        response = self._post(api_key, jpeg, coarse_label, max_tokens)
+        prompt_tokens, completion_tokens, reasoning_tokens = _usage_counts(response)
+        self._ledger(
+            UsageRecord(
+                "baseten",
+                _served_model(response, self._model_id),
+                prompt_tokens,
+                completion_tokens,
+                reasoning_tokens,
+                self._clock(),
             )
-        return labelled
+        )
+        raw_text = _content_text(_message(response))
+        finish_reason = _finish_reason(response)
+        if raw_text.strip():
+            labelled = _object_label(response, requested_model=self._model_id)
+            if labelled.label.strip():
+                return replace(
+                    labelled,
+                    map_point=xyz,
+                    finish_reason=finish_reason,
+                    input_tokens=prompt_tokens,
+                    output_tokens=completion_tokens,
+                    reasoning_tokens=reasoning_tokens,
+                )
+        if finish_reason == "length" and allow_retry:
+            return self._label_once(
+                api_key,
+                jpeg,
+                coarse_label,
+                xyz,
+                max_tokens * 2,
+                allow_retry=False,
+            )
+        raise EmptyLabelError(finish_reason, prompt_tokens, completion_tokens, reasoning_tokens)
 
     def _resolve_api_key(self) -> str:
         raw = self._api_key if self._api_key is not None else os.environ.get("BASETEN_API_KEY")
@@ -134,13 +199,25 @@ class BasetenMuseLabelClient:
             return self._transport
         return _UrllibChatTransport(self._timeout_s)
 
-    def _payload(self, jpeg: bytes, coarse_label: str, xyz: Vec3) -> dict[str, object]:
+    def _post(
+        self, api_key: str, jpeg: bytes, coarse_label: str, max_tokens: int
+    ) -> dict[str, object]:
+        body = json.dumps(self._payload(jpeg, coarse_label, max_tokens)).encode("utf-8")
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        raw = self._transport_for_call().post(_COMPLETIONS_URL, headers, body)
+        return _json_object(raw)
+
+    def _payload(self, jpeg: bytes, coarse_label: str, max_tokens: int) -> dict[str, object]:
         encoded = base64.b64encode(jpeg).decode("ascii")
         image_part: dict[str, object] = {
             "type": "image_url",
             "image_url": {"url": f"data:image/jpeg;base64,{encoded}"},
         }
-        text_part: dict[str, object] = {"type": "text", "text": _user_text(coarse_label, xyz)}
+        text_part: dict[str, object] = {"type": "text", "text": _user_text(coarse_label)}
         user_message: dict[str, object] = {
             "role": "user",
             "content": [image_part, text_part],
@@ -150,7 +227,7 @@ class BasetenMuseLabelClient:
             "model": self._model_id,
             "messages": [system_message, user_message],
             "reasoning_effort": self._reasoning_effort,
-            "max_tokens": self._max_tokens,
+            "max_tokens": max_tokens,
         }
 
 
@@ -170,32 +247,41 @@ def _resolve_reasoning_effort(explicit: str | None) -> str:
 
 
 def _resolve_max_tokens(explicit: int | None) -> int:
-    """Constructor argument wins. Otherwise ``SURMAP_BASETEN_MAX_TOKENS``, else 1024."""
+    """Constructor argument wins. Otherwise ``SURMAP_BASETEN_MAX_TOKENS``, else 4096.
+
+    Values below 2048 are rejected: Muse Spark Open spends on the order of
+    2000 reasoning tokens before it writes the label.
+    """
     if explicit is not None:
         if isinstance(explicit, bool) or explicit <= 0:
             raise ValueError("max_tokens must be a positive integer")
-        return explicit
-    raw = os.environ.get(_MAX_TOKENS_ENV, "").strip()
-    if not raw:
-        return DEFAULT_MAX_TOKENS
-    try:
-        value = int(raw)
-    except ValueError as exc:
-        raise ValueError(f"{_MAX_TOKENS_ENV} must be a positive integer, got {raw!r}") from exc
-    if value <= 0:
-        raise ValueError(f"{_MAX_TOKENS_ENV} must be a positive integer, got {raw!r}")
+        value = explicit
+    else:
+        raw = os.environ.get(_MAX_TOKENS_ENV, "").strip()
+        if not raw:
+            return DEFAULT_MAX_TOKENS
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise ValueError(f"{_MAX_TOKENS_ENV} must be a positive integer, got {raw!r}") from exc
+        if value <= 0:
+            raise ValueError(f"{_MAX_TOKENS_ENV} must be a positive integer, got {raw!r}")
+    if value < MIN_MAX_TOKENS:
+        raise ValueError(
+            f"max_tokens must be at least {MIN_MAX_TOKENS} so reasoning does not "
+            f"consume the whole completion before the label; got {value}"
+        )
     return value
 
 
-def _user_text(coarse_label: str, xyz: Vec3) -> str:
+def _user_text(coarse_label: str) -> str:
     return (
-        f"On-board detector label: {coarse_label}\n"
-        f"Map-frame centroid in metres: x={xyz.x:.2f} y={xyz.y:.2f} z={xyz.z:.2f}\n"
+        f"Detector hint: {coarse_label}\n"
         "\n"
-        "Use these lines:\n"
-        "label: <short noun phrase>\n"
-        "confidence: <number from 0 to 1, or omit the line>\n"
+        "Name the object in the crop for the inventory. Use exactly these lines:\n"
+        "label: <short object name>\n"
         "description: <one sentence>\n"
+        "confidence: <number from 0 to 1>\n"
     )
 
 
@@ -263,6 +349,35 @@ def _object_label(response: dict[str, object], *, requested_model: str) -> Objec
         raw_text=raw_text,
         reasoning_text=reasoning_text,
     )
+
+
+def _served_model(response: dict[str, object], requested_model: str) -> str:
+    served = response.get("model")
+    if isinstance(served, str) and served.strip():
+        return served.strip()
+    return requested_model
+
+
+def _content_text(message: dict[str, object]) -> str:
+    content = message.get("content")
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    raise BasetenRequestError("Baseten message content was not text")
+
+
+def _finish_reason(response: dict[str, object]) -> str | None:
+    choices = response.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    first = choices[0]
+    if not isinstance(first, dict):
+        return None
+    reason = first.get("finish_reason")
+    if isinstance(reason, str):
+        return reason
+    return None
 
 
 def _message(response: dict[str, object]) -> dict[str, object]:
