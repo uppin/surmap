@@ -18,14 +18,14 @@
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Local loader for `surmap.semantic_map_snapshot.v1`
-  - [ ] Meta responses client: `muse-wonder-1.0`, reasoning effort high, `max_output_tokens` >= 8192, retry once on empty output, refuse wonder-full
-  - [ ] `ask`, `report`, and `ask_voice` (`muse-voice-transcribe-1.0`)
-  - [ ] `before_call` / `on_usage`; `UsageLedger` when `surmap.usage` imports
-  - [ ] CLI `ask|report|ask-voice` and `POST /ask`
-  - [ ] Demo snapshot fixture under `examples/`
-  - [ ] Acceptance: `tests/test_mapqa.py` passes
+- [wf 3] ✅ 2026-10-28 `/green` Green — implement until every red test passes · 26 passed, 1 skipped in `tests/test_mapqa_*.py`; suite 494 passed, 6 skipped
+  - [x] Local loader for `surmap.semantic_map_snapshot.v1`
+  - [x] Meta responses client: `muse-wonder-1.0`, reasoning effort high, `max_output_tokens` >= 8192, retry once on empty output, refuse wonder-full
+  - [x] `ask`, `report`, and `ask_voice` (`muse-voice-transcribe-1.0`)
+  - [x] `before_call` / `on_usage`; `UsageLedger` when `surmap.usage` imports
+  - [x] CLI `ask|report|ask-voice` and `POST /ask`
+  - [x] Demo snapshot fixture under `examples/`
+  - [x] Acceptance: `tests/test_mapqa_*.py` passes
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/mapqa.md` — commands, contract, env vars
