@@ -8,6 +8,9 @@ ROS2 Jazzy + PX4: dump sensors into a capture directory, export EuRoC,
 feed the existing demo / RTAB-Map sidecar. No SurMap package may publish
 flight commands, offboard setpoints, or mission items.
 
+The host checklist (launch, bridge, dump, export, what to paste back)
+is [.cursor/skills/px4-sitl-test/SKILL.md](../../.cursor/skills/px4-sitl-test/SKILL.md).
+
 ## Preflight (verified on this WSL host)
 
 | Piece | Status |
