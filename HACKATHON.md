@@ -16,6 +16,17 @@ below. Design of the pipeline remains
 [docs/architecture.md](docs/architecture.md); model policy is in
 [README.md](README.md).
 
+## Model policy
+
+Meta Model API credits cover the models on
+[the models page](https://dev.meta.ai/platform/models) except Muse
+Wonder Full. Muse Spark is the default: hosted `muse-spark-1.3`, and
+Muse Spark Open on Baseten. Muse Wonder (`muse-wonder-1.0`) is in
+scope, planned for map Q&A ("ask the map"), and optional for the
+scene note. SAM 3.1 and Muse Voice Transcribe
+(`muse-voice-transcribe-1.0`) are in scope. Muse Wonder Full is not
+used.
+
 ## Credits
 
 Three credit sources are core infrastructure for the hackathon build.
@@ -31,7 +42,7 @@ client, no request, and no test.
 Muse Spark Open is not on Meta Model API. Meta's models page says to
 run those weights yourself or call a hosted provider; Baseten is that
 provider here. Hosted Muse Spark (`muse-spark-1.3`) is the Model API
-model for the scene note. Muse Wonder is not used.
+model for the scene note. Muse Wonder Full is not used.
 
 Baseten, checked 28 Oct 2026
 ([Model APIs](https://docs.baseten.co/inference/model-apis/overview),
