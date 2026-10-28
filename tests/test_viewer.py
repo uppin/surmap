@@ -1,7 +1,9 @@
 """Survey viewer: snapshot adapter, synced replay, and the ask hook."""
 
 import json
+import sys
 import threading
+import types
 import urllib.request
 from pathlib import Path
 
@@ -25,14 +27,14 @@ from surmap.viewer.model import (
     hud_badges,
 )
 from surmap.viewer.poses import camera_pose
-from surmap.viewer.preview import PreviewReplay
+from surmap.viewer.preview import PreviewReplay, bundled_snapshot_path
 from surmap.viewer.project import detection_overlays, track_overlays
 from surmap.viewer.server import make_viewer_server
 from surmap.viewer.sitl import SitlReplay
 from surmap.viewer.snapshot import read_snapshot
 from surmap.viewer.timeline import placed_tracks
 
-FIXTURE = Path(__file__).parent / "fixtures" / "semantic_map_snapshot.json"
+FIXTURE = bundled_snapshot_path()
 CAMERA = CameraModel(fx=500.0, fy=500.0, cx=320.0, cy=180.0, width=640, height=360)
 
 _IDENTITY_YAML = """
@@ -310,14 +312,73 @@ def test_ask_cites_matching_labels_and_their_mask_cloud() -> None:
     assert len(people.highlight_points) > 1
 
 
-def test_the_live_flag_does_not_call_a_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SURMAP_LIVE_MAP_QA", "1")
+def test_live_meta_without_mapqa_stays_on_the_local_match(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given the live flag and no surmap.mapqa package
+    monkeypatch.setenv("SURMAP_LIVE_META", "1")
+    monkeypatch.delitem(sys.modules, "surmap.mapqa", raising=False)
 
     answer = answer_map_question("car", read_snapshot(FIXTURE))
 
-    assert "SURMAP_LIVE_MAP_QA" in answer.answer
-    assert "does not call a model" in answer.answer
+    # Then the offline label match still cites the car
     assert answer.landmark_ids == ("4",)
+    assert "Matched" in answer.answer
+
+
+def test_live_meta_delegates_to_mapqa_when_that_package_imports(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a stand-in mapqa module and the live flag
+    monkeypatch.setenv("SURMAP_LIVE_META", "1")
+    seen: list[tuple[str, str | None]] = []
+
+    def answer(question: str, snapshot_path: str | None = None) -> dict[str, object]:
+        seen.append((question, snapshot_path))
+        return {
+            "answer": "the door is on the north wall",
+            "landmark_ids": ["9"],
+            "highlight_points": [{"x": 1.0, "y": 2.0, "z": 3.0}],
+        }
+
+    module = types.ModuleType("surmap.mapqa")
+    module.answer = answer  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "surmap.mapqa", module)
+    snapshot = read_snapshot(FIXTURE)
+
+    # When the viewer asks
+    result = answer_map_question("where is the door", snapshot, snapshot_path="/maps/door.json")
+
+    # Then the POST /ask contract from mapqa is what comes back
+    assert seen == [("where is the door", "/maps/door.json")]
+    assert result.answer == "the door is on the north wall"
+    assert result.landmark_ids == ("9",)
+    assert result.highlight_points == (Vec3(1.0, 2.0, 3.0),)
+
+
+def test_mapqa_is_not_called_unless_the_live_flag_is_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SURMAP_LIVE_META", raising=False)
+    module = types.ModuleType("surmap.mapqa")
+
+    def answer(question: str, snapshot_path: str | None = None) -> dict[str, object]:
+        del question, snapshot_path
+        raise AssertionError("mapqa must stay idle without SURMAP_LIVE_META=1")
+
+    module.answer = answer  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "surmap.mapqa", module)
+
+    result = answer_map_question("car", read_snapshot(FIXTURE))
+
+    assert result.landmark_ids == ("4",)
+
+
+def test_the_viewer_listens_on_localhost_unless_a_host_is_given() -> None:
+    local = make_viewer_server(lambda: PreviewReplay(frames=1), port=0)
+    opened = make_viewer_server(lambda: PreviewReplay(frames=1), host="0.0.0.0", port=0)
+    try:
+        assert local.server_address[0] == "127.0.0.1"
+        assert opened.server_address[0] == "0.0.0.0"
+    finally:
+        local.server_close()
+        opened.server_close()
 
 
 def test_preview_replay_moves_the_car_on_one_clock() -> None:

@@ -31,9 +31,10 @@ EuRoC V1_01 (first run downloads about 1.1 GB into
 uv run python scripts/viewer.py --frames 200
 ```
 
-Open **http://localhost:8770/** in the Windows browser. WSL2 forwards
-`localhost`. The process binds `0.0.0.0` so that forward reaches it.
-Ctrl+C stops the server.
+Open **http://localhost:8770/** in the Windows browser. The server
+binds `127.0.0.1`. WSL2 localhost forwarding still reaches that
+address from Windows. Pass `--host 0.0.0.0` to listen on every
+interface. Ctrl+C stops the server.
 
 ## What is on screen
 
@@ -57,10 +58,11 @@ Ctrl+C stops the server.
   The v1 file has no confidence field, so none is shown.
 - **Ask the map**. `POST /ask` with `{"question": "...", "snapshot_path": null}`.
   The response is `{"answer", "landmark_ids", "highlight_points"}`.
-  Cited tracks are marked in the list and in the 3D view. The built-in
-  answer is a local label match. `SURMAP_LIVE_MAP_QA` does not call a
-  model in this build; replace `surmap.viewer.ask.answer_map_question`
-  to connect one.
+  Cited tracks are marked in the list and in the 3D view. With
+  `SURMAP_LIVE_META=1`, a question is delegated to
+  `surmap.mapqa.answer(question, snapshot_path=...)` when that package
+  imports. Otherwise the answer is a local label match. This tree does
+  not call a model.
 
 HUD badges are survey state: `SURVEY`, `MAPPING` once scene points
 exist, `LANDMARKS N`, and `GPS FIX`, `POSE`, or `NO POSE`. EuRoC ground
@@ -85,8 +87,9 @@ uv run python scripts/viewer.py --source sitl --capture ~/sitl-runs/hover-01 \
 `--snapshot` is a `surmap.semantic_map_snapshot.v1` file. Preview loads
 a bundled one when the flag is omitted. EuRoC and SITL show an empty
 landmark list until a snapshot is passed. The reader does not import
-the unmerged writer (PR #35); a copy of the fixture is in
-`tests/fixtures/semantic_map_snapshot.json`.
+the unmerged writer (PR #35). The fixture file is
+`src/surmap/viewer/fixtures/semantic_map_snapshot.json`. Tests read
+that copy.
 
 Tracks whose observation times overlap the replay are placed on that
 clock. Otherwise replay progress scrubs each track along its own
@@ -102,6 +105,7 @@ Content-Type: application/json
 ```
 
 `snapshot_path` is optional. Omitted, the question uses the snapshot
-already loaded for the replay. The cited `landmark_ids` and
-`highlight_points` (`[{x, y, z}, ...]`, mask points or the track
-centroid) are what the page highlights.
+already loaded for the replay, and that replay's path is what
+`surmap.mapqa.answer` receives when the live flag is on. The cited
+`landmark_ids` and `highlight_points` (`[{x, y, z}, ...]`) are what
+the page highlights.

@@ -20,6 +20,7 @@ from surmap.viewer.model import SemanticMapSnapshot, Track, ViewerTick, empty_sn
 from surmap.viewer.snapshot import read_snapshot
 
 _PAGE = (Path(__file__).resolve().parent / "static" / "index.html").read_text(encoding="utf-8")
+DEFAULT_HOST = "127.0.0.1"
 
 
 class Replay(Protocol):
@@ -42,7 +43,7 @@ class _ViewerServer(ThreadingHTTPServer):
 def make_viewer_server(
     replay_factory: Callable[[], Replay],
     *,
-    host: str = "0.0.0.0",
+    host: str = DEFAULT_HOST,
     port: int = 8770,
     fps: float = 10.0,
     loop: bool = False,
@@ -102,13 +103,13 @@ class _Handler(BaseHTTPRequestHandler):
         if not isinstance(question, str) or not question.strip():
             self._send(400, "application/json", b'{"error": "question must be a non-empty string"}')
             return
-        snapshot, error, status = _snapshot_for_question(
+        snapshot, snapshot_path, error, status = _snapshot_for_question(
             raw.get("snapshot_path"), self.server.replay_factory
         )
         if error is not None:
             self._send(status, "application/json", json.dumps({"error": error}).encode())
             return
-        answer = answer_map_question(question, snapshot)
+        answer = answer_map_question(question, snapshot, snapshot_path=snapshot_path)
         self._send(200, "application/json", json.dumps(answer.as_json()).encode())
 
     def _stream(self) -> None:
@@ -148,18 +149,19 @@ class _Handler(BaseHTTPRequestHandler):
 
 def _snapshot_for_question(
     snapshot_path: object, factory: Callable[[], Replay]
-) -> tuple[SemanticMapSnapshot, str | None, int]:
+) -> tuple[SemanticMapSnapshot, str | None, str | None, int]:
     if snapshot_path is None or snapshot_path == "":
-        return factory().snapshot, None, 200
+        replay = factory()
+        return replay.snapshot, replay.snapshot_path, None, 200
     if not isinstance(snapshot_path, str):
-        return empty_snapshot(), "snapshot_path must be a string", 400
+        return empty_snapshot(), None, "snapshot_path must be a string", 400
     path = Path(snapshot_path)
     if not path.is_file():
-        return empty_snapshot(), f"snapshot not found: {snapshot_path}", 404
+        return empty_snapshot(), None, f"snapshot not found: {snapshot_path}", 404
     try:
-        return read_snapshot(path), None, 200
+        return read_snapshot(path), snapshot_path, None, 200
     except ValueError as exc:
-        return empty_snapshot(), str(exc), 400
+        return empty_snapshot(), None, str(exc), 400
 
 
 def _session_payload(replay: Replay) -> dict[str, object]:

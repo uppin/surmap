@@ -19,7 +19,7 @@ from pathlib import Path
 from surmap.demo.datasets import DATASETS, default_cache_dir, ensure_dataset
 from surmap.viewer.euroc import EurocReplay
 from surmap.viewer.preview import PreviewReplay
-from surmap.viewer.server import Replay, make_viewer_server
+from surmap.viewer.server import DEFAULT_HOST, Replay, make_viewer_server
 from surmap.viewer.sitl import SitlReplay
 
 
@@ -35,7 +35,11 @@ def main(argv: list[str] | None = None) -> int:
         help="surmap.semantic_map_snapshot.v1 JSON (optional; preview has a bundled one)",
     )
     parser.add_argument("--cache-dir", type=Path, default=None)
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument(
+        "--host",
+        default=DEFAULT_HOST,
+        help="bind address (default 127.0.0.1). Use 0.0.0.0 to listen on every interface",
+    )
     parser.add_argument("--port", type=int, default=8770)
     parser.add_argument("--fps", type=float, default=10.0)
     parser.add_argument(
