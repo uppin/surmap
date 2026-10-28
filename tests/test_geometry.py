@@ -1,6 +1,6 @@
 import pytest
 
-from surmap.geometry import centroid, to_map_frame
+from surmap.geometry import centroid, to_camera_frame, to_map_frame
 from surmap.types import Pose, Vec3
 
 
@@ -17,6 +17,21 @@ def test_z_up_quarter_turn_rotation() -> None:
     assert out.x == pytest.approx(0.0)
     assert out.y == pytest.approx(1.0)
     assert out.z == pytest.approx(0.0)
+
+
+def test_camera_frame_is_the_inverse_of_map_frame() -> None:
+    # Given a translated quarter-turn about Z
+    s = 2**0.5 / 2.0
+    pose = Pose(Vec3(1.0, 2.0, 3.0), (0.0, 0.0, s, s))
+    point = Vec3(4.0, -1.0, 2.5)
+
+    # When the point goes to the camera and back to the map
+    back = to_map_frame(to_camera_frame(point, pose), pose)
+
+    # Then it is unchanged
+    assert back.x == pytest.approx(point.x)
+    assert back.y == pytest.approx(point.y)
+    assert back.z == pytest.approx(point.z)
 
 
 def test_centroid_and_empty_error() -> None:

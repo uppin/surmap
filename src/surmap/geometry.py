@@ -25,6 +25,13 @@ def to_map_frame(point_camera: Vec3, pose: Pose) -> Vec3:
     return Vec3(r.x + p.x, r.y + p.y, r.z + p.z)
 
 
+def to_camera_frame(point_map: Vec3, pose: Pose) -> Vec3:
+    """Inverse of `to_map_frame` for a unit pose quaternion."""
+    delta = point_map - pose.position
+    x, y, z, w = pose.orientation_xyzw
+    return _rotate(delta, (-x, -y, -z, w))
+
+
 def centroid(points: tuple[Vec3, ...]) -> Vec3:
     if not points:
         raise ValueError("centroid of an empty point set is undefined")
