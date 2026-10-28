@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 
 import numpy as np
 import pytest
@@ -172,6 +172,95 @@ def test_before_call_names_modal_and_can_block_the_request() -> None:
 
     # Then the hook saw the provider and the endpoint was not called
     assert seen == ["modal"]
+
+
+class _SavedUse(Protocol):
+    provider: str
+    model: str
+    input_tokens: int
+    output_tokens: int
+    reasoning_tokens: int | None
+    t_unix: float
+
+
+class _Ledger:
+    """Stand-in for ``surmap.usage.UsageLedger``: ``check`` plus one record call."""
+
+    def __init__(self, *, refuse: bool = False) -> None:
+        self.refuse = refuse
+        self.order: list[str] = []
+        self.checked: list[str] = []
+        self.records: list[_SavedUse] = []
+
+    def check(self, provider: str) -> None:
+        self.order.append("check")
+        self.checked.append(provider)
+        if self.refuse:
+            raise RuntimeError("budget")
+
+    def __call__(self, record: object) -> None:
+        self.order.append("usage")
+        self.records.append(cast(_SavedUse, record))
+
+
+def test_a_usage_ledger_is_checked_then_records_one_zero_token_call() -> None:
+    # Given a ledger with the same check/call shape as surmap.usage.UsageLedger
+    masks, scores = _rectangle_outputs()
+    body = json.dumps(response_body(masks, scores, 1.25)).encode()
+    ledger = _Ledger()
+
+    def poster(url: str, body_bytes: bytes) -> bytes:
+        del url, body_bytes
+        ledger.order.append("post")
+        return body
+
+    session = ModalSamSession(
+        url="http://modal.test/sam",
+        input_size=(32, 32),
+        model="surmap-sam/T4",
+        before_call=ledger,
+        on_usage=ledger,
+        on_gpu_seconds=ledger,
+        poster=poster,
+    )
+
+    # When one tensor is posted
+    session.run(np.zeros((1, 3, 32, 32), dtype=np.float32))
+
+    # Then the ledger is asked first, one zero-token call is stored, and GPU time
+    # does not become a second ledger line
+    assert ledger.order == ["check", "post", "usage"]
+    assert ledger.checked == ["modal"]
+    assert len(ledger.records) == 1
+    recorded = ledger.records[0]
+    assert recorded.provider == "modal"
+    assert recorded.model == "surmap-sam/T4"
+    assert recorded.input_tokens == 0
+    assert recorded.output_tokens == 0
+    assert recorded.reasoning_tokens is None
+    assert isinstance(recorded.t_unix, float)
+
+
+def test_a_usage_ledger_check_can_block_the_request() -> None:
+    # Given a ledger that refuses the provider
+    ledger = _Ledger(refuse=True)
+
+    def poster(url: str, body: bytes) -> bytes:
+        raise AssertionError(f"request was sent to {url} ({len(body)} bytes)")
+
+    session = ModalSamSession(
+        url="http://modal.test/sam",
+        input_size=(32, 32),
+        before_call=ledger,
+        poster=poster,
+    )
+
+    # When inference is attempted
+    with pytest.raises(RuntimeError, match="budget"):
+        session.run(np.zeros((1, 3, 32, 32), dtype=np.float32))
+
+    # Then nothing was posted and nothing was recorded
+    assert ledger.records == []
 
 
 def test_usage_hooks_record_one_modal_request_and_remote_gpu_seconds() -> None:

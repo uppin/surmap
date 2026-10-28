@@ -6,45 +6,19 @@ GPU and returns ``masks``, ``scores``, and its own elapsed inference
 time. ``Sam3Detector`` post-processes that result the same way it does
 for a local CPU or CUDA session.
 
-The checkpoint is not in git. Put it on Modal Volume ``surmap-sam3``
-(mounted at ``/models/sam3.1.onnx``). CI never imports the ``modal``
-package and never needs a token.
-
-Authenticate once, in WSL, as workspace ``ginas-bb``. The token stays
-in ``~/.modal.toml`` on that machine:
-
-    uv run --with modal modal token new
-
-Upload the license-gated export (this creates the volume if needed):
-
-    uv run --with modal modal volume create surmap-sam3
-    uv run --with modal modal volume put surmap-sam3 ./sam3.1.onnx /sam3.1.onnx
-
-Deploy from the repo root. The default GPU is a T4. Override with
-``SURMAP_MODAL_GPU`` (for example ``L4``). ``SURMAP_MODAL_TIMEOUT``
-(seconds, default 300) and ``SURMAP_MODAL_SCALEDOWN_WINDOW`` (seconds,
-default 60) are read at deploy time. The function sets
-``max_containers=1`` and does not set ``min_containers``, so Modal
-scales to zero after the idle window:
+The checkpoint is not in git. CI never imports ``modal`` and never
+needs a token. Deploy, stop, spend, the SAM License, and how to
+produce ``sam3.1.onnx`` are in ``docs/modal-sam.md``.
 
     uv run --with modal modal deploy src/surmap/survey/modal_sam_app.py
-
-Copy the printed web URL, then start the station:
-
-    export MODAL_SAM_URL='https://<workspace>--surmap-sam-segment.modal.run'
-    python -m surmap.survey.station_main --detector sam3-modal
-
-``MODAL_SAM_INPUT`` (default ``256x256``) must match the export's
-spatial size. ``MODAL_SAM_MODEL`` overrides the usage label (default
-``surmap-sam/<gpu>``).
-
-Stop the app when the survey is finished so it cannot boot another GPU:
-
     uv run --with modal modal app stop surmap-sam
 
-Spend for workspace ``ginas-bb`` is the Usage page in the Modal
-dashboard (https://modal.com/settings/usage) and the ``surmap-sam``
-app page listed by ``modal app list``.
+``before_call``, ``on_usage``, and ``on_gpu_seconds`` accept either a
+plain callback or a ``surmap.usage.UsageLedger`` (duck-typed: this
+module does not import it). A ledger's ``check("modal")`` runs before
+the request. Its call records one zero-token usage line. Passing the
+ledger as ``on_gpu_seconds`` does not write a second line; GPU seconds
+are not a ledger field.
 """
 
 from __future__ import annotations
@@ -53,10 +27,12 @@ import base64
 import json
 import math
 import os
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
-from typing import Any, cast
+from dataclasses import dataclass
+from typing import Any, Protocol, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -82,6 +58,24 @@ UsageHook = Callable[[str, str, int, int, int | None], None]
 GpuSecondsHook = Callable[[float], None]
 BeforeCall = Callable[[str], None]
 Poster = Callable[[str, bytes], bytes]
+
+
+class _LedgerCheck(Protocol):
+    """The ``check`` method on ``surmap.usage.UsageLedger``."""
+
+    def check(self, provider: str) -> None: ...
+
+
+@dataclass(frozen=True)
+class _CreditUse:
+    """Attribute-compatible with ``surmap.usage.UsageRecord``. Not imported."""
+
+    provider: str
+    model: str
+    input_tokens: int
+    output_tokens: int
+    reasoning_tokens: int | None
+    t_unix: float
 
 
 def modal_function_kwargs(environ: Mapping[str, str] | None = None) -> dict[str, str | int]:
@@ -215,18 +209,18 @@ class ModalSamSession:
         *,
         input_size: tuple[int, int] | None = None,
         model: str | None = None,
-        on_usage: UsageHook | None = None,
-        on_gpu_seconds: GpuSecondsHook | None = None,
-        before_call: BeforeCall | None = None,
+        on_usage: UsageHook | _LedgerCheck | None = None,
+        on_gpu_seconds: GpuSecondsHook | _LedgerCheck | None = None,
+        before_call: BeforeCall | _LedgerCheck | None = None,
         poster: Poster | None = None,
         timeout_s: float = 300.0,
     ) -> None:
         self._url = resolve_modal_url(url)
         self._input_size = resolve_input_size(input_size)
         self._model = usage_model_name(model)
-        self._on_usage = on_usage
-        self._on_gpu_seconds = on_gpu_seconds
-        self._before_call = before_call
+        self._on_usage = _bind_usage(on_usage)
+        self._on_gpu_seconds = _bind_gpu(on_gpu_seconds)
+        self._before_call = _bind_before(before_call)
         self._poster = poster if poster is not None else _poster(timeout_s)
 
     @property
@@ -258,9 +252,9 @@ def modal_sam_detector(
     url: str | None = None,
     input_size: tuple[int, int] | None = None,
     model: str | None = None,
-    on_usage: UsageHook | None = None,
-    on_gpu_seconds: GpuSecondsHook | None = None,
-    before_call: BeforeCall | None = None,
+    on_usage: UsageHook | _LedgerCheck | None = None,
+    on_gpu_seconds: GpuSecondsHook | _LedgerCheck | None = None,
+    before_call: BeforeCall | _LedgerCheck | None = None,
     poster: Poster | None = None,
 ) -> Sam3Detector:
     """A ``Sam3Detector`` whose session is the Modal endpoint."""
@@ -274,6 +268,70 @@ def modal_sam_detector(
         poster=poster,
     )
     return Sam3Detector(session, label=label)
+
+
+def _ledger_check(hook: object) -> Callable[[str], None] | None:
+    """Return ``hook.check`` when this object is a usage ledger."""
+    check = getattr(hook, "check", None)
+    if not callable(check):
+        return None
+    return cast(Callable[[str], None], check)
+
+
+def _bind_before(hook: BeforeCall | _LedgerCheck | None) -> BeforeCall | None:
+    if hook is None:
+        return None
+    check = _ledger_check(hook)
+    if check is not None:
+        return check
+    if callable(hook):
+        return hook
+    raise TypeError("before_call must be a callable or a usage ledger")
+
+
+def _bind_usage(hook: UsageHook | _LedgerCheck | None) -> UsageHook | None:
+    if hook is None:
+        return None
+    if _ledger_check(hook) is not None:
+        sink = cast(Callable[[_CreditUse], None], hook)
+
+        def record(
+            provider: str,
+            model: str,
+            input_tokens: int,
+            output_tokens: int,
+            reasoning_tokens: int | None,
+        ) -> None:
+            sink(
+                _CreditUse(
+                    provider,
+                    model,
+                    input_tokens,
+                    output_tokens,
+                    reasoning_tokens,
+                    time.time(),
+                )
+            )
+
+        return record
+    if callable(hook):
+        return hook
+    raise TypeError("on_usage must be a callable or a usage ledger")
+
+
+def _bind_gpu(hook: GpuSecondsHook | _LedgerCheck | None) -> GpuSecondsHook | None:
+    """A ledger is accepted and writes nothing: usage records have no GPU field."""
+    if hook is None:
+        return None
+    if _ledger_check(hook) is not None:
+        return _ignore_gpu_seconds
+    if callable(hook):
+        return hook
+    raise TypeError("on_gpu_seconds must be a callable or a usage ledger")
+
+
+def _ignore_gpu_seconds(_seconds: float) -> None:
+    return None
 
 
 def _poster(timeout_s: float) -> Poster:

@@ -1,23 +1,16 @@
 """Modal app that runs the SAM 3.1 ONNX export on one GPU.
 
-Deploy and stop from the repo root, after ``modal token new`` in
-workspace ``ginas-bb`` (the token stays in ``~/.modal.toml``):
+Deploy and stop from the repo root. The token from ``modal token new``
+stays in ``~/.modal.toml``. Licence, the checkpoint, spend, and
+``MODAL_SAM_INPUT`` are in ``docs/modal-sam.md``.
 
     uv run --with modal modal deploy src/surmap/survey/modal_sam_app.py
     uv run --with modal modal app stop surmap-sam
 
-The checkpoint is Volume ``surmap-sam3`` at ``/sam3.1.onnx``, mounted
-on the container as ``/models/sam3.1.onnx``. It is never committed.
 Default GPU is ``T4`` (``SURMAP_MODAL_GPU``), ``timeout`` is 300
-seconds (``SURMAP_MODAL_TIMEOUT``), ``scaledown_window`` is 60 seconds
-(``SURMAP_MODAL_SCALEDOWN_WINDOW``), and ``max_containers`` is 1. There
-is no ``min_containers``, so the container scales to zero.
-
-Spend for workspace ``ginas-bb`` is https://modal.com/settings/usage
-and the ``surmap-sam`` page from ``modal app list``.
-
-Importing this module does not require Modal. ``app`` is ``None`` until
-the package imports. Tests build the app with a stand-in object.
+seconds, ``scaledown_window`` is 60 seconds, and ``max_containers`` is
+1. There is no ``min_containers``. Importing this module does not
+require Modal. ``app`` is ``None`` until the package imports.
 """
 
 from __future__ import annotations

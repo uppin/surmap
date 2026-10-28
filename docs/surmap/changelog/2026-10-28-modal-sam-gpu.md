@@ -13,7 +13,6 @@ The remote app is `surmap-sam`. Deploy with `modal deploy
 src/surmap/survey/modal_sam_app.py` and stop it with `modal app stop
 surmap-sam`. The default GPU is a T4, the idle scale-down is 60
 seconds, and at most one container runs. Nothing is kept warm. The
-checkpoint stays on a Modal Volume. CI does not install Modal. Spend
-for workspace `ginas-bb` is the Usage page at
-https://modal.com/settings/usage. Commands are in `HACKATHON.md` and
-the `surmap.survey.modal_sam` module docstring.
+checkpoint stays on a Modal Volume. CI does not install Modal. Spend,
+the SAM License, and how to produce `sam3.1.onnx` are in
+`docs/modal-sam.md`.

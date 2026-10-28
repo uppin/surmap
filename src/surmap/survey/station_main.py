@@ -9,8 +9,8 @@ ONNX Runtime — CUDA provider on the station GPU, CPU elsewhere:
         --sam3-model /models/sam3.1.onnx --sam3-device cuda
 
 `--detector sam3-modal`, or `--detector sam3 --sam3-device modal`,
-posts the same tensor to `MODAL_SAM_URL`. Deploy and stop commands
-live in `surmap.survey.modal_sam` and HACKATHON.md.
+posts the same tensor to `MODAL_SAM_URL`. Deploy, stop, and the
+checkpoint steps are in `docs/modal-sam.md`.
 """
 
 from __future__ import annotations
