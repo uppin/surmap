@@ -23,20 +23,40 @@ enough for SurMap. Use the SurMap stereo models below (baseline **0.07 m**).
 
 ## Stereo model setup
 
+`make px4_sitl gz_x500` is the stock x500 quadrotor airframe (autostart
+4001). It is the right airframe — `x500_surmap_stereo` includes that
+x500 — but it is not the stereo model. Current PX4 (`px4-rc.gzsim` on
+`main`) spawns `file://$PX4_GZ_MODELS/$PX4_SIM_MODEL/model.sdf`, and
+`gz_env.sh` sets `PX4_GZ_MODELS` to `Tools/simulation/gz/models`.
+`PX4_GZ_MODEL` is not read. `PX4_GZ_MODEL_NAME` only attaches to a
+model that is already in the world. There is no
+`gz_x500_surmap_stereo` make target.
+
+Checked against those two PX4 files. Not launched from this repo.
+
 ```bash
-# Once per shell (or add to ~/.bashrc)
+# From the SurMap repo root, once per shell (or add to ~/.bashrc).
+# model://surmap_stereo_cam resolves from this path. x500 resolves from
+# PX4's own models directory, which gz_env.sh appends.
 export GZ_SIM_RESOURCE_PATH="$GZ_SIM_RESOURCE_PATH:$(pwd)/docs/simulation/gz:$HOME/src/PX4-gazebo-models/models"
 
-# Launch PX4 SITL with the stereo airframe (example — adjust to your PX4 launch style)
+# The spawn path is inside the PX4 tree, not GZ_SIM_RESOURCE_PATH.
+ln -sfn "$(pwd)/docs/simulation/gz/x500_surmap_stereo" \
+  "$HOME/PX4-Autopilot/Tools/simulation/gz/models/x500_surmap_stereo"
+
 cd ~/PX4-Autopilot
-PX4_GZ_MODEL=x500_surmap_stereo make px4_sitl gz_x500
-# If your tree uses PX4_GZ_MODEL_NAME / world flags, point them at x500_surmap_stereo
-# so left_camera + right_camera sensors exist.
+PX4_SIM_MODEL=x500_surmap_stereo make px4_sitl gz_x500
 ```
 
-Confirm in Gazebo that the airframe has **two** camera sensors
-(`left_camera`, `right_camera`). Bridge them to ROS 2 with `ros_gz_bridge`
-(or your existing bridge). GPS should appear as `sensor_msgs/NavSatFix`
+The airframe script keeps a `PX4_SIM_MODEL` you already set
+(`PX4_SIM_MODEL=${PX4_SIM_MODEL:=x500}`). PX4 names the spawned model
+`x500_surmap_stereo_0`.
+
+After launch, confirm Gazebo has **two** camera sensors
+(`left_camera`, `right_camera`) on that model. If the include of
+`x500` fails, the stock model is missing from `PX4_GZ_MODELS` or the
+URI needs a `model://` prefix. Bridge the cameras to ROS 2 with
+`ros_gz_bridge` (or your existing bridge). GPS should appear as `sensor_msgs/NavSatFix`
 (e.g. MAVROS `/mavros/global_position/global` or a Gazebo GPS bridge).
 
 ### Calibration defaults for the SurMap stereo SDF
