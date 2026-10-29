@@ -111,7 +111,7 @@ class OnnxSam3Session:
         return by_name["masks"], by_name["scores"]
 
 
-def _mask_outline(
+def mask_outline(
     mask: NDArray[np.bool_], scale_x: float, scale_y: float, max_points: int = 96
 ) -> tuple[tuple[float, float], ...]:
     """A coarse outline polygon for one binary mask, in frame pixels."""
@@ -188,7 +188,7 @@ class Sam3Detector:
                     label=self._label,
                     score=score,
                     box_xyxy=box,
-                    mask_polygon=_mask_outline(mask, scale_x, scale_y),
+                    mask_polygon=mask_outline(mask, scale_x, scale_y),
                 )
             )
         return tuple(detections)

@@ -10,6 +10,8 @@ playback — the real RTAB-Map map built from the same frames.
     uv run python scripts/demo.py --frames 200         # first 200 pairs only
     uv run python scripts/demo.py --prepare-only       # just download+cache
     uv run python scripts/demo.py --list-datasets
+    uv run python scripts/demo.py --coral-model-dir tests/fixtures/coral_model \
+        --sam2-model-dir ~/.cache/surmap/sam2/sam2.1-hiera-small  # + SAM 2.1 masks
 
 Add a dataset by adding one entry to `DATASETS` in
 `surmap.demo.datasets`; it then appears in `--list-datasets` and as
@@ -17,6 +19,11 @@ a `--dataset` choice here. Playback is paced server-side at `--fps`
 (default: the dataset's native 20 fps). With
 `SURMAP_RTABMAP_SHARED_CONTAINER` set, the final map is built inside
 that reusable container, which is never stopped or removed.
+
+SAM 2.1 (`scripts/fetch_sam2_model.py` exports it) is prompted by
+the Coral boxes: masks are drawn live, and after the map is built
+each RTAB-Map keyframe is segmented and its masked stereo points are
+placed on the map as a labelled object layer.
 """
 
 from __future__ import annotations
@@ -29,6 +36,7 @@ from pathlib import Path
 from surmap.demo.datasets import DATASETS, default_cache_dir, ensure_dataset
 from surmap.demo.server import make_demo_server
 from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
+from surmap.survey.sam2 import DEVICES, MODEL_DIR_ENV, default_sam2_model_dir
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -63,6 +71,21 @@ def main(argv: list[str] | None = None) -> int:
         help="detector model profile for the overlay",
     )
     parser.add_argument(
+        "--sam2-model-dir",
+        type=Path,
+        default=None,
+        help="exported SAM 2.1 model (scripts/fetch_sam2_model.py) for masks prompted by "
+        f"the Coral boxes (default: ${MODEL_DIR_ENV}, else {default_sam2_model_dir()} "
+        "when present; needs --coral-model-dir)",
+    )
+    parser.add_argument(
+        "--sam2-device",
+        choices=DEVICES,
+        default="auto",
+        help="SAM 2.1 encoder: auto = CUDA, else CoreML on the Mac GPU (Metal), else CPU",
+    )
+    parser.add_argument("--no-sam", action="store_true", help="never run SAM 2.1")
+    parser.add_argument(
         "--prepare-only", action="store_true", help="download+cache the dataset and exit"
     )
     args = parser.parse_args(argv)
@@ -80,6 +103,15 @@ def main(argv: list[str] | None = None) -> int:
     coral_dir = args.coral_model_dir
     if coral_dir is None and os.environ.get("SURMAP_CORAL_MODEL_DIR"):
         coral_dir = Path(os.environ["SURMAP_CORAL_MODEL_DIR"])
+    sam_dir = None
+    if not args.no_sam:
+        sam_dir = args.sam2_model_dir
+        if sam_dir is None and (default_sam2_model_dir() / "manifest.json").is_file():
+            sam_dir = default_sam2_model_dir()
+    if sam_dir is not None and coral_dir is None:
+        if args.sam2_model_dir is not None:
+            parser.error("--sam2-model-dir needs --coral-model-dir: Coral boxes prompt SAM 2.1")
+        sam_dir = None  # a cached model alone does not switch SAM on without Coral
     server = make_demo_server(
         prepared,
         host=args.host,
@@ -90,8 +122,12 @@ def main(argv: list[str] | None = None) -> int:
         with_rtabmap=not args.no_rtabmap,
         coral_model_dir=coral_dir,
         coral_model=args.coral_model,
+        sam2_model_dir=sam_dir,
+        sam2_device=args.sam2_device,
     )
     host, port = server.server_address[:2]
+    if sam_dir is not None:
+        print(f"SAM 2.1 masks on (model {sam_dir}, {args.sam2_device}), prompted by Coral boxes")
     print(f"SurMap demo: open http://{host}:{port}/ in a browser (Ctrl+C to stop)")
     try:
         server.serve_forever()

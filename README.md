@@ -57,6 +57,24 @@ the zip into the cache (`~/.cache/surmap/demo-datasets`, override
 Useful flags: `--frames N`, `--start I`, `--fps F`, `--no-rtabmap`,
 `--prepare-only`. Add a dataset by adding one registry entry.
 
+With SAM 2.1, the Coral boxes become SAM prompts. Masks are drawn
+live, best effort (frames are skipped while SAM is busy, so playback
+never slows). After the RTAB-Map map is built, every keyframe with
+Coral boxes is segmented, and its stereo points inside each mask are
+placed by that keyframe's pose as a labelled object layer on the map:
+
+```bash
+uv run --no-project --with torch --with torchvision --with transformers \
+    --with onnx --with onnxscript --with onnxruntime --with pillow \
+    python scripts/fetch_sam2_model.py    # once: export to ~/.cache/surmap/sam2/
+uv run python scripts/demo.py --coral-model-dir tests/fixtures/coral_model
+```
+
+An exported model in the default directory switches SAM on whenever
+Coral is on (`--sam2-model-dir` overrides it, `--no-sam` disables it).
+SAM 2.1 (`facebook/sam2.1-hiera-small`, Apache-2.0, not gated) stands
+in for SAM 3 until access to the gated SAM 3 checkpoints is granted.
+
 RTAB-Map note: RTAB-Map has no official PyPI package, and no host —
 local or CI — may install it. The real backend is
 `surmap.slam.SidecarRtabmapBackend`: it stages streamed stereo pairs
