@@ -68,3 +68,10 @@ warn_unreachable = true
 # googleapis-common-protos ships no stubs or py.typed marker.
 module = "google.api.*"
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Deploy entrypoint must `import modal` at module scope (Modal 1.x rejects
+# nested functions). The SDK is not a CI dependency, so this module is not
+# typechecked here. Tests parse it with ast instead of importing it.
+module = "surmap.survey.modal_sam_app"
+ignore_errors = true

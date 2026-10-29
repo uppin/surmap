@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """Semantic labels and the scene note for a mapped area.
 
 Hosted calls stay behind a client. Each client talks to its own API.
@@ -23,3 +24,6 @@ __all__ = [
     "MetaMuseSceneError",
     "ObjectLabel",
 ]
+=======
+"""Hosted labelling clients. Each one is optional and talks to its own API."""
+>>>>>>> origin/cursor/modal-sam-gpu-bdcd
