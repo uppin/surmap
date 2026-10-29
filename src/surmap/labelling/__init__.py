@@ -1,7 +1,6 @@
-<<<<<<< HEAD
 """Semantic labels and the scene note for a mapped area.
 
-Hosted calls stay behind a client. Each client talks to its own API.
+Hosted calls stay behind a client. Each one is optional and talks to its own API.
 """
 
 from surmap.labelling.baseten_muse import (
@@ -13,6 +12,11 @@ from surmap.labelling.baseten_muse import (
     ObjectLabel,
 )
 from surmap.labelling.meta_muse import MetaMuseSceneClient, MetaMuseSceneError
+from surmap.labelling.modal_muse import (
+    ModalMuseClient,
+    ModalMuseConfigError,
+    ModalMuseRequestError,
+)
 
 __all__ = [
     "BasetenApiKeyMissing",
@@ -22,8 +26,8 @@ __all__ = [
     "LabelClient",
     "MetaMuseSceneClient",
     "MetaMuseSceneError",
+    "ModalMuseClient",
+    "ModalMuseConfigError",
+    "ModalMuseRequestError",
     "ObjectLabel",
 ]
-=======
-"""Hosted labelling clients. Each one is optional and talks to its own API."""
->>>>>>> origin/cursor/modal-sam-gpu-bdcd
