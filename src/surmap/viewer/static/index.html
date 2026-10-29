@@ -27,6 +27,9 @@
   .clock { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 13px; color: #d5dde6; }
   .progress { position: absolute; left: 0; right: 0; top: 48px; height: 2px; background: #1a212b; }
   .progress > span { display: block; height: 100%; width: 0; background: var(--pink); }
+  #impact { margin: 0; padding: 8px 16px; background: #1a1408; color: #f0d7a2;
+    border-bottom: 1px solid var(--line); font-size: 13px; }
+  #impact[hidden] { display: none; }
   main { flex: 1; min-height: 0; display: grid; gap: 10px; padding: 12px 10px 10px;
     grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
     grid-template-rows: minmax(0, 1fr) 228px; }
@@ -96,6 +99,7 @@
   <div class="clock" id="clock">00:00.0</div>
 </header>
 <div class="progress"><span id="progress"></span></div>
+<p id="impact" hidden></p>
 <main>
   <section class="pane camera">
     <canvas id="camera" width="640" height="360"></canvas>
@@ -261,6 +265,21 @@ function setMode(mode) {
   document.getElementById("orbit").classList.toggle("active", mode === "orbit");
   mapTitle.textContent = mode === "chase" ? "MAP, CHASE VIEW" : "MAP, ORBIT VIEW";
 }
+
+fetch("/impact").then(async (response) => {
+  if (!response.ok) return;
+  const impact = await response.json();
+  const node = document.getElementById("impact");
+  const error = impact.mean_position_error_m;
+  const errorText = error == null ? "n/a" : `${Number(error).toFixed(2)} m`;
+  const first = impact.time_to_first_detection_s;
+  const firstText = first == null ? "n/a" : `${Number(first).toFixed(1)} s`;
+  const basis = impact.basis === "fixtures" ? "computed from fixtures" : (impact.basis || "live");
+  node.hidden = false;
+  node.textContent = `Impact (${basis}): ${impact.found} of ${impact.total} survivors, `
+    + `mean position error ${errorText}, time to first detection ${firstText}. `
+    + (impact.ask_answer || "");
+}).catch(() => {});
 
 document.getElementById("ask").addEventListener("submit", async (event) => {
   event.preventDefault();

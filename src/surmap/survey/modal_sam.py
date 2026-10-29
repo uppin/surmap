@@ -38,7 +38,7 @@ from numpy.typing import NDArray
 from PIL import Image
 
 from surmap.survey.sam import RawFrame, SamDetection
-from surmap.survey.sam3 import Sam3Unavailable, _mask_outline
+from surmap.survey.sam3 import Sam3Unavailable, mask_outline
 
 APP_NAME = "surmap-sam"
 DEFAULT_GPU = "L4"
@@ -138,7 +138,7 @@ def pack_detections(
         polygon: tuple[tuple[float, float], ...] = ()
         if mask_stack.ndim == 3 and index < mask_stack.shape[0]:
             binary = np.asarray(mask_stack[index] >= 0.5)
-            polygon = _mask_outline(binary, scale_x, scale_y)
+            polygon = mask_outline(binary, scale_x, scale_y)
         detections.append(
             {
                 "label": prompt,

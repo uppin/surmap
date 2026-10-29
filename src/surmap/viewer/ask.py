@@ -142,7 +142,7 @@ def _local_match(question: str, snapshot: SemanticMapSnapshot) -> AskAnswer:
     matched = [
         track
         for track in snapshot.tracks()
-        if any(token in f"{track.label} {track.description}".lower() for token in tokens)
+        if any(_mentions(token, f"{track.label} {track.description}".lower()) for token in tokens)
     ]
     ids = tuple(track.id for track in matched)
     points: list[Vec3] = []
@@ -163,6 +163,14 @@ def _local_match(question: str, snapshot: SemanticMapSnapshot) -> AskAnswer:
     else:
         answer = "No semantic map snapshot is loaded."
     return AskAnswer(answer, ids, tuple(points))
+
+
+def _mentions(token: str, text: str) -> bool:
+    """True when `token` appears in `text`, including a trailing plural s."""
+    if token in text:
+        return True
+    singular = token[:-1] if len(token) > 3 and token.endswith("s") else ""
+    return singular != "" and singular in text
 
 
 def _tokens(question: str) -> tuple[str, ...]:

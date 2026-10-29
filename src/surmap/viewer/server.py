@@ -9,7 +9,7 @@ import base64
 import json
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Protocol
@@ -38,6 +38,7 @@ class _ViewerServer(ThreadingHTTPServer):
     fps: float
     loop: bool
     stream_lock: threading.Lock
+    impact: Mapping[str, object] | None
 
 
 def make_viewer_server(
@@ -47,6 +48,7 @@ def make_viewer_server(
     port: int = 8770,
     fps: float = 10.0,
     loop: bool = False,
+    impact: Mapping[str, object] | None = None,
 ) -> ThreadingHTTPServer:
     """The viewer HTTP server, not yet serving."""
     if fps <= 0:
@@ -56,6 +58,7 @@ def make_viewer_server(
     server.fps = fps
     server.loop = loop
     server.stream_lock = threading.Lock()
+    server.impact = impact
     return server
 
 
@@ -77,6 +80,13 @@ class _Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/health":
             self._send(200, "application/json", b'{"status": "ok"}')
+            return
+        if path == "/impact":
+            impact = self.server.impact
+            if impact is None:
+                self._send(404, "application/json", b'{"error": "no impact report"}')
+                return
+            self._send(200, "application/json", json.dumps(impact).encode())
             return
         if path == "/":
             self._send(200, "text/html; charset=utf-8", _PAGE.encode())
