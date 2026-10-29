@@ -63,6 +63,32 @@ jobs:
           SURMAP_REQUIRE_RTABMAP_E2E: "1"
         run: uv run pytest tests/test_survey_cm5_rtabmap_e2e.py -q
 
+  rtabmap-stream-e2e:
+    # Real streaming backend: derived image built from repo sources,
+    # EuRoC subset from the fixtures release asset.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync environment
+        run: uv sync --group dev --python 3.12
+
+      - name: Fetch EuRoC fixture
+        run: uv run python scripts/fetch_rtabmap_fixture.py --skip-docker
+
+      - name: Build streaming image
+        run: uv run python scripts/build_rtabmap_stream.py
+
+      - name: Real RTAB-Map streaming e2e
+        env:
+          SURMAP_REQUIRE_RTABMAP_STREAM_E2E: "1"
+        run: uv run pytest tests/test_slam_streaming_e2e.py -q
+
   coral-e2e:
     # Real detector network (CPU twin of the Edge-TPU artifact; no
     # Coral board in CI) plus the EuRoC frames from the RTAB fixture

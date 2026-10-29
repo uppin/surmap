@@ -23,10 +23,11 @@ import json
 import math
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 
 from PIL import Image
 
@@ -41,17 +42,41 @@ from surmap.demo.datasets import (
 from surmap.detection.detector import CoralDetector, decode_rgb
 from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
 from surmap.detection.source import CoralDetectionSource, DetectionSource
+from surmap.slam.base import FrameResult
 from surmap.slam.sidecar import SidecarRtabmapBackend
+from surmap.slam.stream_protocol import MapUpdate
+from surmap.slam.streaming import StreamingRtabmapBackend
 from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
-from surmap.types import StereoFramePair, Vec3
+from surmap.types import Pose, StereoFramePair, Vec3
 
 MAX_OVERLAY_POINTS = 600
 MAX_MAP_POINTS = 4000
 
 
+@runtime_checkable
+class LiveSlamBackend(Protocol):
+    """The streaming-backend surface the demo's live map uses."""
+
+    def process_frame(self, frame: StereoFramePair) -> FrameResult: ...
+    def poll_updates(self) -> list[MapUpdate]: ...
+    def map_snapshot(self) -> tuple[Vec3, ...]: ...
+    def trajectory(self) -> list[Pose]: ...
+    def flush(self) -> list[FrameResult]: ...
+    def close(self) -> None: ...
+
+    @property
+    def dropped_frames(self) -> int: ...
+    @property
+    def odom_state(self) -> str: ...
+    @property
+    def last_odom_frame(self) -> int: ...
+    @property
+    def keyframe_count(self) -> int: ...
+
+
 @dataclass(frozen=True)
 class DemoEvent:
-    kind: str  # "frame" | "status" | "final"
+    kind: str  # "frame" | "status" | "final" | "map" | "detections"
     data: dict[str, object]
     jpeg: bytes = b""
 
@@ -99,6 +124,8 @@ class DemoPlayer:
         with_rtabmap: bool = True,
         stereo: StereoReconstructor | None = None,
         detection_source: DetectionSource | None = None,
+        rtabmap_mode: str = "live",
+        backend_factory: Callable[[], SidecarRtabmapBackend | LiveSlamBackend] | None = None,
     ) -> None:
         if fps <= 0:
             raise ValueError("fps must be positive")
@@ -111,9 +138,47 @@ class DemoPlayer:
         self._with_rtabmap = with_rtabmap
         self._stereo = stereo if stereo is not None else StereoReconstructor()
         self._detection_source = detection_source
+        if rtabmap_mode not in ("live", "batch"):
+            raise ValueError("rtabmap_mode must be 'live' or 'batch'")
+        self._rtabmap_mode = rtabmap_mode
+        self._backend_factory = backend_factory
 
-    def _backend(self) -> SidecarRtabmapBackend:
+    def _map_event(self, backend: LiveSlamBackend, frame_id: int) -> DemoEvent:
+        cloud = backend.map_snapshot()
+        sample = cloud
+        if len(sample) > MAX_MAP_POINTS:
+            step = len(sample) / MAX_MAP_POINTS
+            sample = tuple(sample[int(i * step)] for i in range(MAX_MAP_POINTS))
+        trajectory = backend.trajectory()
+        return DemoEvent(
+            "map",
+            {
+                "frame_id": frame_id,
+                "cloud_xy": [[round(p.x, 3), round(p.y, 3)] for p in sample],
+                "cloud_points": len(cloud),
+                "trajectory_xy": [
+                    [round(p.position.x, 3), round(p.position.y, 3)] for p in trajectory
+                ],
+                "keyframes": backend.keyframe_count,
+                "odom_state": backend.odom_state,
+                "lag_frames": max(0, frame_id - backend.last_odom_frame),
+                "dropped_frames": backend.dropped_frames,
+            },
+        )
+
+    def _backend(self) -> SidecarRtabmapBackend | LiveSlamBackend:
+        if self._backend_factory is not None:
+            return self._backend_factory()
         prepared = self._prepared
+        if self._rtabmap_mode == "live":
+            return StreamingRtabmapBackend(
+                cam0_yaml=scaled_sensor_yaml(
+                    prepared.sensor_yaml("cam0"), DISPLAY_WIDTH, DISPLAY_HEIGHT
+                ),
+                cam1_yaml=scaled_sensor_yaml(
+                    prepared.sensor_yaml("cam1"), DISPLAY_WIDTH, DISPLAY_HEIGHT
+                ),
+            )
         return SidecarRtabmapBackend(
             cam0_yaml=scaled_sensor_yaml(
                 prepared.sensor_yaml("cam0"), DISPLAY_WIDTH, DISPLAY_HEIGHT
@@ -139,6 +204,7 @@ class DemoPlayer:
         if self._max_frames > 0:
             timestamps = timestamps[: self._max_frames]
         backend = self._backend() if self._with_rtabmap else None
+        last_map_emit = 0.0
         try:
             for index, t_ns in enumerate(timestamps):
                 frame_started = time.monotonic()
@@ -195,6 +261,12 @@ class DemoPlayer:
                             ],
                         },
                     )
+                if isinstance(backend, LiveSlamBackend):
+                    backend.poll_updates()
+                    now = time.monotonic()
+                    if now - last_map_emit >= 0.33:
+                        last_map_emit = now
+                        yield self._map_event(backend, index + 1)
                 # Server-side pacing: one frame interval per frame,
                 # however long processing took — never a catch-up burst.
                 remaining = 1.0 / self._fps - (time.monotonic() - frame_started)
@@ -202,7 +274,14 @@ class DemoPlayer:
                     time.sleep(remaining)
             if backend is not None:
                 yield DemoEvent(
-                    "status", {"message": "Building the RTAB-Map map from all played frames…"}
+                    "status",
+                    {
+                        "message": (
+                            "Finalizing RTAB-Map graph…"
+                            if isinstance(backend, LiveSlamBackend)
+                            else "Building the RTAB-Map map from all played frames…"
+                        )
+                    },
                 )
                 results = backend.flush()
                 trajectory = backend.trajectory()
@@ -270,7 +349,7 @@ _PAGE = """<!DOCTYPE html>
 <header>
   <h1>SurMap demo — {title}</h1>
   <p class="sub">{description} Stereo scene points are overlaid live; the RTAB-Map map is built
-  from the same frames and shown at the end.</p>
+  live from the same frames as they play.</p>
 </header>
 <main>
   <div class="stage">
@@ -335,6 +414,23 @@ source.addEventListener('frame', (event) => {{
     + `Stereo scene points this frame <b>${{data.point_count}}</b><br>`
     + `Overlay detections drawn <b>${{data.detections.length}}</b>`;
 }});
+let liveExtent = null;
+source.addEventListener('map', (event) => {{
+  const data = JSON.parse(event.data);
+  rtab.innerHTML = `Keyframes <b>${{data.keyframes}}</b> · cloud `
+    + `<b>${{data.cloud_points}}</b> pts<br>Odometry <b>${{data.odom_state}}</b> `
+    + `· lag <b>${{data.lag_frames}}</b> · dropped <b>${{data.dropped_frames}}</b>`;
+  const all = data.cloud_xy.concat(data.trajectory_xy);
+  if (!all.length) return;
+  if (!liveExtent) liveExtent = {{minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9}};
+  for (const p of all) {{  // extent only grows, never jitters
+    liveExtent.minX = Math.min(liveExtent.minX, p[0]);
+    liveExtent.maxX = Math.max(liveExtent.maxX, p[0]);
+    liveExtent.minY = Math.min(liveExtent.minY, p[1]);
+    liveExtent.maxY = Math.max(liveExtent.maxY, p[1]);
+  }}
+  drawMap({{cloud_xy: data.cloud_xy, trajectory_xy: data.trajectory_xy}}, liveExtent);
+}});
 source.addEventListener('status', (event) => {{
   rtab.textContent = JSON.parse(event.data).message;
 }});
@@ -350,14 +446,17 @@ source.addEventListener('final', (event) => {{
 source.onerror = () => {{
   if (frames === 0) playback.textContent = 'Stream unavailable — is another viewer connected?';
 }};
-function drawMap(data) {{
+function drawMap(data, extent) {{
   const canvas = document.getElementById('map');
   const ctx = canvas.getContext('2d');
   const all = data.cloud_xy.concat(data.trajectory_xy);
   if (!all.length) return;
   const xs = all.map(p => p[0]), ys = all.map(p => p[1]);
-  const minX = Math.min(...xs), maxX = Math.max(...xs);
-  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const minX = extent ? extent.minX : Math.min(...xs);
+  const maxX = extent ? extent.maxX : Math.max(...xs);
+  const minY = extent ? extent.minY : Math.min(...ys);
+  const maxY = extent ? extent.maxY : Math.max(...ys);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   const scale = Math.min(320 / Math.max(0.01, maxX - minX),
     320 / Math.max(0.01, maxY - minY));
   const px = p => [10 + (p[0] - minX) * scale, 330 - (p[1] - minY) * scale];
@@ -402,6 +501,7 @@ def make_demo_server(
     with_rtabmap: bool = True,
     coral_model_dir: Path | None = None,
     coral_model: str = DEFAULT_PROFILE,
+    rtabmap_mode: str = "live",
 ) -> ThreadingHTTPServer:
     """The demo HTTP server (not yet serving); caller serves/closes it."""
     options: dict[str, object] = {
@@ -409,6 +509,7 @@ def make_demo_server(
         "max_frames": max_frames,
         "start_index": start_index,
         "with_rtabmap": with_rtabmap,
+        "rtabmap_mode": rtabmap_mode,
         "detection_source": (
             coral_detection_source(coral_model_dir, coral_model) if coral_model_dir else None
         ),
