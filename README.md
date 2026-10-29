@@ -9,6 +9,8 @@
 
 A drone-mounted survey system that builds a semantic map of an area from
 stereo video and GPS while the drone is flown by someone (or something) else.
+Hackathon scope (civilian search-and-rescue mapping, credits, third-party
+building blocks): [HACKATHON.md](HACKATHON.md).
 
 **Current scope: passive survey only.**
 SurMap observes and maps. It does not fly the drone.
@@ -119,9 +121,10 @@ provisioning step.
   stereo pair and add them to RTAB-Map's output as separate object
   layers: static objects merge into the map, moving objects stay as
   timestamped tracks and are never baked into the static scene.
-- Segment objects with Meta's SAM on the base station and project those
-  regions onto the point cloud.
-- Assign semantic labels to mapped objects with an LLM via a Models API.
+- Segment objects with Meta's SAM 3.1 on the base station and project
+  those regions onto the point cloud.
+- Assign semantic labels to mapped objects, and a short scene note for
+  the mapped area, with Meta's Muse Spark (see Model policy).
 - Continuously update one semantic map tied to GPS coordinates.
 
 ## Explicitly deferred
@@ -140,8 +143,8 @@ end to end on real footage.
 | # | Machine | Role |
 |---|---|---|
 | 1 | Raspberry Pi CM5 + Coral Edge TPU + stereo camera (candidate: ELP dual-lens module, see [docs/camera-elp-stereo.md](docs/camera-elp-stereo.md)) | On-board: stereo capture, labeled object detection and tracking on the Edge TPU, 3D reconstruction of detected objects layered onto RTAB-Map's static-scene output, GPS logging, recording and forwarding |
-| 2 | ROS2 base station with NVIDIA RTX 5060 Ti | Ground processing: SAM segmentation, point-cloud/segment fusion, semantic map building, LLM labelling client |
-| 3 | Simulation machine (hardware and software not yet chosen) | Synthetic stereo/GPS data and replay of recorded sessions, so the pipeline can be developed and tested without flying |
+| 2 | ROS2 base station with NVIDIA RTX 5060 Ti | Ground processing: SAM segmentation, point-cloud/segment fusion, semantic map building, semantic labelling |
+| 3 | Simulation machine: WSL Ubuntu + Gazebo Harmonic + PX4 SITL + ROS 2 Jazzy (see [docs/simulation/px4-sitl.md](docs/simulation/px4-sitl.md)). Other hardware still open | Synthetic stereo/GPS and replay of recorded sessions, so the pipeline can be developed and tested without flying |
 
 The base station is a consumer of survey data only.
 It issues no tasks or commands to the drone in this phase.
@@ -165,8 +168,8 @@ that reason in [docs/architecture.md](docs/architecture.md).
 | Job | Where | Model | Meta? |
 |---|---|---|---|
 | Object detection + tracking | Pi CM5 + Coral Edge TPU | Edge TPU detector (e.g. SSD MobileNet V2 / EfficientDet-Lite, Edge TPU-compiled) plus a lightweight box tracker | No — Meta has no Edge TPU detector; this is the documented exception |
-| Segmentation + video tracking | Base station, RTX 5060 Ti | **SAM 3.1** (Meta, released 2026-03-27 as a drop-in update to SAM 3, 2025-11-19) | Yes |
-| Semantic labelling | Via Models API | Newest Meta Llama model offered by the chosen API at integration time; exact model ID recorded per run | Yes, preferred |
+| Segmentation + video tracking | Base station, RTX 5060 Ti | **SAM 3.1** | Yes |
+| Semantic labelling and scene reasoning | Base station, via an API | **Muse Spark** | Yes |
 | Pose / mapping | Pi CM5 | RTAB-Map | No — not a learned model; no Meta equivalent |
 | Video representations | — | V-JEPA | Deferred |
 
@@ -178,6 +181,7 @@ throughput and VRAM on the RTX 5060 Ti must be measured, not assumed —
 see the open decisions in the architecture doc.
 Sources: [Meta SAM 3 announcement](https://ai.meta.com/blog/segment-anything-model-3/),
 [SAM 3 paper page](https://ai.meta.com/research/publications/sam-3-segment-anything-with-concepts/).
+Hackathon model ids and endpoints: [HACKATHON.md](HACKATHON.md).
 
 ## Data flow
 
@@ -201,7 +205,7 @@ BASE STATION (ROS2, RTX 5060 Ti)
   objects / landmarks in 3D, anchored to GPS checkpoints
         │
         ▼
-  LLM via Models API assigns semantic labels
+  Muse Spark assigns semantic labels and a scene note
         │
         ▼
   semantic map, updated as new survey data arrives
@@ -215,12 +219,14 @@ Details, ROS2 layout, interfaces, and data contracts:
 1. **Design** (now) — this document and the architecture doc.
 2. **Simulation / offline pipeline** — stereo → point cloud → SAM 3.1 →
    map fusion on synthetic or recorded footage, developed on machine 3
-   and machine 2 without flying.
+   and machine 2 without flying. Machine 3's local path is WSL Ubuntu
+   with Gazebo Harmonic, PX4 SITL, and ROS 2 Jazzy
+   ([docs/simulation/px4-sitl.md](docs/simulation/px4-sitl.md)).
 3. **On-board capture and detection** — CM5 + stereo camera + Coral:
    synchronized frames, detection/tracking, RTAB-Map trajectory, GPS,
    store-and-forward to the base station.
 4. **Base station** — ROS2 nodes for ingest, SAM 3.1, fusion, map
-   building, and LLM labelling; one drone's footage at a time.
+   building, and Muse Spark labelling; one drone's footage at a time.
 5. **Later, if at all** — multi-drone map merging, then navigation.
 
 ## Open decisions
@@ -232,12 +238,13 @@ Details, ROS2 layout, interfaces, and data contracts:
   which box tracker — to be settled by on-device benchmarks.
 - SAM 3.1 on the RTX 5060 Ti: measured VRAM, resolution, keyframe rate,
   and whether video-mode tracking or per-image segmentation is used.
-- Which Models API and which exact Meta Llama model ID it exposes;
-  labelling cost/latency budget per session.
+- Labelling cost and latency per session. Model ids and endpoints are
+  in [HACKATHON.md](HACKATHON.md).
 - Link between drone and base station (Wi-Fi / LTE / other), and
   therefore how much is processed live vs. store-and-forward.
-- Simulation machine: hardware, and simulator/replay software
-  (candidates not yet evaluated).
+- Simulation machine: dedicated hardware is still open. The local/WSL
+  software path is Gazebo Harmonic + PX4 SITL + ROS 2 Jazzy
+  ([docs/simulation/px4-sitl.md](docs/simulation/px4-sitl.md)).
 - Exact GPS checkpoint format and frame↔GPS time synchronization.
 - Map export format (GeoJSON-flavoured JSON is the current leaning,
   unconfirmed).
