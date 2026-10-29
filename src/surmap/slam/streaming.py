@@ -38,6 +38,11 @@ from surmap.types import Pose, StereoFramePair, Vec3
 
 STREAM_IMAGE_REPO = "surmap/rtabmap-stream"
 
+# Stored per keyframe so map_snapshot() stays cheap on long runs:
+# the snapshot re-transforms stored points on every poll, so an
+# unbounded per-keyframe cloud makes it quadratic in run length.
+MAX_STORED_POINTS_PER_KEYFRAME = 1000
+
 
 def stream_image_tag(source_dir: Path | None = None) -> str:
     """Content-hash tag for the derived streaming image."""
@@ -175,6 +180,9 @@ class StreamingRtabmapBackend:
         self._lost_frames: set[int] = set()
         self._keyframes: dict[int, KeyframeUpdate] = {}
         self._graph: dict[int, Pose] = {}
+        # node_id -> (pose used, transformed points); a keyframe is
+        # re-transformed only when its optimized pose actually moves.
+        self._snapshot_cache: dict[int, tuple[Pose, tuple[Vec3, ...]]] = {}
         self._frames: list[StereoFramePair] = []
         self._updates: queue.Queue[MapUpdate] = queue.Queue()
         self._in_queue: queue.Queue[tuple[StereoFramePair, bytes, bytes] | None] = queue.Queue(
@@ -313,6 +321,19 @@ class StreamingRtabmapBackend:
                         elif message.lost:
                             self._lost_frames.add(message.frame_id)
                     elif isinstance(message, KeyframeUpdate):
+                        points = message.points_local
+                        if len(points) > MAX_STORED_POINTS_PER_KEYFRAME:
+                            step = len(points) / MAX_STORED_POINTS_PER_KEYFRAME
+                            points = tuple(
+                                points[int(i * step)] for i in range(MAX_STORED_POINTS_PER_KEYFRAME)
+                            )
+                            message = KeyframeUpdate(
+                                message.node_id,
+                                message.frame_id,
+                                message.t_ns,
+                                message.pose,
+                                points,
+                            )
                         self._keyframes[message.node_id] = message
                     elif isinstance(message, GraphUpdate):
                         for node_id, pose in message.poses:
@@ -338,7 +359,13 @@ class StreamingRtabmapBackend:
         points: list[Vec3] = []
         for kf in keyframes:
             pose = graph.get(kf.node_id, kf.pose)
-            points.extend(_apply_pose(pose, p) for p in kf.points_local)
+            cached = self._snapshot_cache.get(kf.node_id)
+            if cached is not None and cached[0] == pose:
+                points.extend(cached[1])
+                continue
+            transformed = tuple(_apply_pose(pose, p) for p in kf.points_local)
+            self._snapshot_cache[kf.node_id] = (pose, transformed)
+            points.extend(transformed)
         return tuple(points)
 
     def trajectory(self) -> list[Pose]:

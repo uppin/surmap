@@ -177,6 +177,31 @@ def test_poll_updates_ordering_and_snapshot_replaces_after_graph() -> None:
         backend.close()
 
 
+def test_keyframe_points_are_capped_so_snapshots_stay_bounded() -> None:
+    holder: list[FakeProcess] = []
+    backend = _backend(holder)
+    try:
+        backend.process_frame(_frame(1))
+        holder[0].emit(
+            {
+                "type": "keyframe",
+                "node_id": 1,
+                "frame_id": 1,
+                "t_ns": 1_000_000_000,
+                "pose": [0, 0, 0, 0, 0, 0, 1],
+                "points_local": [[float(i), 0, 0] for i in range(5000)],
+            }
+        )
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not backend.map_snapshot():
+            backend.poll_updates()
+            time.sleep(0.01)
+        backend.poll_updates()
+        assert 0 < len(backend.map_snapshot()) <= 1000
+    finally:
+        backend.close()
+
+
 def test_flush_shape_matches_batch_and_close_is_idempotent() -> None:
     holder: list[FakeProcess] = []
     rm_calls: list[list[str]] = []
