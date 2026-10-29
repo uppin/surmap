@@ -66,7 +66,9 @@ Its output is never fed back as a control signal.
   `surmap.simulation` exports a EuRoC-style session the demo and
   RTAB-Map sidecar already consume. SurMap stays passive — PX4 (or a
   human) flies; no package publishes flight commands. Runbook:
-  [simulation/px4-sitl.md](simulation/px4-sitl.md).
+  [simulation/px4-sitl.md](simulation/px4-sitl.md). The demo world is a
+  fictional civilian earthquake-and-flood block with scoring ground
+  truth (map ENU and WGS84): [simulation/disaster-world.md](simulation/disaster-world.md).
 - Other simulator options (Isaac Sim, a custom renderer, pure
   rosbag/session replay) and dedicated Machine 3 hardware remain open
   if a different path is needed later.
@@ -228,7 +230,10 @@ No other component may have a simulation-only code path.
 On the Gazebo/PX4 SITL path, the offline bridge is
 `surmap.simulation` (capture directory → EuRoC `mav0/` + GPS CSV) plus
 operator-side dump tooling under `scripts/ros2/` — not a live ROS 2
-dependency inside SurMap packages.
+dependency inside SurMap packages. The disaster-block world adds
+scoring ground truth (people and roads, map frame and WGS84) that a
+demo can compare with detections. Loading that file does not command
+the vehicle.
 
 ## 5. Data flow
 
