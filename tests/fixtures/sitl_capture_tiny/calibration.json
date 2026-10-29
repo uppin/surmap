@@ -1,0 +1,11 @@
+{
+  "calibration_id": "gazebo-stereo-v1",
+  "width": 64,
+  "height": 48,
+  "fx": 50.0,
+  "fy": 50.0,
+  "cx": 32.0,
+  "cy": 24.0,
+  "baseline_m": 0.12,
+  "rate_hz": 20.0
+}
