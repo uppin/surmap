@@ -111,10 +111,15 @@ class OnnxSam3Session:
         return by_name["masks"], by_name["scores"]
 
 
-def _mask_outline(
+def mask_outline(
     mask: NDArray[np.bool_], scale_x: float, scale_y: float, max_points: int = 96
 ) -> tuple[tuple[float, float], ...]:
-    """A coarse outline polygon for one binary mask, in frame pixels."""
+    """A coarse outline of one binary mask.
+
+    Each point is ``(column * scale_x, row * scale_y)``. There is no
+    extra origin: a mask that covers a box, rather than the whole
+    frame, is shifted by the caller.
+    """
     rows = np.nonzero(mask.any(axis=1))[0]
     if len(rows) == 0:
         return ()
@@ -188,7 +193,7 @@ class Sam3Detector:
                     label=self._label,
                     score=score,
                     box_xyxy=box,
-                    mask_polygon=_mask_outline(mask, scale_x, scale_y),
+                    mask_polygon=mask_outline(mask, scale_x, scale_y),
                 )
             )
         return tuple(detections)
