@@ -52,6 +52,10 @@ PINNED_PLATFORM = "linux/amd64"
 # unbounded per-keyframe cloud makes it quadratic in run length.
 MAX_STORED_POINTS_PER_KEYFRAME = 1000
 
+# Per-frame odometry kept for display (~10 s at 20 Hz): a display holds a
+# frame back only until its odometry arrives, never this long.
+FRAME_ODOMETRY_KEPT = 200
+
 
 def stream_image_tag(source_dir: Path | None = None) -> str:
     """Content-hash tag for the derived streaming image."""
@@ -242,6 +246,9 @@ class StreamingRtabmapBackend:
             maxsize=max(1, queue_size)
         )
         self._error: str | None = None
+        self._rectification: Rectification | None = None
+        # Newest odometry per frame, keypoints included, for the display.
+        self._frame_odometry: dict[int, OdomUpdate] = {}
         self._final = threading.Event()
         self._ready = threading.Event()
         argv = [
@@ -368,8 +375,10 @@ class StreamingRtabmapBackend:
                 message = decode_server_line(line)
             except Exception as exc:
                 self._error = str(exc)
+                self._ready.set()  # a bad hello (e.g. version mismatch) fails fast
                 continue
             if isinstance(message, Ready):
+                self._rectification = message.rectification
                 self._ready.set()
             elif isinstance(message, ErrorUpdate):
                 self._error = message.message
@@ -377,6 +386,9 @@ class StreamingRtabmapBackend:
             else:
                 with self._state_lock:
                     if isinstance(message, OdomUpdate):
+                        self._frame_odometry[message.frame_id] = message
+                        while len(self._frame_odometry) > FRAME_ODOMETRY_KEPT:
+                            del self._frame_odometry[next(iter(self._frame_odometry))]
                         if message.pose is not None:
                             if message.frame_id not in self._odom:
                                 self._odom_order.append(message.frame_id)
@@ -409,10 +421,12 @@ class StreamingRtabmapBackend:
 
     @property
     def rectification(self) -> Rectification | None:
-        raise NotImplementedError("TODO(live-map-display): rectification")
+        return self._rectification
 
     def frame_odometry(self, frame_id: int) -> OdomUpdate | None:
-        raise NotImplementedError("TODO(live-map-display): frame_odometry")
+        """That frame's odometry (pose and tracked keypoints), once it arrived."""
+        with self._state_lock:
+            return self._frame_odometry.get(frame_id)
 
     def map_snapshot(self) -> tuple[Vec3, ...]:
         return tuple(Vec3(x, y, z) for x, y, z in self.map_cloud().points.tolist())

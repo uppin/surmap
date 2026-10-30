@@ -2,11 +2,13 @@
 // Protocol: 4-byte LE length + JSON header (+ length-prefixed payloads
 // for pairs) in; JSON lines out. Stereo only: no IMU, no wheel odom.
 #include <rtabmap/core/Odometry.h>
+#include <rtabmap/core/OdometryInfo.h>
 #include <rtabmap/core/Rtabmap.h>
 #include <rtabmap/core/SensorData.h>
 #include <rtabmap/core/StereoCameraModel.h>
 #include <rtabmap/core/Transform.h>
 #include <rtabmap/core/util3d.h>
+#include <rtabmap/core/util3d_transforms.h>
 
 #include <opencv2/calib3d.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -197,7 +199,16 @@ int main(int argc, char** argv) {
     rtabmap::Odometry* odom = rtabmap::Odometry::create(params);
     rtabmap::Rtabmap slam;
     slam.init(params, "", false);
-    std::cout << "{\"type\":\"ready\",\"version\":2}" << std::endl;
+    // The left camera's rectification lets the host map rectified
+    // keypoints back onto the raw image it displays.
+    auto dist = [&](int i) { return i < left.D.cols ? left.D.at<double>(0, i) : 0.0; };
+    std::cout << "{\"type\":\"ready\",\"version\":3,\"rectification\":{\"rotation\":[";
+    for (int i = 0; i < 9; ++i) std::cout << (i ? "," : "") << R1.at<double>(i / 3, i % 3);
+    std::cout << "],\"rectified\":[" << fx << "," << fy << "," << cx << "," << cy
+              << "],\"raw\":[" << left.K.at<double>(0, 0) << "," << left.K.at<double>(1, 1) << ","
+              << left.K.at<double>(0, 2) << "," << left.K.at<double>(1, 2)
+              << "],\"distortion\":[" << dist(0) << "," << dist(1) << "," << dist(2) << ","
+              << dist(3) << "]}}" << std::endl;
 
     int lastNodeId = 0;
     size_t lastGraphSize = 0;
@@ -228,7 +239,8 @@ int main(int argc, char** argv) {
 
       auto start = std::chrono::steady_clock::now();
       rtabmap::SensorData data(leftRect, rightRect, stereoModel, (int)frameId, tNs / 1e9);
-      rtabmap::Transform odomPose = odom->process(data);
+      rtabmap::OdometryInfo info;
+      rtabmap::Transform odomPose = odom->process(data, &info);
       bool lost = odomPose.isNull();
       // Feed SLAM only when tracking; a null pose must never be guessed.
       bool added = false;
@@ -239,7 +251,26 @@ int main(int argc, char** argv) {
 
       std::cout << "{\"type\":\"odom\",\"frame_id\":" << frameId << ",\"t_ns\":" << tNs
                 << ",\"pose\":" << (lost ? std::string("null") : poseJson(odomPose))
-                << ",\"lost\":" << (lost ? "true" : "false") << ",\"ms\":" << ms << "}" << std::endl;
+                << ",\"lost\":" << (lost ? "true" : "false") << ",\"ms\":" << ms
+                << ",\"keypoints\":[";
+      // This frame's inlier features: [word_id, u, v (rectified px), depth].
+      if (!lost) {
+        rtabmap::Transform worldToCamera = odomPose.inverse();
+        bool firstKp = true;
+        for (int wordId : info.reg.inliersIDs) {
+          auto kp = info.words.find(wordId);
+          auto landmark = info.localMap.find(wordId);
+          if (kp == info.words.end() || landmark == info.localMap.end()) continue;
+          cv::Point3f inCamera = rtabmap::util3d::transformPoint(landmark->second, worldToCamera);
+          if (inCamera.z <= 0.f) continue;
+          char buf[96];
+          std::snprintf(buf, sizeof(buf), "%s[%d,%.1f,%.1f,%.2f]", firstKp ? "" : ",", wordId,
+                        kp->second.pt.x, kp->second.pt.y, inCamera.z);
+          std::cout << buf;
+          firstKp = false;
+        }
+      }
+      std::cout << "]}" << std::endl;
 
       int nodeId = slam.getLastLocationId();
       // A node RTAB-Map merged or discarded (e.g. too little motion) is

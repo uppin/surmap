@@ -19,10 +19,12 @@ from __future__ import annotations
 
 import base64
 import html
+import itertools
 import json
 import math
 import threading
 import time
+from collections import deque
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -48,8 +50,8 @@ from surmap.detection.source import CoralDetectionSource, DetectionSource
 from surmap.detection.tracker import TrackedDetection
 from surmap.slam.base import FrameResult
 from surmap.slam.sidecar import SidecarRtabmapBackend
-from surmap.slam.stream_protocol import MapUpdate, OdomUpdate, Rectification
-from surmap.slam.streaming import MapCloud, StreamingRtabmapBackend, pose_rotation
+from surmap.slam.stream_protocol import Keypoint, MapUpdate, OdomUpdate, Rectification
+from surmap.slam.streaming import MapCloud, StreamingRtabmapBackend
 from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
 from surmap.types import Pose, StereoFramePair, Vec3
 
@@ -107,54 +109,79 @@ def project_overlay(
     return visible
 
 
+# Overlay depth ramp, near to far; the page legend shows the same stops.
+DEPTH_STOPS: tuple[tuple[float, tuple[int, int, int]], ...] = (
+    (1.0, (0xFF, 0x5A, 0x3C)),  # near: red
+    (3.0, (0xFF, 0xB0, 0x3A)),  # mid: orange
+    (6.0, (0x2F, 0xD4, 0xC4)),  # far: teal
+)
+
+OverlayPoint = dict[str, float | str]
+
+
 def depth_colour(depth_m: float) -> str:
     """Overlay colour for a depth: red near, orange mid, teal far."""
-    raise NotImplementedError("TODO(live-map-display): depth_colour")
+    rgb = DEPTH_STOPS[0][1] if depth_m <= DEPTH_STOPS[0][0] else DEPTH_STOPS[-1][1]
+    for (low, low_rgb), (high, high_rgb) in itertools.pairwise(DEPTH_STOPS):
+        if low < depth_m <= high:
+            rgb = _blend(low_rgb, high_rgb, (depth_m - low) / (high - low))
+    return "#{:02x}{:02x}{:02x}".format(*rgb)
+
+
+def _blend(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int]:
+    return (
+        round(a[0] + (b[0] - a[0]) * t),
+        round(a[1] + (b[1] - a[1]) * t),
+        round(a[2] + (b[2] - a[2]) * t),
+    )
 
 
 def rectified_to_raw(
     pixels: NDArray[np.float64], rectification: Rectification
 ) -> NDArray[np.float64]:
-    """Rectified left-camera pixels to raw (distorted) display pixels."""
-    raise NotImplementedError("TODO(live-map-display): rectified_to_raw")
+    """Rectified left-camera pixels to raw (distorted) display pixels.
+
+    Undoes the rectification rotation (raw ray = R1ᵀ · rectified ray), then
+    applies the raw camera's radial-tangential distortion.
+    """
+    fx, fy, cx, cy = rectification.rectified
+    rays = np.stack(
+        [(pixels[:, 0] - cx) / fx, (pixels[:, 1] - cy) / fy, np.ones(len(pixels))], axis=1
+    )
+    # Row vectors: R1ᵀ · r is r @ R1.
+    raw_rays = rays @ np.array(rectification.rotation, dtype=np.float64).reshape(3, 3)
+    x = raw_rays[:, 0] / raw_rays[:, 2]
+    y = raw_rays[:, 1] / raw_rays[:, 2]
+    k1, k2, p1, p2 = rectification.distortion
+    r2 = x * x + y * y
+    radial = 1 + k1 * r2 + k2 * r2 * r2
+    xd = x * radial + 2 * p1 * x * y + p2 * (r2 + 2 * x * x)
+    yd = y * radial + p1 * (r2 + 2 * y * y) + 2 * p2 * x * y
+    raw_fx, raw_fy, raw_cx, raw_cy = rectification.raw
+    return np.stack([raw_fx * xd + raw_cx, raw_fy * yd + raw_cy], axis=1)
 
 
-def project_map_overlay(
-    points: NDArray[np.float32],
-    camera_pose: Pose,
+def _coloured(points: list[dict[str, float]]) -> list[OverlayPoint]:
+    return [{**point, "c": depth_colour(point["d"])} for point in points]
+
+
+def keypoint_overlay(
+    keypoints: tuple[Keypoint, ...],
+    rectification: Rectification | None,
     calibration: DemoCalibration,
-    max_points: int = MAX_OVERLAY_POINTS,
-) -> list[dict[str, float]]:
-    """Map-frame points seen from `camera_pose`, projected to display pixels."""
-    pixels, depth = _visible_map_points(points, camera_pose, calibration)
-    return _overlay_entries(pixels, depth, max_points)
-
-
-def _overlay_entries(
-    pixels: NDArray[np.float32], depth: NDArray[np.float32], max_points: int = MAX_OVERLAY_POINTS
-) -> list[dict[str, float]]:
-    if len(depth) > max_points:
-        pick = np.arange(max_points) * len(depth) // max_points
-        pixels, depth = pixels[pick], depth[pick]
-    return [
-        {"x": round(u, 1), "y": round(v, 1), "d": round(d, 2)}
-        for (u, v), d in zip(pixels.tolist(), depth.tolist(), strict=True)
+) -> list[OverlayPoint]:
+    """A frame's tracked keypoints at their raw display pixels, coloured by depth."""
+    if not keypoints:
+        return []
+    pixels = np.array([(k.u, k.v) for k in keypoints], dtype=np.float64)
+    if rectification is not None:
+        pixels = rectified_to_raw(pixels, rectification)
+    points = [
+        {"x": round(u, 1), "y": round(v, 1), "d": round(k.depth, 2)}
+        for (u, v), k in zip(pixels.tolist(), keypoints, strict=True)
+        if 0 <= u < calibration.width and 0 <= v < calibration.height
     ]
-
-
-def _visible_map_points(
-    points: NDArray[np.float32], camera_pose: Pose, calibration: DemoCalibration
-) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
-    """(pixels (N, 2), depths (N,)) of the points inside the camera's view."""
-    position = camera_pose.position
-    translation = np.array([position.x, position.y, position.z], dtype=np.float32)
-    # Row vectors: R^T (p - t) is (p - t) @ R.
-    camera = (points - translation) @ pose_rotation(camera_pose)
-    ahead = camera[camera[:, 2] > 0.05]
-    u = calibration.fx * ahead[:, 0] / ahead[:, 2] + calibration.cx
-    v = calibration.fy * ahead[:, 1] / ahead[:, 2] + calibration.cy
-    inside = (u >= 0) & (u < calibration.width) & (v >= 0) & (v < calibration.height)
-    return np.stack([u[inside], v[inside]], axis=1), ahead[inside, 2]
+    return _coloured(points)
 
 
 def _floor_plane_cloud(cloud: MapCloud, max_points: int = MAX_MAP_POINTS) -> list[list[float]]:
@@ -282,6 +309,89 @@ def _display_jpeg(prepared: PreparedDataset, channel: int, t_ns: int) -> bytes:
     return target.read_bytes()
 
 
+# A live frame waits at most this long for its odometry before it is
+# shown without keypoints (its pair may have been dropped).
+HOLD_MAX_S = 2.0
+
+
+@dataclass
+class _HeldFrame:
+    index: int
+    frame_id: int
+    t_ns: int
+    jpeg: bytes
+    held_at: float
+    overlay: list[OverlayPoint] | None = None  # known up front without live SLAM
+
+
+class _Display:
+    """Shows frames in order, each once its overlay is known.
+
+    With live SLAM a frame waits for its own odometry, so its keypoints
+    are the ones RTAB-Map tracked on that very image; detections are
+    released only once their frame has been shown, never ahead of it.
+    """
+
+    def __init__(
+        self, total: int, backend: LiveSlamBackend | None, calibration: DemoCalibration
+    ) -> None:
+        self._total = total
+        self._backend = backend
+        self._calibration = calibration
+        self._frames: deque[_HeldFrame] = deque()
+        self._detections: list[DemoEvent] = []
+        self._shown = 0
+
+    def add_frame(self, frame: _HeldFrame) -> None:
+        self._frames.append(frame)
+
+    def add_detections(self, events: list[DemoEvent]) -> None:
+        self._detections.extend(events)
+
+    def release(self, *, final: bool = False) -> Iterator[DemoEvent]:
+        while self._frames:
+            head = self._frames[0]
+            overlay = self._overlay_for(head, final)
+            if overlay is None:
+                break
+            self._frames.popleft()
+            self._shown = head.frame_id
+            yield DemoEvent(
+                "frame",
+                {
+                    "index": head.index,
+                    "total": self._total,
+                    "frame_id": head.frame_id,
+                    "t_ns": head.t_ns,
+                    "detections": overlay,
+                    "point_count": len(overlay),
+                },
+                jpeg=head.jpeg,
+            )
+        ready = [
+            event
+            for event in self._detections
+            if final or int(str(event.data["frame_id"])) <= self._shown
+        ]
+        self._detections = [event for event in self._detections if event not in ready]
+        yield from ready
+
+    def _overlay_for(self, frame: _HeldFrame, final: bool) -> list[OverlayPoint] | None:
+        if frame.overlay is not None:
+            return frame.overlay
+        backend = self._backend
+        assert backend is not None
+        odom = backend.frame_odometry(frame.frame_id)
+        if odom is not None:
+            return keypoint_overlay(odom.keypoints, backend.rectification, self._calibration)
+        given_up = (
+            final
+            or backend.last_odom_frame > frame.frame_id  # its pair was dropped
+            or time.monotonic() - frame.held_at > HOLD_MAX_S
+        )
+        return [] if given_up else None
+
+
 class DemoPlayer:
     """Plays one prepared dataset as demo events (see module docs)."""
 
@@ -331,9 +441,6 @@ class DemoPlayer:
             },
         )
 
-    def _map_overlay(self, backend: LiveSlamBackend) -> tuple[list[dict[str, float]], int]:
-        return [], 0  # TODO(live-map-display): keypoint overlay
-
     def _backend(self) -> SidecarRtabmapBackend | LiveSlamBackend:
         if self._backend_factory is not None:
             return self._backend_factory()
@@ -375,6 +482,8 @@ class DemoPlayer:
         worker = (
             _DetectionWorker(self._detection_source) if self._detection_source is not None else None
         )
+        live = backend if isinstance(backend, LiveSlamBackend) else None
+        display = _Display(len(timestamps), live, calibration)
         last_map_emit = 0.0
         try:
             for index, t_ns in enumerate(timestamps):
@@ -395,33 +504,21 @@ class DemoPlayer:
                             right_data=right_jpeg,
                         )
                     )
-                if isinstance(backend, LiveSlamBackend):
-                    # RTAB-Map's own (rectified, map-frame) points seen
-                    # from the newest odometry pose.
-                    overlay, point_count = self._map_overlay(backend)
-                else:
+                held = _HeldFrame(index, index + 1, t_ns, left_jpeg, time.monotonic())
+                if live is None:
                     points = self._stereo.reconstruct(
                         FrameImage(DISPLAY_WIDTH, DISPLAY_HEIGHT, "mjpeg", left_jpeg),
                         FrameImage(DISPLAY_WIDTH, DISPLAY_HEIGHT, "mjpeg", right_jpeg),
                         rig,
                     )
-                    overlay, point_count = project_overlay(points, calibration), len(points)
-                yield DemoEvent(
-                    "frame",
-                    {
-                        "index": index,
-                        "total": len(timestamps),
-                        "frame_id": index + 1,
-                        "t_ns": t_ns,
-                        "detections": overlay,
-                        "point_count": point_count,
-                    },
-                    jpeg=left_jpeg,
-                )
+                    held.overlay = _coloured(project_overlay(points, calibration))
+                display.add_frame(held)
                 if worker is not None:
-                    yield from worker.poll()
+                    display.add_detections(worker.poll())
                 if isinstance(backend, LiveSlamBackend):
                     backend.poll_updates()
+                yield from display.release()
+                if isinstance(backend, LiveSlamBackend):
                     now = time.monotonic()
                     if now - last_map_emit >= 0.33:
                         last_map_emit = now
@@ -432,7 +529,8 @@ class DemoPlayer:
                 if remaining > 0:
                     time.sleep(remaining)
             if worker is not None:
-                yield from worker.drain()
+                display.add_detections(worker.drain())
+            yield from display.release()
             if backend is not None:
                 yield DemoEvent(
                     "status",
@@ -445,6 +543,7 @@ class DemoPlayer:
                     },
                 )
                 results = backend.flush()
+                yield from display.release(final=True)
                 trajectory = backend.trajectory()
                 cloud = results[-1].static_points if results else ()
                 if isinstance(backend, LiveSlamBackend):
@@ -482,6 +581,7 @@ class DemoPlayer:
                         "trajectory_xy": trajectory_xy,
                     },
                 )
+            yield from display.release(final=True)
         finally:
             if worker is not None:
                 worker.close()
@@ -557,6 +657,9 @@ class _DemoHandler(BaseHTTPRequestHandler):
             page = PAGE.format(
                 title=html.escape(self.server.prepared.spec.title),
                 description=html.escape(self.server.prepared.spec.description),
+                near=depth_colour(DEPTH_STOPS[0][0]),
+                mid=depth_colour(DEPTH_STOPS[1][0]),
+                far=depth_colour(DEPTH_STOPS[2][0]),
             )
             self._send(200, "text/html; charset=utf-8", page.encode())
             return

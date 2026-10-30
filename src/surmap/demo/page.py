@@ -39,10 +39,10 @@ PAGE = """<!DOCTYPE html>
   <div class="stage">
     <canvas id="view" width="376" height="240"></canvas>
     <p class="legend">
-      <span class="dot" style="background:#ff5a3c"></span> near &nbsp;
-      <span class="dot" style="background:#ffb03a"></span> mid &nbsp;
-      <span class="dot" style="background:#2fd4c4"></span> far
-      &nbsp;— RTAB-Map points seen from the current camera pose, coloured and sized by depth
+      <span class="dot" style="background:{near}"></span> near (≤1 m) &nbsp;
+      <span class="dot" style="background:{mid}"></span> 3 m &nbsp;
+      <span class="dot" style="background:{far}"></span> far (≥6 m)
+      &nbsp;— features RTAB-Map tracked in this frame, coloured and sized by depth
       (stereo-matcher points when RTAB-Map is off).
       Yellow boxes: tracked objects from the separate detections stream.
     </p>
@@ -83,8 +83,7 @@ source.addEventListener('frame', (event) => {{
   image.onload = () => {{
     view.drawImage(image, 0, 0, 376, 240);
     for (const point of data.detections) {{
-      const t = Math.min(1, Math.max(0, (point.d - 0.3) / 5.7));
-      view.fillStyle = `hsl(${{180 - t * 180}} 85% 55%)`;
+      view.fillStyle = point.c;  // depth colour, from the server's ramp
       view.beginPath();
       view.arc(point.x, point.y, point.d < 1.5 ? 2.2 : 1.4, 0, Math.PI * 2);
       view.fill();
@@ -97,8 +96,7 @@ source.addEventListener('frame', (event) => {{
   const fps = (frames / ((performance.now() - started) / 1000)).toFixed(1);
   playback.innerHTML = `Frame <b>${{data.index + 1}} / ${{data.total}}</b><br>`
     + `Stream rate <b>${{fps}} fps</b><br>`
-    + `Scene points in view <b>${{data.point_count}}</b><br>`
-    + `Overlay detections drawn <b>${{data.detections.length}}</b>`;
+    + `Overlay points this frame <b>${{data.point_count}}</b>`;
 }});
 let liveExtent = null;
 source.addEventListener('map', (event) => {{

@@ -15,7 +15,7 @@ from typing import TypeAlias
 
 from surmap.types import Pose, Vec3
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 
 # Colour given to a keyframe point the sidecar sent without one.
 NEUTRAL_GREY = (160, 160, 160)
@@ -160,6 +160,45 @@ def _int(obj: dict[str, object], key: str) -> int:
     return value
 
 
+def _numbers(value: object, count: int, what: str) -> tuple[float, ...]:
+    if not isinstance(value, list) or len(value) != count:
+        raise ProtocolError(f"{what} must be {count} numbers, got {value!r}")
+    try:
+        nums = tuple(float(v) for v in value)
+    except (TypeError, ValueError) as exc:
+        raise ProtocolError(f"{what} is not numeric: {value!r}") from exc
+    if not all(math.isfinite(n) for n in nums):
+        raise ProtocolError(f"{what} has non-finite values")
+    return nums
+
+
+def _intrinsics(value: object, what: str) -> tuple[float, float, float, float]:
+    fx, fy, cx, cy = _numbers(value, 4, what)
+    return fx, fy, cx, cy
+
+
+def _rectification(value: object) -> Rectification:
+    if not isinstance(value, dict):
+        raise ProtocolError(f"rectification must be an object, got {value!r}")
+    obj: dict[str, object] = value
+    return Rectification(
+        rotation=_numbers(_req(obj, "rotation"), 9, "rotation"),
+        rectified=_intrinsics(_req(obj, "rectified"), "rectified"),
+        raw=_intrinsics(_req(obj, "raw"), "raw"),
+        distortion=_intrinsics(_req(obj, "distortion"), "distortion"),
+    )
+
+
+def _keypoints(value: object) -> tuple[Keypoint, ...]:
+    if not isinstance(value, list):
+        raise ProtocolError("keypoints must be a list")
+    keypoints = []
+    for entry in value:
+        word_id, u, v, depth = _numbers(entry, 4, "keypoint")
+        keypoints.append(Keypoint(int(word_id), u, v, depth))
+    return tuple(keypoints)
+
+
 def decode_server_line(line: str | bytes) -> ServerMessage:
     text = line.decode() if isinstance(line, bytes) else line
     text = text.strip()
@@ -179,7 +218,8 @@ def decode_server_line(line: str | bytes) -> ServerMessage:
             raise ProtocolError(
                 f"protocol version mismatch: server {version}, client {PROTOCOL_VERSION}"
             )
-        return Ready(version)
+        rectification = obj.get("rectification")
+        return Ready(version, None if rectification is None else _rectification(rectification))
     if kind == "error":
         message = _req(obj, "message")
         return ErrorUpdate(str(message))
@@ -194,6 +234,7 @@ def decode_server_line(line: str | bytes) -> ServerMessage:
             pose=None if pose_raw is None else _pose(pose_raw),
             lost=bool(_req(obj, "lost")),
             ms=float(ms_raw),
+            keypoints=_keypoints(obj.get("keypoints", [])),
         )
     if kind == "keyframe":
         points_raw = _req(obj, "points_local")

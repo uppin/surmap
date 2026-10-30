@@ -41,12 +41,13 @@
   - [x] Demo: a frame whose pair was dropped is still shown, without keypoints
   - [x] Demo: depth colour ramp — red near, orange mid, teal far — shared by overlay and legend
   - [x] Run the new tests (verify they fail for missing implementation)
-- [wf 5] ⬜ `/green` Green — keypoint overlay and colour ramp ·
-  - [ ] Sidecar: `OdometryInfo` inlier keypoints with depth; rectification in ready; v3
-  - [ ] Host: protocol v3, per-frame odometry buffer
-  - [ ] Demo: frame hold-back until odometry, keypoint overlay, map-projection overlay removed
-  - [ ] Page: per-point overlay colour from the server; legend from the same stops
-  - [ ] Rebuild the sidecar image; real-container e2e asserts keypoints arrive
+- [wf 5] ✅ 2026-10-30 `/green` Green — keypoint overlay and colour ramp · 540 passed, 2 skipped incl. real-container e2e on `surmap/rtabmap-stream:610a7528eddb`
+  - [x] Sidecar: `OdometryInfo` inlier keypoints with depth; rectification in ready; v3
+  - [x] Host: protocol v3, per-frame odometry buffer
+  - [x] Demo: frame hold-back until odometry, keypoint overlay, map-projection overlay removed
+  - [x] Page: per-point overlay colour from the server; legend from the same stops
+  - [x] Rebuild the sidecar image; real-container e2e asserts keypoints arrive
+  - [x] Host fails fast on a bad hello (version mismatch) instead of a 30 s ready timeout (added)
 - [wf 6] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs, then open the PR ready ·
   - [ ] Verification executed — result recorded
   - [ ] `README.md` §Demo — overlay source, colours, Apple Silicon note
@@ -184,3 +185,8 @@ sidecar and `StereoReconstructor` itself are unchanged.
   `hue = 180 - t·180`, drawing near points cyan and far ones red, opposite
   to its legend. The ramp now lives in Python (`depth_colour`) and the
   page only paints what it is sent.
+- **Keypoint overlay measured** (600 live EuRoC frames, Coral detector
+  on, emulated sidecar): 18.0 fps shown; display hold-back 56 ms median /
+  489 ms p95; 599/600 frames with keypoints, 156 per frame median; the
+  same feature moves 2.83 px median / 7.21 px p95 between consecutive
+  frames (camera motion, not resampling); depth 1.47–5.39 m (5–95 %).
