@@ -88,7 +88,17 @@ demo's EuRoC layout with the dataset authors' calibration.
   in the registry, since the sequence zip carries none.
 - **Bag unpacked to disk, then deleted.** `rosbags` needs a seekable
   file; peak disk is zip + bag + frames, and only the frames stay.
-- **Stereo roles measured, not taken from topic names.** Mapped by name
+- **Extrinsics from our own stereo calibration (supersedes the role swap
+  below).** The VINS-Fusion `body_T_cam` reverse the rig: on real pairs,
+  topics as named give 95–97 % negative disparity; the earlier topic swap
+  only flipped it (81–97 % positive, inconsistent disparities, depth near
+  inverted on screen). `cv2.stereoCalibrate` on the authors'
+  `calib_stereo.zip` (132 pairs, 9×6 at 80 mm, intrinsics fixed, RMS
+  0.359 px): right camera 0.2593 m along +x of the left, 1.16° rotation;
+  93–99 % positive disparity. Topics as named. Result vs Leica (1,500
+  frames): ATE 3.35 → 2.12 m, best-fit scale 1.20 → 0.96; whole-flight
+  floor plan shows the facade and its columns (was a blob).
+- **Stereo roles measured, not taken from topic names (superseded).** Mapped by name
   (`/left/image_raw` as stereo left), odometry lost 299/300 frames mid
   flight; with `/right/image_raw` as stereo left it lost 1/300 (frames
   1200–1500). Each topic keeps its own calibration; only the roles swap.
