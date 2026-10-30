@@ -5,6 +5,7 @@ HTTP smoke of the demo server (started and closed in the test).
 import hashlib
 import io
 import json
+import math
 import threading
 import urllib.request
 import zipfile
@@ -142,8 +143,8 @@ def a_rectification(
     return Rectification(rotation, rectified, raw, distortion)
 
 
-def _odom_with(*keypoints: Keypoint) -> OdomUpdate:
-    return OdomUpdate(0, 0, Pose(Vec3(0.0, 0.0, 0.0)), False, 1.0, keypoints)
+def _odom_with(*keypoints: Keypoint, pose: Pose | None = None) -> OdomUpdate:
+    return OdomUpdate(0, 0, pose or Pose(Vec3(0.0, 0.0, 0.0)), False, 1.0, keypoints)
 
 
 def _png_bytes() -> bytes:
@@ -446,3 +447,42 @@ def test_player_emits_detections_as_a_separate_frame_keyed_event(tmp_path: Path)
     assert isinstance(objects, list)
     assert objects[0]["track_id"] == 7
     assert "objects" not in events[0].data
+
+
+def test_live_frame_carries_its_camera_on_the_floor_plan(tmp_path: Path) -> None:
+    # Given frame 1's odometry: the camera 1 m right, 2 m ahead of where it
+    # started, half a metre up, and turned 90 degrees to face +x
+    turned_right = Pose(
+        Vec3(1.0, -0.5, 2.0), (0.0, math.sin(math.pi / 4), 0.0, math.cos(math.pi / 4))
+    )
+    fake = FakeLiveBackend(odometry={1: _odom_with(pose=turned_right)})
+    player = DemoPlayer(_prepared_tiny(tmp_path), fps=1000.0, backend_factory=lambda: fake)
+
+    # When frame 1 is shown
+    frame = next(event for event in player.events() if event.kind == "frame")
+
+    # Then it carries the camera's floor-plan position, heading and the
+    # display's horizontal field of view (2·atan(188 / 229))
+    assert frame.data["camera"] == {"x": 1.0, "z": 2.0, "dx": 1.0, "dz": 0.0, "fov_deg": 78.8}
+
+
+def test_a_frame_without_odometry_carries_no_camera(tmp_path: Path) -> None:
+    # Given RTAB-Map dropped frame 1's pair and tracked frame 2
+    fake = FakeLiveBackend(odometry={2: _odom_with()})
+    player = DemoPlayer(_prepared_tiny(tmp_path), fps=1000.0, backend_factory=lambda: fake)
+
+    # When playback runs
+    frames = [event for event in player.events() if event.kind == "frame"]
+
+    # Then frame 1 has no camera to draw, and frame 2 has one
+    assert frames[0].data["camera"] is None
+    assert frames[1].data["camera"] is not None
+
+
+def test_without_rtabmap_frames_carry_no_camera(tmp_path: Path) -> None:
+    # Given / When playback without SLAM
+    player = DemoPlayer(_prepared_tiny(tmp_path), fps=1000.0, with_rtabmap=False)
+    frame = next(event for event in player.events() if event.kind == "frame")
+
+    # Then there is no camera pose to show
+    assert frame.data["camera"] is None
