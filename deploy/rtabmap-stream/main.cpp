@@ -265,6 +265,9 @@ int main(int argc, char** argv) {
       std::cout << "{\"type\":\"odom\",\"frame_id\":" << frameId << ",\"t_ns\":" << tNs
                 << ",\"pose\":" << (lost ? std::string("null") : poseJson(odomPose))
                 << ",\"lost\":" << (lost ? "true" : "false") << ",\"ms\":" << ms
+                // The pose after loop closures: map <- odom correction applied.
+                << ",\"map_pose\":"
+                << (lost ? std::string("null") : poseJson(slam.getMapCorrection() * odomPose))
                 << ",\"keypoints\":[";
       // This frame's inlier features: [word_id, u, v (rectified px), depth].
       if (!lost) {

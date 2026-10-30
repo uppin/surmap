@@ -64,6 +64,8 @@ class OdomUpdate:
     lost: bool
     ms: float
     keypoints: tuple[Keypoint, ...] = ()
+    # The pose after RTAB-Map's odometry-to-map correction (loop closures).
+    map_pose: Pose | None = None
 
 
 @dataclass(frozen=True)
@@ -242,6 +244,7 @@ def decode_server_line(line: str | bytes) -> ServerMessage:
             lost=bool(_req(obj, "lost")),
             ms=float(ms_raw),
             keypoints=_keypoints(obj.get("keypoints", [])),
+            map_pose=None if obj.get("map_pose") is None else _pose(obj["map_pose"]),
         )
     if kind == "keyframe":
         points_raw = _req(obj, "points_local")

@@ -52,6 +52,7 @@ def test_streaming_backend_maps_live_over_the_fixture() -> None:
     )
     live_updates = 0
     tracked_keypoints: list[int] = []
+    map_poses = 0
     try:
         for index, t_ns in enumerate(timestamps):
             backend.process_frame(
@@ -68,6 +69,9 @@ def test_streaming_backend_maps_live_over_the_fixture() -> None:
             tracked_keypoints += [
                 len(update.keypoints) for update in updates if isinstance(update, OdomUpdate)
             ]
+            map_poses += sum(
+                1 for u in updates if isinstance(u, OdomUpdate) and u.map_pose is not None
+            )
             # Real-time feed at the recording's 20 Hz: the backend drops
             # the oldest pairs when fed faster than RTAB-Map runs.
             time.sleep(1 / 20)
@@ -113,5 +117,7 @@ def test_streaming_backend_maps_live_over_the_fixture() -> None:
     # rectification to place them on the raw image came with ready
     assert tracked_keypoints and sorted(tracked_keypoints)[len(tracked_keypoints) // 2] > 50
     assert rectification is not None and rectification.raw[0] > 0
+    # Each tracked frame also carries its pose after the map correction
+    assert map_poses > 0
     # Points carry the camera's real intensity, not one flat colour
     assert len(np.unique(cloud.colors[:, 0])) > 50

@@ -183,3 +183,26 @@ def test_keyframe_points_without_colour_decode_as_neutral_grey() -> None:
     # Then the point gets the neutral grey
     assert isinstance(keyframe, KeyframeUpdate)
     assert keyframe.colors == (NEUTRAL_GREY,)
+
+
+def test_odometry_carries_its_map_corrected_pose() -> None:
+    # Given an odom line with the pose after RTAB-Map's map correction
+    line = (
+        '{"type":"odom","frame_id":3,"t_ns":99,"pose":[0,0,0,0,0,0,1],"lost":false,'
+        '"ms":1.0,"map_pose":[3,0,4,0,0,0,1]}'
+    )
+
+    # When / Then it is decoded alongside the raw odometry pose
+    odom = decode_server_line(line)
+    assert isinstance(odom, OdomUpdate) and odom.map_pose is not None
+    assert odom.map_pose.position == Vec3(3.0, 0.0, 4.0)
+
+
+def test_odometry_without_a_map_pose_has_none() -> None:
+    # Given / When an odom line from before the map correction existed
+    odom = decode_server_line(
+        '{"type":"odom","frame_id":3,"t_ns":99,"pose":[0,0,0,0,0,0,1],"lost":false,"ms":1.0}'
+    )
+
+    # Then it has no map pose
+    assert isinstance(odom, OdomUpdate) and odom.map_pose is None

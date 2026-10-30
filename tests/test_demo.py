@@ -2,6 +2,7 @@
 HTTP smoke of the demo server (started and closed in the test).
 """
 
+import base64
 import hashlib
 import io
 import json
@@ -26,6 +27,7 @@ from surmap.demo.datasets import (
 )
 from surmap.demo.server import (
     DemoPlayer,
+    FloorExtent,
     depth_colour,
     make_demo_server,
     project_overlay,
@@ -67,7 +69,7 @@ class FakeLiveBackend:
         odometry_lag: int = 0,
     ) -> None:
         entries = cloud if cloud is not None else [((1.0, 2.0, 0.0), (128, 128, 128))]
-        self._cloud = MapCloud(
+        self.cloud = MapCloud(
             np.array([xyz for xyz, _ in entries], dtype=np.float32).reshape(-1, 3),
             np.array([rgb for _, rgb in entries], dtype=np.uint8).reshape(-1, 3),
         )
@@ -99,10 +101,10 @@ class FakeLiveBackend:
         return []
 
     def map_cloud(self) -> MapCloud:
-        return self._cloud
+        return self.cloud
 
     def map_snapshot(self) -> tuple[Vec3, ...]:
-        return tuple(Vec3(*map(float, row)) for row in self._cloud.points.tolist())
+        return tuple(Vec3(*map(float, row)) for row in self.cloud.points.tolist())
 
     def trajectory(self) -> list[Pose]:
         return self._trajectory
@@ -134,6 +136,23 @@ class BlockingDetector:
         return (TrackedDetection("car", 0.9, (1.0, 2.0, 30.0, 40.0), 7, frame_id),)
 
 
+def floor_pixel(png_b64: object, u: float, v: float) -> tuple[int, int, int, int]:
+    """The RGBA of a map-image pixel."""
+    assert isinstance(png_b64, str)
+    with Image.open(io.BytesIO(base64.b64decode(png_b64))) as image:
+        pixel = image.convert("RGBA").getpixel((int(u), int(v)))
+    assert isinstance(pixel, tuple) and len(pixel) == 4
+    r, g, b, a = (int(channel) for channel in pixel)
+    return r, g, b, a
+
+
+def an_extent(raw: object) -> FloorExtent:
+    """The extent a map event sends as [min_x, max_x, min_z, max_z]."""
+    assert isinstance(raw, list) and len(raw) == 4
+    min_x, max_x, min_z, max_z = (float(value) for value in raw)
+    return FloorExtent(min_x, max_x, min_z, max_z)
+
+
 def a_rectification(
     rotation: tuple[float, ...] = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
     rectified: tuple[float, float, float, float] = (200.0, 200.0, 100.0, 80.0),
@@ -143,8 +162,10 @@ def a_rectification(
     return Rectification(rotation, rectified, raw, distortion)
 
 
-def _odom_with(*keypoints: Keypoint, pose: Pose | None = None) -> OdomUpdate:
-    return OdomUpdate(0, 0, pose or Pose(Vec3(0.0, 0.0, 0.0)), False, 1.0, keypoints)
+def _odom_with(
+    *keypoints: Keypoint, pose: Pose | None = None, map_pose: Pose | None = None
+) -> OdomUpdate:
+    return OdomUpdate(0, 0, pose or Pose(Vec3(0.0, 0.0, 0.0)), False, 1.0, keypoints, map_pose)
 
 
 def _png_bytes() -> bytes:
@@ -308,10 +329,14 @@ def test_live_map_plots_the_floor_plane_in_point_colour(tmp_path: Path) -> None:
     # When the first map event is emitted
     map_event = next(event for event in player.events() if event.kind == "map")
 
-    # Then points and trajectory are on the floor plane (x, z) — the
-    # optical frame's y is height — and points keep their colour
-    assert map_event.data["cloud_xy"] == [[1.0, 5.0, 10, 20, 30]]
+    # Then the trajectory is on the floor plane (x, z) — the optical
+    # frame's y is height — and the map image shows the point there in its
+    # own grey (r=10 here), within an extent covering both
     assert map_event.data["trajectory_xy"] == [[0.5, 2.0]]
+    extent = an_extent(map_event.data["extent"])
+    assert extent.min_x <= 0.5 and extent.max_x >= 1.0 and extent.max_z >= 5.0
+    u, v = extent.to_pixels(1.0, 5.0)
+    assert floor_pixel(map_event.data["floor_png"], u, v)[0] == 10
 
 
 def test_live_frame_shows_its_own_tracked_keypoints_once_its_odometry_arrived(
