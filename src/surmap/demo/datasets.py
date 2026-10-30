@@ -65,6 +65,28 @@ class ZipAsset:
 
 
 @dataclass(frozen=True)
+class CameraCalibration:
+    """One camera as EuRoC's sensor.yaml describes it (pinhole, radial-tangential)."""
+
+    intrinsics: tuple[float, float, float, float]  # fx, fy, cx, cy
+    distortion: tuple[float, float, float, float]  # k1, k2, p1, p2
+    resolution: tuple[int, int]
+    t_bs: tuple[float, ...]  # body <- sensor, 4x4 row-major
+
+
+@dataclass(frozen=True)
+class Ros1Stereo:
+    """Where a ROS 1 bag keeps its stereo pair, and that pair's calibration."""
+
+    left_topic: str
+    right_topic: str
+    left: CameraCalibration
+    right: CameraCalibration
+    # A right image pairs with the left image at most this far from it.
+    max_pair_skew_ns: int = 5_000_000
+
+
+@dataclass(frozen=True)
 class DatasetSpec:
     """One downloadable demo dataset (the registry entry)."""
 
@@ -77,6 +99,7 @@ class DatasetSpec:
     official_url: str
     dataset_format: str = "euroc"
     calibration: ZipAsset | None = None
+    ros1_stereo: Ros1Stereo | None = None
     display_size: tuple[int, int] = (DISPLAY_WIDTH, DISPLAY_HEIGHT)
     fps: float = 20.0
     # Overlay depth ramp (near, mid, far) and the keyframe depth cap, in m.
