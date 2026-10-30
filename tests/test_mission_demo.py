@@ -7,8 +7,9 @@ seam. They do not start Docker.
 import io
 import json
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Protocol, cast
 
 import pytest
 from PIL import Image
@@ -18,6 +19,7 @@ from surmap.labelling.meta_muse import MetaMuseSceneClient
 from surmap.mission.demo import (
     MissionConfigError,
     _live_segmenter,
+    build_live_services,
     detection_crop_jpeg,
     live_map_backend,
     live_sam_prompt,
@@ -25,12 +27,13 @@ from surmap.mission.demo import (
     resolve_live_session,
     run_live_mission,
     run_offline_mission,
+    sam_frame,
 )
 from surmap.mission.metrics import load_offline_perception
 from surmap.simulation.calibration import StereoCalibrationSpec
 from surmap.simulation.disaster_world import PersonGroundTruth, load_disaster_ground_truth
 from surmap.slam.base import FrameResult
-from surmap.survey.meta_sam import MetaSamDetector
+from surmap.survey.meta_sam import MetaSamDetector, MetaSamError, _frame_image_data_url
 from surmap.survey.sam import RawFrame, SamDetection
 from surmap.types import Pose, StereoFramePair, Vec3
 from surmap.viewer.server import make_viewer_server
@@ -257,6 +260,123 @@ def test_the_live_mission_sends_muse_a_crop_around_the_detection(
     assert height < 48
 
 
+def test_sam_stays_on_modal_while_the_scene_note_stays_on_meta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given both live flags, so Meta is available for the scene note
+    _allow_live_flags(monkeypatch)
+    monkeypatch.setenv("SURMAP_LIVE_MODAL", "1")
+    monkeypatch.setenv("MODAL_SAM_URL", "http://modal.test/sam")
+
+    # When services are built with no explicit route
+    services = build_live_services()
+
+    # Then SAM is Modal and the scene note is still Meta
+    assert services.sam == "modal"
+    assert services.scene_note == "meta"
+    assert services.labels == "baseten"
+
+
+def test_an_explicit_meta_sam_route_does_not_require_the_modal_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given both flags, and no Modal URL
+    _allow_live_flags(monkeypatch)
+    monkeypatch.setenv("SURMAP_LIVE_MODAL", "1")
+    monkeypatch.delenv("MODAL_SAM_URL", raising=False)
+
+    # When SAM is pinned to Meta
+    services = build_live_services(sam_route="meta")
+
+    # Then the scene note and SAM both use Meta
+    assert services.sam == "meta"
+    assert services.scene_note == "meta"
+
+
+def test_modal_sam_without_its_flag_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given Meta and Baseten, and Modal switched off
+    _allow_live_flags(monkeypatch)
+
+    # When the operator asks for the Modal SAM route
+    with pytest.raises(MissionConfigError, match="SURMAP_LIVE_MODAL"):
+        build_live_services(sam_route="modal")
+
+
+def test_meta_sam_frames_are_raw_rgb() -> None:
+    # Given a small PNG
+    image = Image.new("RGB", (8, 6), (4, 5, 6))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    png = buffer.getvalue()
+
+    # When it is packed for Meta and for Modal
+    meta = sam_frame(png, frame_id=1, t_ns=1, width=8, height=6, route="meta")
+    modal = sam_frame(png, frame_id=1, t_ns=1, width=8, height=6, route="modal")
+
+    # Then Meta receives raw RGB that its adapter accepts, and Modal keeps the PNG
+    assert meta.encoding == "raw_rgb"
+    assert len(meta.data) == 8 * 6 * 3
+    assert _frame_image_data_url(meta).startswith("data:image/png;base64,")
+    assert modal.encoding == "png"
+    png_frame = RawFrame(1, 1, 0, 8, 6, "png", png)
+    with pytest.raises(MetaSamError, match="unsupported frame encoding"):
+        _frame_image_data_url(png_frame)
+
+
+def test_the_live_mission_sends_meta_sam_raw_rgb(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a capture and a detector that records the frame it is given
+    _allow_live_flags(monkeypatch)
+    _block_network(monkeypatch)
+    recording = _RecordingMap(snapshot=(_MAP_POINT,))
+    seen: list[RawFrame] = []
+    monkeypatch.setattr("surmap.mission.demo.open_live_map", lambda _calibration: recording)
+    monkeypatch.setattr(MetaSamDetector, "detect", _remember_frame(seen))
+    monkeypatch.setattr(MetaMuseSceneClient, "note", _scene_note)
+
+    # When the live mission runs on the Meta SAM route
+    run_live_mission(tmp_path, _CAPTURE)
+
+    # Then every posed frame is raw RGB
+    assert seen
+    assert {frame.encoding for frame in seen} == {"raw_rgb"}
+    assert len(seen[0].data) == seen[0].width * seen[0].height * 3
+    assert _frame_image_data_url(seen[0]).startswith("data:")
+
+
+def test_the_sam_route_flag_is_forwarded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given the mission command
+    module = _mission_script()
+    seen: dict[str, object] = {}
+
+    def halt(output: Path, capture: Path, sam_route: str | None = None) -> None:
+        del output, capture
+        seen["sam_route"] = sam_route
+        raise MissionConfigError("stop before any service call")
+
+    monkeypatch.setattr(module, "run_live_mission", halt)
+
+    # When it is started with an explicit SAM route
+    code = module.main(
+        [
+            "--live",
+            "--sam-route",
+            "modal",
+            "--capture",
+            str(tmp_path),
+            "--output",
+            str(tmp_path),
+            "--no-viewer",
+        ]
+    )
+
+    # Then the route reaches the mission and no service is built
+    assert code == 2
+    assert seen["sam_route"] == "modal"
+
+
 def test_open_live_map_builds_the_streaming_backend_from_the_capture_calibration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -452,6 +572,34 @@ def _person_mask() -> SamDetection:
 async def _detect_person(self: object, frame: RawFrame) -> tuple[SamDetection, ...]:
     del self, frame
     return (_person_mask(),)
+
+
+def _remember_frame(
+    seen: list[RawFrame],
+) -> Callable[[object, RawFrame], Awaitable[tuple[SamDetection, ...]]]:
+    async def detect(self: object, frame: RawFrame) -> tuple[SamDetection, ...]:
+        del self
+        seen.append(frame)
+        return ()
+
+    return detect
+
+
+class _MissionCli(Protocol):
+    def main(self, argv: list[str]) -> int: ...
+
+    run_live_mission: Callable[..., object]
+
+
+def _mission_script() -> _MissionCli:
+    import importlib.util
+
+    path = Path("scripts/mission_demo.py")
+    spec = importlib.util.spec_from_file_location("mission_demo_cli", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return cast(_MissionCli, module)
 
 
 async def _detect_inset_person(self: object, frame: RawFrame) -> tuple[SamDetection, ...]:
