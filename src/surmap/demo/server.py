@@ -56,7 +56,7 @@ from surmap.detection.tracker import TrackedDetection
 from surmap.slam.base import FrameResult
 from surmap.slam.sidecar import SidecarRtabmapBackend
 from surmap.slam.stream_protocol import Keypoint, MapUpdate, OdomUpdate, Rectification
-from surmap.slam.streaming import MapCloud, StreamingRtabmapBackend
+from surmap.slam.streaming import MapCloud, StreamingRtabmapBackend, pose_rotation
 from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
 from surmap.types import Pose, StereoFramePair, Vec3
 
@@ -235,6 +235,31 @@ def _floor_plane_cloud(cloud: MapCloud, max_points: int = MAX_MAP_POINTS) -> lis
     ]
 
 
+FloorCamera = dict[str, float]
+
+
+def floor_camera(pose: Pose, calibration: DemoCalibration) -> FloorCamera:
+    """The camera on the floor plan: position (x, z), unit heading and
+    horizontal field of view.
+
+    The heading is the optical axis (rotation's third column) projected
+    onto the x-z floor plane; a camera looking straight down keeps +z.
+    """
+    rotation = pose_rotation(pose)
+    dx, dz = float(rotation[0, 2]), float(rotation[2, 2])
+    length = math.hypot(dx, dz)
+    if length < 1e-6:
+        dx, dz, length = 0.0, 1.0, 1.0
+    fov = 2 * math.degrees(math.atan(calibration.width / 2 / calibration.fx))
+    return {
+        "x": round(pose.position.x, 3),
+        "z": round(pose.position.z, 3),
+        "dx": round(dx / length, 3),
+        "dz": round(dz / length, 3),
+        "fov_deg": round(fov, 1),
+    }
+
+
 def _floor_plane_trajectory(trajectory: list[Pose]) -> list[list[float]]:
     return [[round(pose.position.x, 3), round(pose.position.z, 3)] for pose in trajectory]
 
@@ -391,9 +416,10 @@ class _Display:
     def release(self, *, final: bool = False) -> Iterator[DemoEvent]:
         while self._frames:
             head = self._frames[0]
-            overlay = self._overlay_for(head, final)
-            if overlay is None:
+            shown = self._overlay_for(head, final)
+            if shown is None:
                 break
+            overlay, camera = shown
             self._frames.popleft()
             self._shown = head.frame_id
             yield DemoEvent(
@@ -405,6 +431,7 @@ class _Display:
                     "t_ns": head.t_ns,
                     "detections": overlay,
                     "point_count": len(overlay),
+                    "camera": camera,
                 },
                 jpeg=head.jpeg,
             )
@@ -416,22 +443,27 @@ class _Display:
         self._detections = [event for event in self._detections if event not in ready]
         yield from ready
 
-    def _overlay_for(self, frame: _HeldFrame, final: bool) -> list[OverlayPoint] | None:
+    def _overlay_for(
+        self, frame: _HeldFrame, final: bool
+    ) -> tuple[list[OverlayPoint], FloorCamera | None] | None:
+        """(overlay, camera) once the frame can be shown, else None."""
         if frame.overlay is not None:
-            return frame.overlay
+            return frame.overlay, None
         backend = self._backend
         assert backend is not None
         odom = backend.frame_odometry(frame.frame_id)
         if odom is not None:
-            return keypoint_overlay(
+            overlay = keypoint_overlay(
                 odom.keypoints, backend.rectification, self._calibration, self._stops
             )
+            camera = floor_camera(odom.pose, self._calibration) if odom.pose else None
+            return overlay, camera
         given_up = (
             final
             or backend.last_odom_frame > frame.frame_id  # its pair was dropped
             or time.monotonic() - frame.held_at > HOLD_MAX_S
         )
-        return [] if given_up else None
+        return ([], None) if given_up else None
 
 
 class PlaybackControls:

@@ -76,7 +76,8 @@ PAGE = """<!DOCTYPE html>
     <div class="stat" id="rtab">Waiting for playback to finish…</div>
     <canvas id="map" width="340" height="340"></canvas>
     <p class="legend">Top-down floor plan: RTAB-Map cloud (sampled) in each point's camera
-    intensity, amber = camera trajectory.</p>
+    intensity, amber = camera trajectory, yellow wedge = the camera now and its field of
+    view.</p>
   </aside>
 </main>
 <script>
@@ -86,6 +87,9 @@ const rtab = document.getElementById('rtab');
 let frames = 0, started = performance.now(), lastPoints = 0;
 let latestDetections = null;
 const SCENE = '{dataset_id}';
+// Latest floor plan and the shown frame's camera: the map is redrawn
+// with every frame so the camera marker moves with the video.
+let lastMap = null, lastCamera = null;
 let source = null;
 function drawBoxes() {{
   if (!latestDetections) return;
@@ -117,6 +121,8 @@ source.addEventListener('frame', (event) => {{
   }};
   image.src = 'data:image/jpeg;base64,' + data.image_b64;
   frames += 1; lastPoints = data.point_count;
+  lastCamera = data.camera;
+  if (lastMap) drawMap(lastMap.data, lastMap.extent, lastCamera);
   const fps = (frames / ((performance.now() - started) / 1000)).toFixed(1);
   playback.innerHTML = `Frame <b>${{data.index + 1}} / ${{data.total}}</b><br>`
     + `Stream rate <b>${{fps}} fps</b><br>`
@@ -137,7 +143,9 @@ source.addEventListener('map', (event) => {{
     liveExtent.minY = Math.min(liveExtent.minY, p[1]);
     liveExtent.maxY = Math.max(liveExtent.maxY, p[1]);
   }}
-  drawMap({{cloud_xy: data.cloud_xy, trajectory_xy: data.trajectory_xy}}, liveExtent);
+  lastMap = {{data: {{cloud_xy: data.cloud_xy, trajectory_xy: data.trajectory_xy}},
+    extent: liveExtent}};
+  drawMap(lastMap.data, lastMap.extent, lastCamera);
 }});
 source.addEventListener('status', (event) => {{
   rtab.textContent = JSON.parse(event.data).message;
@@ -148,7 +156,8 @@ source.addEventListener('final', (event) => {{
     + `Trajectory travelled <b>${{data.travelled_m}} m</b><br>`
     + `Assembled cloud <b>${{data.cloud_points}} points</b> `
     + `(sample of ${{data.cloud_xy.length}} drawn)`;
-  drawMap(data);
+  lastMap = null;
+  drawMap(data, null, lastCamera);
   source.close();
   pauseButton.disabled = true;
 }});
@@ -230,7 +239,7 @@ pauseButton.addEventListener('click', async () => {{
 }});
 document.getElementById('restart').addEventListener('click', () => location.reload());
 fillScenes().then(prepareThenPlay);
-function drawMap(data, extent) {{
+function drawMap(data, extent, camera) {{
   const canvas = document.getElementById('map');
   const ctx = canvas.getContext('2d');
   const all = data.cloud_xy.concat(data.trajectory_xy);
@@ -256,6 +265,25 @@ function drawMap(data, extent) {{
     const [x, y] = px(point); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
   }});
   ctx.stroke();
+  if (camera) drawCamera(ctx, px([camera.x, camera.z]), camera);
+}}
+function drawCamera(ctx, [x, y], camera) {{
+  // Field-of-view wedge along the heading (canvas y grows downward).
+  const heading = Math.atan2(-camera.dz, camera.dx);
+  const half = (camera.fov_deg / 2) * Math.PI / 180;
+  const reach = 34;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.arc(x, y, reach, heading - half, heading + half);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255, 210, 60, 0.22)';
+  ctx.fill();
+  ctx.strokeStyle = '#ffd23c'; ctx.lineWidth = 1.4;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x, y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffd23c';
+  ctx.fill();
 }}
 </script>
 </body>

@@ -15,9 +15,9 @@
   - [x] Demo: a live frame carries its camera's floor-plan position, heading and field of view
   - [x] Demo: a frame without odometry, or playback without SLAM, carries no camera
   - [x] Run the new tests (verify they fail for missing implementation)
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Frame events carry `camera` from the shown frame's odometry pose
-  - [ ] Page: floor plan redrawn per frame with the camera dot and field-of-view wedge
+- [wf 3] ⏳ `/green` Green — implement until every red test passes · 568 passed, 2 skipped; page script passes `node --check`; browser look pending
+  - [x] Frame events carry `camera` from the shown frame's odometry pose
+  - [x] Page: floor plan redrawn per frame with the camera dot and field-of-view wedge
   - [ ] Real check in the browser
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs, then open the PR ready ·
   - [ ] Verification executed — result recorded
