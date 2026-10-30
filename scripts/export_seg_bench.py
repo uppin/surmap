@@ -37,8 +37,9 @@ def main(argv: list[str] | None = None) -> int:
             negative_count=args.negatives,
         )
         print(
-            f"dev set would keep {len(chosen)} frames "
-            f"({args.survivors} survivor, {args.negatives} hard negative)"
+            "dev set "
+            + " ".join(str(frame.frame_id) for frame in chosen)
+            + f" ({args.survivors} survivor frames, {args.negatives} hard negatives)"
         )
     print(f"wrote bench {bench}")
     return 0

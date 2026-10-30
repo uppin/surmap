@@ -9,8 +9,9 @@ not launch Gazebo and it does not call Meta, Baseten, or Modal.
 
 Live calls the services whose flags are already set
 (``SURMAP_LIVE_META``, ``SURMAP_LIVE_BASETEN``, ``SURMAP_LIVE_MODAL``)
-and reads keys only inside those clients. Pass a capture directory.
-This process does not arm PX4.
+and reads keys only inside those clients. ``--sam-route modal`` keeps
+SAM on Modal while Meta still writes the scene note. Pass a capture
+directory. This process does not arm PX4.
 
     uv run python scripts/mission_demo.py --live --capture ~/sitl-runs/disaster-01
 
