@@ -47,6 +47,12 @@ uv run python scripts/demo.py            # downloads+caches EuRoC, serves the de
 # open http://127.0.0.1:8765/ in a browser
 ```
 
+The one-command disaster survey is a separate command. Offline, it
+writes a fixture impact report and opens the survey viewer on port
+8770. Runbook: [docs/mission-demo.md](docs/mission-demo.md). The Gazebo
+scene that a live capture comes from:
+[docs/simulation/gazebo-disaster-world.md](docs/simulation/gazebo-disaster-world.md).
+
 The demo plays a recorded dataset as real-time video with the stereo
 reconstructor's scene points overlaid as depth-coloured detections,
 and builds the RTAB-Map map live from the same frames as they play:

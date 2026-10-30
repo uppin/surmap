@@ -2,7 +2,9 @@
 
 One command runs a civilian search-and-rescue survey and opens the
 viewer. SurMap stays passive: the command does not arm PX4 and does
-not upload the lawnmower.
+not upload the lawnmower. Gazebo overview:
+[simulation/gazebo-disaster-world.md](simulation/gazebo-disaster-world.md).
+A live Gazebo flight is not part of CI.
 
 ```bash
 uv run python scripts/mission_demo.py
@@ -105,3 +107,4 @@ uv run pytest -q tests/test_mission_metrics.py tests/test_mission_demo.py
 
 Those tests use fakes. They do not open a socket except to
 `127.0.0.1` for the viewer. They do not read API keys into the report.
+They do not launch Gazebo. The WSL steps above are the operator run.
