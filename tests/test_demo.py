@@ -18,6 +18,7 @@ from PIL import Image
 from surmap.demo.datasets import (
     DATASETS,
     DatasetSpec,
+    PreparedDataset,
     ensure_dataset,
     load_calibration,
     scaled_sensor_yaml,
@@ -224,7 +225,7 @@ def _write_zip_to(_url: str, target: Path, source: Path) -> None:
     target.write_bytes(source.read_bytes())
 
 
-def _prepared_tiny(tmp_path: Path) -> object:
+def _prepared_tiny(tmp_path: Path) -> PreparedDataset:
     zip_path = tmp_path / "tiny.zip"
     spec = _tiny_zip(zip_path)
     return ensure_dataset(
@@ -237,7 +238,7 @@ def _prepared_tiny(tmp_path: Path) -> object:
 
 def test_demo_server_serves_page_health_and_stream_then_closes(tmp_path: Path) -> None:
     prepared = _prepared_tiny(tmp_path)
-    server = make_demo_server(prepared, host="127.0.0.1", port=0, with_rtabmap=False)  # type: ignore[arg-type]
+    server = make_demo_server(prepared, host="127.0.0.1", port=0, with_rtabmap=False)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     host = str(server.server_address[0])
@@ -260,19 +261,19 @@ def test_demo_server_serves_page_health_and_stream_then_closes(tmp_path: Path) -
 
 def test_player_paces_frames_and_closes_its_backend(tmp_path: Path) -> None:
     prepared = _prepared_tiny(tmp_path)
-    player = DemoPlayer(prepared, fps=50.0, with_rtabmap=False)  # type: ignore[arg-type]
+    player = DemoPlayer(prepared, fps=50.0, with_rtabmap=False)
     events = list(player.events())
     assert [event.kind for event in events] == ["frame", "frame"]
     assert all(event.jpeg for event in events)
     with pytest.raises(ValueError, match="fps"):
-        DemoPlayer(prepared, fps=0, with_rtabmap=False)  # type: ignore[arg-type]
+        DemoPlayer(prepared, fps=0, with_rtabmap=False)
 
 
 def test_player_emits_live_map_events_before_final_and_closes_backend(tmp_path: Path) -> None:
     # Given a live backend
     fake = FakeLiveBackend()
     player = DemoPlayer(
-        _prepared_tiny(tmp_path),  # type: ignore[arg-type]
+        _prepared_tiny(tmp_path),
         fps=1000.0,
         backend_factory=lambda: fake,
     )
@@ -298,7 +299,7 @@ def test_live_map_plots_the_floor_plane_in_point_colour(tmp_path: Path) -> None:
         trajectory=[Pose(Vec3(0.5, -1.0, 2.0))],
     )
     player = DemoPlayer(
-        _prepared_tiny(tmp_path),  # type: ignore[arg-type]
+        _prepared_tiny(tmp_path),
         fps=1000.0,
         backend_factory=lambda: fake,
     )
@@ -325,7 +326,7 @@ def test_live_frame_shows_its_own_tracked_keypoints_once_its_odometry_arrived(
         odometry_lag=1,
     )
     player = DemoPlayer(
-        _prepared_tiny(tmp_path),  # type: ignore[arg-type]
+        _prepared_tiny(tmp_path),
         fps=1000.0,
         backend_factory=lambda: fake,
         stereo=MatcherThatMustNotRun(),
@@ -348,7 +349,7 @@ def test_a_frame_whose_pair_was_dropped_is_shown_without_keypoints(tmp_path: Pat
     # Given RTAB-Map dropped frame 1's pair and tracked frame 2
     fake = FakeLiveBackend(odometry={2: _odom_with(Keypoint(5, 183.5, 124.0, 2.0))})
     player = DemoPlayer(
-        _prepared_tiny(tmp_path),  # type: ignore[arg-type]
+        _prepared_tiny(tmp_path),
         fps=1000.0,
         backend_factory=lambda: fake,
     )
@@ -397,7 +398,7 @@ def test_a_slow_detector_does_not_stall_playback(tmp_path: Path) -> None:
     # Given a detector that blocks until the test releases it
     detector = BlockingDetector()
     player = DemoPlayer(
-        _prepared_tiny(tmp_path),  # type: ignore[arg-type]
+        _prepared_tiny(tmp_path),
         fps=50.0,
         with_rtabmap=False,
         detection_source=detector,
@@ -428,7 +429,7 @@ def test_player_emits_detections_as_a_separate_frame_keyed_event(tmp_path: Path)
 
     prepared = _prepared_tiny(tmp_path)
     player = DemoPlayer(
-        prepared,  # type: ignore[arg-type]
+        prepared,
         fps=50.0,
         with_rtabmap=False,
         detection_source=StubSource(),

@@ -25,20 +25,26 @@ import math
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Protocol, runtime_checkable
+from urllib.parse import parse_qs, urlsplit
 
 import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
 from surmap.demo.datasets import (
+    DATASETS,
     DatasetSpec,
     DemoCalibration,
     PreparedDataset,
+    PrepareProgress,
+    cached_dataset,
+    default_cache_dir,
+    ensure_dataset,
     load_calibration,
     scaled_sensor_yaml,
 )
@@ -428,6 +434,36 @@ class _Display:
         return [] if given_up else None
 
 
+class PlaybackControls:
+    """Pause, resume or cancel one player from another thread."""
+
+    def __init__(self) -> None:
+        self._playing = threading.Event()
+        self._playing.set()
+        self._cancelled = threading.Event()
+
+    @property
+    def paused(self) -> bool:
+        return not self._playing.is_set()
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled.is_set()
+
+    def pause(self) -> None:
+        self._playing.clear()
+
+    def resume(self) -> None:
+        self._playing.set()
+
+    def cancel(self) -> None:
+        self._cancelled.set()
+        self._playing.set()  # a paused player wakes up to stop
+
+    def wait_while_paused(self, timeout: float) -> None:
+        self._playing.wait(timeout)
+
+
 class DemoPlayer:
     """Plays one prepared dataset as demo events (see module docs)."""
 
@@ -443,7 +479,9 @@ class DemoPlayer:
         detection_source: DetectionSource | None = None,
         rtabmap_mode: str = "live",
         backend_factory: Callable[[], SidecarRtabmapBackend | LiveSlamBackend] | None = None,
+        controls: PlaybackControls | None = None,
     ) -> None:
+        self._controls = controls if controls is not None else PlaybackControls()
         fps = prepared.spec.fps if fps is None else fps
         if fps <= 0:
             raise ValueError("fps must be positive")
@@ -532,6 +570,15 @@ class DemoPlayer:
         last_map_emit = 0.0
         try:
             for index, t_ns in enumerate(timestamps):
+                # Paused: no pairs reach SLAM and no new frames are shown,
+                # but held frames keep resolving as their odometry lands.
+                while self._controls.paused and not self._controls.cancelled:
+                    if isinstance(backend, LiveSlamBackend):
+                        backend.poll_updates()
+                    yield from display.release()
+                    self._controls.wait_while_paused(0.05)
+                if self._controls.cancelled:
+                    return
                 frame_started = time.monotonic()
                 left_jpeg = _display_jpeg(prepared, 0, t_ns)
                 right_jpeg = _display_jpeg(prepared, 1, t_ns)
@@ -636,11 +683,98 @@ class DemoPlayer:
                 backend.close()
 
 
+@dataclass
+class _Preparation:
+    """One scene's background download + extraction into the cache."""
+
+    state: str = "preparing"  # preparing | ready | error
+    progress: PrepareProgress | None = None
+    error: str = ""
+
+
+# A new viewer waits at most this long for the running stream to stop.
+TAKEOVER_TIMEOUT_S = 10.0
+
+
 class _DemoHttpServer(ThreadingHTTPServer):
     daemon_threads = True
-    prepared: PreparedDataset
+    catalog: dict[str, DatasetSpec]
+    default_dataset: str
+    cache_dir: Path
+    fetch: Callable[[str, Path], None] | None
     player_options: dict[str, object]
     stream_lock: threading.Lock
+    state_lock: threading.Lock
+    prepared: dict[str, PreparedDataset]
+    preparations: dict[str, _Preparation]
+    current: PlaybackControls | None
+
+    def prepared_scene(self, dataset_id: str) -> PreparedDataset | None:
+        with self.state_lock:
+            found = self.prepared.get(dataset_id)
+        if found is None:
+            found = cached_dataset(self.catalog[dataset_id], self.cache_dir)
+            if found is not None:
+                with self.state_lock:
+                    self.prepared[dataset_id] = found
+        return found
+
+    def scene_listing(self) -> dict[str, object]:
+        scenes = []
+        for dataset_id, spec in self.catalog.items():
+            entry: dict[str, object] = {
+                "id": dataset_id,
+                "title": spec.title,
+                "description": spec.description,
+                "state": "missing",
+                "progress": None,
+                "error": "",
+            }
+            with self.state_lock:
+                job = self.preparations.get(dataset_id)
+            if self.prepared_scene(dataset_id) is not None:
+                entry["state"] = "ready"
+                entry["progress"] = {"phase": "ready", "done": 1, "total": 1}
+            elif job is not None:
+                step = job.progress
+                entry["state"] = job.state
+                entry["error"] = job.error
+                if step is not None:
+                    entry["progress"] = {
+                        "phase": step.phase,
+                        "done": step.done,
+                        "total": step.total,
+                    }
+            scenes.append(entry)
+        return {"current": self.default_dataset, "datasets": scenes}
+
+    def prepare(self, dataset_id: str) -> str:
+        """Start preparing `dataset_id` once (idempotent); its state now."""
+        if self.prepared_scene(dataset_id) is not None:
+            return "ready"
+        with self.state_lock:
+            job = self.preparations.get(dataset_id)
+            if job is not None and job.state == "preparing":
+                return job.state
+            job = _Preparation()
+            self.preparations[dataset_id] = job
+        threading.Thread(target=self._prepare, args=(dataset_id, job), daemon=True).start()
+        return job.state
+
+    def _prepare(self, dataset_id: str, job: _Preparation) -> None:
+        def report(step: PrepareProgress) -> None:
+            job.progress = step
+
+        try:
+            prepared = ensure_dataset(
+                self.catalog[dataset_id], self.cache_dir, fetch=self.fetch, progress=report
+            )
+        except Exception as exc:  # surfaced to the page via /datasets
+            job.state, job.error = "error", str(exc)
+            return
+        with self.state_lock:
+            self.prepared[dataset_id] = prepared
+        job.state = "ready"
 
 
 def coral_detection_source(model_dir: Path, model: str = DEFAULT_PROFILE) -> CoralDetectionSource:
@@ -675,8 +809,12 @@ def _page_tuning(spec: DatasetSpec) -> dict[str, object]:
 
 
 def make_demo_server(
-    prepared: PreparedDataset,
+    prepared: PreparedDataset | None = None,
     *,
+    catalog: Sequence[DatasetSpec] | None = None,
+    cache_dir: Path | None = None,
+    default_dataset: str | None = None,
+    fetch: Callable[[str, Path], None] | None = None,
     host: str = "127.0.0.1",
     port: int = 8765,
     fps: float | None = None,
@@ -687,7 +825,17 @@ def make_demo_server(
     coral_model: str = DEFAULT_PROFILE,
     rtabmap_mode: str = "live",
 ) -> ThreadingHTTPServer:
-    """The demo HTTP server (not yet serving); caller serves/closes it."""
+    """The demo HTTP server (not yet serving); caller serves/closes it.
+
+    Every `catalog` scene (default: the registry) is offered; one not yet
+    in `cache_dir` is prepared there the first time it is picked.
+    `prepared`, when given, is served as the default scene.
+    """
+    specs = list(catalog) if catalog is not None else list(DATASETS.values())
+    if prepared is not None and prepared.spec.dataset_id not in {s.dataset_id for s in specs}:
+        specs.insert(0, prepared.spec)
+    if not specs:
+        raise ValueError("the demo needs at least one scene")
     options: dict[str, object] = {
         "fps": fps,
         "max_frames": max_frames,
@@ -699,9 +847,22 @@ def make_demo_server(
         ),
     }
     server = _DemoHttpServer((host, port), _DemoHandler)
-    server.prepared = prepared
+    server.catalog = {spec.dataset_id: spec for spec in specs}
+    server.default_dataset = default_dataset or (
+        prepared.spec.dataset_id if prepared is not None else specs[0].dataset_id
+    )
+    if server.default_dataset not in server.catalog:
+        raise ValueError(f"unknown default scene: {server.default_dataset}")
+    server.cache_dir = cache_dir or (
+        prepared.root.parent if prepared is not None else default_cache_dir()
+    )
+    server.fetch = fetch
     server.player_options = options
     server.stream_lock = threading.Lock()
+    server.state_lock = threading.Lock()
+    server.prepared = {prepared.spec.dataset_id: prepared} if prepared is not None else {}
+    server.preparations = {}
+    server.current = None
     return server
 
 
@@ -718,33 +879,90 @@ class _DemoHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_json(self, status: int, body: dict[str, object]) -> None:
+        self._send(status, "application/json", json.dumps(body).encode())
+
+    def _scene(self, query: dict[str, list[str]]) -> str | None:
+        """The requested scene id (default: the launcher's), or None if unknown."""
+        dataset_id = query.get("dataset", [self.server.default_dataset])[0]
+        return dataset_id if dataset_id in self.server.catalog else None
+
     def do_GET(self) -> None:
-        if self.path == "/health":
+        url = urlsplit(self.path)
+        query = parse_qs(url.query)
+        if url.path == "/health":
             self._send(200, "application/json", b'{"status": "ok"}')
             return
-        if self.path == "/":
-            page = PAGE.format(
-                title=html.escape(self.server.prepared.spec.title),
-                description=html.escape(self.server.prepared.spec.description),
-                **_page_tuning(self.server.prepared.spec),
-            )
-            self._send(200, "text/html; charset=utf-8", page.encode())
+        if url.path == "/datasets":
+            self._send_json(200, self.server.scene_listing())
             return
-        if self.path == "/stream":
-            self._stream()
+        if url.path in ("/", "/stream"):
+            dataset_id = self._scene(query)
+            if dataset_id is None:
+                self._send(404, "text/plain", b"unknown scene")
+            elif url.path == "/":
+                spec = self.server.catalog[dataset_id]
+                page = PAGE.format(
+                    title=html.escape(spec.title),
+                    description=html.escape(spec.description),
+                    dataset_id=dataset_id,
+                    **_page_tuning(spec),
+                )
+                self._send(200, "text/html; charset=utf-8", page.encode())
+            else:
+                self._stream(dataset_id)
             return
         self._send(404, "text/plain", b"not found")
 
-    def _stream(self) -> None:
-        if not self.server.stream_lock.acquire(blocking=False):
-            self._send(409, "text/plain", b"a demo stream is already running")
+    def do_POST(self) -> None:
+        url = urlsplit(self.path)
+        if url.path == "/prepare":
+            dataset_id = self._scene(parse_qs(url.query))
+            if dataset_id is None:
+                self._send(404, "text/plain", b"unknown scene")
+                return
+            self._send_json(202, {"state": self.server.prepare(dataset_id)})
             return
+        if url.path == "/control":
+            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                action = json.loads(self.rfile.read(length) or b"{}").get("action")
+            except (ValueError, AttributeError):
+                action = None
+            controls = self.server.current
+            if action not in ("pause", "resume"):
+                self._send(400, "text/plain", b"action must be pause or resume")
+            elif controls is None:
+                self._send(409, "text/plain", b"nothing is playing")
+            else:
+                controls.pause() if action == "pause" else controls.resume()
+                self._send_json(200, {"state": "paused" if controls.paused else "playing"})
+            return
+        self._send(404, "text/plain", b"not found")
+
+    def _stream(self, dataset_id: str) -> None:
+        prepared = self.server.prepared_scene(dataset_id)
+        if prepared is None:
+            self._send(409, "text/plain", b"scene not downloaded yet; POST /prepare first")
+            return
+        # The newest viewer takes over: stop the running player (its
+        # finally tears the sidecar down), then wait for the lock.
+        with self.server.state_lock:
+            previous = self.server.current
+        if previous is not None:
+            previous.cancel()
+        if not self.server.stream_lock.acquire(timeout=TAKEOVER_TIMEOUT_S):
+            self._send(409, "text/plain", b"the running demo stream did not stop")
+            return
+        controls = PlaybackControls()
+        with self.server.state_lock:
+            self.server.current = controls
         try:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            player = DemoPlayer(self.server.prepared, **self.server.player_options)  # type: ignore[arg-type]
+            player = DemoPlayer(prepared, controls=controls, **self.server.player_options)  # type: ignore[arg-type]
             for event in player.events():
                 payload = dict(event.data)
                 if event.kind == "frame":
@@ -755,6 +973,9 @@ class _DemoHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass  # viewer went away; the player's finally tears down
         finally:
+            with self.server.state_lock:
+                if self.server.current is controls:
+                    self.server.current = None
             self.server.stream_lock.release()
 
 

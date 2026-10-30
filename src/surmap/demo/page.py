@@ -27,6 +27,17 @@ PAGE = """<!DOCTYPE html>
   .legend {{ font-size: 12px; color: #9aa3ad; }}
   .dot {{ display: inline-block; width: 9px; height: 9px;
     border-radius: 50%; vertical-align: -1px; }}
+  .controls {{ display: flex; gap: 8px; align-items: center; margin-top: 12px;
+    flex-wrap: wrap; font-size: 13px; }}
+  .controls select, .controls button {{ background: #24272c; color: #e8eaed;
+    border: 1px solid #3b4047; border-radius: 6px; padding: 5px 10px; font: inherit; }}
+  .controls button:disabled {{ opacity: 0.45; }}
+  .progress {{ display: flex; gap: 10px; align-items: center; margin-top: 10px;
+    font-size: 13px; color: #c3c9d1; }}
+  .progress[hidden] {{ display: none; }}
+  .bar {{ width: 320px; max-width: 60vw; height: 8px; background: #24272c;
+    border-radius: 4px; overflow: hidden; }}
+  .bar > div {{ height: 100%; width: 0; background: #2fd4c4; transition: width 0.3s; }}
 </style>
 </head>
 <body>
@@ -34,6 +45,16 @@ PAGE = """<!DOCTYPE html>
   <h1>SurMap demo — {title}</h1>
   <p class="sub">{description} The RTAB-Map map is built live from the frames as they play, and
   its points are overlaid on the video by depth.</p>
+  <div class="controls">
+    <label for="scene">Scene</label>
+    <select id="scene"></select>
+    <button id="pause" disabled>Pause</button>
+    <button id="restart">Restart</button>
+  </div>
+  <div class="progress" id="progress" hidden>
+    <div class="bar"><div id="bar-fill"></div></div>
+    <span id="progress-text"></span>
+  </div>
 </header>
 <main>
   <div class="stage">
@@ -64,7 +85,8 @@ const playback = document.getElementById('playback');
 const rtab = document.getElementById('rtab');
 let frames = 0, started = performance.now(), lastPoints = 0;
 let latestDetections = null;
-const source = new EventSource('/stream');
+const SCENE = '{dataset_id}';
+let source = null;
 function drawBoxes() {{
   if (!latestDetections) return;
   view.strokeStyle = '#ffd23c'; view.lineWidth = 1.6;
@@ -75,6 +97,7 @@ function drawBoxes() {{
     view.fillText(`${{object.label}} #${{object.track_id}}`, x1 + 2, Math.max(10, y1 - 3));
   }}
 }}
+function attachListeners() {{
 source.addEventListener('detections', (event) => {{
   latestDetections = JSON.parse(event.data);
 }});
@@ -127,12 +150,86 @@ source.addEventListener('final', (event) => {{
     + `(sample of ${{data.cloud_xy.length}} drawn)`;
   drawMap(data);
   source.close();
+  pauseButton.disabled = true;
 }});
 source.onerror = () => {{
   if (frames === 0) {{
     playback.textContent = 'Stream unavailable — the server sent no frames; see its log.';
   }}
 }};
+}}
+function openStream() {{
+  source = new EventSource('/stream?dataset=' + encodeURIComponent(SCENE));
+  attachListeners();
+  pauseButton.disabled = false;
+}}
+const sceneSelect = document.getElementById('scene');
+const pauseButton = document.getElementById('pause');
+const progress = document.getElementById('progress');
+const progressText = document.getElementById('progress-text');
+const barFill = document.getElementById('bar-fill');
+function describe(step) {{
+  if (!step) return 'Starting…';
+  const mb = (n) => (n / 1e6).toFixed(0);
+  if (step.phase === 'downloading') {{
+    return `Downloading ${{mb(step.done)}} / ${{mb(step.total)}} MB`;
+  }}
+  if (step.phase === 'verifying') return 'Verifying checksum…';
+  if (step.phase === 'extracting') return `Extracting frames ${{step.done}} / ${{step.total}}`;
+  return 'Ready';
+}}
+async function sceneState() {{
+  const listing = await (await fetch('/datasets')).json();
+  return listing.datasets.find((scene) => scene.id === SCENE);
+}}
+async function prepareThenPlay() {{
+  let scene = await sceneState();
+  if (scene.state !== 'ready') {{
+    progress.hidden = false;
+    playback.textContent = 'This scene is downloaded once, then cached.';
+    await fetch('/prepare?dataset=' + encodeURIComponent(SCENE), {{method: 'POST'}});
+    while (scene.state !== 'ready') {{
+      if (scene.state === 'error') {{
+        progressText.textContent = `Preparing failed: ${{scene.error}}`;
+        return;
+      }}
+      const step = scene.progress;
+      barFill.style.width = step && step.total ? `${{100 * step.done / step.total}}%` : '0';
+      progressText.textContent = describe(step);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      scene = await sceneState();
+    }}
+    progress.hidden = true;
+  }}
+  playback.textContent = 'Connecting…';
+  openStream();
+}}
+async function fillScenes() {{
+  const listing = await (await fetch('/datasets')).json();
+  for (const scene of listing.datasets) {{
+    const option = document.createElement('option');
+    option.value = scene.id;
+    option.textContent = scene.state === 'ready'
+      ? scene.title : `${{scene.title}} (downloads on first play)`;
+    option.selected = scene.id === SCENE;
+    sceneSelect.appendChild(option);
+  }}
+}}
+sceneSelect.addEventListener('change', () => {{
+  location.href = '/?dataset=' + encodeURIComponent(sceneSelect.value);
+}});
+pauseButton.addEventListener('click', async () => {{
+  const action = pauseButton.textContent === 'Pause' ? 'pause' : 'resume';
+  const response = await fetch('/control', {{
+    method: 'POST', headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{action}}),
+  }});
+  if (!response.ok) return;
+  const state = (await response.json()).state;
+  pauseButton.textContent = state === 'paused' ? 'Resume' : 'Pause';
+}});
+document.getElementById('restart').addEventListener('click', () => location.reload());
+fillScenes().then(prepareThenPlay);
 function drawMap(data, extent) {{
   const canvas = document.getElementById('map');
   const ctx = canvas.getContext('2d');
