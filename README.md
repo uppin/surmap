@@ -43,9 +43,17 @@ request.
 ## Demo
 
 ```bash
-uv run python scripts/demo.py            # downloads+caches EuRoC, serves the demo
+uv run python scripts/demo.py            # serves the demo; downloads nothing at start
 # open http://127.0.0.1:8765/ in a browser
 ```
+
+The page has a scene picker with every registered scene. A scene not yet
+in the cache is downloaded, verified and converted the first time it is
+picked, with a progress bar on the page (MB downloaded, checksum, frames
+extracted); later picks and launches are cache hits. Pause/Resume stops
+feeding RTAB-Map as well as the video, so the map stays consistent;
+Restart replays the scene. A new viewer takes the stream over (the
+running one stops and its sidecar is removed).
 
 The demo plays a recorded dataset as real-time video and builds the
 RTAB-Map map live from the same frames as they play. Each frame is
@@ -58,7 +66,7 @@ top-down floor plan of the keyframes RTAB-Map's graph keeps, each point
 in its camera intensity, re-placed whenever the graph is re-optimised;
 a final optimized graph is drawn when playback ends. The detector runs
 on its own worker thread, so it never stalls playback. Datasets are registry entries in `surmap.demo.datasets`
-(`--list-datasets`): the first run downloads and SHA-256-verifies
+(`--list-datasets`): the first pick downloads and SHA-256-verifies
 the zip into the cache (`~/.cache/surmap/demo-datasets`, override
 `--cache-dir`/`$SURMAP_DEMO_CACHE_DIR`); later runs download nothing.
 Useful flags: `--frames N`, `--start I`, `--fps F`, `--no-rtabmap`,
