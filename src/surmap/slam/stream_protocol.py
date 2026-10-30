@@ -97,7 +97,12 @@ def _frame(obj: dict[str, object], payload: bytes = b"") -> bytes:
 
 
 def encode_hello(
-    cam0_yaml: str, cam1_yaml: str, width: int, height: int, params: dict[str, str]
+    cam0_yaml: str,
+    cam1_yaml: str,
+    width: int,
+    height: int,
+    params: dict[str, str],
+    max_depth_m: float = 6.0,
 ) -> bytes:
     return _frame(
         {
@@ -108,6 +113,8 @@ def encode_hello(
             "width": width,
             "height": height,
             "params": params,
+            # Keyframe points beyond this depth are too noisy to map.
+            "max_depth_m": max_depth_m,
         }
     )
 

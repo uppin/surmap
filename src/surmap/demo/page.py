@@ -37,15 +37,16 @@ PAGE = """<!DOCTYPE html>
 </header>
 <main>
   <div class="stage">
-    <canvas id="view" width="376" height="240"></canvas>
+    <canvas id="view" width="{width}" height="{height}"></canvas>
     <p class="legend">
-      <span class="dot" style="background:{near}"></span> near (≤1 m) &nbsp;
-      <span class="dot" style="background:{mid}"></span> 3 m &nbsp;
-      <span class="dot" style="background:{far}"></span> far (≥6 m)
+      <span class="dot" style="background:{near}"></span> near ({near_label}) &nbsp;
+      <span class="dot" style="background:{mid}"></span> {mid_label} &nbsp;
+      <span class="dot" style="background:{far}"></span> far ({far_label})
       &nbsp;— features RTAB-Map tracked in this frame, coloured and sized by depth
       (stereo-matcher points when RTAB-Map is off).
       Yellow boxes: tracked objects from the separate detections stream.
     </p>
+    <p class="legend">{credit}</p>
   </div>
   <aside>
     <h2>Playback</h2>
@@ -81,11 +82,11 @@ source.addEventListener('frame', (event) => {{
   const data = JSON.parse(event.data);
   const image = new Image();
   image.onload = () => {{
-    view.drawImage(image, 0, 0, 376, 240);
+    view.drawImage(image, 0, 0, view.canvas.width, view.canvas.height);
     for (const point of data.detections) {{
       view.fillStyle = point.c;  // depth colour, from the server's ramp
       view.beginPath();
-      view.arc(point.x, point.y, point.d < 1.5 ? 2.2 : 1.4, 0, Math.PI * 2);
+      view.arc(point.x, point.y, point.d < {near_m} * 1.5 ? 2.2 : 1.4, 0, Math.PI * 2);
       view.fill();
     }}
     drawBoxes();

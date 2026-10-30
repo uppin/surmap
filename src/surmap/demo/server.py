@@ -36,8 +36,7 @@ from numpy.typing import NDArray
 from PIL import Image
 
 from surmap.demo.datasets import (
-    DISPLAY_HEIGHT,
-    DISPLAY_WIDTH,
+    DatasetSpec,
     DemoCalibration,
     PreparedDataset,
     load_calibration,
@@ -109,12 +108,15 @@ def project_overlay(
     return visible
 
 
-# Overlay depth ramp, near to far; the page legend shows the same stops.
-DEPTH_STOPS: tuple[tuple[float, tuple[int, int, int]], ...] = (
-    (1.0, (0xFF, 0x5A, 0x3C)),  # near: red
-    (3.0, (0xFF, 0xB0, 0x3A)),  # mid: orange
-    (6.0, (0x2F, 0xD4, 0xC4)),  # far: teal
+# Overlay ramp colours, near to far; each dataset sets the depths
+# (`DatasetSpec.depth_stops_m`) and the page legend shows the same stops.
+DEPTH_COLOURS: tuple[tuple[int, int, int], ...] = (
+    (0xFF, 0x5A, 0x3C),  # near: red
+    (0xFF, 0xB0, 0x3A),  # mid: orange
+    (0x2F, 0xD4, 0xC4),  # far: teal
 )
+DepthStops = tuple[float, float, float]
+INDOOR_STOPS: DepthStops = (1.0, 3.0, 6.0)
 
 OverlayPoint = dict[str, float | str]
 
@@ -131,13 +133,22 @@ class StreamBackendOptions:
 
 
 def stream_backend_options(prepared: PreparedDataset) -> StreamBackendOptions:
-    raise NotImplementedError("TODO(kitti-demo): stream_backend_options")
+    """The live sidecar's configuration: display-size frames and calibration."""
+    width, height = prepared.spec.display_size
+    return StreamBackendOptions(
+        cam0_yaml=scaled_sensor_yaml(prepared.sensor_yaml("cam0"), width, height),
+        cam1_yaml=scaled_sensor_yaml(prepared.sensor_yaml("cam1"), width, height),
+        width=width,
+        height=height,
+        max_depth_m=prepared.spec.max_map_depth_m,
+    )
 
 
-def depth_colour(depth_m: float, stops: tuple[float, float, float] = (1.0, 3.0, 6.0)) -> str:
+def depth_colour(depth_m: float, stops: DepthStops = INDOOR_STOPS) -> str:
     """Overlay colour for a depth: red near, orange mid, teal far."""
-    rgb = DEPTH_STOPS[0][1] if depth_m <= DEPTH_STOPS[0][0] else DEPTH_STOPS[-1][1]
-    for (low, low_rgb), (high, high_rgb) in itertools.pairwise(DEPTH_STOPS):
+    ramp = list(zip(stops, DEPTH_COLOURS, strict=True))
+    rgb = ramp[0][1] if depth_m <= ramp[0][0] else ramp[-1][1]
+    for (low, low_rgb), (high, high_rgb) in itertools.pairwise(ramp):
         if low < depth_m <= high:
             rgb = _blend(low_rgb, high_rgb, (depth_m - low) / (high - low))
     return "#{:02x}{:02x}{:02x}".format(*rgb)
@@ -176,14 +187,17 @@ def rectified_to_raw(
     return np.stack([raw_fx * xd + raw_cx, raw_fy * yd + raw_cy], axis=1)
 
 
-def _coloured(points: list[dict[str, float]]) -> list[OverlayPoint]:
-    return [{**point, "c": depth_colour(point["d"])} for point in points]
+def _coloured(
+    points: list[dict[str, float]], stops: DepthStops = INDOOR_STOPS
+) -> list[OverlayPoint]:
+    return [{**point, "c": depth_colour(point["d"], stops)} for point in points]
 
 
 def keypoint_overlay(
     keypoints: tuple[Keypoint, ...],
     rectification: Rectification | None,
     calibration: DemoCalibration,
+    stops: DepthStops = INDOOR_STOPS,
 ) -> list[OverlayPoint]:
     """A frame's tracked keypoints at their raw display pixels, coloured by depth."""
     if not keypoints:
@@ -196,7 +210,7 @@ def keypoint_overlay(
         for (u, v), k in zip(pixels.tolist(), keypoints, strict=True)
         if 0 <= u < calibration.width and 0 <= v < calibration.height
     ]
-    return _coloured(points)
+    return _coloured(points, stops)
 
 
 def _floor_plane_cloud(cloud: MapCloud, max_points: int = MAX_MAP_POINTS) -> list[list[float]]:
@@ -227,8 +241,9 @@ class _DetectionWorker:
     back in frame order.
     """
 
-    def __init__(self, source: DetectionSource) -> None:
+    def __init__(self, source: DetectionSource, size: tuple[int, int]) -> None:
         self._source = source
+        self._size = size
         self._condition = threading.Condition()
         self._pending: tuple[int, int, bytes] | None = None
         self._busy = False
@@ -275,7 +290,7 @@ class _DetectionWorker:
                 frame_id, t_ns, jpeg = self._pending
                 self._pending, self._busy = None, True
             try:
-                rgb = decode_rgb(FrameImage(DISPLAY_WIDTH, DISPLAY_HEIGHT, "mjpeg", jpeg))
+                rgb = decode_rgb(FrameImage(*self._size, "mjpeg", jpeg))
                 event = _detections_event(
                     frame_id, t_ns, self._source.detect_tracked(frame_id, rgb)
                 )
@@ -314,13 +329,12 @@ def _detections_event(frame_id: int, t_ns: int, tracked: tuple[TrackedDetection,
 
 def _display_jpeg(prepared: PreparedDataset, channel: int, t_ns: int) -> bytes:
     """The half-res JPEG for one frame, generated once and cached."""
-    target = prepared.root / "display" / f"cam{channel}" / f"{t_ns}.jpg"
+    width, height = prepared.spec.display_size
+    target = prepared.root / f"display-{width}x{height}" / f"cam{channel}" / f"{t_ns}.jpg"
     if not target.is_file():
         target.parent.mkdir(parents=True, exist_ok=True)
         with Image.open(prepared.frame_path(channel, t_ns)) as frame:
-            frame.resize((DISPLAY_WIDTH, DISPLAY_HEIGHT)).convert("L").save(
-                target, format="JPEG", quality=85
-            )
+            frame.resize((width, height)).convert("L").save(target, format="JPEG", quality=85)
     return target.read_bytes()
 
 
@@ -348,9 +362,14 @@ class _Display:
     """
 
     def __init__(
-        self, total: int, backend: LiveSlamBackend | None, calibration: DemoCalibration
+        self,
+        total: int,
+        backend: LiveSlamBackend | None,
+        calibration: DemoCalibration,
+        stops: DepthStops,
     ) -> None:
         self._total = total
+        self._stops = stops
         self._backend = backend
         self._calibration = calibration
         self._frames: deque[_HeldFrame] = deque()
@@ -398,7 +417,9 @@ class _Display:
         assert backend is not None
         odom = backend.frame_odometry(frame.frame_id)
         if odom is not None:
-            return keypoint_overlay(odom.keypoints, backend.rectification, self._calibration)
+            return keypoint_overlay(
+                odom.keypoints, backend.rectification, self._calibration, self._stops
+            )
         given_up = (
             final
             or backend.last_odom_frame > frame.frame_id  # its pair was dropped
@@ -414,7 +435,7 @@ class DemoPlayer:
         self,
         prepared: PreparedDataset,
         *,
-        fps: float = 20.0,
+        fps: float | None = None,
         max_frames: int = 0,
         start_index: int = 0,
         with_rtabmap: bool = True,
@@ -423,11 +444,13 @@ class DemoPlayer:
         rtabmap_mode: str = "live",
         backend_factory: Callable[[], SidecarRtabmapBackend | LiveSlamBackend] | None = None,
     ) -> None:
+        fps = prepared.spec.fps if fps is None else fps
         if fps <= 0:
             raise ValueError("fps must be positive")
         self._prepared = prepared
         self._native = load_calibration(prepared)
-        self._calibration = self._native.scaled(DISPLAY_WIDTH, DISPLAY_HEIGHT)
+        self._size = prepared.spec.display_size
+        self._calibration = self._native.scaled(*self._size)
         self._fps = fps
         self._max_frames = max_frames
         self._start_index = start_index
@@ -436,6 +459,11 @@ class DemoPlayer:
         self._detection_source = detection_source
         if rtabmap_mode not in ("live", "batch"):
             raise ValueError("rtabmap_mode must be 'live' or 'batch'")
+        if with_rtabmap and rtabmap_mode == "batch" and not prepared.has_imu:
+            raise ValueError(
+                f"{prepared.spec.dataset_id} has no IMU; the batch sidecar needs one "
+                "(use --rtabmap-mode live)"
+            )
         self._rtabmap_mode = rtabmap_mode
         self._backend_factory = backend_factory
 
@@ -458,28 +486,24 @@ class DemoPlayer:
 
     @property
     def fps(self) -> float:
-        raise NotImplementedError("TODO(kitti-demo): fps")
+        return self._fps
 
     def _backend(self) -> SidecarRtabmapBackend | LiveSlamBackend:
         if self._backend_factory is not None:
             return self._backend_factory()
         prepared = self._prepared
+        options = stream_backend_options(prepared)
         if self._rtabmap_mode == "live":
             return StreamingRtabmapBackend(
-                cam0_yaml=scaled_sensor_yaml(
-                    prepared.sensor_yaml("cam0"), DISPLAY_WIDTH, DISPLAY_HEIGHT
-                ),
-                cam1_yaml=scaled_sensor_yaml(
-                    prepared.sensor_yaml("cam1"), DISPLAY_WIDTH, DISPLAY_HEIGHT
-                ),
+                cam0_yaml=options.cam0_yaml,
+                cam1_yaml=options.cam1_yaml,
+                width=options.width,
+                height=options.height,
+                max_depth_m=options.max_depth_m,
             )
         return SidecarRtabmapBackend(
-            cam0_yaml=scaled_sensor_yaml(
-                prepared.sensor_yaml("cam0"), DISPLAY_WIDTH, DISPLAY_HEIGHT
-            ),
-            cam1_yaml=scaled_sensor_yaml(
-                prepared.sensor_yaml("cam1"), DISPLAY_WIDTH, DISPLAY_HEIGHT
-            ),
+            cam0_yaml=options.cam0_yaml,
+            cam1_yaml=options.cam1_yaml,
             imu_yaml=prepared.sensor_yaml("imu0"),
             imu_csv=prepared.imu_csv(),
         )
@@ -499,10 +523,12 @@ class DemoPlayer:
             timestamps = timestamps[: self._max_frames]
         backend = self._backend() if self._with_rtabmap else None
         worker = (
-            _DetectionWorker(self._detection_source) if self._detection_source is not None else None
+            _DetectionWorker(self._detection_source, self._size)
+            if self._detection_source is not None
+            else None
         )
         live = backend if isinstance(backend, LiveSlamBackend) else None
-        display = _Display(len(timestamps), live, calibration)
+        display = _Display(len(timestamps), live, calibration, prepared.spec.depth_stops_m)
         last_map_emit = 0.0
         try:
             for index, t_ns in enumerate(timestamps):
@@ -526,11 +552,13 @@ class DemoPlayer:
                 held = _HeldFrame(index, index + 1, t_ns, left_jpeg, time.monotonic())
                 if live is None:
                     points = self._stereo.reconstruct(
-                        FrameImage(DISPLAY_WIDTH, DISPLAY_HEIGHT, "mjpeg", left_jpeg),
-                        FrameImage(DISPLAY_WIDTH, DISPLAY_HEIGHT, "mjpeg", right_jpeg),
+                        FrameImage(*self._size, "mjpeg", left_jpeg),
+                        FrameImage(*self._size, "mjpeg", right_jpeg),
                         rig,
                     )
-                    held.overlay = _coloured(project_overlay(points, calibration))
+                    held.overlay = _coloured(
+                        project_overlay(points, calibration), prepared.spec.depth_stops_m
+                    )
                 display.add_frame(held)
                 if worker is not None:
                     display.add_detections(worker.poll())
@@ -624,12 +652,34 @@ def coral_detection_source(model_dir: Path, model: str = DEFAULT_PROFILE) -> Cor
     return CoralDetectionSource(detector)
 
 
+def _metres(value: float) -> str:
+    return f"{value:g} m"
+
+
+def _page_tuning(spec: DatasetSpec) -> dict[str, object]:
+    """Per-dataset values the page template needs: view size, ramp, credit."""
+    near, mid, far = spec.depth_stops_m
+    width, height = spec.display_size
+    return {
+        "width": width,
+        "height": height,
+        "near": depth_colour(near, spec.depth_stops_m),
+        "mid": depth_colour(mid, spec.depth_stops_m),
+        "far": depth_colour(far, spec.depth_stops_m),
+        "near_label": f"≤{_metres(near)}",
+        "mid_label": _metres(mid),
+        "far_label": f"≥{_metres(far)}",
+        "near_m": near,
+        "credit": html.escape(f"Data: {spec.credit}") if spec.credit else "",
+    }
+
+
 def make_demo_server(
     prepared: PreparedDataset,
     *,
     host: str = "127.0.0.1",
     port: int = 8765,
-    fps: float = 20.0,
+    fps: float | None = None,
     max_frames: int = 0,
     start_index: int = 0,
     with_rtabmap: bool = True,
@@ -676,9 +726,7 @@ class _DemoHandler(BaseHTTPRequestHandler):
             page = PAGE.format(
                 title=html.escape(self.server.prepared.spec.title),
                 description=html.escape(self.server.prepared.spec.description),
-                near=depth_colour(DEPTH_STOPS[0][0]),
-                mid=depth_colour(DEPTH_STOPS[1][0]),
-                far=depth_colour(DEPTH_STOPS[2][0]),
+                **_page_tuning(self.server.prepared.spec),
             )
             self._send(200, "text/html; charset=utf-8", page.encode())
             return

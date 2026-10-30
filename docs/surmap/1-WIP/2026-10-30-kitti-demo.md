@@ -20,12 +20,12 @@
   - [x] Demo: playback defaults to the dataset's rate; batch mode is refused without an IMU
   - [x] Streaming: hello carries the keyframe depth cap
   - [x] Run the new tests (verify they fail for missing implementation)
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] `kitti-raw` extraction + calibration conversion
-  - [ ] Per-dataset display size, fps, depth stops, depth cap, credit
-  - [ ] Sidecar reads `max_depth_m` from hello
-  - [ ] Registry entry `kitti-2011-09-26-drive-0009` with pinned hashes
-  - [ ] Real run on the drive: map, overlay, detector recorded
+- [wf 3] ✅ 2026-10-30 `/green` Green — implement until every red test passes · 555 passed, 2 skipped; EuRoC real-container e2e green on `surmap/rtabmap-stream:19fd4657da62`
+  - [x] `kitti-raw` extraction + calibration conversion
+  - [x] Per-dataset display size, fps, depth stops, depth cap, credit
+  - [x] Sidecar reads `max_depth_m` from hello
+  - [x] Registry entry `kitti-2011-09-26-drive-0009` with pinned hashes
+  - [x] Real run on the drive: map, overlay, detector recorded
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs, then open the PR ready ·
   - [ ] Verification executed — result recorded
   - [ ] `README.md` §Demo — KITTI scene, attribution and licence
@@ -100,3 +100,11 @@ suits a street, and credited on the page with its licence.
   and the pipeline is grey; colour is a later option.
 - **cam0 timestamps name both images.** KITTI sync frames are aligned by
   index; cam1's own stamps differ by microseconds.
+- **Real run measured** (full 447-pair drive 0009, Coral detector on,
+  emulated sidecar on Apple Silicon): baseline 0.537 m from the converted
+  calibration; 252 m travelled, 353 keyframes, floor plan ≈ 197 × 223 m;
+  keypoints on 338/447 frames (151 median), depth median 31.9 m
+  (9.1–92.3 m, 5–95 %); detections: car 1227, person 120, truck 33,
+  bus 14. Sidecar odom+SLAM 63 ms median / 111 ms p95 per pair (EuRoC:
+  39 / 63 ms), so 55 pairs were dropped at 10 Hz under emulation; no
+  tracking loss. A native arm64 sidecar image is the lever, not this PR.

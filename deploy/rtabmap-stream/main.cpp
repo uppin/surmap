@@ -80,6 +80,15 @@ long jsonLong(const std::string& json, const std::string& key, long fallback) {
   return std::strtol(json.c_str() + pos + 1, nullptr, 10);
 }
 
+double jsonDouble(const std::string& json, const std::string& key, double fallback) {
+  std::string pat = "\"" + key + "\"";
+  size_t pos = json.find(pat);
+  if (pos == std::string::npos) return fallback;
+  pos = json.find(':', pos + pat.size());
+  if (pos == std::string::npos) return fallback;
+  return std::strtod(json.c_str() + pos + 1, nullptr);
+}
+
 std::vector<double> numbersAfter(const std::string& text, const std::string& key) {
   std::vector<double> values;
   size_t pos = text.find(key);
@@ -175,6 +184,10 @@ int main(int argc, char** argv) {
     }
     int width = (int)jsonLong(header, "width", 376);
     int height = (int)jsonLong(header, "height", 240);
+    // Keyframe points beyond this come from 1-2 px disparities: too noisy
+    // to map (6 m suits EuRoC at 376 px; a street with a wide baseline
+    // maps further).
+    float maxDepth = (float)jsonDouble(header, "max_depth_m", 6.0);
     CamCalib left = parseCam(cam0Yaml, width, height);
     CamCalib right = parseCam(cam1Yaml, width, height);
 
@@ -290,9 +303,7 @@ int main(int argc, char** argv) {
             auto key = std::make_tuple((int)std::floor(p.x / 0.05f),
                                        (int)std::floor(p.y / 0.05f),
                                        (int)std::floor(p.z / 0.05f));
-            // Far points come from 1-2 px disparities (1 px ~ 25 m at
-            // 376 px wide): too noisy to map, so keep z within 6 m.
-            if (p.z <= 0.f || p.z > 6.f) continue;
+            if (p.z <= 0.f || p.z > maxDepth) continue;
             if (!seen.emplace(key, true).second) continue;
             int u = (int)std::lround(fx * p.x / p.z + cx);
             int v = (int)std::lround(fy * p.y / p.z + cy);

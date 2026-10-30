@@ -271,7 +271,9 @@ class StreamingRtabmapBackend:
         self._reader.start()
         self._writer.start()
         try:
-            self._process.write(encode_hello(cam0_yaml, cam1_yaml, width, height, params or {}))
+            self._process.write(
+                encode_hello(cam0_yaml, cam1_yaml, width, height, params or {}, max_depth_m)
+            )
         except Exception as exc:
             raise SidecarError(f"streaming sidecar hello failed: {exc}") from exc
         if not self._ready.wait(timeout=30):
