@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 """Launch the SurMap browser demo on a recorded dataset.
 
-Downloads and caches the selected dataset on first run (later runs
-reuse the cache), then serves the demo page: real-time stereo video
-with projected scene-point detections overlaid, and — at the end of
-playback — the real RTAB-Map map built from the same frames.
+Serves the demo page without downloading anything: every registered
+scene is offered in the page's scene picker, and a scene is downloaded
+into the cache (with progress on the page) the first time it is picked;
+later picks and launches reuse the cache. The page plays the stereo
+video with RTAB-Map's tracked keypoints overlaid by depth while the map
+builds live, with Pause/Resume and Restart.
 
-    uv run python scripts/demo.py                      # full EuRoC V1_01
+    uv run python scripts/demo.py                      # opens on EuRoC V1_01
+    uv run python scripts/demo.py --dataset kitti-2011-09-26-drive-0009
     uv run python scripts/demo.py --frames 200         # first 200 pairs only
-    uv run python scripts/demo.py --prepare-only       # just download+cache
+    uv run python scripts/demo.py --prepare-only       # just download+cache --dataset
     uv run python scripts/demo.py --list-datasets
 
 Add a dataset by adding one entry to `DATASETS` in
-`surmap.demo.datasets`; it then appears in `--list-datasets` and as
-a `--dataset` choice here. Playback is paced server-side at `--fps`
-(default: the dataset's native 20 fps). With
+`surmap.demo.datasets`; it then appears in the page's picker, in
+`--list-datasets` and as a `--dataset` choice here. Playback is paced server-side at `--fps`
+(default: the dataset's native rate). With
 `SURMAP_RTABMAP_SHARED_CONTAINER` set, the final map is built inside
 that reusable container, which is never stopped or removed.
 """
@@ -45,7 +48,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--fps", type=float, default=20.0, help="server-side playback rate")
+    parser.add_argument(
+        "--fps", type=float, default=None, help="server-side playback rate (default: dataset's)"
+    )
     parser.add_argument("--frames", type=int, default=0, help="pairs to play (0 = full sequence)")
     parser.add_argument("--start", type=int, default=0, help="first pair index to play")
     parser.add_argument("--no-rtabmap", action="store_true", help="skip the final RTAB-Map map")
@@ -78,16 +83,20 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{spec.dataset_id}\t{spec.title}\t{spec.description}")
         return 0
 
-    prepared = ensure_dataset(DATASETS[args.dataset], args.cache_dir or default_cache_dir())
+    cache_dir = args.cache_dir or default_cache_dir()
     if args.prepare_only:
+        prepared = ensure_dataset(DATASETS[args.dataset], cache_dir)
         print(f"cached under {prepared.root}")
         return 0
 
     coral_dir = args.coral_model_dir
     if coral_dir is None and os.environ.get("SURMAP_CORAL_MODEL_DIR"):
         coral_dir = Path(os.environ["SURMAP_CORAL_MODEL_DIR"])
+    # Nothing is downloaded here: a scene is fetched into the cache the
+    # first time it is picked on the page (with progress shown there).
     server = make_demo_server(
-        prepared,
+        cache_dir=cache_dir,
+        default_dataset=args.dataset,
         host=args.host,
         port=args.port,
         fps=args.fps,

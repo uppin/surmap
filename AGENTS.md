@@ -117,7 +117,7 @@ uv run pytest -q
 # only when all four pass: git commit, git push, open/update the PR
 ```
 
-## Git and PR ownership
+## Git and PRs
 
 - **All work lands through a pull request. Never push to `main`.**
   Every change — features, fixes, docs, this file — goes on a branch,
@@ -127,12 +127,6 @@ uv run pytest -q
   it happens, disclose it immediately and let the user decide whether
   to keep it or move it into a PR retroactively. Landing on `main`
   via a merged PR is the only exception.
-- Commits and PRs on this repo are authored as
-  `uppin <mantas.indrasius@gmail.com>` (repo-local git config is
-  already set). Open PRs with `gh` while authenticated as `uppin`.
-- GitHub cannot transfer PR authorship. A PR opened under the wrong
-  account must be closed and re-created under `uppin` (same branch,
-  base, title, and body) — do not just reassign it.
 - Never commit or push unless the user asked for that exact action.
 
 ## Scope guardrail

@@ -22,6 +22,7 @@ dependencies = [
     # connectrpc 0.12.1 imports protobuf.wkt.api_pb, removed after
     # protobuf-py 0.5.0; see docs/connectrpc.md before bumping.
     "protobuf-py==0.5.0",
+    "rosbags>=0.11.9",
     "websockets>=14.0",
 ]
 

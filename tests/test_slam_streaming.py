@@ -3,6 +3,7 @@
 import io
 import json
 import queue
+import struct
 import threading
 import time
 from collections.abc import Callable
@@ -12,8 +13,9 @@ import pytest
 from PIL import Image
 
 from surmap.slam.sidecar import SidecarError
-from surmap.slam.streaming import StreamingRtabmapBackend
-from surmap.types import StereoFramePair
+from surmap.slam.stream_protocol import PROTOCOL_VERSION, Keypoint
+from surmap.slam.streaming import StreamingRtabmapBackend, stream_build_argv
+from surmap.types import Pose, StereoFramePair, Vec3
 
 CAM_YAML = "sensor_type: camera\nresolution: [376, 240]\n"
 
@@ -31,13 +33,14 @@ def _frame(frame_id: int) -> StereoFramePair:
 class FakeProcess:
     """Scripted process: test pushes stdout lines; stdin is recorded."""
 
-    def __init__(self, argv: list[str]) -> None:
+    def __init__(self, argv: list[str], ready: dict[str, object] | None = None) -> None:
         self.argv = argv
         self.written = bytearray()
         self.stdin_closed = threading.Event()
         self.terminated = False
         self._lines: queue.Queue[bytes] = queue.Queue()
-        self._lines.put(b'{"type":"ready","version":1}\n')
+        announced = {"type": "ready", "version": PROTOCOL_VERSION, **(ready or {})}
+        self._lines.put((json.dumps(announced) + "\n").encode())
 
     def write(self, data: bytes) -> None:
         self.written.extend(data)
@@ -66,9 +69,10 @@ def _backend(
     *,
     queue_size: int = 4,
     runner: Callable[[list[str]], None] | None = None,
+    ready: dict[str, object] | None = None,
 ) -> StreamingRtabmapBackend:
     def factory(argv: list[str]) -> FakeProcess:
-        proc = FakeProcess(argv)
+        proc = FakeProcess(argv, ready)
         fake_holder.append(proc)
         return proc
 
@@ -257,3 +261,215 @@ def test_dockerfile_digest_matches_pinned_image() -> None:
     from surmap.slam.sidecar import PINNED_RTABMAP_IMAGE
 
     assert PINNED_RTABMAP_IMAGE in dockerfile
+
+
+def _eventually(condition: Callable[[], bool], backend: StreamingRtabmapBackend) -> None:
+    """Drain updates until the reader thread has applied what the test emitted."""
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        backend.poll_updates()
+        if condition():
+            return
+        time.sleep(0.01)
+    raise AssertionError("condition never held")
+
+
+def _keyframe(node_id: int, pose: list[float], points: list[list[float]]) -> dict[str, object]:
+    return {
+        "type": "keyframe",
+        "node_id": node_id,
+        "frame_id": node_id,
+        "t_ns": node_id * 1_000_000_000,
+        "pose": pose,
+        "points_local": points,
+    }
+
+
+def _odom(frame_id: int, pose: list[float]) -> dict[str, object]:
+    return {
+        "type": "odom",
+        "frame_id": frame_id,
+        "t_ns": frame_id * 1_000_000_000,
+        "pose": pose,
+        "lost": False,
+        "ms": 1.0,
+    }
+
+
+IDENTITY = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+
+
+def test_keyframes_the_optimized_graph_dropped_leave_the_map() -> None:
+    # Given two keyframes, of which RTAB-Map's graph keeps only node 1
+    holder: list[FakeProcess] = []
+    backend = _backend(holder)
+    try:
+        backend.process_frame(_frame(1))
+        holder[0].emit(_keyframe(1, IDENTITY, [[1, 0, 0]]))
+        holder[0].emit(_keyframe(2, IDENTITY, [[2, 0, 0]]))
+        _eventually(lambda: backend.keyframe_count == 2, backend)
+
+        # When the graph update arrives without node 2
+        holder[0].emit(
+            {"type": "graph", "poses": [{"node_id": 1, "pose": IDENTITY}], "final": False}
+        )
+
+        # Then node 2's points and count are gone
+        _eventually(lambda: backend.keyframe_count == 1, backend)
+        assert backend.map_snapshot() == (Vec3(1.0, 0.0, 0.0),)
+    finally:
+        backend.close()
+
+
+def test_map_cloud_returns_map_frame_points_with_their_colours() -> None:
+    # Given a keyframe 10 m along x holding one coloured point
+    holder: list[FakeProcess] = []
+    backend = _backend(holder)
+    try:
+        backend.process_frame(_frame(1))
+        holder[0].emit(_keyframe(1, [10, 0, 0, 0, 0, 0, 1], [[1, 0, 0, 10, 20, 30]]))
+        _eventually(lambda: backend.keyframe_count == 1, backend)
+
+        # When the map cloud is read
+        cloud = backend.map_cloud()
+
+        # Then the point is placed by its keyframe pose and keeps its colour
+        assert cloud.points.tolist() == [[11.0, 0.0, 0.0]]
+        assert cloud.colors.tolist() == [[10, 20, 30]]
+    finally:
+        backend.close()
+
+
+def test_frame_odometry_returns_that_frames_pose_and_keypoints() -> None:
+    # Given odometry for frame 2 carrying one tracked keypoint
+    holder: list[FakeProcess] = []
+    backend = _backend(holder)
+    try:
+        backend.process_frame(_frame(1))
+        holder[0].emit({**_odom(2, [0, 0, 1, 0, 0, 0, 1]), "keypoints": [[7, 10, 20, 3.5]]})
+        _eventually(lambda: backend.frame_odometry(2) is not None, backend)
+
+        # When frame 2's odometry is read
+        odom = backend.frame_odometry(2)
+
+        # Then it is that frame's pose and keypoints, and frame 1 has none yet
+        assert odom is not None
+        assert odom.pose == Pose(Vec3(0.0, 0.0, 1.0))
+        assert odom.keypoints == (Keypoint(7, 10.0, 20.0, 3.5),)
+        assert backend.frame_odometry(1) is None
+    finally:
+        backend.close()
+
+
+def test_rectification_is_the_one_the_sidecar_announced() -> None:
+    # Given a sidecar announcing its left camera's rectification
+    announced = {
+        "rotation": [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        "rectified": [200, 200, 100, 80],
+        "raw": [210, 209, 101, 79],
+        "distortion": [-0.28, 0.07, 0, 0],
+    }
+    backend = _backend([], ready={"rectification": announced})
+    try:
+        # When / Then the backend exposes it
+        rectification = backend.rectification
+        assert rectification is not None
+        assert rectification.rectified == (200.0, 200.0, 100.0, 80.0)
+        assert rectification.distortion == (-0.28, 0.07, 0.0, 0.0)
+    finally:
+        backend.close()
+
+
+def test_pairs_travel_as_raw_gray8_at_the_configured_size() -> None:
+    # Given a backend configured for 376x240 frames
+    holder: list[FakeProcess] = []
+    backend = _backend(holder)
+    hello_length = len(holder[0].written)
+    try:
+        # When a pair is processed
+        backend.process_frame(_frame(1))
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and len(holder[0].written) == hello_length:
+            time.sleep(0.01)
+
+        # Then it is sent as raw gray8 bytes, one per pixel
+        pair = bytes(holder[0].written[hello_length:])
+        (header_length,) = struct.unpack("<I", pair[:4])
+        header = json.loads(pair[4 : 4 + header_length])
+        (left_length,) = struct.unpack("<I", pair[4 + header_length : 8 + header_length])
+        assert header["encoding"] == "gray8"
+        assert left_length == 376 * 240
+    finally:
+        backend.close()
+
+
+def test_sidecar_runs_on_the_pinned_image_platform() -> None:
+    # Given / When a backend starts its sidecar
+    holder: list[FakeProcess] = []
+    backend = _backend(holder)
+    backend.close()
+
+    # Then docker run asks for the pinned image's only platform
+    argv = holder[0].argv
+    assert argv[argv.index("--platform") + 1] == "linux/amd64"
+
+
+def test_sidecar_image_builds_for_the_pinned_image_platform() -> None:
+    # Given / When the build command is produced
+    argv = stream_build_argv("surmap/rtabmap-stream:abc", Path("deploy/rtabmap-stream"))
+
+    # Then it builds for the pinned image's only platform
+    assert argv == [
+        "docker",
+        "build",
+        "--platform",
+        "linux/amd64",
+        "-t",
+        "surmap/rtabmap-stream:abc",
+        "deploy/rtabmap-stream",
+    ]
+
+
+def _hello(fake: FakeProcess) -> dict[str, object]:
+    (length,) = struct.unpack("<I", bytes(fake.written[:4]))
+    hello: dict[str, object] = json.loads(bytes(fake.written[4 : 4 + length]))
+    return hello
+
+
+def test_hello_carries_the_keyframe_depth_cap() -> None:
+    # Given a backend for a street scene, mapping out to 30 m
+    holder: list[FakeProcess] = []
+
+    def factory(argv: list[str]) -> FakeProcess:
+        holder.append(FakeProcess(argv))
+        return holder[-1]
+
+    backend = StreamingRtabmapBackend(
+        cam0_yaml=CAM_YAML, cam1_yaml=CAM_YAML, process_factory=factory, max_depth_m=30.0
+    )
+    backend.close()
+
+    # When / Then the sidecar is told the cap in its hello
+    assert _hello(holder[0])["max_depth_m"] == 30.0
+
+
+def test_the_keyframe_depth_cap_defaults_to_the_indoor_six_metres() -> None:
+    # Given / When a backend starts without a cap
+    holder: list[FakeProcess] = []
+    _backend(holder).close()
+
+    # Then the hello carries the indoor default
+    assert _hello(holder[0])["max_depth_m"] == 6.0
+
+
+def test_odometry_restarts_after_losing_track() -> None:
+    # Given / When a backend starts its sidecar with default parameters
+    holder: list[FakeProcess] = []
+    _backend(holder).close()
+
+    # Then RTAB-Map is told to reset odometry one frame after losing track
+    # (its default, 0, never recovers: a single dropout ends tracking)
+    argv = holder[0].argv
+    params = {argv[i + 1] for i, arg in enumerate(argv) if arg == "--Param"}
+    assert "Odom/ResetCountdown=1" in params
+    assert "Rtabmap/DetectionRate=2" in params

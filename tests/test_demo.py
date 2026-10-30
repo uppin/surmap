@@ -2,26 +2,43 @@
 HTTP smoke of the demo server (started and closed in the test).
 """
 
+import base64
 import hashlib
 import io
 import json
+import math
 import threading
 import urllib.request
 import zipfile
 from pathlib import Path
 
+import numpy as np
 import pytest
+from numpy.typing import NDArray
 from PIL import Image
 
 from surmap.demo.datasets import (
     DATASETS,
     DatasetSpec,
+    PreparedDataset,
     ensure_dataset,
     load_calibration,
     scaled_sensor_yaml,
 )
-from surmap.demo.server import DemoPlayer, make_demo_server, project_overlay
-from surmap.types import Vec3
+from surmap.demo.server import (
+    DemoPlayer,
+    FloorExtent,
+    depth_colour,
+    make_demo_server,
+    project_overlay,
+    rectified_to_raw,
+)
+from surmap.detection.tracker import TrackedDetection
+from surmap.slam.base import FrameResult
+from surmap.slam.stream_protocol import Keypoint, MapUpdate, OdomUpdate, Rectification
+from surmap.slam.streaming import MapCloud
+from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
+from surmap.types import Pose, StereoFramePair, Vec3
 
 CAM0_YAML = """sensor_type: camera
 T_BS:
@@ -39,6 +56,116 @@ distortion_model: radial-tangential
 distortion_coefficients: [0.0, 0.0, 0.0, 0.0]
 """
 CAM1_YAML = CAM0_YAML.replace("0.0, -0.05,", "0.0, 0.06,")
+
+
+class FakeLiveBackend:
+    """Live backend double: a fixed coloured map cloud, trajectory and newest pose."""
+
+    def __init__(
+        self,
+        cloud: list[tuple[tuple[float, float, float], tuple[int, int, int]]] | None = None,
+        trajectory: list[Pose] | None = None,
+        odometry: dict[int, OdomUpdate] | None = None,
+        odometry_lag: int = 0,
+    ) -> None:
+        entries = cloud if cloud is not None else [((1.0, 2.0, 0.0), (128, 128, 128))]
+        self.cloud = MapCloud(
+            np.array([xyz for xyz, _ in entries], dtype=np.float32).reshape(-1, 3),
+            np.array([rgb for _, rgb in entries], dtype=np.uint8).reshape(-1, 3),
+        )
+        self._trajectory = trajectory if trajectory is not None else [Pose(Vec3(0.1, 0.0, 0.0))]
+        self._odometry = odometry or {}
+        self._odometry_lag = odometry_lag
+        self._arrived_through = 0
+        self.rectification: Rectification | None = a_rectification(
+            rectified=(229.0, 228.5, 183.5, 124.0), raw=(229.0, 228.5, 183.5, 124.0)
+        )
+        self.closed = False
+        self.dropped_frames = 0
+        self.odom_state = "tracking"
+        self.keyframe_count = 1
+
+    @property
+    def last_odom_frame(self) -> int:
+        return max((f for f in self._odometry if f <= self._arrived_through), default=0)
+
+    def process_frame(self, frame: StereoFramePair) -> FrameResult:
+        # Odometry for frame f arrives once frame f + lag has been sent
+        self._arrived_through = frame.frame_id - self._odometry_lag
+        return FrameResult(frame.frame_id, frame.t_ns, self._trajectory[-1], ())
+
+    def frame_odometry(self, frame_id: int) -> OdomUpdate | None:
+        return self._odometry.get(frame_id) if frame_id <= self._arrived_through else None
+
+    def poll_updates(self) -> list[MapUpdate]:
+        return []
+
+    def map_cloud(self) -> MapCloud:
+        return self.cloud
+
+    def map_snapshot(self) -> tuple[Vec3, ...]:
+        return tuple(Vec3(*map(float, row)) for row in self.cloud.points.tolist())
+
+    def trajectory(self) -> list[Pose]:
+        return self._trajectory
+
+    def flush(self) -> list[FrameResult]:
+        self._arrived_through = max(self._odometry, default=0)
+        last = self._trajectory[-1]
+        return [FrameResult(1, 100, last, self.map_snapshot())]
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class MatcherThatMustNotRun(StereoReconstructor):
+    """The numpy matcher, failing loudly if the live overlay calls it."""
+
+    def reconstruct(self, left: FrameImage, right: FrameImage, rig: StereoRig) -> tuple[Vec3, ...]:
+        raise AssertionError("the live overlay ran the numpy stereo matcher")
+
+
+class BlockingDetector:
+    """Detection source that blocks every call until `release` is set."""
+
+    def __init__(self) -> None:
+        self.release = threading.Event()
+
+    def detect_tracked(self, frame_id: int, rgb: NDArray[np.uint8]) -> tuple[TrackedDetection, ...]:
+        assert self.release.wait(timeout=10), "detector was never released"
+        return (TrackedDetection("car", 0.9, (1.0, 2.0, 30.0, 40.0), 7, frame_id),)
+
+
+def floor_pixel(png_b64: object, u: float, v: float) -> tuple[int, int, int, int]:
+    """The RGBA of a map-image pixel."""
+    assert isinstance(png_b64, str)
+    with Image.open(io.BytesIO(base64.b64decode(png_b64))) as image:
+        pixel = image.convert("RGBA").getpixel((int(u), int(v)))
+    assert isinstance(pixel, tuple) and len(pixel) == 4
+    r, g, b, a = (int(channel) for channel in pixel)
+    return r, g, b, a
+
+
+def an_extent(raw: object) -> FloorExtent:
+    """The extent a map event sends as [min_x, max_x, min_z, max_z]."""
+    assert isinstance(raw, list) and len(raw) == 4
+    min_x, max_x, min_z, max_z = (float(value) for value in raw)
+    return FloorExtent(min_x, max_x, min_z, max_z)
+
+
+def a_rectification(
+    rotation: tuple[float, ...] = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
+    rectified: tuple[float, float, float, float] = (200.0, 200.0, 100.0, 80.0),
+    raw: tuple[float, float, float, float] = (200.0, 200.0, 100.0, 80.0),
+    distortion: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0),
+) -> Rectification:
+    return Rectification(rotation, rectified, raw, distortion)
+
+
+def _odom_with(
+    *keypoints: Keypoint, pose: Pose | None = None, map_pose: Pose | None = None
+) -> OdomUpdate:
+    return OdomUpdate(0, 0, pose or Pose(Vec3(0.0, 0.0, 0.0)), False, 1.0, keypoints, map_pose)
 
 
 def _png_bytes() -> bytes:
@@ -120,7 +247,7 @@ def _write_zip_to(_url: str, target: Path, source: Path) -> None:
     target.write_bytes(source.read_bytes())
 
 
-def _prepared_tiny(tmp_path: Path) -> object:
+def _prepared_tiny(tmp_path: Path) -> PreparedDataset:
     zip_path = tmp_path / "tiny.zip"
     spec = _tiny_zip(zip_path)
     return ensure_dataset(
@@ -133,7 +260,7 @@ def _prepared_tiny(tmp_path: Path) -> object:
 
 def test_demo_server_serves_page_health_and_stream_then_closes(tmp_path: Path) -> None:
     prepared = _prepared_tiny(tmp_path)
-    server = make_demo_server(prepared, host="127.0.0.1", port=0, with_rtabmap=False)  # type: ignore[arg-type]
+    server = make_demo_server(prepared, host="127.0.0.1", port=0, with_rtabmap=False)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     host = str(server.server_address[0])
@@ -156,53 +283,24 @@ def test_demo_server_serves_page_health_and_stream_then_closes(tmp_path: Path) -
 
 def test_player_paces_frames_and_closes_its_backend(tmp_path: Path) -> None:
     prepared = _prepared_tiny(tmp_path)
-    player = DemoPlayer(prepared, fps=50.0, with_rtabmap=False)  # type: ignore[arg-type]
+    player = DemoPlayer(prepared, fps=50.0, with_rtabmap=False)
     events = list(player.events())
     assert [event.kind for event in events] == ["frame", "frame"]
     assert all(event.jpeg for event in events)
     with pytest.raises(ValueError, match="fps"):
-        DemoPlayer(prepared, fps=0, with_rtabmap=False)  # type: ignore[arg-type]
+        DemoPlayer(prepared, fps=0, with_rtabmap=False)
 
 
 def test_player_emits_live_map_events_before_final_and_closes_backend(tmp_path: Path) -> None:
-    from surmap.slam.base import FrameResult
-    from surmap.slam.stream_protocol import MapUpdate
-    from surmap.types import Pose, StereoFramePair, Vec3
-
-    class FakeLiveBackend:
-        def __init__(self) -> None:
-            self.closed = False
-            self.dropped_frames = 0
-            self.odom_state = "tracking"
-            self.last_odom_frame = 0
-            self.keyframe_count = 1
-
-        def process_frame(self, frame: StereoFramePair) -> FrameResult:
-            self.last_odom_frame = frame.frame_id
-            return FrameResult(frame.frame_id, frame.t_ns, Pose(Vec3(0.1, 0.0, 0.0)), ())
-
-        def poll_updates(self) -> list[MapUpdate]:
-            return []
-
-        def map_snapshot(self) -> tuple[Vec3, ...]:
-            return (Vec3(1.0, 2.0, 0.0),)
-
-        def trajectory(self) -> list[Pose]:
-            return [Pose(Vec3(0.1, 0.0, 0.0))]
-
-        def flush(self) -> list[FrameResult]:
-            return [FrameResult(1, 100, Pose(Vec3(0.1, 0.0, 0.0)), (Vec3(1.0, 2.0, 0.0),))]
-
-        def close(self) -> None:
-            self.closed = True
-
+    # Given a live backend
     fake = FakeLiveBackend()
-    prepared = _prepared_tiny(tmp_path)
     player = DemoPlayer(
-        prepared,  # type: ignore[arg-type]
+        _prepared_tiny(tmp_path),
         fps=1000.0,
         backend_factory=lambda: fake,
     )
+
+    # When the player runs to the end
     events = list(player.events())
 
     # Then map events arrive during playback (before final), final
@@ -211,16 +309,145 @@ def test_player_emits_live_map_events_before_final_and_closes_backend(tmp_path: 
     assert "map" in kinds
     assert kinds.index("map") < kinds.index("final")
     assert kinds[-1] == "final"
-    map_event = events[kinds.index("map")]
-    assert map_event.data["cloud_xy"] == [[1.0, 2.0]]
-    assert map_event.data["odom_state"] == "tracking"
+    assert events[kinds.index("map")].data["odom_state"] == "tracking"
     assert fake.closed
+
+
+def test_live_map_plots_the_floor_plane_in_point_colour(tmp_path: Path) -> None:
+    # Given a map point 5 m ahead, 2 m below the camera's start, and a
+    # camera that moved 2 m forward and 1 m up
+    fake = FakeLiveBackend(
+        cloud=[((1.0, 2.0, 5.0), (10, 20, 30))],
+        trajectory=[Pose(Vec3(0.5, -1.0, 2.0))],
+    )
+    player = DemoPlayer(
+        _prepared_tiny(tmp_path),
+        fps=1000.0,
+        backend_factory=lambda: fake,
+    )
+
+    # When the first map event is emitted
+    map_event = next(event for event in player.events() if event.kind == "map")
+
+    # Then the trajectory is on the floor plane (x, z) — the optical
+    # frame's y is height — and the map image shows the point there in its
+    # own grey (r=10 here), within an extent covering both
+    assert map_event.data["trajectory_xy"] == [[0.5, 2.0]]
+    extent = an_extent(map_event.data["extent"])
+    assert extent.min_x <= 0.5 and extent.max_x >= 1.0 and extent.max_z >= 5.0
+    u, v = extent.to_pixels(1.0, 5.0)
+    assert floor_pixel(map_event.data["floor_png"], u, v)[0] == 10
+
+
+def test_live_frame_shows_its_own_tracked_keypoints_once_its_odometry_arrived(
+    tmp_path: Path,
+) -> None:
+    # Given odometry that arrives one frame late, tracking word 5 on
+    # each frame at a slightly different pixel and depth
+    fake = FakeLiveBackend(
+        odometry={
+            1: _odom_with(Keypoint(5, 183.5, 124.0, 0.5)),
+            2: _odom_with(Keypoint(5, 190.0, 124.0, 0.6)),
+        },
+        odometry_lag=1,
+    )
+    player = DemoPlayer(
+        _prepared_tiny(tmp_path),
+        fps=1000.0,
+        backend_factory=lambda: fake,
+        stereo=MatcherThatMustNotRun(),
+    )
+
+    # When playback runs to the end
+    frames = [event for event in player.events() if event.kind == "frame"]
+
+    # Then each frame, in order, carries its own frame's keypoint
+    assert [frame.data["frame_id"] for frame in frames] == [1, 2]
+    assert frames[0].data["detections"] == [
+        {"x": 183.5, "y": 124.0, "d": 0.5, "c": depth_colour(0.5)}
+    ]
+    assert frames[1].data["detections"] == [
+        {"x": 190.0, "y": 124.0, "d": 0.6, "c": depth_colour(0.6)}
+    ]
+
+
+def test_a_frame_whose_pair_was_dropped_is_shown_without_keypoints(tmp_path: Path) -> None:
+    # Given RTAB-Map dropped frame 1's pair and tracked frame 2
+    fake = FakeLiveBackend(odometry={2: _odom_with(Keypoint(5, 183.5, 124.0, 2.0))})
+    player = DemoPlayer(
+        _prepared_tiny(tmp_path),
+        fps=1000.0,
+        backend_factory=lambda: fake,
+    )
+
+    # When playback runs to the end
+    frames = [event for event in player.events() if event.kind == "frame"]
+
+    # Then frame 1 is still shown, with no keypoints, and frame 2 has its own
+    assert [frame.data["frame_id"] for frame in frames] == [1, 2]
+    assert frames[0].data["detections"] == []
+    assert frames[1].data["point_count"] == 1
+
+
+def test_rectified_pixels_map_back_through_the_lens_distortion() -> None:
+    # Given a rectification with barrel distortion k1 = -0.2 and no rotation
+    rectification = a_rectification(distortion=(-0.2, 0.0, 0.0, 0.0))
+
+    # When a rectified pixel half a focal length right of centre is mapped
+    raw = rectified_to_raw(np.array([[200.0, 80.0]]), rectification)
+
+    # Then it lands where the distortion pulls it in: x 0.5 -> 0.475
+    assert raw.tolist() == [[195.0, 80.0]]
+
+
+def test_rectified_pixels_map_back_through_the_rectification_rotation() -> None:
+    # Given a rectification that rotated the raw camera 90 degrees about z
+    rectification = a_rectification(rotation=(0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0))
+
+    # When a rectified pixel half a focal length right of centre is mapped
+    raw = rectified_to_raw(np.array([[200.0, 80.0]]), rectification)
+
+    # Then the raw ray is rotated back: half a focal length up
+    assert raw.tolist() == [[100.0, -20.0]]
+
+
+def test_depth_colours_run_red_near_through_orange_to_teal_far() -> None:
+    # Given / When / Then the ramp's stops, clamped beyond them
+    assert depth_colour(0.2) == "#ff5a3c"
+    assert depth_colour(1.0) == "#ff5a3c"
+    assert depth_colour(3.0) == "#ffb03a"
+    assert depth_colour(6.0) == "#2fd4c4"
+    assert depth_colour(9.0) == "#2fd4c4"
+
+
+def test_a_slow_detector_does_not_stall_playback(tmp_path: Path) -> None:
+    # Given a detector that blocks until the test releases it
+    detector = BlockingDetector()
+    player = DemoPlayer(
+        _prepared_tiny(tmp_path),
+        fps=50.0,
+        with_rtabmap=False,
+        detection_source=detector,
+    )
+
+    # When playback runs, releasing the detector only after both frames
+    kinds: list[str] = []
+    detected_frames: list[object] = []
+    for event in player.events():
+        kinds.append(event.kind)
+        if event.kind == "detections":
+            detected_frames.append(event.data["frame_id"])
+        if kinds.count("frame") == 2:
+            detector.release.set()
+
+    # Then both frames played before any detection, and every frame's
+    # detections still arrived, in frame order
+    assert kinds == ["frame", "frame", "detections", "detections"]
+    assert detected_frames == [1, 2]
 
 
 def test_player_emits_detections_as_a_separate_frame_keyed_event(tmp_path: Path) -> None:
     from typing import Any
-
-    from surmap.detection.tracker import TrackedDetection
 
     class StubSource:
         def detect_tracked(self, frame_id: int, rgb: Any) -> tuple[TrackedDetection, ...]:
@@ -228,18 +455,59 @@ def test_player_emits_detections_as_a_separate_frame_keyed_event(tmp_path: Path)
 
     prepared = _prepared_tiny(tmp_path)
     player = DemoPlayer(
-        prepared,  # type: ignore[arg-type]
+        prepared,
         fps=50.0,
         with_rtabmap=False,
         detection_source=StubSource(),
     )
     events = list(player.events())
     # Detections are their own events carrying frame_id — never a
-    # field riding on the frame events
-    assert [event.kind for event in events] == ["frame", "detections", "frame", "detections"]
-    detections = events[1]
+    # field riding on the frame events — and each follows its frame
+    kinds = [event.kind for event in events]
+    assert kinds.count("frame") == 2 and kinds.count("detections") == 2
+    assert kinds[0] == "frame"
+    detections = events[kinds.index("detections")]
     assert detections.data["frame_id"] == 1
     objects = detections.data["objects"]
     assert isinstance(objects, list)
     assert objects[0]["track_id"] == 7
     assert "objects" not in events[0].data
+
+
+def test_live_frame_carries_its_camera_on_the_floor_plan(tmp_path: Path) -> None:
+    # Given frame 1's odometry: the camera 1 m right, 2 m ahead of where it
+    # started, half a metre up, and turned 90 degrees to face +x
+    turned_right = Pose(
+        Vec3(1.0, -0.5, 2.0), (0.0, math.sin(math.pi / 4), 0.0, math.cos(math.pi / 4))
+    )
+    fake = FakeLiveBackend(odometry={1: _odom_with(pose=turned_right)})
+    player = DemoPlayer(_prepared_tiny(tmp_path), fps=1000.0, backend_factory=lambda: fake)
+
+    # When frame 1 is shown
+    frame = next(event for event in player.events() if event.kind == "frame")
+
+    # Then it carries the camera's floor-plan position, heading and the
+    # display's horizontal field of view (2·atan(188 / 229))
+    assert frame.data["camera"] == {"x": 1.0, "z": 2.0, "dx": 1.0, "dz": 0.0, "fov_deg": 78.8}
+
+
+def test_a_frame_without_odometry_carries_no_camera(tmp_path: Path) -> None:
+    # Given RTAB-Map dropped frame 1's pair and tracked frame 2
+    fake = FakeLiveBackend(odometry={2: _odom_with()})
+    player = DemoPlayer(_prepared_tiny(tmp_path), fps=1000.0, backend_factory=lambda: fake)
+
+    # When playback runs
+    frames = [event for event in player.events() if event.kind == "frame"]
+
+    # Then frame 1 has no camera to draw, and frame 2 has one
+    assert frames[0].data["camera"] is None
+    assert frames[1].data["camera"] is not None
+
+
+def test_without_rtabmap_frames_carry_no_camera(tmp_path: Path) -> None:
+    # Given / When playback without SLAM
+    player = DemoPlayer(_prepared_tiny(tmp_path), fps=1000.0, with_rtabmap=False)
+    frame = next(event for event in player.events() if event.kind == "frame")
+
+    # Then there is no camera pose to show
+    assert frame.data["camera"] is None

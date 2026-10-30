@@ -19,23 +19,33 @@ from __future__ import annotations
 
 import base64
 import html
+import io
+import itertools
 import json
 import math
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections import deque
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Protocol, runtime_checkable
+from urllib.parse import parse_qs, urlsplit
 
+import numpy as np
+from numpy.typing import NDArray
 from PIL import Image
 
 from surmap.demo.datasets import (
-    DISPLAY_HEIGHT,
-    DISPLAY_WIDTH,
+    DATASETS,
+    DatasetSpec,
     DemoCalibration,
     PreparedDataset,
+    PrepareProgress,
+    cached_dataset,
+    default_cache_dir,
+    ensure_dataset,
     load_calibration,
     scaled_sensor_yaml,
 )
@@ -43,15 +53,15 @@ from surmap.demo.page import PAGE
 from surmap.detection.detector import CoralDetector, decode_rgb
 from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
 from surmap.detection.source import CoralDetectionSource, DetectionSource
+from surmap.detection.tracker import TrackedDetection
 from surmap.slam.base import FrameResult
 from surmap.slam.sidecar import SidecarRtabmapBackend
-from surmap.slam.stream_protocol import MapUpdate
-from surmap.slam.streaming import StreamingRtabmapBackend
+from surmap.slam.stream_protocol import Keypoint, MapUpdate, OdomUpdate, Rectification
+from surmap.slam.streaming import MapCloud, StreamingRtabmapBackend, pose_rotation
 from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
 from surmap.types import Pose, StereoFramePair, Vec3
 
 MAX_OVERLAY_POINTS = 600
-MAX_MAP_POINTS = 4000
 
 
 @runtime_checkable
@@ -61,6 +71,8 @@ class LiveSlamBackend(Protocol):
     def process_frame(self, frame: StereoFramePair) -> FrameResult: ...
     def poll_updates(self) -> list[MapUpdate]: ...
     def map_snapshot(self) -> tuple[Vec3, ...]: ...
+    def map_cloud(self) -> MapCloud: ...
+    def frame_odometry(self, frame_id: int) -> OdomUpdate | None: ...
     def trajectory(self) -> list[Pose]: ...
     def flush(self) -> list[FrameResult]: ...
     def close(self) -> None: ...
@@ -73,6 +85,8 @@ class LiveSlamBackend(Protocol):
     def last_odom_frame(self) -> int: ...
     @property
     def keyframe_count(self) -> int: ...
+    @property
+    def rectification(self) -> Rectification | None: ...
 
 
 @dataclass(frozen=True)
@@ -100,16 +114,447 @@ def project_overlay(
     return visible
 
 
+# Floor plan canvas (square, px), its padding, and how many points make a
+# pixel fully opaque.
+FLOOR_CANVAS_PX = 340
+FLOOR_PADDING_PX = 10
+FLOOR_SOLID_POINTS = 16
+
+# Overlay ramp colours, near to far; each dataset sets the depths
+# (`DatasetSpec.depth_stops_m`) and the page legend shows the same stops.
+DEPTH_COLOURS: tuple[tuple[int, int, int], ...] = (
+    (0xFF, 0x5A, 0x3C),  # near: red
+    (0xFF, 0xB0, 0x3A),  # mid: orange
+    (0x2F, 0xD4, 0xC4),  # far: teal
+)
+DepthStops = tuple[float, float, float]
+INDOOR_STOPS: DepthStops = (1.0, 3.0, 6.0)
+
+OverlayPoint = dict[str, float | str]
+
+
+@dataclass(frozen=True)
+class StreamBackendOptions:
+    """How the live sidecar is configured for one prepared dataset."""
+
+    cam0_yaml: str
+    cam1_yaml: str
+    width: int
+    height: int
+    max_depth_m: float
+
+
+def stream_backend_options(prepared: PreparedDataset) -> StreamBackendOptions:
+    """The live sidecar's configuration: display-size frames and calibration."""
+    width, height = prepared.spec.display_size
+    return StreamBackendOptions(
+        cam0_yaml=scaled_sensor_yaml(prepared.sensor_yaml("cam0"), width, height),
+        cam1_yaml=scaled_sensor_yaml(prepared.sensor_yaml("cam1"), width, height),
+        width=width,
+        height=height,
+        max_depth_m=prepared.spec.max_map_depth_m,
+    )
+
+
+def depth_colour(depth_m: float, stops: DepthStops = INDOOR_STOPS) -> str:
+    """Overlay colour for a depth: red near, orange mid, teal far."""
+    ramp = list(zip(stops, DEPTH_COLOURS, strict=True))
+    rgb = ramp[0][1] if depth_m <= ramp[0][0] else ramp[-1][1]
+    for (low, low_rgb), (high, high_rgb) in itertools.pairwise(ramp):
+        if low < depth_m <= high:
+            rgb = _blend(low_rgb, high_rgb, (depth_m - low) / (high - low))
+    return "#{:02x}{:02x}{:02x}".format(*rgb)
+
+
+def _blend(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int]:
+    return (
+        round(a[0] + (b[0] - a[0]) * t),
+        round(a[1] + (b[1] - a[1]) * t),
+        round(a[2] + (b[2] - a[2]) * t),
+    )
+
+
+def rectified_to_raw(
+    pixels: NDArray[np.float64], rectification: Rectification
+) -> NDArray[np.float64]:
+    """Rectified left-camera pixels to raw (distorted) display pixels.
+
+    Undoes the rectification rotation (raw ray = R1ᵀ · rectified ray), then
+    applies the raw camera's radial-tangential distortion.
+    """
+    fx, fy, cx, cy = rectification.rectified
+    rays = np.stack(
+        [(pixels[:, 0] - cx) / fx, (pixels[:, 1] - cy) / fy, np.ones(len(pixels))], axis=1
+    )
+    # Row vectors: R1ᵀ · r is r @ R1.
+    raw_rays = rays @ np.array(rectification.rotation, dtype=np.float64).reshape(3, 3)
+    x = raw_rays[:, 0] / raw_rays[:, 2]
+    y = raw_rays[:, 1] / raw_rays[:, 2]
+    k1, k2, p1, p2 = rectification.distortion
+    r2 = x * x + y * y
+    radial = 1 + k1 * r2 + k2 * r2 * r2
+    xd = x * radial + 2 * p1 * x * y + p2 * (r2 + 2 * x * x)
+    yd = y * radial + p1 * (r2 + 2 * y * y) + 2 * p2 * x * y
+    raw_fx, raw_fy, raw_cx, raw_cy = rectification.raw
+    return np.stack([raw_fx * xd + raw_cx, raw_fy * yd + raw_cy], axis=1)
+
+
+def _coloured(
+    points: list[dict[str, float]], stops: DepthStops = INDOOR_STOPS
+) -> list[OverlayPoint]:
+    return [{**point, "c": depth_colour(point["d"], stops)} for point in points]
+
+
+def keypoint_overlay(
+    keypoints: tuple[Keypoint, ...],
+    rectification: Rectification | None,
+    calibration: DemoCalibration,
+    stops: DepthStops = INDOOR_STOPS,
+) -> list[OverlayPoint]:
+    """A frame's tracked keypoints at their raw display pixels, coloured by depth."""
+    if not keypoints:
+        return []
+    pixels = np.array([(k.u, k.v) for k in keypoints], dtype=np.float64)
+    if rectification is not None:
+        pixels = rectified_to_raw(pixels, rectification)
+    points = [
+        {"x": round(u, 1), "y": round(v, 1), "d": round(k.depth, 2)}
+        for (u, v), k in zip(pixels.tolist(), keypoints, strict=True)
+        if 0 <= u < calibration.width and 0 <= v < calibration.height
+    ]
+    return _coloured(points, stops)
+
+
+@dataclass(frozen=True)
+class FloorExtent:
+    """The floor-plan area shown, in map metres, and its canvas mapping."""
+
+    min_x: float
+    max_x: float
+    min_z: float
+    max_z: float
+
+    @property
+    def scale(self) -> float:
+        """Canvas pixels per metre (uniform, so the plan is never squashed)."""
+        span = max(self.max_x - self.min_x, self.max_z - self.min_z, 0.01)
+        return (FLOOR_CANVAS_PX - 2 * FLOOR_PADDING_PX) / span
+
+    def to_pixels(self, x: float, z: float) -> tuple[float, float]:
+        return (
+            FLOOR_PADDING_PX + (x - self.min_x) * self.scale,
+            FLOOR_CANVAS_PX - FLOOR_PADDING_PX - (z - self.min_z) * self.scale,
+        )
+
+    def grown(self, xs: NDArray[np.float32], zs: NDArray[np.float32]) -> FloorExtent:
+        """This extent widened to cover the given points (never shrinks)."""
+        if not len(xs):
+            return self
+        return FloorExtent(
+            min(self.min_x, float(np.min(xs))),
+            max(self.max_x, float(np.max(xs))),
+            min(self.min_z, float(np.min(zs))),
+            max(self.max_z, float(np.max(zs))),
+        )
+
+    def as_list(self) -> list[float]:
+        return [round(v, 3) for v in (self.min_x, self.max_x, self.min_z, self.max_z)]
+
+
+def _first_extent(xs: NDArray[np.float32], zs: NDArray[np.float32]) -> FloorExtent:
+    return FloorExtent(float(np.min(xs)), float(np.max(xs)), float(np.min(zs)), float(np.max(zs)))
+
+
+def render_floor_plan(xz: NDArray[np.float32], grey: NDArray[np.uint8], extent: FloorExtent) -> str:
+    """Every map point on the floor plan as one base64 RGBA PNG.
+
+    Each pixel is the mean grey of the points falling in it; its opacity
+    rises with how many do (log scale), so walls and edges — where points
+    pile up — read as solid lines. Deterministic: no sampling.
+    """
+    size = FLOOR_CANVAS_PX
+    scale = extent.scale
+    u = np.floor(FLOOR_PADDING_PX + (xz[:, 0] - extent.min_x) * scale).astype(np.int64)
+    v = np.floor(size - FLOOR_PADDING_PX - (xz[:, 1] - extent.min_z) * scale).astype(np.int64)
+    inside = (u >= 0) & (u < size) & (v >= 0) & (v < size)
+    index = v[inside] * size + u[inside]
+    count = np.bincount(index, minlength=size * size)
+    total = np.bincount(index, weights=grey[inside].astype(np.float64), minlength=size * size)
+    seen = count > 0
+    mean = np.zeros(size * size)
+    mean[seen] = total[seen] / count[seen]
+    alpha = np.zeros(size * size)
+    alpha[seen] = np.clip(255 * np.log1p(count[seen]) / np.log1p(FLOOR_SOLID_POINTS), 0, 255)
+    rgba = np.zeros((size * size, 4), np.uint8)
+    rgba[:, 0] = rgba[:, 1] = rgba[:, 2] = np.round(mean).astype(np.uint8)
+    rgba[:, 3] = np.round(alpha).astype(np.uint8)
+    out = io.BytesIO()
+    Image.fromarray(rgba.reshape(size, size, 4), "RGBA").save(out, format="PNG")
+    return base64.b64encode(out.getvalue()).decode()
+
+
+FloorCamera = dict[str, float]
+
+
+def floor_camera(pose: Pose, calibration: DemoCalibration) -> FloorCamera:
+    """The camera on the floor plan: position (x, z), unit heading and
+    horizontal field of view.
+
+    The heading is the optical axis (rotation's third column) projected
+    onto the x-z floor plane; a camera looking straight down keeps +z.
+    """
+    rotation = pose_rotation(pose)
+    dx, dz = float(rotation[0, 2]), float(rotation[2, 2])
+    length = math.hypot(dx, dz)
+    if length < 1e-6:
+        dx, dz, length = 0.0, 1.0, 1.0
+    fov = 2 * math.degrees(math.atan(calibration.width / 2 / calibration.fx))
+    return {
+        "x": round(pose.position.x, 3),
+        "z": round(pose.position.z, 3),
+        "dx": round(dx / length, 3),
+        "dz": round(dz / length, 3),
+        "fov_deg": round(fov, 1),
+    }
+
+
+def _floor_plane_trajectory(trajectory: list[Pose]) -> list[list[float]]:
+    return [[round(pose.position.x, 3), round(pose.position.z, 3)] for pose in trajectory]
+
+
+class _DetectionWorker:
+    """Runs the detector off the frame loop, on the newest submitted frame.
+
+    A frame submitted while another waits replaces it (latest-only), so a
+    slow detector skips frames instead of stalling playback. Results come
+    back in frame order.
+    """
+
+    def __init__(self, source: DetectionSource, size: tuple[int, int]) -> None:
+        self._source = source
+        self._size = size
+        self._condition = threading.Condition()
+        self._pending: tuple[int, int, bytes] | None = None
+        self._busy = False
+        self._closed = False
+        self._results: list[DemoEvent] = []
+        self._error: BaseException | None = None
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def submit(self, frame_id: int, t_ns: int, jpeg: bytes) -> None:
+        with self._condition:
+            self._pending = (frame_id, t_ns, jpeg)
+            self._condition.notify_all()
+
+    def poll(self) -> list[DemoEvent]:
+        with self._condition:
+            if self._error is not None:
+                raise self._error
+            done, self._results = self._results, []
+            return done
+
+    def drain(self, timeout: float = 30.0) -> list[DemoEvent]:
+        """Wait for the in-flight and pending frames, then return their results."""
+        with self._condition:
+            self._condition.wait_for(
+                lambda: (self._pending is None and not self._busy) or self._error is not None,
+                timeout=timeout,
+            )
+        return self.poll()
+
+    def close(self) -> None:
+        with self._condition:
+            self._closed = True
+            self._condition.notify_all()
+        self._thread.join(timeout=5)
+
+    def _run(self) -> None:
+        while True:
+            with self._condition:
+                self._condition.wait_for(lambda: self._pending is not None or self._closed)
+                if self._closed:
+                    return
+                assert self._pending is not None
+                frame_id, t_ns, jpeg = self._pending
+                self._pending, self._busy = None, True
+            try:
+                rgb = decode_rgb(FrameImage(*self._size, "mjpeg", jpeg))
+                event = _detections_event(
+                    frame_id, t_ns, self._source.detect_tracked(frame_id, rgb)
+                )
+            except BaseException as exc:  # surfaced on the playback thread
+                with self._condition:
+                    self._error, self._busy = exc, False
+                    self._condition.notify_all()
+                return
+            with self._condition:
+                self._results.append(event)
+                self._busy = False
+                self._condition.notify_all()
+
+
+def _detections_event(frame_id: int, t_ns: int, tracked: tuple[TrackedDetection, ...]) -> DemoEvent:
+    # A separate event, keyed by frame_id — detections are not attached
+    # to the frame event; the page joins them by frame_id like a wire
+    # client would.
+    return DemoEvent(
+        "detections",
+        {
+            "frame_id": frame_id,
+            "t_ns": t_ns,
+            "objects": [
+                {
+                    "label": detection.label,
+                    "score": round(detection.score, 2),
+                    "track_id": detection.track_id,
+                    "box": [round(value, 1) for value in detection.box_xyxy],
+                }
+                for detection in tracked
+            ],
+        },
+    )
+
+
 def _display_jpeg(prepared: PreparedDataset, channel: int, t_ns: int) -> bytes:
     """The half-res JPEG for one frame, generated once and cached."""
-    target = prepared.root / "display" / f"cam{channel}" / f"{t_ns}.jpg"
+    width, height = prepared.spec.display_size
+    target = prepared.root / f"display-{width}x{height}" / f"cam{channel}" / f"{t_ns}.jpg"
     if not target.is_file():
         target.parent.mkdir(parents=True, exist_ok=True)
         with Image.open(prepared.frame_path(channel, t_ns)) as frame:
-            frame.resize((DISPLAY_WIDTH, DISPLAY_HEIGHT)).convert("L").save(
-                target, format="JPEG", quality=85
-            )
+            frame.resize((width, height)).convert("L").save(target, format="JPEG", quality=85)
     return target.read_bytes()
+
+
+# A live frame waits at most this long for its odometry before it is
+# shown without keypoints (its pair may have been dropped).
+HOLD_MAX_S = 2.0
+
+
+@dataclass
+class _HeldFrame:
+    index: int
+    frame_id: int
+    t_ns: int
+    jpeg: bytes
+    held_at: float
+    overlay: list[OverlayPoint] | None = None  # known up front without live SLAM
+
+
+class _Display:
+    """Shows frames in order, each once its overlay is known.
+
+    With live SLAM a frame waits for its own odometry, so its keypoints
+    are the ones RTAB-Map tracked on that very image; detections are
+    released only once their frame has been shown, never ahead of it.
+    """
+
+    def __init__(
+        self,
+        total: int,
+        backend: LiveSlamBackend | None,
+        calibration: DemoCalibration,
+        stops: DepthStops,
+    ) -> None:
+        self._total = total
+        self._stops = stops
+        self._backend = backend
+        self._calibration = calibration
+        self._frames: deque[_HeldFrame] = deque()
+        self._detections: list[DemoEvent] = []
+        self._shown = 0
+
+    def add_frame(self, frame: _HeldFrame) -> None:
+        self._frames.append(frame)
+
+    def add_detections(self, events: list[DemoEvent]) -> None:
+        self._detections.extend(events)
+
+    def release(self, *, final: bool = False) -> Iterator[DemoEvent]:
+        while self._frames:
+            head = self._frames[0]
+            shown = self._overlay_for(head, final)
+            if shown is None:
+                break
+            overlay, camera = shown
+            self._frames.popleft()
+            self._shown = head.frame_id
+            yield DemoEvent(
+                "frame",
+                {
+                    "index": head.index,
+                    "total": self._total,
+                    "frame_id": head.frame_id,
+                    "t_ns": head.t_ns,
+                    "detections": overlay,
+                    "point_count": len(overlay),
+                    "camera": camera,
+                },
+                jpeg=head.jpeg,
+            )
+        ready = [
+            event
+            for event in self._detections
+            if final or int(str(event.data["frame_id"])) <= self._shown
+        ]
+        self._detections = [event for event in self._detections if event not in ready]
+        yield from ready
+
+    def _overlay_for(
+        self, frame: _HeldFrame, final: bool
+    ) -> tuple[list[OverlayPoint], FloorCamera | None] | None:
+        """(overlay, camera) once the frame can be shown, else None."""
+        if frame.overlay is not None:
+            return frame.overlay, None
+        backend = self._backend
+        assert backend is not None
+        odom = backend.frame_odometry(frame.frame_id)
+        if odom is not None:
+            overlay = keypoint_overlay(
+                odom.keypoints, backend.rectification, self._calibration, self._stops
+            )
+            # The map-corrected pose keeps the camera on its (optimised)
+            # trajectory after loop closures; raw odometry drifts off it.
+            pose = odom.map_pose or odom.pose
+            camera = floor_camera(pose, self._calibration) if pose else None
+            return overlay, camera
+        given_up = (
+            final
+            or backend.last_odom_frame > frame.frame_id  # its pair was dropped
+            or time.monotonic() - frame.held_at > HOLD_MAX_S
+        )
+        return ([], None) if given_up else None
+
+
+class PlaybackControls:
+    """Pause, resume or cancel one player from another thread."""
+
+    def __init__(self) -> None:
+        self._playing = threading.Event()
+        self._playing.set()
+        self._cancelled = threading.Event()
+
+    @property
+    def paused(self) -> bool:
+        return not self._playing.is_set()
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled.is_set()
+
+    def pause(self) -> None:
+        self._playing.clear()
+
+    def resume(self) -> None:
+        self._playing.set()
+
+    def cancel(self) -> None:
+        self._cancelled.set()
+        self._playing.set()  # a paused player wakes up to stop
+
+    def wait_while_paused(self, timeout: float) -> None:
+        self._playing.wait(timeout)
 
 
 class DemoPlayer:
@@ -119,7 +564,7 @@ class DemoPlayer:
         self,
         prepared: PreparedDataset,
         *,
-        fps: float = 20.0,
+        fps: float | None = None,
         max_frames: int = 0,
         start_index: int = 0,
         with_rtabmap: bool = True,
@@ -127,12 +572,17 @@ class DemoPlayer:
         detection_source: DetectionSource | None = None,
         rtabmap_mode: str = "live",
         backend_factory: Callable[[], SidecarRtabmapBackend | LiveSlamBackend] | None = None,
+        controls: PlaybackControls | None = None,
     ) -> None:
+        self._controls = controls if controls is not None else PlaybackControls()
+        self._extent: FloorExtent | None = None
+        fps = prepared.spec.fps if fps is None else fps
         if fps <= 0:
             raise ValueError("fps must be positive")
         self._prepared = prepared
         self._native = load_calibration(prepared)
-        self._calibration = self._native.scaled(DISPLAY_WIDTH, DISPLAY_HEIGHT)
+        self._size = prepared.spec.display_size
+        self._calibration = self._native.scaled(*self._size)
         self._fps = fps
         self._max_frames = max_frames
         self._start_index = start_index
@@ -141,25 +591,41 @@ class DemoPlayer:
         self._detection_source = detection_source
         if rtabmap_mode not in ("live", "batch"):
             raise ValueError("rtabmap_mode must be 'live' or 'batch'")
+        if with_rtabmap and rtabmap_mode == "batch" and not prepared.has_imu:
+            raise ValueError(
+                f"{prepared.spec.dataset_id} has no IMU; the batch sidecar needs one "
+                "(use --rtabmap-mode live)"
+            )
         self._rtabmap_mode = rtabmap_mode
         self._backend_factory = backend_factory
 
+    def _floor_plan(
+        self, xz: NDArray[np.float32], grey: NDArray[np.uint8], trajectory_xz: list[list[float]]
+    ) -> dict[str, object]:
+        """Map image + its (grow-only) extent + trajectory, for map/final events."""
+        path = np.array(trajectory_xz, np.float32).reshape(-1, 2)
+        everything = np.concatenate([xz.astype(np.float32), path])
+        if len(everything):
+            xs, zs = everything[:, 0], everything[:, 1]
+            self._extent = (self._extent or _first_extent(xs, zs)).grown(xs, zs)
+        extent = self._extent or FloorExtent(-1.0, 1.0, -1.0, 1.0)
+        return {
+            "floor_png": render_floor_plan(xz, grey, extent),
+            "extent": extent.as_list(),
+            "trajectory_xy": trajectory_xz,
+        }
+
     def _map_event(self, backend: LiveSlamBackend, frame_id: int) -> DemoEvent:
-        cloud = backend.map_snapshot()
-        sample = cloud
-        if len(sample) > MAX_MAP_POINTS:
-            step = len(sample) / MAX_MAP_POINTS
-            sample = tuple(sample[int(i * step)] for i in range(MAX_MAP_POINTS))
+        cloud = backend.map_cloud()
         trajectory = backend.trajectory()
         return DemoEvent(
             "map",
             {
                 "frame_id": frame_id,
-                "cloud_xy": [[round(p.x, 3), round(p.y, 3)] for p in sample],
-                "cloud_points": len(cloud),
-                "trajectory_xy": [
-                    [round(p.position.x, 3), round(p.position.y, 3)] for p in trajectory
-                ],
+                **self._floor_plan(
+                    cloud.points[:, [0, 2]], cloud.colors[:, 0], _floor_plane_trajectory(trajectory)
+                ),
+                "cloud_points": len(cloud.points),
                 "keyframes": backend.keyframe_count,
                 "odom_state": backend.odom_state,
                 "lag_frames": max(0, frame_id - backend.last_odom_frame),
@@ -167,26 +633,26 @@ class DemoPlayer:
             },
         )
 
+    @property
+    def fps(self) -> float:
+        return self._fps
+
     def _backend(self) -> SidecarRtabmapBackend | LiveSlamBackend:
         if self._backend_factory is not None:
             return self._backend_factory()
         prepared = self._prepared
+        options = stream_backend_options(prepared)
         if self._rtabmap_mode == "live":
             return StreamingRtabmapBackend(
-                cam0_yaml=scaled_sensor_yaml(
-                    prepared.sensor_yaml("cam0"), DISPLAY_WIDTH, DISPLAY_HEIGHT
-                ),
-                cam1_yaml=scaled_sensor_yaml(
-                    prepared.sensor_yaml("cam1"), DISPLAY_WIDTH, DISPLAY_HEIGHT
-                ),
+                cam0_yaml=options.cam0_yaml,
+                cam1_yaml=options.cam1_yaml,
+                width=options.width,
+                height=options.height,
+                max_depth_m=options.max_depth_m,
             )
         return SidecarRtabmapBackend(
-            cam0_yaml=scaled_sensor_yaml(
-                prepared.sensor_yaml("cam0"), DISPLAY_WIDTH, DISPLAY_HEIGHT
-            ),
-            cam1_yaml=scaled_sensor_yaml(
-                prepared.sensor_yaml("cam1"), DISPLAY_WIDTH, DISPLAY_HEIGHT
-            ),
+            cam0_yaml=options.cam0_yaml,
+            cam1_yaml=options.cam1_yaml,
             imu_yaml=prepared.sensor_yaml("imu0"),
             imu_csv=prepared.imu_csv(),
         )
@@ -205,17 +671,30 @@ class DemoPlayer:
         if self._max_frames > 0:
             timestamps = timestamps[: self._max_frames]
         backend = self._backend() if self._with_rtabmap else None
+        worker = (
+            _DetectionWorker(self._detection_source, self._size)
+            if self._detection_source is not None
+            else None
+        )
+        live = backend if isinstance(backend, LiveSlamBackend) else None
+        display = _Display(len(timestamps), live, calibration, prepared.spec.depth_stops_m)
         last_map_emit = 0.0
         try:
             for index, t_ns in enumerate(timestamps):
+                # Paused: no pairs reach SLAM and no new frames are shown,
+                # but held frames keep resolving as their odometry lands.
+                while self._controls.paused and not self._controls.cancelled:
+                    if isinstance(backend, LiveSlamBackend):
+                        backend.poll_updates()
+                    yield from display.release()
+                    self._controls.wait_while_paused(0.05)
+                if self._controls.cancelled:
+                    return
                 frame_started = time.monotonic()
                 left_jpeg = _display_jpeg(prepared, 0, t_ns)
                 right_jpeg = _display_jpeg(prepared, 1, t_ns)
-                points = self._stereo.reconstruct(
-                    FrameImage(DISPLAY_WIDTH, DISPLAY_HEIGHT, "mjpeg", left_jpeg),
-                    FrameImage(DISPLAY_WIDTH, DISPLAY_HEIGHT, "mjpeg", right_jpeg),
-                    rig,
-                )
+                if worker is not None:
+                    worker.submit(index + 1, t_ns, left_jpeg)
                 if backend is not None:
                     backend.process_frame(
                         StereoFramePair(
@@ -228,42 +707,23 @@ class DemoPlayer:
                             right_data=right_jpeg,
                         )
                     )
-                yield DemoEvent(
-                    "frame",
-                    {
-                        "index": index,
-                        "total": len(timestamps),
-                        "frame_id": index + 1,
-                        "t_ns": t_ns,
-                        "detections": project_overlay(points, calibration),
-                        "point_count": len(points),
-                    },
-                    jpeg=left_jpeg,
-                )
-                if self._detection_source is not None:
-                    # A separate event, keyed by frame_id — detections
-                    # are not attached to the frame event; the page
-                    # joins them by frame_id like a wire client would.
-                    rgb = decode_rgb(FrameImage(DISPLAY_WIDTH, DISPLAY_HEIGHT, "mjpeg", left_jpeg))
-                    tracked = self._detection_source.detect_tracked(index + 1, rgb)
-                    yield DemoEvent(
-                        "detections",
-                        {
-                            "frame_id": index + 1,
-                            "t_ns": t_ns,
-                            "objects": [
-                                {
-                                    "label": detection.label,
-                                    "score": round(detection.score, 2),
-                                    "track_id": detection.track_id,
-                                    "box": [round(value, 1) for value in detection.box_xyxy],
-                                }
-                                for detection in tracked
-                            ],
-                        },
+                held = _HeldFrame(index, index + 1, t_ns, left_jpeg, time.monotonic())
+                if live is None:
+                    points = self._stereo.reconstruct(
+                        FrameImage(*self._size, "mjpeg", left_jpeg),
+                        FrameImage(*self._size, "mjpeg", right_jpeg),
+                        rig,
                     )
+                    held.overlay = _coloured(
+                        project_overlay(points, calibration), prepared.spec.depth_stops_m
+                    )
+                display.add_frame(held)
+                if worker is not None:
+                    display.add_detections(worker.poll())
                 if isinstance(backend, LiveSlamBackend):
                     backend.poll_updates()
+                yield from display.release()
+                if isinstance(backend, LiveSlamBackend):
                     now = time.monotonic()
                     if now - last_map_emit >= 0.33:
                         last_map_emit = now
@@ -273,6 +733,9 @@ class DemoPlayer:
                 remaining = 1.0 / self._fps - (time.monotonic() - frame_started)
                 if remaining > 0:
                     time.sleep(remaining)
+            if worker is not None:
+                display.add_detections(worker.drain())
+            yield from display.release()
             if backend is not None:
                 yield DemoEvent(
                     "status",
@@ -285,6 +748,7 @@ class DemoPlayer:
                     },
                 )
                 results = backend.flush()
+                yield from display.release(final=True)
                 trajectory = backend.trajectory()
                 cloud = results[-1].static_points if results else ()
                 travelled = 0.0
@@ -297,33 +761,130 @@ class DemoPlayer:
                         )
                         for pose in trajectory
                     )
-                sample = cloud
-                if len(sample) > MAX_MAP_POINTS:
-                    step = len(sample) / MAX_MAP_POINTS
-                    sample = tuple(sample[int(i * step)] for i in range(MAX_MAP_POINTS))
+                if isinstance(backend, LiveSlamBackend):
+                    live_cloud = backend.map_cloud()
+                    plan = self._floor_plan(
+                        live_cloud.points[:, [0, 2]],
+                        live_cloud.colors[:, 0],
+                        _floor_plane_trajectory(trajectory),
+                    )
+                else:
+                    # The batch sidecar's map is z-up (EuRoC base frame).
+                    xy = np.array([(p.x, p.y) for p in cloud], np.float32).reshape(-1, 2)
+                    plan = self._floor_plan(
+                        xy,
+                        np.full(len(xy), 160, np.uint8),
+                        [[round(t.position.x, 3), round(t.position.y, 3)] for t in trajectory],
+                    )
                 yield DemoEvent(
                     "final",
                     {
                         "poses": len(trajectory),
                         "travelled_m": round(travelled, 3),
                         "cloud_points": len(cloud),
-                        "cloud_xy": [[round(p.x, 3), round(p.y, 3)] for p in sample],
-                        "trajectory_xy": [
-                            [round(pose.position.x, 3), round(pose.position.y, 3)]
-                            for pose in trajectory
-                        ],
+                        **plan,
                     },
                 )
+            yield from display.release(final=True)
         finally:
+            if worker is not None:
+                worker.close()
             if backend is not None:
                 backend.close()
 
 
+@dataclass
+class _Preparation:
+    """One scene's background download + extraction into the cache."""
+
+    state: str = "preparing"  # preparing | ready | error
+    progress: PrepareProgress | None = None
+    error: str = ""
+
+
+# A new viewer waits at most this long for the running stream to stop.
+TAKEOVER_TIMEOUT_S = 10.0
+
+
 class _DemoHttpServer(ThreadingHTTPServer):
     daemon_threads = True
-    prepared: PreparedDataset
+    catalog: dict[str, DatasetSpec]
+    default_dataset: str
+    cache_dir: Path
+    fetch: Callable[[str, Path], None] | None
     player_options: dict[str, object]
     stream_lock: threading.Lock
+    state_lock: threading.Lock
+    prepared: dict[str, PreparedDataset]
+    preparations: dict[str, _Preparation]
+    current: PlaybackControls | None
+
+    def prepared_scene(self, dataset_id: str) -> PreparedDataset | None:
+        with self.state_lock:
+            found = self.prepared.get(dataset_id)
+        if found is None:
+            found = cached_dataset(self.catalog[dataset_id], self.cache_dir)
+            if found is not None:
+                with self.state_lock:
+                    self.prepared[dataset_id] = found
+        return found
+
+    def scene_listing(self) -> dict[str, object]:
+        scenes = []
+        for dataset_id, spec in self.catalog.items():
+            entry: dict[str, object] = {
+                "id": dataset_id,
+                "title": spec.title,
+                "description": spec.description,
+                "state": "missing",
+                "progress": None,
+                "error": "",
+            }
+            with self.state_lock:
+                job = self.preparations.get(dataset_id)
+            if self.prepared_scene(dataset_id) is not None:
+                entry["state"] = "ready"
+                entry["progress"] = {"phase": "ready", "done": 1, "total": 1}
+            elif job is not None:
+                step = job.progress
+                entry["state"] = job.state
+                entry["error"] = job.error
+                if step is not None:
+                    entry["progress"] = {
+                        "phase": step.phase,
+                        "done": step.done,
+                        "total": step.total,
+                    }
+            scenes.append(entry)
+        return {"current": self.default_dataset, "datasets": scenes}
+
+    def prepare(self, dataset_id: str) -> str:
+        """Start preparing `dataset_id` once (idempotent); its state now."""
+        if self.prepared_scene(dataset_id) is not None:
+            return "ready"
+        with self.state_lock:
+            job = self.preparations.get(dataset_id)
+            if job is not None and job.state == "preparing":
+                return job.state
+            job = _Preparation()
+            self.preparations[dataset_id] = job
+        threading.Thread(target=self._prepare, args=(dataset_id, job), daemon=True).start()
+        return job.state
+
+    def _prepare(self, dataset_id: str, job: _Preparation) -> None:
+        def report(step: PrepareProgress) -> None:
+            job.progress = step
+
+        try:
+            prepared = ensure_dataset(
+                self.catalog[dataset_id], self.cache_dir, fetch=self.fetch, progress=report
+            )
+        except Exception as exc:  # surfaced to the page via /datasets
+            job.state, job.error = "error", str(exc)
+            return
+        with self.state_lock:
+            self.prepared[dataset_id] = prepared
+        job.state = "ready"
 
 
 def coral_detection_source(model_dir: Path, model: str = DEFAULT_PROFILE) -> CoralDetectionSource:
@@ -335,12 +896,38 @@ def coral_detection_source(model_dir: Path, model: str = DEFAULT_PROFILE) -> Cor
     return CoralDetectionSource(detector)
 
 
+def _metres(value: float) -> str:
+    return f"{value:g} m"
+
+
+def _page_tuning(spec: DatasetSpec) -> dict[str, object]:
+    """Per-dataset values the page template needs: view size, ramp, credit."""
+    near, mid, far = spec.depth_stops_m
+    width, height = spec.display_size
+    return {
+        "width": width,
+        "height": height,
+        "near": depth_colour(near, spec.depth_stops_m),
+        "mid": depth_colour(mid, spec.depth_stops_m),
+        "far": depth_colour(far, spec.depth_stops_m),
+        "near_label": f"≤{_metres(near)}",
+        "mid_label": _metres(mid),
+        "far_label": f"≥{_metres(far)}",
+        "near_m": near,
+        "credit": html.escape(f"Data: {spec.credit}") if spec.credit else "",
+    }
+
+
 def make_demo_server(
-    prepared: PreparedDataset,
+    prepared: PreparedDataset | None = None,
     *,
+    catalog: Sequence[DatasetSpec] | None = None,
+    cache_dir: Path | None = None,
+    default_dataset: str | None = None,
+    fetch: Callable[[str, Path], None] | None = None,
     host: str = "127.0.0.1",
     port: int = 8765,
-    fps: float = 20.0,
+    fps: float | None = None,
     max_frames: int = 0,
     start_index: int = 0,
     with_rtabmap: bool = True,
@@ -348,7 +935,17 @@ def make_demo_server(
     coral_model: str = DEFAULT_PROFILE,
     rtabmap_mode: str = "live",
 ) -> ThreadingHTTPServer:
-    """The demo HTTP server (not yet serving); caller serves/closes it."""
+    """The demo HTTP server (not yet serving); caller serves/closes it.
+
+    Every `catalog` scene (default: the registry) is offered; one not yet
+    in `cache_dir` is prepared there the first time it is picked.
+    `prepared`, when given, is served as the default scene.
+    """
+    specs = list(catalog) if catalog is not None else list(DATASETS.values())
+    if prepared is not None and prepared.spec.dataset_id not in {s.dataset_id for s in specs}:
+        specs.insert(0, prepared.spec)
+    if not specs:
+        raise ValueError("the demo needs at least one scene")
     options: dict[str, object] = {
         "fps": fps,
         "max_frames": max_frames,
@@ -360,9 +957,22 @@ def make_demo_server(
         ),
     }
     server = _DemoHttpServer((host, port), _DemoHandler)
-    server.prepared = prepared
+    server.catalog = {spec.dataset_id: spec for spec in specs}
+    server.default_dataset = default_dataset or (
+        prepared.spec.dataset_id if prepared is not None else specs[0].dataset_id
+    )
+    if server.default_dataset not in server.catalog:
+        raise ValueError(f"unknown default scene: {server.default_dataset}")
+    server.cache_dir = cache_dir or (
+        prepared.root.parent if prepared is not None else default_cache_dir()
+    )
+    server.fetch = fetch
     server.player_options = options
     server.stream_lock = threading.Lock()
+    server.state_lock = threading.Lock()
+    server.prepared = {prepared.spec.dataset_id: prepared} if prepared is not None else {}
+    server.preparations = {}
+    server.current = None
     return server
 
 
@@ -379,32 +989,90 @@ class _DemoHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_json(self, status: int, body: dict[str, object]) -> None:
+        self._send(status, "application/json", json.dumps(body).encode())
+
+    def _scene(self, query: dict[str, list[str]]) -> str | None:
+        """The requested scene id (default: the launcher's), or None if unknown."""
+        dataset_id = query.get("dataset", [self.server.default_dataset])[0]
+        return dataset_id if dataset_id in self.server.catalog else None
+
     def do_GET(self) -> None:
-        if self.path == "/health":
+        url = urlsplit(self.path)
+        query = parse_qs(url.query)
+        if url.path == "/health":
             self._send(200, "application/json", b'{"status": "ok"}')
             return
-        if self.path == "/":
-            page = PAGE.format(
-                title=html.escape(self.server.prepared.spec.title),
-                description=html.escape(self.server.prepared.spec.description),
-            )
-            self._send(200, "text/html; charset=utf-8", page.encode())
+        if url.path == "/datasets":
+            self._send_json(200, self.server.scene_listing())
             return
-        if self.path == "/stream":
-            self._stream()
+        if url.path in ("/", "/stream"):
+            dataset_id = self._scene(query)
+            if dataset_id is None:
+                self._send(404, "text/plain", b"unknown scene")
+            elif url.path == "/":
+                spec = self.server.catalog[dataset_id]
+                page = PAGE.format(
+                    title=html.escape(spec.title),
+                    description=html.escape(spec.description),
+                    dataset_id=dataset_id,
+                    **_page_tuning(spec),
+                )
+                self._send(200, "text/html; charset=utf-8", page.encode())
+            else:
+                self._stream(dataset_id)
             return
         self._send(404, "text/plain", b"not found")
 
-    def _stream(self) -> None:
-        if not self.server.stream_lock.acquire(blocking=False):
-            self._send(409, "text/plain", b"a demo stream is already running")
+    def do_POST(self) -> None:
+        url = urlsplit(self.path)
+        if url.path == "/prepare":
+            dataset_id = self._scene(parse_qs(url.query))
+            if dataset_id is None:
+                self._send(404, "text/plain", b"unknown scene")
+                return
+            self._send_json(202, {"state": self.server.prepare(dataset_id)})
             return
+        if url.path == "/control":
+            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                action = json.loads(self.rfile.read(length) or b"{}").get("action")
+            except (ValueError, AttributeError):
+                action = None
+            controls = self.server.current
+            if action not in ("pause", "resume"):
+                self._send(400, "text/plain", b"action must be pause or resume")
+            elif controls is None:
+                self._send(409, "text/plain", b"nothing is playing")
+            else:
+                controls.pause() if action == "pause" else controls.resume()
+                self._send_json(200, {"state": "paused" if controls.paused else "playing"})
+            return
+        self._send(404, "text/plain", b"not found")
+
+    def _stream(self, dataset_id: str) -> None:
+        prepared = self.server.prepared_scene(dataset_id)
+        if prepared is None:
+            self._send(409, "text/plain", b"scene not downloaded yet; POST /prepare first")
+            return
+        # The newest viewer takes over: stop the running player (its
+        # finally tears the sidecar down), then wait for the lock.
+        with self.server.state_lock:
+            previous = self.server.current
+        if previous is not None:
+            previous.cancel()
+        if not self.server.stream_lock.acquire(timeout=TAKEOVER_TIMEOUT_S):
+            self._send(409, "text/plain", b"the running demo stream did not stop")
+            return
+        controls = PlaybackControls()
+        with self.server.state_lock:
+            self.server.current = controls
         try:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            player = DemoPlayer(self.server.prepared, **self.server.player_options)  # type: ignore[arg-type]
+            player = DemoPlayer(prepared, controls=controls, **self.server.player_options)  # type: ignore[arg-type]
             for event in player.events():
                 payload = dict(event.data)
                 if event.kind == "frame":
@@ -415,6 +1083,9 @@ class _DemoHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass  # viewer went away; the player's finally tears down
         finally:
+            with self.server.state_lock:
+                if self.server.current is controls:
+                    self.server.current = None
             self.server.stream_lock.release()
 
 

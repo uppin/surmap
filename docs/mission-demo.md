@@ -15,7 +15,11 @@ an API key. Add `--live` only on a machine that should call the hosted
 models.
 
 The viewer listens on [http://127.0.0.1:8770/](http://127.0.0.1:8770/).
-Ctrl+C stops it. `--no-viewer` writes the report and exits.
+Ctrl+C stops it. `--no-viewer` writes the report and exits. This is
+not the dataset demo: that page is
+[http://127.0.0.1:8765/](http://127.0.0.1:8765/) from `scripts/demo.py`
+(EuRoC, KITTI, NTU VIRAL). `--live` uses the same
+`StreamingRtabmapBackend` that page uses.
 
 Outputs land in `mission-demo-out/` (gitignored):
 
@@ -90,14 +94,14 @@ SAM is Meta when `SURMAP_LIVE_META=1`, otherwise Modal when
 Labels always need `SURMAP_LIVE_BASETEN=1`. A flag that is unset is not
 called.
 
-The 3D cloud in live mode is PR #38's streaming backend.
-`open_live_map()` builds `StreamingRtabmapBackend` from the capture
-calibration, feeds every stereo pair, and reads `map_snapshot()` after
-`flush()`. `live_map_backend()` is `live-rtabmap`. An empty snapshot
-says positions were not estimated. Offline keeps using the fixture
-cloud and says so (`"basis": "fixtures"`). Live model calls stay
-behind `SURMAP_LIVE_META`, `SURMAP_LIVE_BASETEN`, and
-`SURMAP_LIVE_MODAL`.
+The 3D cloud in live mode is the same streaming backend as
+`scripts/demo.py` (`--rtabmap-mode live`). `open_live_map()` builds
+`StreamingRtabmapBackend` from the capture calibration, feeds every
+stereo pair, and reads `map_snapshot()` after `flush()`.
+`live_map_backend()` is `live-rtabmap`. An empty snapshot says
+positions were not estimated. Offline keeps using the fixture cloud
+and says so (`"basis": "fixtures"`). Live model calls stay behind
+`SURMAP_LIVE_META`, `SURMAP_LIVE_BASETEN`, and `SURMAP_LIVE_MODAL`.
 
 ## Tests
 
