@@ -235,6 +235,24 @@ def _floor_plane_cloud(cloud: MapCloud, max_points: int = MAX_MAP_POINTS) -> lis
     ]
 
 
+@dataclass(frozen=True)
+class FloorExtent:
+    """The floor-plan area shown, in map metres, and its canvas mapping."""
+
+    min_x: float
+    max_x: float
+    min_z: float
+    max_z: float
+
+    def to_pixels(self, x: float, z: float) -> tuple[float, float]:
+        raise NotImplementedError("TODO(map-render): to_pixels")
+
+
+def render_floor_plan(xz: NDArray[np.float32], grey: NDArray[np.uint8], extent: FloorExtent) -> str:
+    """Every map point on the floor plan as one base64 PNG."""
+    raise NotImplementedError("TODO(map-render): render_floor_plan")
+
+
 FloorCamera = dict[str, float]
 
 

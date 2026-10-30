@@ -64,6 +64,8 @@ class OdomUpdate:
     lost: bool
     ms: float
     keypoints: tuple[Keypoint, ...] = ()
+    # The pose after RTAB-Map's odometry-to-map correction (loop closures).
+    map_pose: Pose | None = None
 
 
 @dataclass(frozen=True)
