@@ -49,16 +49,30 @@ uv run python scripts/demo.py            # downloads+caches EuRoC, serves the de
 
 The demo plays a recorded dataset as real-time video with the stereo
 reconstructor's scene points overlaid as depth-coloured detections,
-then builds the final RTAB-Map map from the same frames and draws it
-top-down. Datasets are registry entries in `surmap.demo.datasets`
+and builds the RTAB-Map map live from the same frames as they play:
+the map panel grows frame by frame during playback, and a final
+optimized graph is drawn when playback ends. Datasets are registry entries in `surmap.demo.datasets`
 (`--list-datasets`): the first run downloads and SHA-256-verifies
 the zip into the cache (`~/.cache/surmap/demo-datasets`, override
 `--cache-dir`/`$SURMAP_DEMO_CACHE_DIR`); later runs download nothing.
 Useful flags: `--frames N`, `--start I`, `--fps F`, `--no-rtabmap`,
-`--prepare-only`. Add a dataset by adding one registry entry.
+`--rtabmap-mode live|batch` (default `live`; `batch` builds the map
+at the end instead), `--prepare-only`. The live panel shows keyframe
+count, cloud size, odometry state, SLAM lag in frames and dropped
+frames. Add a dataset by adding one registry entry.
 
 RTAB-Map note: RTAB-Map has no official PyPI package, and no host —
-local or CI — may install it. The real backend is
+local or CI — may install it. Two Docker backends exist. The demo's
+default is `surmap.slam.StreamingRtabmapBackend`: a long-lived
+`surmap-rtabmap-stream` process (librtabmap embedded in a small C++
+tool, built into a derived image `surmap/rtabmap-stream:<hash>` FROM
+the pinned image by `scripts/build_rtabmap_stream.py`) consumes
+stereo pairs over stdin and emits the odometry pose per pair,
+keyframe points per new keyframe, and optimized graph poses whenever
+RTAB-Map re-optimizes and once at end of stream. It is stereo-only
+(no IMU, no wheel odometry), never blocks playback (a bounded queue
+drops the oldest pairs and counts them), and its `flush()` returns
+the same shape as the batch backend. The batch backend is
 `surmap.slam.SidecarRtabmapBackend`: it stages streamed stereo pairs
 as a EuRoC-style dataset and runs the pinned RTAB-Map Docker image
 (`rtabmap-euroc_dataset` + `rtabmap-export`) over it, returning
