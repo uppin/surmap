@@ -184,6 +184,9 @@ function describe(step) {{
     return `Downloading ${{mb(step.done)}} / ${{mb(step.total)}} MB`;
   }}
   if (step.phase === 'verifying') return 'Verifying checksum…';
+  if (step.phase === 'unpacking') {{
+    return `Unpacking the recording ${{mb(step.done)}} / ${{mb(step.total)}} MB`;
+  }}
   if (step.phase === 'extracting') return `Extracting frames ${{step.done}} / ${{step.total}}`;
   return 'Ready';
 }}

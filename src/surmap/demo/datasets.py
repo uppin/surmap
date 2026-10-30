@@ -18,6 +18,7 @@ the launcher's `--cache-dir` or `$SURMAP_DEMO_CACHE_DIR`):
 
 from __future__ import annotations
 
+import bisect
 import calendar
 import hashlib
 import json
@@ -31,6 +32,13 @@ import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol, cast
+
+import numpy as np
+from numpy.typing import NDArray
+from PIL import Image
+from rosbags.rosbag1 import Reader
+from rosbags.typesys import Stores, get_typestore
 
 # Frames are played at half resolution: full-res EuRoC is 752x480,
 # the demo canvas and the stereo reconstructor work at 376x240.
@@ -152,6 +160,106 @@ DATASETS: dict[str, DatasetSpec] = {
         credit=(
             "KITTI raw data, Geiger, Lenz, Stiller and Urtasun (KIT and Toyota Technological "
             "Institute), CC BY-NC-SA 3.0, for academic use — cvlibs.net/datasets/kitti"
+        ),
+    ),
+    # NTU VIRAL, a UAV flight over a campus plaza: the ROS 1 bag is read
+    # once into the EuRoC layout. The zip has no calibration; it is the
+    # dataset authors' own (brytsknguyen/VINS-Fusion@3d8bf9e,
+    # config/ntuviral: camLeft.yaml, camRight.yaml, body_T_cam1/cam0).
+    "ntu-viral-sbs-01": DatasetSpec(
+        dataset_id="ntu-viral-sbs-01",
+        title="NTU VIRAL sbs_01",
+        description="Drone flight over NTU's Biological Sciences plaza, 10 Hz stereo.",
+        zip_url=(
+            "https://huggingface.co/datasets/Yuan-Shenghai/NTU-VIRAL-DATASET/"
+            "resolve/main/sequences/sbs_01.zip"
+        ),
+        zip_size_bytes=3_775_725_925,
+        zip_sha256="16063577be7b0d8b6ca89e40cf3ec45d603469048e7d989d25bab88f3950c390",
+        official_url="https://ntu-aris.github.io/ntu_viral_dataset/",
+        dataset_format="ros1-stereo",
+        # Stereo "left" is the camera whose partner sits at +x in its own
+        # frame. Measured on this flight (frames 1200-1500): mapped by topic
+        # name, odometry lost 299/300 frames; with the camera recorded on
+        # /right/image_raw as left, it lost 1/300. Topics and their
+        # calibrations stay paired; only the stereo roles are assigned.
+        ros1_stereo=Ros1Stereo(
+            left_topic="/right/image_raw",
+            right_topic="/left/image_raw",
+            left=CameraCalibration(
+                intrinsics=(
+                    431.3364265799752,
+                    432.7527965378035,
+                    354.8956286992647,
+                    232.5508916495161,
+                ),
+                distortion=(
+                    -0.300267420221178,
+                    0.090544063693053,
+                    3.330220891093334e-05,
+                    8.989607188457415e-05,
+                ),
+                resolution=(752, 480),
+                t_bs=(
+                    -0.01916508,
+                    -0.01496218,
+                    0.99970437,
+                    0.00519443,
+                    0.99974371,
+                    0.01176483,
+                    0.01934191,
+                    0.1347802,
+                    -0.01205075,
+                    0.99981884,
+                    0.01473287,
+                    0.01465067,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                ),
+            ),
+            right=CameraCalibration(
+                intrinsics=(
+                    425.0258563372763,
+                    426.7976260903337,
+                    386.015186655088,
+                    241.913033674344,
+                ),
+                distortion=(
+                    -0.288105327549552,
+                    0.074578284234601,
+                    7.784489598138802e-04,
+                    -2.277853975035461e-04,
+                ),
+                resolution=(752, 480),
+                t_bs=(
+                    0.02183084,
+                    -0.01312053,
+                    0.99967558,
+                    0.00552943,
+                    0.99975965,
+                    0.00230088,
+                    -0.02180248,
+                    -0.12431302,
+                    -0.00201407,
+                    0.99991127,
+                    0.01316761,
+                    0.01614686,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                ),
+            ),
+        ),
+        fps=10.0,
+        # 0.26 m baseline at 376 px wide: fx·b ≈ 55 px·m, so maps to 20 m.
+        depth_stops_m=(3.0, 8.0, 20.0),
+        max_map_depth_m=20.0,
+        credit=(
+            "NTU VIRAL dataset, Nguyen, Yuan, Cao, Yang, Nguyen and Xie (NTU Singapore), "
+            "CC BY-NC-SA 4.0, for non-commercial use — ntu-aris.github.io/ntu_viral_dataset"
         ),
     ),
 }
@@ -375,6 +483,131 @@ def _extract_kitti_raw(
                 )
 
 
+class _RosStamp(Protocol):
+    sec: int
+    nanosec: int
+
+
+class _RosHeader(Protocol):
+    stamp: _RosStamp
+
+
+class _RosImage(Protocol):
+    """The `sensor_msgs/Image` fields read here (rosbags deserialises to `object`)."""
+
+    header: _RosHeader
+    height: int
+    width: int
+    encoding: str
+    step: int
+    data: NDArray[np.uint8]
+
+
+def _ros_image_gray(message: object) -> tuple[int, NDArray[np.uint8]]:
+    """(stamp ns, H x W 8-bit grey pixels) of one `sensor_msgs/Image`."""
+    image = cast(_RosImage, message)
+    rows = np.asarray(image.data, dtype=np.uint8).reshape(image.height, image.step)
+    if image.encoding in ("mono8", "8UC1"):
+        pixels = rows[:, : image.width]
+    elif image.encoding in ("mono16", "16UC1"):
+        wide = rows[:, : 2 * image.width].view("<u2" if not _big_endian(message) else ">u2")
+        pixels = (wide >> 8).astype(np.uint8)
+    else:
+        raise ValueError(f"unsupported image encoding {image.encoding!r}")
+    stamp = image.header.stamp
+    return stamp.sec * 1_000_000_000 + stamp.nanosec, np.ascontiguousarray(pixels)
+
+
+def _big_endian(message: object) -> bool:
+    return bool(getattr(message, "is_bigendian", 0))
+
+
+def _euroc_sensor_yaml(camera: CameraCalibration, rate_hz: float) -> str:
+    """EuRoC `sensor.yaml` for one pinhole, radial-tangential camera."""
+    rows = [", ".join(repr(float(v)) for v in camera.t_bs[i : i + 4]) for i in range(0, 16, 4)]
+    data = ",\n         ".join(rows)
+    return (
+        "sensor_type: camera\n"
+        f"T_BS:\n  cols: 4\n  rows: 4\n  data: [{data}]\n"
+        f"rate_hz: {rate_hz:g}\n"
+        f"resolution: [{camera.resolution[0]}, {camera.resolution[1]}]\n"
+        "camera_model: pinhole\n"
+        f"intrinsics: [{', '.join(repr(float(v)) for v in camera.intrinsics)}]\n"
+        "distortion_model: radial-tangential\n"
+        f"distortion_coefficients: [{', '.join(repr(float(v)) for v in camera.distortion)}]\n"
+    )
+
+
+def _unpack_bag(zip_path: Path, target: Path, report: Report) -> None:
+    """The zip's ROS 1 bag, copied out so it can be read with seeks."""
+    with zipfile.ZipFile(zip_path) as archive:
+        member = next((m for m in archive.infolist() if m.filename.endswith(".bag")), None)
+        if member is None:
+            raise ValueError(f"{zip_path} holds no .bag file")
+        done = 0
+        with archive.open(member) as source, target.open("wb") as out:
+            for chunk in iter(lambda: source.read(1 << 22), b""):
+                out.write(chunk)
+                done += len(chunk)
+                report(PrepareProgress("unpacking", done, member.file_size))
+
+
+def _extract_ros1_stereo(
+    zip_path: Path, root: Path, stereo: Ros1Stereo, fps: float, report: Report = _no_report
+) -> None:
+    """A ROS 1 stereo bag as the EuRoC layout.
+
+    Each image is written as it is read (memory stays flat); right images
+    are then paired with the nearest left image within the skew and
+    renamed to the left stamp, as EuRoC pairs share a name. The unpacked
+    bag is deleted afterwards — only the frames stay in the cache.
+    """
+    left_dir, right_dir = root / "mav0" / "cam0" / "data", root / "mav0" / "cam1" / "data"
+    staging = root / "mav0" / "cam1" / "staging"
+    for folder in (left_dir, right_dir, staging):
+        folder.mkdir(parents=True, exist_ok=True)
+    for channel, camera in ((0, stereo.left), (1, stereo.right)):
+        (root / "mav0" / f"cam{channel}" / "sensor.yaml").write_text(
+            _euroc_sensor_yaml(camera, fps), encoding="utf-8"
+        )
+    bag = root / "unpacking.bag"
+    try:
+        _unpack_bag(zip_path, bag, report)
+        lefts: list[int] = []
+        rights: list[int] = []
+        typestore = get_typestore(Stores.ROS1_NOETIC)
+        with Reader(bag) as reader:
+            wanted = [
+                c for c in reader.connections if c.topic in (stereo.left_topic, stereo.right_topic)
+            ]
+            total = sum(c.msgcount for c in wanted)
+            for index, (connection, _, raw) in enumerate(reader.messages(connections=wanted)):
+                t_ns, pixels = _ros_image_gray(typestore.deserialize_ros1(raw, connection.msgtype))
+                is_left = connection.topic == stereo.left_topic
+                folder = left_dir if is_left else staging
+                Image.fromarray(pixels).save(folder / f"{t_ns}.png", compress_level=1)
+                (lefts if is_left else rights).append(t_ns)
+                report(PrepareProgress("extracting", index + 1, total))
+    finally:
+        bag.unlink(missing_ok=True)
+    lefts.sort()
+    taken: set[int] = set()
+    for t_right in sorted(rights):
+        at = bisect.bisect_left(lefts, t_right)
+        near = [lefts[i] for i in (at - 1, at) if 0 <= i < len(lefts)]
+        t_left = min(near, key=lambda t: abs(t - t_right), default=None)
+        source = staging / f"{t_right}.png"
+        if t_left is None or t_left in taken or abs(t_left - t_right) > stereo.max_pair_skew_ns:
+            source.unlink()
+            continue
+        taken.add(t_left)
+        source.replace(right_dir / f"{t_left}.png")
+    staging.rmdir()
+    for t_left in lefts:
+        if t_left not in taken:
+            (left_dir / f"{t_left}.png").unlink()
+
+
 def _fetch_verified(
     url: str,
     size_bytes: int,
@@ -423,7 +656,7 @@ def ensure_dataset(
     progress: Callable[[PrepareProgress], None] | None = None,
 ) -> PreparedDataset:
     """Download (once), verify, extract, and index `spec` in the cache."""
-    if spec.dataset_format not in ("euroc", "kitti-raw"):
+    if spec.dataset_format not in ("euroc", "kitti-raw", "ros1-stereo"):
         raise ValueError(f"unsupported dataset format: {spec.dataset_format}")
     report = progress or _no_report
     cached = cached_dataset(spec, cache_dir)
@@ -458,6 +691,10 @@ def ensure_dataset(
             report,
         )
         _extract_kitti_raw(zip_path, calibration_path, root, report)
+    elif spec.dataset_format == "ros1-stereo":
+        if spec.ros1_stereo is None:
+            raise ValueError(f"{spec.dataset_id}: a ros1-stereo dataset needs its topics")
+        _extract_ros1_stereo(zip_path, root, spec.ros1_stereo, spec.fps, report)
     else:
         _extract(zip_path, root, report)
     cam0 = sorted((root / "mav0" / "cam0" / "data").glob("*.png"))

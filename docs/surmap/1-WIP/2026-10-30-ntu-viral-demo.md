@@ -21,11 +21,12 @@
   - [x] Registry entry `ntu-viral-sbs-01` with the authors' calibration and credit
   - [x] A prepared flight plays through the demo
   - [x] Run the new tests (verify they fail for missing implementation)
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] `ros1-stereo` format: unpack bag, typed image adapter, nearest-stamp pairing, PNG frames, sensor.yaml
-  - [ ] Page shows the unpacking phase
-  - [ ] Registry entry with depth tuning for an outdoor plaza
-  - [ ] Real run on sbs_01: left/right orientation confirmed, map, overlay, detector recorded
+- [wf 3] ✅ 2026-10-30 `/green` Green — implement until every red test passes · 576 passed, 2 skipped; EuRoC real-container e2e green; sbs_01 tracked end to end
+  - [x] `ros1-stereo` format: unpack bag, typed image adapter, nearest-stamp pairing, PNG frames, sensor.yaml
+  - [x] Page shows the unpacking phase
+  - [x] Registry entry with depth tuning for an outdoor plaza
+  - [x] Real run on sbs_01: left/right orientation confirmed, map, overlay, detector recorded
+  - [x] Odometry resets one frame after losing track (`Odom/ResetCountdown=1`, added: default 0 never recovers)
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs, then open the PR ready ·
   - [ ] Verification executed — result recorded
   - [ ] `README.md` §Demo — NTU VIRAL scene, attribution and licence
@@ -87,3 +88,18 @@ demo's EuRoC layout with the dataset authors' calibration.
   in the registry, since the sequence zip carries none.
 - **Bag unpacked to disk, then deleted.** `rosbags` needs a seekable
   file; peak disk is zip + bag + frames, and only the frames stay.
+- **Stereo roles measured, not taken from topic names.** Mapped by name
+  (`/left/image_raw` as stereo left), odometry lost 299/300 frames mid
+  flight; with `/right/image_raw` as stereo left it lost 1/300 (frames
+  1200–1500). Each topic keeps its own calibration; only the roles swap.
+- **`Odom/ResetCountdown=1` by default for the streaming sidecar.**
+  RTAB-Map's default 0 never resets lost odometry: sbs_01 lost 719 of
+  1200 frames and the last ~140 s untracked. With 1: lost 0/3325 over the
+  whole flight, keypoints on 3314 frames. EuRoC e2e still green.
+- **Real run measured** (whole sbs_01, 3540 pairs, emulated sidecar):
+  9.4 fps shown, odom+SLAM 72 ms median, 215 pairs dropped; detections
+  person 1586, car 68, truck 80. Trajectory reaches ~15 m from the start
+  against the Leica ground truth's 24.9 m (path 202 m, span 16 × 29.5 ×
+  5.3 m): tracked throughout but ~40 % short — thin depth at 376 px
+  (`fx·b ≈ 55 px·m`, features ~22 m away); full 752 px would double it
+  but needs a native sidecar (72 ms of a 100 ms budget already).

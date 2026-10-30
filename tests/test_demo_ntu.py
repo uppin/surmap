@@ -2,7 +2,6 @@
 
 import io
 import zipfile
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -176,12 +175,16 @@ def test_the_registry_offers_an_outdoor_drone_flight() -> None:
     # Given / When the NTU VIRAL entry is read
     spec = DATASETS["ntu-viral-sbs-01"]
 
-    # Then it is the sbs_01 plaza flight, pinned, with the authors' calibration
+    # Then it is the sbs_01 plaza flight, pinned, with the authors'
+    # calibration — the stereo left being the camera recorded on
+    # /right/image_raw (measured: tracking holds only that way round)
     assert spec.dataset_format == "ros1-stereo"
     assert spec.zip_url.endswith("/sequences/sbs_01.zip")
     assert spec.zip_sha256 == "16063577be7b0d8b6ca89e40cf3ec45d603469048e7d989d25bab88f3950c390"
     assert spec.ros1_stereo is not None
-    assert spec.ros1_stereo.left.intrinsics[0] == 425.0258563372763
+    assert spec.ros1_stereo.left_topic == "/right/image_raw"
+    assert spec.ros1_stereo.left.intrinsics[0] == 431.3364265799752
+    assert spec.ros1_stereo.right.intrinsics[0] == 425.0258563372763
     assert spec.fps == 10.0
     assert "NTU VIRAL" in spec.credit and "CC BY-NC-SA 4.0" in spec.credit
 
@@ -190,7 +193,7 @@ def test_a_drone_flight_streams_through_the_demo(tmp_path: Path) -> None:
     # Given a prepared flight, played without SLAM
     from surmap.demo.server import DemoPlayer
 
-    prepared = prepare(replace(a_drone_flight(tmp_path), display_size=(6, 4)), tmp_path / "c")
+    prepared = prepare(a_drone_flight(tmp_path), tmp_path / "cache")
 
     # When / Then both pairs play
     kinds = [e.kind for e in DemoPlayer(prepared, with_rtabmap=False).events()]
