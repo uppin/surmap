@@ -53,6 +53,8 @@ def test_streaming_backend_maps_live_over_the_fixture() -> None:
     backend = StreamingRtabmapBackend(
         cam0_yaml=scaled_sensor_yaml(cam0, 376, 240),
         cam1_yaml=scaled_sensor_yaml(cam1, 376, 240),
+        # Indoor EuRoC stays at 6 m. The constructor default is the 30 m street cap.
+        max_depth_m=6.0,
     )
     live_updates = 0
     tracked_keypoints: list[int] = []

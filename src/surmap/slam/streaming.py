@@ -16,7 +16,7 @@ import subprocess
 import threading
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
@@ -56,6 +56,11 @@ MAX_STORED_POINTS_PER_KEYFRAME = 1000
 # odometry, so one dropout ends tracking for the rest of a run (measured
 # on NTU VIRAL sbs_01: 719/1200 frames lost; 0/3325 with 1).
 DEFAULT_RTABMAP_PARAMS = {"Rtabmap/DetectionRate": "2", "Odom/ResetCountdown": "1"}
+
+# Street-survey cap. Indoor callers (EuRoC) pass 6 m themselves.
+DEFAULT_MAX_DEPTH_M = 30.0
+# Below 2 px, depth on this stereo rig is noise. Same floor as StereoReconstructor.
+DEFAULT_MIN_DISPARITY_PX = 2.0
 
 # Per-frame odometry kept for display (~10 s at 20 Hz): a display holds a
 # frame back only until its odometry arrives, never this long.
@@ -199,6 +204,30 @@ def _to_gray8(frame: StereoFramePair, channel: int, width: int, height: int) -> 
         return gray.tobytes()
 
 
+def keep_confident_camera_points(
+    points: tuple[Vec3, ...],
+    *,
+    fx: float,
+    baseline_m: float,
+    max_depth_m: float,
+    min_disparity_px: float,
+) -> tuple[Vec3, ...]:
+    """Camera-frame points inside the depth cap and at or above the disparity floor.
+
+    Disparity is ``fx * baseline / depth``. A non-positive floor keeps every
+    point that is inside the cap.
+    """
+    kept: list[Vec3] = []
+    for point in points:
+        depth = point.z
+        if depth <= 0.0 or depth > max_depth_m:
+            continue
+        if min_disparity_px > 0.0 and fx * baseline_m / depth < min_disparity_px:
+            continue
+        kept.append(point)
+    return tuple(kept)
+
+
 def pose_rotation(pose: Pose) -> NDArray[np.float32]:
     """3x3 rotation matrix of a pose's unit quaternion."""
     x, y, z, w = pose.orientation_xyzw
@@ -235,7 +264,10 @@ class StreamingRtabmapBackend:
         runner: Callable[[list[str]], None] | None = None,
         queue_size: int = 4,
         flush_timeout: float = 120.0,
-        max_depth_m: float = 6.0,
+        max_depth_m: float = DEFAULT_MAX_DEPTH_M,
+        min_disparity_px: float = DEFAULT_MIN_DISPARITY_PX,
+        fx: float = 0.0,
+        baseline_m: float = 0.0,
     ) -> None:
         if os.environ.get(SHARED_CONTAINER_ENV, "").strip():
             raise SidecarError(
@@ -244,6 +276,10 @@ class StreamingRtabmapBackend:
             )
         self._width, self._height = width, height
         self._flush_timeout = flush_timeout
+        self._max_depth_m = max_depth_m
+        self._min_disparity_px = min_disparity_px
+        self._fx = fx
+        self._baseline_m = baseline_m
         self._runner = runner if runner is not None else _subprocess_runner
         self._image = image or stream_image_tag()
         self._instance_id = uuid.uuid4().hex[:12]
@@ -292,7 +328,15 @@ class StreamingRtabmapBackend:
         self._writer.start()
         try:
             self._process.write(
-                encode_hello(cam0_yaml, cam1_yaml, width, height, params or {}, max_depth_m)
+                encode_hello(
+                    cam0_yaml,
+                    cam1_yaml,
+                    width,
+                    height,
+                    params or {},
+                    max_depth_m,
+                    min_disparity_px,
+                )
             )
         except Exception as exc:
             raise SidecarError(f"streaming sidecar hello failed: {exc}") from exc
@@ -430,7 +474,9 @@ class StreamingRtabmapBackend:
                         elif message.lost:
                             self._lost_frames.add(message.frame_id)
                     elif isinstance(message, KeyframeUpdate):
-                        self._keyframes[message.node_id] = _Keyframe.of(message)
+                        self._keyframes[message.node_id] = _Keyframe.of(
+                            self._limit_keyframe(message)
+                        )
                     elif isinstance(message, GraphUpdate):
                         if message.poses:
                             # The graph is authoritative: a node it no
@@ -461,6 +507,27 @@ class StreamingRtabmapBackend:
         """That frame's odometry (pose and tracked keypoints), once it arrived."""
         with self._state_lock:
             return self._frame_odometry.get(frame_id)
+
+    def _limit_keyframe(self, update: KeyframeUpdate) -> KeyframeUpdate:
+        """Drop noisy far points when this backend knows the stereo rig."""
+        if self._fx <= 0.0 or self._baseline_m <= 0.0:
+            return update
+        kept_points: list[Vec3] = []
+        kept_colors: list[tuple[int, int, int]] = []
+        paired = len(update.colors) == len(update.points_local)
+        for index, point in enumerate(update.points_local):
+            if not keep_confident_camera_points(
+                (point,),
+                fx=self._fx,
+                baseline_m=self._baseline_m,
+                max_depth_m=self._max_depth_m,
+                min_disparity_px=self._min_disparity_px,
+            ):
+                continue
+            kept_points.append(point)
+            if paired:
+                kept_colors.append(update.colors[index])
+        return replace(update, points_local=tuple(kept_points), colors=tuple(kept_colors))
 
     def map_snapshot(self) -> tuple[Vec3, ...]:
         return tuple(Vec3(x, y, z) for x, y, z in self.map_cloud().points.tolist())

@@ -32,20 +32,26 @@ from surmap.simulation.disaster_world import (
 PX4_LATITUDE_DEG = 47.397971057728974
 PX4_LONGITUDE_DEG = 8.546163739800146
 PX4_ELEVATION_M = 488.0
-SURVEY_ALTITUDE_M = 12.0
+SURVEY_ALTITUDE_M = 5.0
 SURVEY_SPEED_M_S = 4.0
 CROSS_TRACK_M = 8.0
 
-# North-south lanes at x = -24, -12, 0, 12, 24, between y = 18 and y = 100.
+# North-south lanes every 8 m from x = -24 to 24, between y = 18 and y = 100.
+# At 5 m the forward camera's near-ground swath is about 13 m wide, so 8 m
+# spacing overlaps by about 5 m. 12 m spacing would leave a gap at that edge.
 LAWNMOWER_ENU_M = (
     (-24.0, 18.0),
     (-24.0, 100.0),
-    (-12.0, 100.0),
-    (-12.0, 18.0),
-    (0.0, 18.0),
+    (-16.0, 100.0),
+    (-16.0, 18.0),
+    (-8.0, 18.0),
+    (-8.0, 100.0),
     (0.0, 100.0),
-    (12.0, 100.0),
-    (12.0, 18.0),
+    (0.0, 18.0),
+    (8.0, 18.0),
+    (8.0, 100.0),
+    (16.0, 100.0),
+    (16.0, 18.0),
     (24.0, 18.0),
     (24.0, 100.0),
 )
@@ -275,12 +281,12 @@ def test_albedo_maps_resolve_next_to_the_world_file() -> None:
     assert_textures_exist(sdf_path.parent, maps)
 
 
-def test_survey_plan_is_a_twelve_metre_lawnmower() -> None:
+def test_survey_plan_is_a_five_metre_lawnmower() -> None:
     # Given the QGroundControl plan the operator uploads
     plan = load_survey_plan()
 
     # When the mission items are read in order
-    # Then takeoff, the contracted lawnmower at 12 m, and RTL are the whole mission
+    # Then takeoff, the 5 m lawnmower, and RTL are the whole mission
     assert plan.cruise_speed_m_s == pytest.approx(SURVEY_SPEED_M_S)
     assert plan.home_latitude_deg == pytest.approx(PX4_LATITUDE_DEG)
     assert plan.home_longitude_deg == pytest.approx(PX4_LONGITUDE_DEG)

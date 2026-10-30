@@ -103,6 +103,17 @@ positions were not estimated. Offline keeps using the fixture cloud
 and says so (`"basis": "fixtures"`). Live model calls stay behind
 `SURMAP_LIVE_META`, `SURMAP_LIVE_BASETEN`, and `SURMAP_LIVE_MODAL`.
 
+The survey flies at 5 m above home (see
+[simulation/gazebo-disaster-world.md](simulation/gazebo-disaster-world.md)).
+The live map asks the sidecar for a depth cap of 30 m
+(`--max-depth-m`, or `SURMAP_MAX_DEPTH_M`). Points closer than 2 px of
+disparity are kept and farther noisy points are dropped
+(`--min-disparity-px`, or `SURMAP_MIN_DISPARITY_PX`). On this rig
+(`fx` ≈ 381, baseline 0.07 m) 2 px is about 13 m, which still covers
+the street in the lower part of a forward frame at 5 m. An explicit
+flag wins over the environment variable. `0` for the disparity floor
+turns that filter off and leaves the depth cap in charge.
+
 ## Tests
 
 ```bash

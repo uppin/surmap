@@ -235,6 +235,105 @@ def test_open_live_map_builds_the_streaming_backend_from_the_capture_calibration
     assert isinstance(cam1, str)
     assert "intrinsics: [50.0, 50.0, 32.0, 24.0]" in cam0
     assert "intrinsics: [50.0, 50.0, 32.0, 24.0]" in cam1
+    assert captured["max_depth_m"] == 30.0
+    assert captured["min_disparity_px"] == 2.0
+    assert captured["fx"] == 50.0
+    assert captured["baseline_m"] == 0.12
+
+
+def test_open_live_map_lets_the_environment_override_the_depth_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a capture calibration and environment overrides
+    calibration = StereoCalibrationSpec(
+        calibration_id="gazebo-stereo-v1",
+        width=64,
+        height=48,
+        fx=50.0,
+        fy=50.0,
+        cx=32.0,
+        cy=24.0,
+        baseline_m=0.12,
+    )
+    captured: dict[str, object] = {}
+
+    class RecordingBackend:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setenv("SURMAP_MAX_DEPTH_M", "18")
+    monkeypatch.setenv("SURMAP_MIN_DISPARITY_PX", "3")
+    monkeypatch.setattr("surmap.slam.streaming.StreamingRtabmapBackend", RecordingBackend)
+
+    # When the live map is opened without an explicit cap
+    open_live_map(calibration)
+
+    # Then the environment wins over the 30 m / 2 px defaults
+    assert captured["max_depth_m"] == 18.0
+    assert captured["min_disparity_px"] == 3.0
+
+
+def test_an_explicit_depth_cap_wins_over_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given environment values and an explicit cap
+    calibration = StereoCalibrationSpec(
+        calibration_id="gazebo-stereo-v1",
+        width=64,
+        height=48,
+        fx=50.0,
+        fy=50.0,
+        cx=32.0,
+        cy=24.0,
+        baseline_m=0.12,
+    )
+    captured: dict[str, object] = {}
+
+    class RecordingBackend:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setenv("SURMAP_MAX_DEPTH_M", "18")
+    monkeypatch.setenv("SURMAP_MIN_DISPARITY_PX", "3")
+    monkeypatch.setattr("surmap.slam.streaming.StreamingRtabmapBackend", RecordingBackend)
+
+    # When the caller passes its own limits
+    open_live_map(calibration, max_depth_m=22.0, min_disparity_px=4.0)
+
+    # Then the explicit limits are what the sidecar is given
+    assert captured["max_depth_m"] == 22.0
+    assert captured["min_disparity_px"] == 4.0
+
+
+def test_live_mission_forwards_the_depth_cap_to_the_streaming_backend(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a capture and explicit survey limits
+    _allow_live_flags(monkeypatch)
+    _block_network(monkeypatch)
+    seen: dict[str, float] = {}
+
+    def opener(
+        calibration: StereoCalibrationSpec,
+        *,
+        max_depth_m: float,
+        min_disparity_px: float,
+    ) -> _RecordingMap:
+        del calibration
+        seen["max_depth_m"] = max_depth_m
+        seen["min_disparity_px"] = min_disparity_px
+        return _RecordingMap(snapshot=())
+
+    monkeypatch.setattr("surmap.mission.demo.open_live_map", opener)
+    monkeypatch.setattr(MetaMuseSceneClient, "note", _scene_note)
+
+    # When the live mission runs
+    run_live_mission(tmp_path, _CAPTURE, max_depth_m=22.0, min_disparity_px=3.0)
+
+    # Then those limits are the ones handed to the streaming backend
+    assert seen["max_depth_m"] == 22.0
+    assert seen["min_disparity_px"] == 3.0
 
 
 def test_live_mission_projects_the_streaming_snapshot_into_the_map(
@@ -246,7 +345,9 @@ def test_live_mission_projects_the_streaming_snapshot_into_the_map(
     _block_network(monkeypatch)
     recording = _RecordingMap(snapshot=(_MAP_POINT,))
     labelled: list[Vec3] = []
-    monkeypatch.setattr("surmap.mission.demo.open_live_map", lambda _calibration: recording)
+    monkeypatch.setattr(
+        "surmap.mission.demo.open_live_map", lambda _calibration, **_kwargs: recording
+    )
     monkeypatch.setattr(MetaSamDetector, "detect", _detect_person)
     monkeypatch.setattr(BasetenMuseLabelClient, "label", _remembering_label(labelled))
     monkeypatch.setattr(MetaMuseSceneClient, "note", _scene_note)
@@ -283,7 +384,9 @@ def test_live_mission_says_when_the_streaming_backend_returns_no_points(
         del self, frame
         raise AssertionError("live mission called SAM with no map cloud")
 
-    monkeypatch.setattr("surmap.mission.demo.open_live_map", lambda _calibration: recording)
+    monkeypatch.setattr(
+        "surmap.mission.demo.open_live_map", lambda _calibration, **_kwargs: recording
+    )
     monkeypatch.setattr(MetaSamDetector, "detect", refuse_detect)
     monkeypatch.setattr(MetaMuseSceneClient, "note", _scene_note)
 

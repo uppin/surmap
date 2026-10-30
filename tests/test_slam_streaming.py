@@ -15,7 +15,12 @@ from PIL import Image
 
 from surmap.slam.sidecar import SidecarError
 from surmap.slam.stream_protocol import PROTOCOL_VERSION, Keypoint
-from surmap.slam.streaming import StreamingRtabmapBackend, _PopenProcess, stream_build_argv
+from surmap.slam.streaming import (
+    StreamingRtabmapBackend,
+    _PopenProcess,
+    keep_confident_camera_points,
+    stream_build_argv,
+)
 from surmap.types import Pose, StereoFramePair, Vec3
 
 CAM_YAML = "sensor_type: camera\nresolution: [376, 240]\n"
@@ -454,13 +459,14 @@ def test_hello_carries_the_keyframe_depth_cap() -> None:
     assert _hello(holder[0])["max_depth_m"] == 30.0
 
 
-def test_the_keyframe_depth_cap_defaults_to_the_indoor_six_metres() -> None:
+def test_the_keyframe_depth_cap_defaults_to_thirty_metres() -> None:
     # Given / When a backend starts without a cap
     holder: list[FakeProcess] = []
     _backend(holder).close()
 
-    # Then the hello carries the indoor default
-    assert _hello(holder[0])["max_depth_m"] == 6.0
+    # Then the hello carries the street-survey default, and the disparity floor
+    assert _hello(holder[0])["max_depth_m"] == 30.0
+    assert _hello(holder[0])["min_disparity_px"] == 2.0
 
 
 class _StdoutClosed(FakeProcess):
@@ -602,6 +608,62 @@ def test_a_sidecar_process_that_fills_stderr_still_yields_stdout() -> None:
         except ProcessLookupError:
             pass
         proc.wait(timeout=2)
+
+
+def test_the_disparity_filter_drops_far_points_and_keeps_near_ones() -> None:
+    # Given the disaster rig and a 30 m cap with a 2 px floor
+    fx = 381.36
+    baseline_m = 0.07
+    near = Vec3(0.2, 0.0, 5.0)
+    noisy = Vec3(0.2, 0.0, 25.0)
+    beyond_cap = Vec3(0.2, 0.0, 40.0)
+
+    # When the camera-frame points are filtered
+    kept = keep_confident_camera_points(
+        (near, noisy, beyond_cap),
+        fx=fx,
+        baseline_m=baseline_m,
+        max_depth_m=30.0,
+        min_disparity_px=2.0,
+    )
+
+    # Then only the near point remains: 25 m is under 2 px, 40 m is past the cap
+    assert kept == (near,)
+
+
+def test_a_live_backend_stores_near_points_and_drops_noisy_far_ones() -> None:
+    # Given a backend calibrated like the disaster stereo rig
+    holder: list[FakeProcess] = []
+
+    def factory(argv: list[str]) -> FakeProcess:
+        proc = FakeProcess(argv)
+        holder.append(proc)
+        return proc
+
+    backend = StreamingRtabmapBackend(
+        cam0_yaml=CAM_YAML,
+        cam1_yaml=CAM_YAML,
+        process_factory=factory,
+        max_depth_m=30.0,
+        min_disparity_px=2.0,
+        fx=381.36,
+        baseline_m=0.07,
+    )
+    try:
+        backend.process_frame(_frame(1))
+        holder[0].emit(
+            _keyframe(1, IDENTITY, [[0.2, 0.0, 5.0], [0.2, 0.0, 25.0], [0.2, 0.0, 40.0]])
+        )
+        _eventually(lambda: backend.keyframe_count == 1, backend)
+
+        # When the map is read
+        snapshot = backend.map_snapshot()
+
+        # Then the 5 m point is kept and the noisy and over-cap points are gone
+        assert len(snapshot) == 1
+        assert snapshot[0].z == pytest.approx(5.0)
+    finally:
+        backend.close()
 
 
 def test_odometry_restarts_after_losing_track() -> None:
