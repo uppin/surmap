@@ -50,6 +50,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--start", type=int, default=0, help="first pair index to play")
     parser.add_argument("--no-rtabmap", action="store_true", help="skip the final RTAB-Map map")
     parser.add_argument(
+        "--rtabmap-mode",
+        choices=["live", "batch"],
+        default="live",
+        help="live: map grows during playback; batch: map built at the end",
+    )
+    parser.add_argument(
         "--coral-model-dir",
         type=Path,
         default=None,
@@ -88,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
         max_frames=args.frames,
         start_index=args.start,
         with_rtabmap=not args.no_rtabmap,
+        rtabmap_mode=args.rtabmap_mode,
         coral_model_dir=coral_dir,
         coral_model=args.coral_model,
     )

@@ -164,6 +164,59 @@ def test_player_paces_frames_and_closes_its_backend(tmp_path: Path) -> None:
         DemoPlayer(prepared, fps=0, with_rtabmap=False)  # type: ignore[arg-type]
 
 
+def test_player_emits_live_map_events_before_final_and_closes_backend(tmp_path: Path) -> None:
+    from surmap.slam.base import FrameResult
+    from surmap.slam.stream_protocol import MapUpdate
+    from surmap.types import Pose, StereoFramePair, Vec3
+
+    class FakeLiveBackend:
+        def __init__(self) -> None:
+            self.closed = False
+            self.dropped_frames = 0
+            self.odom_state = "tracking"
+            self.last_odom_frame = 0
+            self.keyframe_count = 1
+
+        def process_frame(self, frame: StereoFramePair) -> FrameResult:
+            self.last_odom_frame = frame.frame_id
+            return FrameResult(frame.frame_id, frame.t_ns, Pose(Vec3(0.1, 0.0, 0.0)), ())
+
+        def poll_updates(self) -> list[MapUpdate]:
+            return []
+
+        def map_snapshot(self) -> tuple[Vec3, ...]:
+            return (Vec3(1.0, 2.0, 0.0),)
+
+        def trajectory(self) -> list[Pose]:
+            return [Pose(Vec3(0.1, 0.0, 0.0))]
+
+        def flush(self) -> list[FrameResult]:
+            return [FrameResult(1, 100, Pose(Vec3(0.1, 0.0, 0.0)), (Vec3(1.0, 2.0, 0.0),))]
+
+        def close(self) -> None:
+            self.closed = True
+
+    fake = FakeLiveBackend()
+    prepared = _prepared_tiny(tmp_path)
+    player = DemoPlayer(
+        prepared,  # type: ignore[arg-type]
+        fps=1000.0,
+        backend_factory=lambda: fake,
+    )
+    events = list(player.events())
+
+    # Then map events arrive during playback (before final), final
+    # still arrives, and the backend is closed
+    kinds = [event.kind for event in events]
+    assert "map" in kinds
+    assert kinds.index("map") < kinds.index("final")
+    assert kinds[-1] == "final"
+    map_event = events[kinds.index("map")]
+    assert map_event.data["cloud_xy"] == [[1.0, 2.0]]
+    assert map_event.data["odom_state"] == "tracking"
+    assert fake.closed
+
+
 def test_player_emits_detections_as_a_separate_frame_keyed_event(tmp_path: Path) -> None:
     from typing import Any
 

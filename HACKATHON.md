@@ -43,7 +43,8 @@ have no client, no request, and no test.
 Muse Spark Open is not on Meta Model API. Meta's models page says to
 run those weights yourself or call a hosted provider; Baseten is that
 provider here. Hosted Muse Spark (`muse-spark-1.3`) is the Model API
-model for the scene note. `MetaMuseSceneClient` sends
+model for the scene note. Muse Wonder Full is not used.
+`MetaMuseSceneClient` sends
 `reasoning.effort` `high` unless `SURMAP_META_REASONING_EFFORT` or
 the constructor sets `low` or `medium` (anything else is refused).
 `max_output_tokens` is 4096 unless `SURMAP_META_MAX_OUTPUT_TOKENS`
@@ -57,7 +58,6 @@ nothing for that last count when the detail is absent). Credits
 cover the models on the Meta models page except Muse Wonder Full
 (ids matching `wonder-full` or `wonder_full`). This client refuses
 that id and the Baseten slug `meta-models/muse-spark-open-1026`.
-Muse Wonder Full is not used.
 
 Baseten, checked 28 Oct 2026
 ([Model APIs](https://docs.baseten.co/inference/model-apis/overview),
