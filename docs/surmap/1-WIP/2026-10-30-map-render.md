@@ -17,12 +17,12 @@
   - [x] Extent: corners map to the padded canvas; it only grows
   - [x] Camera: placed by its map-corrected pose
   - [x] Run the new tests (verify they fail for missing implementation)
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Sidecar emits `map_pose` = `getMapCorrection() · odomPose`
-  - [ ] `FloorExtent`, `render_floor_plan`; map and final events send the image + extent
-  - [ ] Page draws the image, then trajectory and camera through the same extent
-  - [ ] Rebuild the sidecar; real-container e2e asserts map poses arrive
-  - [ ] Real check on sbs_01
+- [wf 3] ✅ 2026-10-30 `/green` Green — implement until every red test passes · 584 passed, 2 skipped; e2e green on `surmap/rtabmap-stream:87e7d8243752`
+  - [x] Sidecar emits `map_pose` = `getMapCorrection() · odomPose`
+  - [x] `FloorExtent`, `render_floor_plan`; map and final events send the image + extent
+  - [x] Page draws the image, then trajectory and camera through the same extent
+  - [x] Rebuild the sidecar; real-container e2e asserts map poses arrive
+  - [x] Real check on sbs_01 — camera 0.09 m median / 0.37 m p95 from its trajectory (was up to 5.3 m); map event 27 ms median rendering 1.09M points; floor plan stable but scene still not recognisable (see Decisions)
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs, then open the PR ready ·
   - [ ] Verification executed — result recorded
   - [ ] Changelog entry `docs/surmap/changelog/2026-10-30-map-render.md`
@@ -81,3 +81,11 @@ its trajectory after loop closures.
 - **3D view not now (user decision).**
 - **SLAM accuracy unchanged here.** Measured limit of stereo-only
   odometry on sbs_01 (ATE ≈ 3.3 m, scale 1.2); IMU fusion is separate.
+
+- **Recognisability is limited by the reconstruction, not the display.**
+  Offline renders of the whole sbs_01 map (1,058 keyframes, 1.06M points)
+  with depth ≤ 20 / 10 / 15 m and with ground removed (≥ 0.7 m above the
+  ground estimated at y = 0.52 m) all show blobs, no facade lines: with
+  ATE ≈ 3.3 m and per-keyframe stereo noise, each wall is placed metres
+  apart across keyframes. Next levers are the SLAM itself (IMU fusion from
+  the bag's VN100 at 385 Hz), not rendering.

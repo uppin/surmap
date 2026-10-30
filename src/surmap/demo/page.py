@@ -75,8 +75,8 @@ PAGE = """<!DOCTYPE html>
     <h2>RTAB-Map</h2>
     <div class="stat" id="rtab">Waiting for playback to finish…</div>
     <canvas id="map" width="340" height="340"></canvas>
-    <p class="legend">Top-down floor plan: RTAB-Map cloud (sampled) in each point's camera
-    intensity, amber = camera trajectory, yellow wedge = the camera now and its field of
+    <p class="legend">Top-down floor plan: every RTAB-Map point, in its camera intensity
+    and more opaque where points pile up (walls, edges), amber = camera trajectory, yellow wedge = the camera now and its field of
     view.</p>
   </aside>
 </main>
@@ -122,30 +122,18 @@ source.addEventListener('frame', (event) => {{
   image.src = 'data:image/jpeg;base64,' + data.image_b64;
   frames += 1; lastPoints = data.point_count;
   lastCamera = data.camera;
-  if (lastMap) drawMap(lastMap.data, lastMap.extent, lastCamera);
+  if (lastMap) drawMap(lastMap, lastCamera);
   const fps = (frames / ((performance.now() - started) / 1000)).toFixed(1);
   playback.innerHTML = `Frame <b>${{data.index + 1}} / ${{data.total}}</b><br>`
     + `Stream rate <b>${{fps}} fps</b><br>`
     + `Overlay points this frame <b>${{data.point_count}}</b>`;
 }});
-let liveExtent = null;
 source.addEventListener('map', (event) => {{
   const data = JSON.parse(event.data);
   rtab.innerHTML = `Keyframes <b>${{data.keyframes}}</b> · cloud `
     + `<b>${{data.cloud_points}}</b> pts<br>Odometry <b>${{data.odom_state}}</b> `
     + `· lag <b>${{data.lag_frames}}</b> · dropped <b>${{data.dropped_frames}}</b>`;
-  const all = data.cloud_xy.concat(data.trajectory_xy);
-  if (!all.length) return;
-  if (!liveExtent) liveExtent = {{minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9}};
-  for (const p of all) {{  // extent only grows, never jitters
-    liveExtent.minX = Math.min(liveExtent.minX, p[0]);
-    liveExtent.maxX = Math.max(liveExtent.maxX, p[0]);
-    liveExtent.minY = Math.min(liveExtent.minY, p[1]);
-    liveExtent.maxY = Math.max(liveExtent.maxY, p[1]);
-  }}
-  lastMap = {{data: {{cloud_xy: data.cloud_xy, trajectory_xy: data.trajectory_xy}},
-    extent: liveExtent}};
-  drawMap(lastMap.data, lastMap.extent, lastCamera);
+  showMap(data);
 }});
 source.addEventListener('status', (event) => {{
   rtab.textContent = JSON.parse(event.data).message;
@@ -154,10 +142,8 @@ source.addEventListener('final', (event) => {{
   const data = JSON.parse(event.data);
   rtab.innerHTML = `Optimized poses <b>${{data.poses}}</b><br>`
     + `Trajectory travelled <b>${{data.travelled_m}} m</b><br>`
-    + `Assembled cloud <b>${{data.cloud_points}} points</b> `
-    + `(sample of ${{data.cloud_xy.length}} drawn)`;
-  lastMap = null;
-  drawMap(data, null, lastCamera);
+    + `Assembled cloud <b>${{data.cloud_points}} points</b>, all drawn`;
+  showMap(data);
   source.close();
   pauseButton.disabled = true;
 }});
@@ -242,29 +228,26 @@ pauseButton.addEventListener('click', async () => {{
 }});
 document.getElementById('restart').addEventListener('click', () => location.reload());
 fillScenes().then(prepareThenPlay);
-function drawMap(data, extent, camera) {{
-  const canvas = document.getElementById('map');
-  const ctx = canvas.getContext('2d');
-  const all = data.cloud_xy.concat(data.trajectory_xy);
-  if (!all.length) return;
-  const xs = all.map(p => p[0]), ys = all.map(p => p[1]);
-  const minX = extent ? extent.minX : Math.min(...xs);
-  const maxX = extent ? extent.maxX : Math.max(...xs);
-  const minY = extent ? extent.minY : Math.min(...ys);
-  const maxY = extent ? extent.maxY : Math.max(...ys);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const scale = Math.min(320 / Math.max(0.01, maxX - minX),
-    320 / Math.max(0.01, maxY - minY));
-  const px = p => [10 + (p[0] - minX) * scale, 330 - (p[1] - minY) * scale];
-  for (const point of data.cloud_xy) {{
-    // [x, y] or [x, y, r, g, b]
-    ctx.fillStyle = point.length === 5
-      ? `rgb(${{point[2]}}, ${{point[3]}}, ${{point[4]}})` : '#8a929c';
-    const [x, y] = px(point);
-    ctx.fillRect(x, y, 1.6, 1.6);
-  }}
+// The server renders every map point into `floor_png` and owns the
+// (grow-only) extent; trajectory and camera use the same mapping.
+const FLOOR_PX = 340, FLOOR_PAD = 10;
+function showMap(data) {{
+  const image = new Image();
+  image.onload = () => {{
+    lastMap = {{image, extent: data.extent, trajectory: data.trajectory_xy}};
+    drawMap(lastMap, lastCamera);
+  }};
+  image.src = 'data:image/png;base64,' + data.floor_png;
+}}
+function drawMap(map, camera) {{
+  const ctx = document.getElementById('map').getContext('2d');
+  const [minX, maxX, minZ, maxZ] = map.extent;
+  const scale = (FLOOR_PX - 2 * FLOOR_PAD) / Math.max(maxX - minX, maxZ - minZ, 0.01);
+  const px = (p) => [FLOOR_PAD + (p[0] - minX) * scale, FLOOR_PX - FLOOR_PAD - (p[1] - minZ) * scale];
+  ctx.clearRect(0, 0, FLOOR_PX, FLOOR_PX);
+  ctx.drawImage(map.image, 0, 0);
   ctx.strokeStyle = '#ffb03a'; ctx.lineWidth = 2; ctx.beginPath();
-  data.trajectory_xy.forEach((point, i) => {{
+  map.trajectory.forEach((point, i) => {{
     const [x, y] = px(point); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
   }});
   ctx.stroke();

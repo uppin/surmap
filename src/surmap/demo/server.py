@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import html
+import io
 import itertools
 import json
 import math
@@ -61,7 +62,6 @@ from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
 from surmap.types import Pose, StereoFramePair, Vec3
 
 MAX_OVERLAY_POINTS = 600
-MAX_MAP_POINTS = 4000
 
 
 @runtime_checkable
@@ -113,6 +113,12 @@ def project_overlay(
         visible = [visible[int(index * step)] for index in range(max_points)]
     return visible
 
+
+# Floor plan canvas (square, px), its padding, and how many points make a
+# pixel fully opaque.
+FLOOR_CANVAS_PX = 340
+FLOOR_PADDING_PX = 10
+FLOOR_SOLID_POINTS = 16
 
 # Overlay ramp colours, near to far; each dataset sets the depths
 # (`DatasetSpec.depth_stops_m`) and the page legend shows the same stops.
@@ -219,22 +225,6 @@ def keypoint_overlay(
     return _coloured(points, stops)
 
 
-def _floor_plane_cloud(cloud: MapCloud, max_points: int = MAX_MAP_POINTS) -> list[list[float]]:
-    """Live map points on the floor plane as [x, z, r, g, b].
-
-    The live map is in RTAB-Map's optical-world frame (x right, y down,
-    z forward from the first camera pose), so the floor plane is x-z.
-    """
-    points, colors = cloud.points, cloud.colors
-    if len(points) > max_points:
-        pick = np.arange(max_points) * len(points) // max_points
-        points, colors = points[pick], colors[pick]
-    return [
-        [round(x, 3), round(z, 3), r, g, b]
-        for (x, _, z), (r, g, b) in zip(points.tolist(), colors.tolist(), strict=True)
-    ]
-
-
 @dataclass(frozen=True)
 class FloorExtent:
     """The floor-plan area shown, in map metres, and its canvas mapping."""
@@ -244,13 +234,63 @@ class FloorExtent:
     min_z: float
     max_z: float
 
+    @property
+    def scale(self) -> float:
+        """Canvas pixels per metre (uniform, so the plan is never squashed)."""
+        span = max(self.max_x - self.min_x, self.max_z - self.min_z, 0.01)
+        return (FLOOR_CANVAS_PX - 2 * FLOOR_PADDING_PX) / span
+
     def to_pixels(self, x: float, z: float) -> tuple[float, float]:
-        raise NotImplementedError("TODO(map-render): to_pixels")
+        return (
+            FLOOR_PADDING_PX + (x - self.min_x) * self.scale,
+            FLOOR_CANVAS_PX - FLOOR_PADDING_PX - (z - self.min_z) * self.scale,
+        )
+
+    def grown(self, xs: NDArray[np.float32], zs: NDArray[np.float32]) -> FloorExtent:
+        """This extent widened to cover the given points (never shrinks)."""
+        if not len(xs):
+            return self
+        return FloorExtent(
+            min(self.min_x, float(xs.min())),
+            max(self.max_x, float(xs.max())),
+            min(self.min_z, float(zs.min())),
+            max(self.max_z, float(zs.max())),
+        )
+
+    def as_list(self) -> list[float]:
+        return [round(v, 3) for v in (self.min_x, self.max_x, self.min_z, self.max_z)]
+
+
+def _first_extent(xs: NDArray[np.float32], zs: NDArray[np.float32]) -> FloorExtent:
+    return FloorExtent(float(xs.min()), float(xs.max()), float(zs.min()), float(zs.max()))
 
 
 def render_floor_plan(xz: NDArray[np.float32], grey: NDArray[np.uint8], extent: FloorExtent) -> str:
-    """Every map point on the floor plan as one base64 PNG."""
-    raise NotImplementedError("TODO(map-render): render_floor_plan")
+    """Every map point on the floor plan as one base64 RGBA PNG.
+
+    Each pixel is the mean grey of the points falling in it; its opacity
+    rises with how many do (log scale), so walls and edges — where points
+    pile up — read as solid lines. Deterministic: no sampling.
+    """
+    size = FLOOR_CANVAS_PX
+    scale = extent.scale
+    u = np.floor(FLOOR_PADDING_PX + (xz[:, 0] - extent.min_x) * scale).astype(np.int64)
+    v = np.floor(size - FLOOR_PADDING_PX - (xz[:, 1] - extent.min_z) * scale).astype(np.int64)
+    inside = (u >= 0) & (u < size) & (v >= 0) & (v < size)
+    index = v[inside] * size + u[inside]
+    count = np.bincount(index, minlength=size * size)
+    total = np.bincount(index, weights=grey[inside].astype(np.float64), minlength=size * size)
+    seen = count > 0
+    mean = np.zeros(size * size)
+    mean[seen] = total[seen] / count[seen]
+    alpha = np.zeros(size * size)
+    alpha[seen] = np.clip(255 * np.log1p(count[seen]) / np.log1p(FLOOR_SOLID_POINTS), 0, 255)
+    rgba = np.zeros((size * size, 4), np.uint8)
+    rgba[:, 0] = rgba[:, 1] = rgba[:, 2] = np.round(mean).astype(np.uint8)
+    rgba[:, 3] = np.round(alpha).astype(np.uint8)
+    out = io.BytesIO()
+    Image.fromarray(rgba.reshape(size, size, 4), "RGBA").save(out, format="PNG")
+    return base64.b64encode(out.getvalue()).decode()
 
 
 FloorCamera = dict[str, float]
@@ -474,7 +514,10 @@ class _Display:
             overlay = keypoint_overlay(
                 odom.keypoints, backend.rectification, self._calibration, self._stops
             )
-            camera = floor_camera(odom.pose, self._calibration) if odom.pose else None
+            # The map-corrected pose keeps the camera on its (optimised)
+            # trajectory after loop closures; raw odometry drifts off it.
+            pose = odom.map_pose or odom.pose
+            camera = floor_camera(pose, self._calibration) if pose else None
             return overlay, camera
         given_up = (
             final
@@ -532,6 +575,7 @@ class DemoPlayer:
         controls: PlaybackControls | None = None,
     ) -> None:
         self._controls = controls if controls is not None else PlaybackControls()
+        self._extent: FloorExtent | None = None
         fps = prepared.spec.fps if fps is None else fps
         if fps <= 0:
             raise ValueError("fps must be positive")
@@ -555,6 +599,22 @@ class DemoPlayer:
         self._rtabmap_mode = rtabmap_mode
         self._backend_factory = backend_factory
 
+    def _floor_plan(
+        self, xz: NDArray[np.float32], grey: NDArray[np.uint8], trajectory_xz: list[list[float]]
+    ) -> dict[str, object]:
+        """Map image + its (grow-only) extent + trajectory, for map/final events."""
+        path = np.array(trajectory_xz, np.float32).reshape(-1, 2)
+        everything = np.concatenate([xz.astype(np.float32), path])
+        if len(everything):
+            xs, zs = everything[:, 0], everything[:, 1]
+            self._extent = (self._extent or _first_extent(xs, zs)).grown(xs, zs)
+        extent = self._extent or FloorExtent(-1.0, 1.0, -1.0, 1.0)
+        return {
+            "floor_png": render_floor_plan(xz, grey, extent),
+            "extent": extent.as_list(),
+            "trajectory_xy": trajectory_xz,
+        }
+
     def _map_event(self, backend: LiveSlamBackend, frame_id: int) -> DemoEvent:
         cloud = backend.map_cloud()
         trajectory = backend.trajectory()
@@ -562,9 +622,10 @@ class DemoPlayer:
             "map",
             {
                 "frame_id": frame_id,
-                "cloud_xy": _floor_plane_cloud(cloud),
+                **self._floor_plan(
+                    cloud.points[:, [0, 2]], cloud.colors[:, 0], _floor_plane_trajectory(trajectory)
+                ),
                 "cloud_points": len(cloud.points),
-                "trajectory_xy": _floor_plane_trajectory(trajectory),
                 "keyframes": backend.keyframe_count,
                 "odom_state": backend.odom_state,
                 "lag_frames": max(0, frame_id - backend.last_odom_frame),
@@ -690,21 +751,6 @@ class DemoPlayer:
                 yield from display.release(final=True)
                 trajectory = backend.trajectory()
                 cloud = results[-1].static_points if results else ()
-                if isinstance(backend, LiveSlamBackend):
-                    live_cloud = backend.map_cloud()
-                    cloud_xy = _floor_plane_cloud(live_cloud)
-                    trajectory_xy = _floor_plane_trajectory(trajectory)
-                else:
-                    # The batch sidecar's map is z-up (EuRoC base frame).
-                    sample = cloud
-                    if len(sample) > MAX_MAP_POINTS:
-                        step = len(sample) / MAX_MAP_POINTS
-                        sample = tuple(sample[int(i * step)] for i in range(MAX_MAP_POINTS))
-                    cloud_xy = [[round(p.x, 3), round(p.y, 3)] for p in sample]
-                    trajectory_xy = [
-                        [round(pose.position.x, 3), round(pose.position.y, 3)]
-                        for pose in trajectory
-                    ]
                 travelled = 0.0
                 if trajectory:
                     origin = trajectory[0].position
@@ -715,14 +761,28 @@ class DemoPlayer:
                         )
                         for pose in trajectory
                     )
+                if isinstance(backend, LiveSlamBackend):
+                    live_cloud = backend.map_cloud()
+                    plan = self._floor_plan(
+                        live_cloud.points[:, [0, 2]],
+                        live_cloud.colors[:, 0],
+                        _floor_plane_trajectory(trajectory),
+                    )
+                else:
+                    # The batch sidecar's map is z-up (EuRoC base frame).
+                    xy = np.array([(p.x, p.y) for p in cloud], np.float32).reshape(-1, 2)
+                    plan = self._floor_plan(
+                        xy,
+                        np.full(len(xy), 160, np.uint8),
+                        [[round(t.position.x, 3), round(t.position.y, 3)] for t in trajectory],
+                    )
                 yield DemoEvent(
                     "final",
                     {
                         "poses": len(trajectory),
                         "travelled_m": round(travelled, 3),
                         "cloud_points": len(cloud),
-                        "cloud_xy": cloud_xy,
-                        "trajectory_xy": trajectory_xy,
+                        **plan,
                     },
                 )
             yield from display.release(final=True)

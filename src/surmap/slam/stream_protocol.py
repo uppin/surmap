@@ -244,6 +244,7 @@ def decode_server_line(line: str | bytes) -> ServerMessage:
             lost=bool(_req(obj, "lost")),
             ms=float(ms_raw),
             keypoints=_keypoints(obj.get("keypoints", [])),
+            map_pose=None if obj.get("map_pose") is None else _pose(obj["map_pose"]),
         )
     if kind == "keyframe":
         points_raw = _req(obj, "points_local")
