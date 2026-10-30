@@ -98,13 +98,21 @@ def _number(value: object, unit: str) -> str:
 def _serve(snapshot_path: Path, report_path: Path, host: str, port: int) -> int:
     report = json.loads(report_path.read_text(encoding="utf-8"))
     impact = report if isinstance(report, dict) else None
-    server = make_viewer_server(
+    try:
+        server = make_viewer_server(
         lambda: MissionReplay(snapshot_path),
         host=host,
         port=port,
         fps=1.0,
         impact=impact,
     )
+    except OSError as exc:
+        print(
+            f"Viewer cannot listen on {host}:{port} ({exc}). "
+            "Stop the other viewer or pass --port.",
+            file=sys.stderr,
+        )
+        return 1
     bound_host, bound_port = server.server_address[:2]
     shown = "127.0.0.1" if bound_host in ("0.0.0.0", "") else bound_host
     print(f"Viewer: http://{shown}:{bound_port}/  (Ctrl+C to stop)")

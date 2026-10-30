@@ -158,7 +158,7 @@ def resolve_live_session(capture: Path | None) -> Path:
         )
     raise MissionConfigError(
         "Gazebo is not on PATH and no --capture was given. "
-        "Use a recorded EuRoC session from a SITL dump: --live --capture <dir>."
+        "Record a SITL capture and re-run with --live --capture <dir>."
     )
 
 
@@ -245,10 +245,13 @@ def run_offline_mission(output_dir: Path) -> MissionResult:
 
 def run_live_mission(output_dir: Path, capture: Path) -> MissionResult:
     """Real SAM, labels, and scene note. The cloud is the streaming RTAB-Map map."""
-    services = build_live_services()
     capture_dir = resolve_live_session(capture)
+    try:
+        frames, calibration, gps = load_sitl_capture(capture_dir)
+    except (OSError, ValueError) as exc:
+        raise MissionConfigError(str(exc)) from exc
+    services = build_live_services()
     output_dir.mkdir(parents=True, exist_ok=True)
-    frames, calibration, gps = load_sitl_capture(capture_dir)
     euroc_path = export_euroc_session(output_dir / "euroc", frames, calibration, gps).root
     truth = load_disaster_ground_truth()
     backend = live_map_backend()

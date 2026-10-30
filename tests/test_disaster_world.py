@@ -8,6 +8,8 @@ the JSON a demo uses to score detections.
 from __future__ import annotations
 
 import math
+import os
+import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -297,6 +299,34 @@ def test_every_survivor_is_inside_the_survey_cross_track() -> None:
     # When each person is measured to the nearest plan segment
     # Then none sits more than 8 m off the path
     assert_people_within_cross_track(people, points, CROSS_TRACK_M)
+
+
+def test_launch_script_stops_when_the_px4_gazebo_models_are_missing(tmp_path: Path) -> None:
+    # Given a PX4 tree with the gz directories, and no PX4-gazebo-models checkout
+    script = Path(__file__).resolve().parents[1] / "scripts" / "launch_disaster_sitl.sh"
+    px4 = tmp_path / "PX4-Autopilot"
+    (px4 / "Tools" / "simulation" / "gz" / "models").mkdir(parents=True)
+    (px4 / "Tools" / "simulation" / "gz" / "worlds").mkdir(parents=True)
+    home = tmp_path / "home"
+    home.mkdir()
+    env = os.environ.copy()
+    env["HOME"] = str(home)
+    env["PX4_AUTOPILOT_ROOT"] = str(px4)
+    env.pop("PX4_GZ_MODELS", None)
+
+    # When the launch script runs
+    result = subprocess.run(
+        ["bash", str(script)],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    # Then it stops before make, and names the missing models directory
+    assert result.returncode == 1
+    assert "PX4 Gazebo models not found" in result.stderr
+    assert "make" not in result.stderr
 
 
 def test_launch_script_selects_the_stereo_airframe_and_does_not_fly() -> None:

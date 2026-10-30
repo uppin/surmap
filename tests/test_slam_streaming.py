@@ -4,6 +4,7 @@ import io
 import json
 import queue
 import struct
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -14,7 +15,7 @@ from PIL import Image
 
 from surmap.slam.sidecar import SidecarError
 from surmap.slam.stream_protocol import PROTOCOL_VERSION, Keypoint
-from surmap.slam.streaming import StreamingRtabmapBackend, stream_build_argv
+from surmap.slam.streaming import StreamingRtabmapBackend, _PopenProcess, stream_build_argv
 from surmap.types import Pose, StereoFramePair, Vec3
 
 CAM_YAML = "sensor_type: camera\nresolution: [376, 240]\n"
@@ -460,6 +461,147 @@ def test_the_keyframe_depth_cap_defaults_to_the_indoor_six_metres() -> None:
 
     # Then the hello carries the indoor default
     assert _hello(holder[0])["max_depth_m"] == 6.0
+
+
+class _StdoutClosed(FakeProcess):
+    """The sidecar exits after ready, with no final graph."""
+
+    def close_stdin(self) -> None:
+        self.stdin_closed.set()
+        self._lines.put(b"")
+
+
+class _BrokenStdin(FakeProcess):
+    """The sidecar's stdin closes once a pair is written."""
+
+    def __init__(self, argv: list[str]) -> None:
+        super().__init__(argv)
+        self._writes = 0
+
+    def write(self, data: bytes) -> None:
+        self._writes += 1
+        if self._writes > 1:
+            raise BrokenPipeError("stdin closed")
+        super().write(data)
+
+    def close_stdin(self) -> None:
+        self.stdin_closed.set()
+
+
+def test_a_sidecar_that_closes_its_output_fails_before_the_flush_timeout() -> None:
+    # Given a sidecar that announces ready and then closes stdout
+    holder: list[FakeProcess] = []
+
+    def factory(argv: list[str]) -> FakeProcess:
+        proc = _StdoutClosed(argv)
+        holder.append(proc)
+        return proc
+
+    backend = StreamingRtabmapBackend(
+        cam0_yaml=CAM_YAML,
+        cam1_yaml=CAM_YAML,
+        process_factory=factory,
+        flush_timeout=3.0,
+    )
+    start = time.monotonic()
+    try:
+        # When the capture is flushed
+        with pytest.raises(SidecarError, match="closed its output") as raised:
+            backend.flush()
+    finally:
+        backend.close()
+
+    # Then the failure names the closed sidecar and does not wait out the flush window
+    assert "timed out" not in str(raised.value)
+    assert time.monotonic() - start < 2.0
+
+
+def test_a_sidecar_whose_stdin_breaks_fails_before_the_flush_timeout() -> None:
+    # Given a sidecar that dies when the first pair is written
+    def factory(argv: list[str]) -> FakeProcess:
+        return _BrokenStdin(argv)
+
+    backend = StreamingRtabmapBackend(
+        cam0_yaml=CAM_YAML,
+        cam1_yaml=CAM_YAML,
+        process_factory=factory,
+        flush_timeout=3.0,
+    )
+    start = time.monotonic()
+    try:
+        backend.process_frame(_frame(1))
+
+        # When the capture is flushed
+        with pytest.raises(SidecarError, match="stdin closed") as raised:
+            backend.flush()
+    finally:
+        backend.close()
+
+    # Then the write error is reported and the flush window is not used up
+    assert "timed out" not in str(raised.value)
+    assert time.monotonic() - start < 2.0
+
+
+def test_a_lost_frame_is_omitted_and_the_odometry_state_is_lost() -> None:
+    # Given one tracked frame and a later frame whose odometry is lost
+    holder: list[FakeProcess] = []
+    backend = _backend(holder)
+    try:
+        backend.process_frame(_frame(1))
+        backend.process_frame(_frame(2))
+        holder[0].emit(_odom(1, IDENTITY))
+        holder[0].emit(
+            {
+                "type": "odom",
+                "frame_id": 2,
+                "t_ns": 2_000_000_000,
+                "pose": None,
+                "lost": True,
+                "ms": 1.0,
+            }
+        )
+        _eventually(lambda: backend.odom_state == "lost", backend)
+
+        # When the capture is flushed
+        results = backend.flush()
+
+        # Then only the tracked frame is returned, and it is not given an invented pose
+        assert [result.frame_id for result in results] == [1]
+        assert results[0].pose is not None
+        assert backend.odom_state == "lost"
+    finally:
+        backend.close()
+
+
+def test_a_sidecar_process_that_fills_stderr_still_yields_stdout() -> None:
+    # Given a process that fills the stderr pipe before it writes stdout
+    script = (
+        "import sys\n"
+        "sys.stderr.write('x' * 300000)\n"
+        "sys.stderr.flush()\n"
+        "sys.stdout.write('ready\\n')\n"
+        "sys.stdout.flush()\n"
+    )
+    proc = _PopenProcess([sys.executable, "-c", script])
+    received: dict[str, bytes] = {"line": b""}
+
+    def read() -> None:
+        received["line"] = proc.readline()
+
+    thread = threading.Thread(target=read)
+    thread.start()
+    thread.join(2.0)
+    try:
+        # When stdout is read
+        # Then the ready line arrives, instead of the process blocking on a full stderr pipe
+        assert not thread.is_alive()
+        assert received["line"] == b"ready\n"
+    finally:
+        try:
+            proc.terminate()
+        except ProcessLookupError:
+            pass
+        proc.wait(timeout=2)
 
 
 def test_odometry_restarts_after_losing_track() -> None:

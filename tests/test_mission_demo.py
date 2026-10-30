@@ -105,15 +105,57 @@ def test_offline_mission_ignores_live_flags_and_does_not_open_the_network(
     assert "secret-baseten-key" not in text
 
 
-def test_live_mode_without_a_capture_names_the_recorded_session_when_gazebo_is_absent(
+def test_live_mode_without_a_capture_asks_for_a_sitl_capture_when_gazebo_is_absent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given no gz binary
     monkeypatch.setattr("surmap.mission.demo.gazebo_on_path", lambda: False)
 
     # When a live session is requested without a capture directory
-    with pytest.raises(MissionConfigError, match="--capture"):
+    with pytest.raises(MissionConfigError, match="--capture") as raised:
         resolve_live_session(None)
+
+    # Then the message names a SITL capture directory. That directory is
+    # the dump layout, not an EuRoC tree.
+    message = str(raised.value)
+    assert "capture" in message
+    assert "EuRoC" not in message
+
+
+def test_live_mission_names_a_missing_capture_before_it_asks_for_provider_flags(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given no provider flags and a capture path that is not on disk
+    monkeypatch.delenv("SURMAP_LIVE_META", raising=False)
+    monkeypatch.delenv("SURMAP_LIVE_BASETEN", raising=False)
+    monkeypatch.delenv("SURMAP_LIVE_MODAL", raising=False)
+
+    # When the live mission is asked to run
+    with pytest.raises(MissionConfigError, match="capture not found") as raised:
+        run_live_mission(tmp_path, tmp_path / "missing-capture")
+
+    # Then the missing directory is the error, and no provider is mentioned
+    assert "SURMAP_LIVE" not in str(raised.value)
+
+
+def test_live_mission_names_an_incomplete_capture_before_it_asks_for_provider_flags(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given no provider flags and a capture directory with no calibration file
+    monkeypatch.delenv("SURMAP_LIVE_META", raising=False)
+    monkeypatch.delenv("SURMAP_LIVE_BASETEN", raising=False)
+    monkeypatch.delenv("SURMAP_LIVE_MODAL", raising=False)
+    empty = tmp_path / "empty-capture"
+    empty.mkdir()
+
+    # When the live mission is asked to run
+    with pytest.raises(MissionConfigError, match="calibration.json") as raised:
+        run_live_mission(tmp_path / "out", empty)
+
+    # Then the incomplete capture is the error, and no provider is mentioned
+    assert "SURMAP_LIVE" not in str(raised.value)
 
 
 def test_live_services_refuse_a_provider_whose_flag_is_unset(
@@ -256,6 +298,38 @@ def test_live_mission_says_when_the_streaming_backend_returns_no_points(
     assert report["map_backend"] == "live-rtabmap"
     assert "not estimated" in str(report["basis_note"]).lower()
     assert "secret-model-key" not in json.dumps(report)
+
+
+def test_a_busy_viewer_port_is_named_without_a_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Given the offline report is ready and the viewer port is already taken
+    import importlib.util
+    import socket
+    from typing import cast
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "mission_demo.py"
+    spec = importlib.util.spec_from_file_location("mission_demo_cli", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    main = cast(Callable[[list[str]], int], module.main)
+    held = socket.socket()
+    held.bind(("127.0.0.1", 0))
+    held.listen(1)
+    port = int(held.getsockname()[1])
+
+    try:
+        # When the demo tries to serve on that port
+        code = main(["--output", str(tmp_path), "--port", str(port)])
+    finally:
+        held.close()
+    captured = capsys.readouterr()
+
+    # Then it exits with a message that names the port and does not dump a traceback
+    assert code == 1
+    assert str(port) in captured.err
+    assert "Traceback" not in captured.err
 
 
 def test_viewer_serves_the_impact_report_and_the_survivor_question(tmp_path: Path) -> None:
