@@ -7,11 +7,15 @@ not launch Gazebo and it does not call Meta, Baseten, or Modal.
     uv run python scripts/mission_demo.py
     uv run python scripts/mission_demo.py --no-viewer
 
-Live calls the services whose flags are already set
-(``SURMAP_LIVE_META``, ``SURMAP_LIVE_BASETEN``, ``SURMAP_LIVE_MODAL``)
-and reads keys only inside those clients. Pass a capture directory.
-This process does not arm PX4.
+Live with ``SURMAP_LIVE_META=1`` and ``MODEL_API_KEY`` calls Meta SAM
+3.1, Muse Spark labels, and the Muse Spark scene note. Baseten and
+Modal are optional fallbacks when that Meta flag is unset
+(``SURMAP_LIVE_BASETEN``, ``SURMAP_LIVE_MODAL``). Keys are read only
+inside those clients. Pass a capture directory. This process does not
+enable PX4 motors.
 
+    export SURMAP_LIVE_META=1
+    export MODEL_API_KEY='your-key'
     uv run python scripts/mission_demo.py --live --capture ~/sitl-runs/disaster-01
 
 The viewer listens on http://127.0.0.1:8770/ . See docs/mission-demo.md.

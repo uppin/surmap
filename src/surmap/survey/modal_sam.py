@@ -306,11 +306,17 @@ def run_modal_sam_check(
     for detection in detections:
         x0, y0, x1, y1 = detection.box_xyxy
         print(
-            f"  {detection.label} score={detection.score:.3f} "
+            f"  {detection.label} score={_score_text(detection.score)} "
             f"box=({x0:.1f},{y0:.1f},{x1:.1f},{y1:.1f}) "
             f"polygon_points={len(detection.mask_polygon)}"
         )
     return detections
+
+
+def _score_text(score: float | None) -> str:
+    if score is None:
+        return "none"
+    return f"{score:.3f}"
 
 
 def _media_type(image: bytes) -> str:

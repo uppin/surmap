@@ -71,6 +71,16 @@ class MapLandmark:
 
 
 @dataclass(frozen=True)
+class MetaCallRecord:
+    """One hosted Meta call: role, model id, and elapsed seconds."""
+
+    role: str
+    model_id: str
+    elapsed_s: float
+    confidences: tuple[float | None, ...] = ()
+
+
+@dataclass(frozen=True)
 class SemanticMapSnapshot:
     """Layered semantic map. ``landmarks`` and ``dynamic`` are never merged."""
 
@@ -78,6 +88,7 @@ class SemanticMapSnapshot:
     origin: MapOrigin | None
     landmarks: tuple[MapLandmark, ...]
     dynamic: tuple[MapLandmark, ...]
+    meta_calls: tuple[MetaCallRecord, ...] = ()
 
 
 def build_snapshot(
@@ -254,6 +265,16 @@ def _snapshot_json(snapshot: SemanticMapSnapshot) -> dict[str, object]:
         "origin": origin,
         "landmarks": [_landmark_json(landmark) for landmark in snapshot.landmarks],
         "dynamic": [_landmark_json(landmark) for landmark in snapshot.dynamic],
+        "meta_calls": [_meta_call_json(call) for call in snapshot.meta_calls],
+    }
+
+
+def _meta_call_json(call: MetaCallRecord) -> dict[str, object]:
+    return {
+        "role": call.role,
+        "model_id": call.model_id,
+        "elapsed_s": call.elapsed_s,
+        "confidences": list(call.confidences),
     }
 
 
@@ -267,7 +288,36 @@ def _parse_snapshot(raw: object) -> SemanticMapSnapshot:
         origin=_parse_origin(document.get("origin")),
         landmarks=_parse_landmarks(document.get("landmarks"), "landmarks"),
         dynamic=_parse_landmarks(document.get("dynamic"), "dynamic"),
+        meta_calls=_parse_meta_calls(document.get("meta_calls", ())),
     )
+
+
+def _parse_meta_calls(raw: object) -> tuple[MetaCallRecord, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ValueError("meta_calls must be a list")
+    records: list[MetaCallRecord] = []
+    for index, item in enumerate(raw):
+        body = _as_object(item, f"meta_calls[{index}]")
+        confidences_raw = body.get("confidences", [])
+        if not isinstance(confidences_raw, list):
+            raise ValueError(f"meta_calls[{index}].confidences must be a list")
+        confidences: list[float | None] = []
+        for confidence in confidences_raw:
+            if confidence is None:
+                confidences.append(None)
+            else:
+                confidences.append(_as_float(confidence, f"meta_calls[{index}].confidences"))
+        records.append(
+            MetaCallRecord(
+                role=_as_str(body.get("role"), f"meta_calls[{index}].role"),
+                model_id=_as_str(body.get("model_id"), f"meta_calls[{index}].model_id"),
+                elapsed_s=_as_float(body.get("elapsed_s"), f"meta_calls[{index}].elapsed_s"),
+                confidences=tuple(confidences),
+            )
+        )
+    return tuple(records)
 
 
 def _parse_origin(raw: object) -> MapOrigin | None:

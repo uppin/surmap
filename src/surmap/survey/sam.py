@@ -39,7 +39,7 @@ class SamDetection:
     """One SAM detection: label, box, mask outline, optional on-board track."""
 
     label: str
-    score: float
+    score: float | None
     box_xyxy: tuple[float, float, float, float]
     mask_polygon: tuple[tuple[float, float], ...] = ()
     track_id: int | None = None

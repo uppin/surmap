@@ -42,7 +42,8 @@ def frame_from_image(path: Path) -> RawFrame:
 
 def format_detection(detection: SamDetection) -> str:
     return (
-        f"{detection.label} score={detection.score} box={detection.box_xyxy} "
+        f"{detection.label} score={'none' if detection.score is None else detection.score} "
+        f"box={detection.box_xyxy} "
         f"points={len(detection.mask_polygon)} track_id={detection.track_id}"
     )
 
