@@ -10,10 +10,13 @@ import os
 import pathlib
 import shutil
 import subprocess
+import time
 
+import numpy as np
 import pytest
 
 from surmap.demo.datasets import scaled_sensor_yaml
+from surmap.slam.stream_protocol import OdomUpdate
 from surmap.slam.streaming import StreamingRtabmapBackend, stream_image_tag
 from surmap.types import StereoFramePair
 
@@ -48,6 +51,7 @@ def test_streaming_backend_maps_live_over_the_fixture() -> None:
         cam1_yaml=scaled_sensor_yaml(cam1, 376, 240),
     )
     live_updates = 0
+    tracked_keypoints: list[int] = []
     try:
         for index, t_ns in enumerate(timestamps):
             backend.process_frame(
@@ -59,9 +63,19 @@ def test_streaming_backend_maps_live_over_the_fixture() -> None:
                     calibration_id="euroc-v1-01-stream",
                 )
             )
-            live_updates += len(backend.poll_updates())  # live, before stdin closes
+            updates = backend.poll_updates()  # live, before stdin closes
+            live_updates += len(updates)
+            tracked_keypoints += [
+                len(update.keypoints) for update in updates if isinstance(update, OdomUpdate)
+            ]
+            # Real-time feed at the recording's 20 Hz: the backend drops
+            # the oldest pairs when fed faster than RTAB-Map runs.
+            time.sleep(1 / 20)
         assert live_updates > 0, "no odometry arrived before flush (batch, not live)"
         results = backend.flush()
+        keyframes = backend.keyframe_count
+        rectification = backend.rectification
+        cloud = backend.map_cloud()
     finally:
         backend.close()
 
@@ -93,3 +107,11 @@ def test_streaming_backend_maps_live_over_the_fixture() -> None:
     )
     assert travelled > 0.3
     assert results and len(results[-1].static_points) > 5_000
+    # Only nodes RTAB-Map's graph kept are keyframes
+    assert keyframes == len(trajectory)
+    # Each frame's odometry carries the features it tracked, and the
+    # rectification to place them on the raw image came with ready
+    assert tracked_keypoints and sorted(tracked_keypoints)[len(tracked_keypoints) // 2] > 50
+    assert rectification is not None and rectification.raw[0] > 0
+    # Points carry the camera's real intensity, not one flat colour
+    assert len(np.unique(cloud.colors[:, 0])) > 50

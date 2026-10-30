@@ -16,20 +16,25 @@ import subprocess
 import threading
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+import numpy as np
+from numpy.typing import NDArray
 from PIL import Image
 
 from surmap.slam.base import FrameResult
 from surmap.slam.sidecar import SHARED_CONTAINER_ENV, SidecarError, _subprocess_runner
 from surmap.slam.stream_protocol import (
+    NEUTRAL_GREY,
     ErrorUpdate,
     GraphUpdate,
     KeyframeUpdate,
     MapUpdate,
     OdomUpdate,
     Ready,
+    Rectification,
     decode_server_line,
     encode_hello,
     encode_pair,
@@ -38,10 +43,18 @@ from surmap.types import Pose, StereoFramePair, Vec3
 
 STREAM_IMAGE_REPO = "surmap/rtabmap-stream"
 
+# The pinned RTAB-Map image is published for amd64 only; arm64 hosts
+# (Apple Silicon) build and run it emulated. A no-op on amd64 hosts.
+PINNED_PLATFORM = "linux/amd64"
+
 # Stored per keyframe so map_snapshot() stays cheap on long runs:
 # the snapshot re-transforms stored points on every poll, so an
 # unbounded per-keyframe cloud makes it quadratic in run length.
 MAX_STORED_POINTS_PER_KEYFRAME = 1000
+
+# Per-frame odometry kept for display (~10 s at 20 Hz): a display holds a
+# frame back only until its odometry arrives, never this long.
+FRAME_ODOMETRY_KEPT = 200
 
 
 def stream_image_tag(source_dir: Path | None = None) -> str:
@@ -56,6 +69,46 @@ def stream_image_tag(source_dir: Path | None = None) -> str:
             digest.update(name.encode())
             digest.update(path.read_bytes())
     return f"{STREAM_IMAGE_REPO}:{digest.hexdigest()[:12]}"
+
+
+def stream_build_argv(tag: str, source_dir: Path) -> list[str]:
+    """`docker build` command for the derived streaming image."""
+    return ["docker", "build", "--platform", PINNED_PLATFORM, "-t", tag, str(source_dir)]
+
+
+@dataclass(frozen=True)
+class MapCloud:
+    """The live map in the map frame: (N, 3) float32 points, (N, 3) uint8 RGB."""
+
+    points: NDArray[np.float32]
+    colors: NDArray[np.uint8]
+
+
+@dataclass(frozen=True)
+class _Keyframe:
+    """One stored keyframe: its odometry pose and capped local points."""
+
+    node_id: int
+    pose: Pose
+    points: NDArray[np.float32]
+    colors: NDArray[np.uint8]
+
+    @staticmethod
+    def of(update: KeyframeUpdate) -> _Keyframe:
+        points = np.array([(p.x, p.y, p.z) for p in update.points_local], dtype=np.float32).reshape(
+            -1, 3
+        )
+        colors = np.array(update.colors or [NEUTRAL_GREY] * len(points), dtype=np.uint8).reshape(
+            -1, 3
+        )
+        if len(points) > MAX_STORED_POINTS_PER_KEYFRAME:
+            pick = (
+                np.arange(MAX_STORED_POINTS_PER_KEYFRAME)
+                * len(points)
+                // MAX_STORED_POINTS_PER_KEYFRAME
+            )
+            points, colors = points[pick], colors[pick]
+        return _Keyframe(update.node_id, update.pose, points, colors)
 
 
 class StreamProcess(Protocol):
@@ -106,40 +159,44 @@ def _default_factory(argv: list[str]) -> StreamProcess:
     return _PopenProcess(argv)
 
 
-def _to_png_gray(frame: StereoFramePair, channel: int) -> bytes:
+def _to_gray8(frame: StereoFramePair, channel: int, width: int, height: int) -> bytes:
+    """Raw 8-bit grey pixels at the sidecar's configured size (no re-encode)."""
     data = frame.left_data if channel == 0 else frame.right_data
     if data:
-        with Image.open(io.BytesIO(data)) as image:
-            out = io.BytesIO()
-            image.convert("L").save(out, format="PNG")
-            return out.getvalue()
-    ref = frame.left_ref if channel == 0 else frame.right_ref
-    source = Path(ref)
-    if not source.is_file():
-        raise SidecarError(
-            f"frame {frame.frame_id} channel {channel} carries no image bytes "
-            f"and ref {ref!r} is not a readable file"
-        )
+        source: io.BytesIO | Path = io.BytesIO(data)
+    else:
+        ref = frame.left_ref if channel == 0 else frame.right_ref
+        source = Path(ref)
+        if not source.is_file():
+            raise SidecarError(
+                f"frame {frame.frame_id} channel {channel} carries no image bytes "
+                f"and ref {ref!r} is not a readable file"
+            )
     with Image.open(source) as image:
-        out = io.BytesIO()
-        image.convert("L").save(out, format="PNG")
-        return out.getvalue()
+        gray = image.convert("L")
+        if gray.size != (width, height):
+            gray = gray.resize((width, height), Image.Resampling.BILINEAR)
+        return gray.tobytes()
 
 
-def _apply_pose(pose: Pose, point: Vec3) -> Vec3:
-    qx, qy, qz, qw = pose.orientation_xyzw
-    # Rotate point by unit quaternion.
-    ux, uy, uz = qx, qy, qz
-    s = qw
-    dot_uv = ux * point.x + uy * point.y + uz * point.z
-    dot_uu = ux * ux + uy * uy + uz * uz
-    cross_x = uy * point.z - uz * point.y
-    cross_y = uz * point.x - ux * point.z
-    cross_z = ux * point.y - uy * point.x
-    rx = 2 * dot_uv * ux + (s * s - dot_uu) * point.x + 2 * s * cross_x
-    ry = 2 * dot_uv * uy + (s * s - dot_uu) * point.y + 2 * s * cross_y
-    rz = 2 * dot_uv * uz + (s * s - dot_uu) * point.z + 2 * s * cross_z
-    return Vec3(rx + pose.position.x, ry + pose.position.y, rz + pose.position.z)
+def pose_rotation(pose: Pose) -> NDArray[np.float32]:
+    """3x3 rotation matrix of a pose's unit quaternion."""
+    x, y, z, w = pose.orientation_xyzw
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ],
+        dtype=np.float32,
+    )
+
+
+def _place(pose: Pose, points: NDArray[np.float32]) -> NDArray[np.float32]:
+    """Keyframe-local points into the map frame."""
+    translation = np.array([pose.position.x, pose.position.y, pose.position.z], dtype=np.float32)
+    placed: NDArray[np.float32] = points @ pose_rotation(pose).T + translation
+    return placed
 
 
 class StreamingRtabmapBackend:
@@ -158,6 +215,7 @@ class StreamingRtabmapBackend:
         runner: Callable[[list[str]], None] | None = None,
         queue_size: int = 4,
         flush_timeout: float = 120.0,
+        max_depth_m: float = 6.0,
     ) -> None:
         if os.environ.get(SHARED_CONTAINER_ENV, "").strip():
             raise SidecarError(
@@ -178,17 +236,20 @@ class StreamingRtabmapBackend:
         self._odom: dict[int, Pose] = {}
         self._odom_order: list[int] = []
         self._lost_frames: set[int] = set()
-        self._keyframes: dict[int, KeyframeUpdate] = {}
+        self._keyframes: dict[int, _Keyframe] = {}
         self._graph: dict[int, Pose] = {}
-        # node_id -> (pose used, transformed points); a keyframe is
-        # re-transformed only when its optimized pose actually moves.
-        self._snapshot_cache: dict[int, tuple[Pose, tuple[Vec3, ...]]] = {}
+        # node_id -> (pose used, map-frame points); a keyframe is
+        # re-placed only when its optimized pose actually moves.
+        self._placed_cache: dict[int, tuple[Pose, NDArray[np.float32]]] = {}
         self._frames: list[StereoFramePair] = []
         self._updates: queue.Queue[MapUpdate] = queue.Queue()
         self._in_queue: queue.Queue[tuple[StereoFramePair, bytes, bytes] | None] = queue.Queue(
             maxsize=max(1, queue_size)
         )
         self._error: str | None = None
+        self._rectification: Rectification | None = None
+        # Newest odometry per frame, keypoints included, for the display.
+        self._frame_odometry: dict[int, OdomUpdate] = {}
         self._final = threading.Event()
         self._ready = threading.Event()
         argv = [
@@ -198,6 +259,8 @@ class StreamingRtabmapBackend:
             "--rm",
             "--name",
             self._container_name,
+            "--platform",
+            PINNED_PLATFORM,
             self._image,
         ]
         for key, value in sorted((params or {"Rtabmap/DetectionRate": "2"}).items()):
@@ -208,7 +271,9 @@ class StreamingRtabmapBackend:
         self._reader.start()
         self._writer.start()
         try:
-            self._process.write(encode_hello(cam0_yaml, cam1_yaml, width, height, params or {}))
+            self._process.write(
+                encode_hello(cam0_yaml, cam1_yaml, width, height, params or {}, max_depth_m)
+            )
         except Exception as exc:
             raise SidecarError(f"streaming sidecar hello failed: {exc}") from exc
         if not self._ready.wait(timeout=30):
@@ -257,8 +322,8 @@ class StreamingRtabmapBackend:
             raise SidecarError("cannot process frames after close()")
         if self._error is not None:
             raise SidecarError(f"streaming sidecar error: {self._error}")
-        left = _to_png_gray(frame, 0)
-        right = _to_png_gray(frame, 1)
+        left = _to_gray8(frame, 0, self._width, self._height)
+        right = _to_gray8(frame, 1, self._width, self._height)
         self._frames.append(frame)
         item = (frame, left, right)
         try:
@@ -287,7 +352,15 @@ class StreamingRtabmapBackend:
             frame, left, right = item
             try:
                 self._process.write(
-                    encode_pair(frame.frame_id, frame.t_ns, self._width, self._height, left, right)
+                    encode_pair(
+                        frame.frame_id,
+                        frame.t_ns,
+                        self._width,
+                        self._height,
+                        left,
+                        right,
+                        encoding="gray8",
+                    )
                 )
             except Exception as exc:  # process died
                 self._error = str(exc)
@@ -305,8 +378,10 @@ class StreamingRtabmapBackend:
                 message = decode_server_line(line)
             except Exception as exc:
                 self._error = str(exc)
+                self._ready.set()  # a bad hello (e.g. version mismatch) fails fast
                 continue
             if isinstance(message, Ready):
+                self._rectification = message.rectification
                 self._ready.set()
             elif isinstance(message, ErrorUpdate):
                 self._error = message.message
@@ -314,6 +389,9 @@ class StreamingRtabmapBackend:
             else:
                 with self._state_lock:
                     if isinstance(message, OdomUpdate):
+                        self._frame_odometry[message.frame_id] = message
+                        while len(self._frame_odometry) > FRAME_ODOMETRY_KEPT:
+                            del self._frame_odometry[next(iter(self._frame_odometry))]
                         if message.pose is not None:
                             if message.frame_id not in self._odom:
                                 self._odom_order.append(message.frame_id)
@@ -321,23 +399,15 @@ class StreamingRtabmapBackend:
                         elif message.lost:
                             self._lost_frames.add(message.frame_id)
                     elif isinstance(message, KeyframeUpdate):
-                        points = message.points_local
-                        if len(points) > MAX_STORED_POINTS_PER_KEYFRAME:
-                            step = len(points) / MAX_STORED_POINTS_PER_KEYFRAME
-                            points = tuple(
-                                points[int(i * step)] for i in range(MAX_STORED_POINTS_PER_KEYFRAME)
-                            )
-                            message = KeyframeUpdate(
-                                message.node_id,
-                                message.frame_id,
-                                message.t_ns,
-                                message.pose,
-                                points,
-                            )
-                        self._keyframes[message.node_id] = message
+                        self._keyframes[message.node_id] = _Keyframe.of(message)
                     elif isinstance(message, GraphUpdate):
-                        for node_id, pose in message.poses:
-                            self._graph[node_id] = pose
+                        if message.poses:
+                            # The graph is authoritative: a node it no
+                            # longer holds (merged or discarded by
+                            # RTAB-Map) leaves the map.
+                            self._graph = dict(message.poses)
+                            for node_id in [n for n in self._keyframes if n not in self._graph]:
+                                del self._keyframes[node_id]
                         if message.final:
                             self._final.set()
                 self._updates.put(message)
@@ -352,21 +422,35 @@ class StreamingRtabmapBackend:
             except queue.Empty:
                 return drained
 
+    @property
+    def rectification(self) -> Rectification | None:
+        return self._rectification
+
+    def frame_odometry(self, frame_id: int) -> OdomUpdate | None:
+        """That frame's odometry (pose and tracked keypoints), once it arrived."""
+        with self._state_lock:
+            return self._frame_odometry.get(frame_id)
+
     def map_snapshot(self) -> tuple[Vec3, ...]:
+        return tuple(Vec3(x, y, z) for x, y, z in self.map_cloud().points.tolist())
+
+    def map_cloud(self) -> MapCloud:
         with self._state_lock:
             keyframes = list(self._keyframes.values())
             graph = dict(self._graph)
-        points: list[Vec3] = []
+        for node_id in [n for n in self._placed_cache if n not in self._keyframes]:
+            del self._placed_cache[node_id]
+        placed: list[NDArray[np.float32]] = []
         for kf in keyframes:
             pose = graph.get(kf.node_id, kf.pose)
-            cached = self._snapshot_cache.get(kf.node_id)
-            if cached is not None and cached[0] == pose:
-                points.extend(cached[1])
-                continue
-            transformed = tuple(_apply_pose(pose, p) for p in kf.points_local)
-            self._snapshot_cache[kf.node_id] = (pose, transformed)
-            points.extend(transformed)
-        return tuple(points)
+            cached = self._placed_cache.get(kf.node_id)
+            if cached is None or cached[0] != pose:
+                cached = (pose, _place(pose, kf.points))
+                self._placed_cache[kf.node_id] = cached
+            placed.append(cached[1])
+        if not keyframes:
+            return MapCloud(np.zeros((0, 3), np.float32), np.zeros((0, 3), np.uint8))
+        return MapCloud(np.concatenate(placed), np.concatenate([kf.colors for kf in keyframes]))
 
     def trajectory(self) -> list[Pose]:
         with self._state_lock:

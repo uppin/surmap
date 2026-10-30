@@ -14,7 +14,7 @@ playback — the real RTAB-Map map built from the same frames.
 Add a dataset by adding one entry to `DATASETS` in
 `surmap.demo.datasets`; it then appears in `--list-datasets` and as
 a `--dataset` choice here. Playback is paced server-side at `--fps`
-(default: the dataset's native 20 fps). With
+(default: the dataset's native rate). With
 `SURMAP_RTABMAP_SHARED_CONTAINER` set, the final map is built inside
 that reusable container, which is never stopped or removed.
 """
@@ -45,7 +45,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--fps", type=float, default=20.0, help="server-side playback rate")
+    parser.add_argument(
+        "--fps", type=float, default=None, help="server-side playback rate (default: dataset's)"
+    )
     parser.add_argument("--frames", type=int, default=0, help="pairs to play (0 = full sequence)")
     parser.add_argument("--start", type=int, default=0, help="first pair index to play")
     parser.add_argument("--no-rtabmap", action="store_true", help="skip the final RTAB-Map map")

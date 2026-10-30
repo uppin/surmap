@@ -18,12 +18,14 @@ the launcher's `--cache-dir` or `$SURMAP_DEMO_CACHE_DIR`):
 
 from __future__ import annotations
 
+import calendar
 import hashlib
 import json
 import math
 import os
 import re
 import shutil
+import time
 import urllib.request
 import zipfile
 from collections.abc import Callable
@@ -34,6 +36,15 @@ from pathlib import Path
 # the demo canvas and the stereo reconstructor work at 376x240.
 DISPLAY_WIDTH = 376
 DISPLAY_HEIGHT = 240
+
+
+@dataclass(frozen=True)
+class ZipAsset:
+    """One extra downloadable zip a dataset needs, pinned like the main one."""
+
+    url: str
+    size_bytes: int
+    sha256: str
 
 
 @dataclass(frozen=True)
@@ -48,6 +59,13 @@ class DatasetSpec:
     zip_sha256: str
     official_url: str
     dataset_format: str = "euroc"
+    calibration: ZipAsset | None = None
+    display_size: tuple[int, int] = (DISPLAY_WIDTH, DISPLAY_HEIGHT)
+    fps: float = 20.0
+    # Overlay depth ramp (near, mid, far) and the keyframe depth cap, in m.
+    depth_stops_m: tuple[float, float, float] = (1.0, 3.0, 6.0)
+    max_map_depth_m: float = 6.0
+    credit: str = ""
 
 
 # The registry. The EuRoC zip is byte-identical between the official
@@ -65,6 +83,35 @@ DATASETS: dict[str, DatasetSpec] = {
         official_url=(
             "https://robotics.ethz.ch/~asl-datasets/ijrr_euroc_mav_dataset/"
             "vicon_room/vicon_room_1/V1_01_easy/V1_01_easy.zip"
+        ),
+    ),
+    # KITTI raw, fetched from KITTI's own host and converted locally; never
+    # re-hosted (CC BY-NC-SA 3.0, academic use — credited on the page).
+    "kitti-2011-09-26-drive-0009": DatasetSpec(
+        dataset_id="kitti-2011-09-26-drive-0009",
+        title="KITTI 2011_09_26 drive 0009",
+        description="Karlsruhe city drive, 447 rectified grey stereo pairs at 10 Hz.",
+        zip_url=(
+            "https://s3.eu-central-1.amazonaws.com/avg-kitti/raw_data/"
+            "2011_09_26_drive_0009/2011_09_26_drive_0009_sync.zip"
+        ),
+        zip_size_bytes=1_791_264_044,
+        zip_sha256="909639de40540f1d9bd8e3c181d79556ee4852781aa4684999f4cda3f3ef2611",
+        official_url="https://www.cvlibs.net/datasets/kitti/raw_data.php",
+        dataset_format="kitti-raw",
+        calibration=ZipAsset(
+            url="https://s3.eu-central-1.amazonaws.com/avg-kitti/raw_data/2011_09_26_calib.zip",
+            size_bytes=4_068,
+            sha256="e0108cfd000cf802c14ed94fba38601185c792e5640abba015a34b7a85b812e0",
+        ),
+        # Half of the rectified 1242x375; a 0.54 m baseline maps a street.
+        display_size=(620, 188),
+        fps=10.0,
+        depth_stops_m=(5.0, 15.0, 40.0),
+        max_map_depth_m=30.0,
+        credit=(
+            "KITTI raw data, Geiger, Lenz, Stiller and Urtasun (KIT and Toyota Technological "
+            "Institute), CC BY-NC-SA 3.0, for academic use — cvlibs.net/datasets/kitti"
         ),
     ),
 }
@@ -88,6 +135,10 @@ class PreparedDataset:
 
     def sensor_yaml(self, sensor: str) -> str:
         return (self.root / "mav0" / sensor / "sensor.yaml").read_text(encoding="utf-8")
+
+    @property
+    def has_imu(self) -> bool:
+        return (self.root / "mav0" / "imu0" / "sensor.yaml").is_file()
 
     def imu_csv(self) -> str:
         path = self.root / "mav0" / "imu0" / "data.csv"
@@ -202,6 +253,90 @@ def _extract(spec: DatasetSpec, zip_path: Path, root: Path) -> None:
                 shutil.copyfileobj(source, out, length=1 << 20)
 
 
+def _kitti_t_ns(stamp: str) -> int:
+    """A KITTI timestamp line ("2011-09-26 13:02:44.329372928") in ns, read as UTC."""
+    whole, _, fraction = stamp.strip().partition(".")
+    seconds = calendar.timegm(time.strptime(whole, "%Y-%m-%d %H:%M:%S"))
+    return seconds * 1_000_000_000 + int(fraction.ljust(9, "0")[:9])
+
+
+def _kitti_projection(calib: str, camera: str) -> tuple[list[float], list[int]]:
+    """(P_rect 3x4 row-major, S_rect [w, h]) of one rectified camera."""
+    rows = dict(line.split(":", 1) for line in calib.splitlines() if ":" in line)
+    projection = [float(value) for value in rows[f"P_rect_{camera}"].split()]
+    size = [round(float(value)) for value in rows[f"S_rect_{camera}"].split()]
+    return projection, size
+
+
+def _kitti_sensor_yaml(projection: list[float], size: list[int], x_m: float) -> str:
+    """EuRoC sensor.yaml for a rectified KITTI camera `x_m` right of cam0."""
+    fx, cx, fy, cy = projection[0], projection[2], projection[5], projection[6]
+    return (
+        "sensor_type: camera\n"
+        "T_BS:\n  cols: 4\n  rows: 4\n"
+        f"  data: [1.0, 0.0, 0.0, {x_m!r},\n"
+        "         0.0, 1.0, 0.0, 0.0,\n"
+        "         0.0, 0.0, 1.0, 0.0,\n"
+        "         0.0, 0.0, 0.0, 1.0]\n"
+        "rate_hz: 10\n"
+        f"resolution: [{size[0]}, {size[1]}]\n"
+        "camera_model: pinhole\n"
+        f"intrinsics: [{fx!r}, {fy!r}, {cx!r}, {cy!r}]\n"
+        "distortion_model: radial-tangential\n"
+        "distortion_coefficients: [0.0, 0.0, 0.0, 0.0]\n"
+    )
+
+
+def _extract_kitti_raw(zip_path: Path, calibration_path: Path, root: Path) -> None:
+    """A KITTI raw `_sync` drive as the EuRoC layout: grey stereo + calibration.
+
+    KITTI sync frames are rectified and aligned by index, so cam0's
+    timestamps name both images of a pair.
+    """
+    with zipfile.ZipFile(calibration_path) as archive:
+        name = next(n for n in archive.namelist() if n.endswith("calib_cam_to_cam.txt"))
+        calib = archive.read(name).decode()
+    left, left_size = _kitti_projection(calib, "00")
+    right, right_size = _kitti_projection(calib, "01")
+    baseline_m = -right[3] / right[0]
+    with zipfile.ZipFile(zip_path) as archive:
+        names = archive.namelist()
+        stamps_name = next(n for n in names if n.endswith("image_00/timestamps.txt"))
+        drive = stamps_name.removesuffix("image_00/timestamps.txt")
+        stamps = [
+            _kitti_t_ns(line) for line in archive.read(stamps_name).decode().splitlines() if line
+        ]
+        for channel, (projection, size, x_m) in enumerate(
+            ((left, left_size, 0.0), (right, right_size, baseline_m))
+        ):
+            camera = root / "mav0" / f"cam{channel}"
+            (camera / "data").mkdir(parents=True, exist_ok=True)
+            (camera / "sensor.yaml").write_text(
+                _kitti_sensor_yaml(projection, size, x_m), encoding="utf-8"
+            )
+            for index, t_ns in enumerate(stamps):
+                member = f"{drive}image_0{channel}/data/{index:010d}.png"
+                if member in names:
+                    (camera / "data" / f"{t_ns}.png").write_bytes(archive.read(member))
+
+
+def _fetch_verified(
+    url: str,
+    size_bytes: int,
+    sha256: str,
+    target: Path,
+    log: Callable[[str], None],
+    fetch: Callable[[str, Path], None] | None,
+) -> None:
+    if not (target.is_file() and target.stat().st_size == size_bytes):
+        log(f"  fetching {url}")
+        (fetch or (lambda source, out: _download(source, out, log)))(url, target)
+    if target.stat().st_size != size_bytes:
+        raise ValueError(f"{target} has the wrong size; refusing to use it")
+    if _sha256(target) != sha256:
+        raise ValueError(f"{target} failed SHA-256 verification; refusing to use it")
+
+
 def ensure_dataset(
     spec: DatasetSpec,
     cache_dir: Path,
@@ -210,7 +345,7 @@ def ensure_dataset(
     fetch: Callable[[str, Path], None] | None = None,
 ) -> PreparedDataset:
     """Download (once), verify, extract, and index `spec` in the cache."""
-    if spec.dataset_format != "euroc":
+    if spec.dataset_format not in ("euroc", "kitti-raw"):
         raise ValueError(f"unsupported dataset format: {spec.dataset_format}")
     root = cache_dir / spec.dataset_id
     manifest_path = root / "manifest.json"
@@ -239,7 +374,21 @@ def ensure_dataset(
 
     log(f"dataset {spec.dataset_id}: extracting stereo frames…")
     root.mkdir(parents=True, exist_ok=True)
-    _extract(spec, zip_path, root)
+    if spec.dataset_format == "kitti-raw":
+        if spec.calibration is None:
+            raise ValueError(f"{spec.dataset_id}: a kitti-raw dataset needs its calibration zip")
+        calibration_path = downloads / f"{spec.dataset_id}-calibration.zip"
+        _fetch_verified(
+            spec.calibration.url,
+            spec.calibration.size_bytes,
+            spec.calibration.sha256,
+            calibration_path,
+            log,
+            fetch,
+        )
+        _extract_kitti_raw(zip_path, calibration_path, root)
+    else:
+        _extract(spec, zip_path, root)
     cam0 = sorted((root / "mav0" / "cam0" / "data").glob("*.png"))
     cam1_names = {path.name for path in (root / "mav0" / "cam1" / "data").glob("*.png")}
     timestamps = tuple(int(path.stem) for path in cam0 if path.name in cam1_names)

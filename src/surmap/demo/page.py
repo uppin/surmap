@@ -32,19 +32,21 @@ PAGE = """<!DOCTYPE html>
 <body>
 <header>
   <h1>SurMap demo — {title}</h1>
-  <p class="sub">{description} Stereo scene points are overlaid live; the RTAB-Map map is built
-  live from the same frames as they play.</p>
+  <p class="sub">{description} The RTAB-Map map is built live from the frames as they play, and
+  its points are overlaid on the video by depth.</p>
 </header>
 <main>
   <div class="stage">
-    <canvas id="view" width="376" height="240"></canvas>
+    <canvas id="view" width="{width}" height="{height}"></canvas>
     <p class="legend">
-      <span class="dot" style="background:#ff5a3c"></span> near &nbsp;
-      <span class="dot" style="background:#ffb03a"></span> mid &nbsp;
-      <span class="dot" style="background:#2fd4c4"></span> far
-      &nbsp;— projected stereo detections, sized by depth.
+      <span class="dot" style="background:{near}"></span> near ({near_label}) &nbsp;
+      <span class="dot" style="background:{mid}"></span> {mid_label} &nbsp;
+      <span class="dot" style="background:{far}"></span> far ({far_label})
+      &nbsp;— features RTAB-Map tracked in this frame, coloured and sized by depth
+      (stereo-matcher points when RTAB-Map is off).
       Yellow boxes: tracked objects from the separate detections stream.
     </p>
+    <p class="legend">{credit}</p>
   </div>
   <aside>
     <h2>Playback</h2>
@@ -52,7 +54,8 @@ PAGE = """<!DOCTYPE html>
     <h2>RTAB-Map</h2>
     <div class="stat" id="rtab">Waiting for playback to finish…</div>
     <canvas id="map" width="340" height="340"></canvas>
-    <p class="legend">Top-down map: grey = RTAB-Map cloud (sampled), amber = camera trajectory.</p>
+    <p class="legend">Top-down floor plan: RTAB-Map cloud (sampled) in each point's camera
+    intensity, amber = camera trajectory.</p>
   </aside>
 </main>
 <script>
@@ -79,12 +82,11 @@ source.addEventListener('frame', (event) => {{
   const data = JSON.parse(event.data);
   const image = new Image();
   image.onload = () => {{
-    view.drawImage(image, 0, 0, 376, 240);
+    view.drawImage(image, 0, 0, view.canvas.width, view.canvas.height);
     for (const point of data.detections) {{
-      const t = Math.min(1, Math.max(0, (point.d - 0.3) / 5.7));
-      view.fillStyle = `hsl(${{180 - t * 180}} 85% 55%)`;
+      view.fillStyle = point.c;  // depth colour, from the server's ramp
       view.beginPath();
-      view.arc(point.x, point.y, point.d < 1.5 ? 2.2 : 1.4, 0, Math.PI * 2);
+      view.arc(point.x, point.y, point.d < {near_m} * 1.5 ? 2.2 : 1.4, 0, Math.PI * 2);
       view.fill();
     }}
     drawBoxes();
@@ -95,8 +97,7 @@ source.addEventListener('frame', (event) => {{
   const fps = (frames / ((performance.now() - started) / 1000)).toFixed(1);
   playback.innerHTML = `Frame <b>${{data.index + 1}} / ${{data.total}}</b><br>`
     + `Stream rate <b>${{fps}} fps</b><br>`
-    + `Stereo scene points this frame <b>${{data.point_count}}</b><br>`
-    + `Overlay detections drawn <b>${{data.detections.length}}</b>`;
+    + `Overlay points this frame <b>${{data.point_count}}</b>`;
 }});
 let liveExtent = null;
 source.addEventListener('map', (event) => {{
@@ -128,7 +129,9 @@ source.addEventListener('final', (event) => {{
   source.close();
 }});
 source.onerror = () => {{
-  if (frames === 0) playback.textContent = 'Stream unavailable — is another viewer connected?';
+  if (frames === 0) {{
+    playback.textContent = 'Stream unavailable — the server sent no frames; see its log.';
+  }}
 }};
 function drawMap(data, extent) {{
   const canvas = document.getElementById('map');
@@ -144,8 +147,13 @@ function drawMap(data, extent) {{
   const scale = Math.min(320 / Math.max(0.01, maxX - minX),
     320 / Math.max(0.01, maxY - minY));
   const px = p => [10 + (p[0] - minX) * scale, 330 - (p[1] - minY) * scale];
-  ctx.fillStyle = '#8a929c';
-  for (const point of data.cloud_xy) {{ const [x, y] = px(point); ctx.fillRect(x, y, 1.6, 1.6); }}
+  for (const point of data.cloud_xy) {{
+    // [x, y] or [x, y, r, g, b]
+    ctx.fillStyle = point.length === 5
+      ? `rgb(${{point[2]}}, ${{point[3]}}, ${{point[4]}})` : '#8a929c';
+    const [x, y] = px(point);
+    ctx.fillRect(x, y, 1.6, 1.6);
+  }}
   ctx.strokeStyle = '#ffb03a'; ctx.lineWidth = 2; ctx.beginPath();
   data.trajectory_xy.forEach((point, i) => {{
     const [x, y] = px(point); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
