@@ -9,8 +9,6 @@ set. API keys are read by the clients and are not written into the report.
 from __future__ import annotations
 
 import asyncio
-import importlib
-import importlib.util
 import io
 import json
 import os
@@ -18,10 +16,11 @@ import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from PIL import Image
 
-from surmap.geometry import centroid
+from surmap.geometry import centroid, to_camera_frame
 from surmap.labelling.baseten_muse import BasetenMuseLabelClient, ObjectLabel
 from surmap.labelling.meta_muse import MetaMuseSceneClient
 from surmap.map.snapshot import build_snapshot, write_snapshot
@@ -32,15 +31,25 @@ from surmap.mission.metrics import (
     load_offline_perception,
     score_survivors,
 )
+from surmap.simulation.calibration import StereoCalibrationSpec, render_cam_sensor_yaml
 from surmap.simulation.disaster_world import DisasterGroundTruth, load_disaster_ground_truth
 from surmap.simulation.euroc_export import export_euroc_session
 from surmap.simulation.sitl_capture import load_sitl_capture
+from surmap.slam.base import FrameResult
 from surmap.survey.mask_cloud import points_in_mask
 from surmap.survey.meta_sam import MetaSamDetector
 from surmap.survey.modal_sam import ModalSamDetector
 from surmap.survey.sam import RawFrame, SamDetection
 from surmap.survey.stereo import StereoRig
-from surmap.types import GpsCheckpoint, Motion, ObjectPoints, ObjectTrack3D, Pose, Vec3
+from surmap.types import (
+    GpsCheckpoint,
+    Motion,
+    ObjectPoints,
+    ObjectTrack3D,
+    Pose,
+    StereoFramePair,
+    Vec3,
+)
 from surmap.viewer.ask import answer_map_question
 from surmap.viewer.snapshot import read_snapshot
 
@@ -53,7 +62,7 @@ _FRAME_WIDTH = 120
 _FRAME_HEIGHT = 80
 _Segmenter = Callable[[RawFrame], tuple[SamDetection, ...]]
 _MAP_BACKEND_FIXTURE = "fixture-cloud"
-_MAP_BACKEND_PENDING = "pending-pr-38"
+_MAP_BACKEND_LIVE = "live-rtabmap"
 _BASIS_NOTE = (
     "Computed from fixtures. These figures are not a live flight. "
     "Each detection is a recorded camera point posed at a fixed offset "
@@ -63,6 +72,22 @@ _BASIS_NOTE = (
 
 class MissionConfigError(RuntimeError):
     """The mission cannot start with the flags and paths it was given."""
+
+
+class LiveMap(Protocol):
+    """The streaming-map surface the live mission drives.
+
+    ``StreamingRtabmapBackend`` is the production adapter. Tests stand
+    in at ``open_live_map``.
+    """
+
+    def process_frame(self, frame: StereoFramePair) -> FrameResult: ...
+
+    def flush(self) -> list[FrameResult]: ...
+
+    def map_snapshot(self) -> tuple[Vec3, ...]: ...
+
+    def close(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -103,10 +128,20 @@ def gazebo_on_path() -> bool:
 
 
 def live_map_backend() -> str:
-    """``live-rtabmap`` once PR #38's streaming module imports, else a named hook."""
-    if importlib.util.find_spec("surmap.slam.streaming") is None:
-        return _MAP_BACKEND_PENDING
-    return "live-rtabmap"
+    """The live map is PR #38's streaming RTAB-Map backend."""
+    return _MAP_BACKEND_LIVE
+
+
+def open_live_map(calibration: StereoCalibrationSpec) -> LiveMap:
+    """Open the streaming backend calibrated from a capture. This starts the sidecar."""
+    from surmap.slam.streaming import StreamingRtabmapBackend
+
+    return StreamingRtabmapBackend(
+        cam0_yaml=render_cam_sensor_yaml(calibration, 0),
+        cam1_yaml=render_cam_sensor_yaml(calibration, 1),
+        width=calibration.width,
+        height=calibration.height,
+    )
 
 
 def resolve_live_session(capture: Path | None) -> Path:
@@ -209,7 +244,7 @@ def run_offline_mission(output_dir: Path) -> MissionResult:
 
 
 def run_live_mission(output_dir: Path, capture: Path) -> MissionResult:
-    """Real SAM, labels, and scene note. The cloud waits on PR #38 when it is absent."""
+    """Real SAM, labels, and scene note. The cloud is the streaming RTAB-Map map."""
     services = build_live_services()
     capture_dir = resolve_live_session(capture)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -217,6 +252,7 @@ def run_live_mission(output_dir: Path, capture: Path) -> MissionResult:
     euroc_path = export_euroc_session(output_dir / "euroc", frames, calibration, gps).root
     truth = load_disaster_ground_truth()
     backend = live_map_backend()
+    map_cloud, poses = _stream_capture(frames, calibration)
     segmenter = _live_segmenter(services.sam)
     labeller = BasetenMuseLabelClient()
     note_client = MetaMuseSceneClient()
@@ -238,6 +274,9 @@ def run_live_mission(output_dir: Path, capture: Path) -> MissionResult:
         image = Path(frame.left_ref).read_bytes()
         if image.startswith(b"\xff\xd8"):
             first_jpeg = image
+        pose = poses.get(frame.frame_id)
+        if pose is None or not map_cloud:
+            continue
         raw = RawFrame(
             frame.frame_id,
             frame.t_ns,
@@ -247,17 +286,15 @@ def run_live_mission(output_dir: Path, capture: Path) -> MissionResult:
             "png",
             image,
         )
-        cloud = _live_cloud(backend)
+        camera_cloud = tuple(to_camera_frame(point, pose) for point in map_cloud)
         for detection in segmenter(raw):
-            if not cloud:
-                continue
             claimed = points_in_mask(
-                cloud,
+                camera_cloud,
                 rig,
                 detection.mask_polygon,
                 calibration.width,
                 calibration.height,
-                Pose(Vec3(0.0, 0.0, 0.0)),
+                pose,
             )
             if not claimed:
                 continue
@@ -304,11 +341,10 @@ def run_live_mission(output_dir: Path, capture: Path) -> MissionResult:
         basis="live",
     )
     note = "Computed from the live run. " + (
-        "The 3D cloud is not available until PR #38 lands "
-        "(--rtabmap-mode live, StreamingRtabmapBackend), so positions "
-        "were not estimated."
-        if backend == _MAP_BACKEND_PENDING
-        else "The cloud came from the live RTAB-Map streaming backend."
+        "The cloud came from the live RTAB-Map streaming backend."
+        if map_cloud
+        else "The live RTAB-Map streaming backend returned no map points, "
+        "so positions were not estimated."
     )
     report_path = output_dir / "impact.json"
     _write_report(
@@ -332,19 +368,21 @@ def run_live_mission(output_dir: Path, capture: Path) -> MissionResult:
     )
 
 
-def _live_cloud(backend: str) -> tuple[Vec3, ...]:
-    """Points from PR #38 when that backend is importable. Empty until the sidecar is driven."""
-    if backend == _MAP_BACKEND_PENDING:
-        return ()
-    return _streaming_points()
-
-
-def _streaming_points() -> tuple[Vec3, ...]:
-    module = importlib.import_module("surmap.slam.streaming")
-    points: list[Vec3] = []
-    if getattr(module, "StreamingRtabmapBackend", None) is None:
-        return tuple(points)
-    return tuple(points)
+def _stream_capture(
+    frames: list[StereoFramePair],
+    calibration: StereoCalibrationSpec,
+) -> tuple[tuple[Vec3, ...], dict[int, Pose]]:
+    """Feed the capture to the streaming backend and read its final map."""
+    slam = open_live_map(calibration)
+    try:
+        for frame in frames:
+            slam.process_frame(frame)
+        flushed = slam.flush()
+        cloud = slam.map_snapshot()
+    finally:
+        slam.close()
+    poses = {result.frame_id: result.pose for result in flushed if result.pose is not None}
+    return cloud, poses
 
 
 def _live_segmenter(kind: str) -> _Segmenter:
@@ -547,9 +585,9 @@ def _write_report(
             "imports. Otherwise it uses the local label match."
         ),
         "live_rtabmap": (
-            "PR #38 is not merged. scripts/demo.py --rtabmap-mode live "
-            "and StreamingRtabmapBackend plug in here when that branch lands. "
-            f"live_map_backend() is {live_map_backend()}."
+            "PR #38 is integrated. Live mode feeds the capture through "
+            "StreamingRtabmapBackend and reads map_snapshot() as the cloud. "
+            f"This run's map_backend is {map_backend}."
         ),
         "gazebo": gazebo,
         "euroc_session": str(euroc_path),

@@ -88,11 +88,14 @@ SAM is Meta when `SURMAP_LIVE_META=1`, otherwise Modal when
 Labels always need `SURMAP_LIVE_BASETEN=1`. A flag that is unset is not
 called.
 
-The 3D cloud in live mode waits on PR #38 (`--rtabmap-mode live`,
-`StreamingRtabmapBackend`). Until that branch is merged,
-`live_map_backend()` is `pending-pr-38` and the live report says
-positions were not estimated. Offline keeps using the fixture cloud
-and says so.
+The 3D cloud in live mode is PR #38's streaming backend.
+`open_live_map()` builds `StreamingRtabmapBackend` from the capture
+calibration, feeds every stereo pair, and reads `map_snapshot()` after
+`flush()`. `live_map_backend()` is `live-rtabmap`. An empty snapshot
+says positions were not estimated. Offline keeps using the fixture
+cloud and says so (`"basis": "fixtures"`). Live model calls stay
+behind `SURMAP_LIVE_META`, `SURMAP_LIVE_BASETEN`, and
+`SURMAP_LIVE_MODAL`.
 
 ## Tests
 

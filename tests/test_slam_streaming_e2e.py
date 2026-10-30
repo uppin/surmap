@@ -24,8 +24,12 @@ REQUIRED = os.environ.get("SURMAP_REQUIRE_RTABMAP_STREAM_E2E") == "1"
 def _require_prepared() -> dict[str, object]:
     manifest = FIXTURE / "manifest.json"
     tag = stream_image_tag()
-    image = subprocess.run(["docker", "image", "inspect", tag], capture_output=True, text=True)
-    if not manifest.is_file() or shutil.which("docker") is None or image.returncode != 0:
+    docker = shutil.which("docker")
+    image_ready = False
+    if docker is not None:
+        image = subprocess.run([docker, "image", "inspect", tag], capture_output=True, text=True)
+        image_ready = image.returncode == 0
+    if not manifest.is_file() or docker is None or not image_ready:
         message = (
             "streaming e2e not prepared: run `uv run python scripts/fetch_rtabmap_fixture.py` "
             "and `uv run python scripts/build_rtabmap_stream.py` first"

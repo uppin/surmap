@@ -16,7 +16,7 @@
   - [x] "Where are the survivors?" highlights survivor landmarks
   - [x] Live providers stay behind `SURMAP_LIVE_META` / `SURMAP_LIVE_BASETEN` / `SURMAP_LIVE_MODAL`
   - [x] Viewer `GET /impact` and the page banner
-  - [x] PR #38 and `surmap.mapqa` named as hooks, not merged
+  - [x] PR #38's `StreamingRtabmapBackend` is the live map; `surmap.mapqa` stays a named hook
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] Live capture on a WSL host with Gazebo
@@ -34,8 +34,9 @@ The pieces live on separate pull requests. No command runs them together.
 ### State B
 
 One offline command writes a fixture-labelled impact report and opens
-the viewer. Live mode calls only the flagged clients. The survivor
-total is the ground-truth `people` array.
+the viewer. Live mode calls only the flagged clients and reads the
+cloud from `StreamingRtabmapBackend`. The survivor total is the
+ground-truth `people` array.
 
 ### Delta
 

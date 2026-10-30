@@ -11,6 +11,7 @@ the survivors?". Impact metrics compare those points with the `people`
 array in the disaster-block ground-truth JSON and record the basis
 `fixtures`. Live mode calls Meta, Baseten, and Modal only when
 `SURMAP_LIVE_META`, `SURMAP_LIVE_BASETEN`, and `SURMAP_LIVE_MODAL` are
-set. The live map cloud stays a hook for PR #38. Runbook:
+set. Live mode feeds the capture through `StreamingRtabmapBackend`
+(PR #38) and reads `map_snapshot()` as the cloud. Runbook:
 `docs/mission-demo.md`. Gazebo overview:
 `docs/simulation/gazebo-disaster-world.md`.
