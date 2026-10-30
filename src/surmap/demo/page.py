@@ -76,8 +76,8 @@ PAGE = """<!DOCTYPE html>
     <div class="stat" id="rtab">Waiting for playback to finish…</div>
     <canvas id="map" width="340" height="340"></canvas>
     <p class="legend">Top-down floor plan: every RTAB-Map point, in its camera intensity
-    and more opaque where points pile up (walls, edges), amber = camera trajectory, yellow wedge = the camera now and its field of
-    view.</p>
+    and more opaque where points pile up (walls, edges), amber = camera trajectory,
+    yellow wedge = the camera now and its field of view.</p>
   </aside>
 </main>
 <script>
@@ -243,7 +243,9 @@ function drawMap(map, camera) {{
   const ctx = document.getElementById('map').getContext('2d');
   const [minX, maxX, minZ, maxZ] = map.extent;
   const scale = (FLOOR_PX - 2 * FLOOR_PAD) / Math.max(maxX - minX, maxZ - minZ, 0.01);
-  const px = (p) => [FLOOR_PAD + (p[0] - minX) * scale, FLOOR_PX - FLOOR_PAD - (p[1] - minZ) * scale];
+  const px = (p) => [
+    FLOOR_PAD + (p[0] - minX) * scale, FLOOR_PX - FLOOR_PAD - (p[1] - minZ) * scale,
+  ];
   ctx.clearRect(0, 0, FLOOR_PX, FLOOR_PX);
   ctx.drawImage(map.image, 0, 0);
   ctx.strokeStyle = '#ffb03a'; ctx.lineWidth = 2; ctx.beginPath();
