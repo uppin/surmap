@@ -107,7 +107,7 @@ Mode choice is a bench result, not a listing decision.
 4. Measure the lens baseline physically; run stereo calibration
    (fisheye model); report reprojection error and rectified epipolar
    alignment.
-5. Depth accuracy check against tape-measured targets at roughly
+5. Depth accuracy check against tape-measured distances at roughly
    1 / 3 / 5 / 10 / 20 m; state the distance where error becomes
    unacceptable for survey use. This sets the survey altitude envelope.
 6. Exposure test: verify exposure and gain can be locked and matched
