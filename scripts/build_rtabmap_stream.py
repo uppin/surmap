@@ -23,6 +23,12 @@ def image_tag() -> str:
     return stream_image_tag(SOURCE_DIR)
 
 
+def build_argv(tag: str) -> list[str]:
+    from surmap.slam.streaming import stream_build_argv
+
+    return stream_build_argv(tag, SOURCE_DIR)
+
+
 def main() -> int:
     tag = image_tag()
     present = subprocess.run(
@@ -32,9 +38,7 @@ def main() -> int:
         print(f"image {tag} already present")
         return 0
     print(f"building {tag} (once per source hash, ~1-3 min)…")
-    result = subprocess.run(
-        ["docker", "build", "-t", tag, str(SOURCE_DIR)], text=True
-    )
+    result = subprocess.run(build_argv(tag), text=True)
     return result.returncode
 
 

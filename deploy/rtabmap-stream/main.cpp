@@ -197,10 +197,11 @@ int main(int argc, char** argv) {
     rtabmap::Odometry* odom = rtabmap::Odometry::create(params);
     rtabmap::Rtabmap slam;
     slam.init(params, "", false);
-    std::cout << "{\"type\":\"ready\",\"version\":1}" << std::endl;
+    std::cout << "{\"type\":\"ready\",\"version\":2}" << std::endl;
 
     int lastNodeId = 0;
     size_t lastGraphSize = 0;
+    int lastGraphMaxId = 0;
     while (true) {
       std::string pairHeader;
       if (!readFramed(pairHeader)) break;  // EOF: finalize below
@@ -241,11 +242,16 @@ int main(int argc, char** argv) {
                 << ",\"lost\":" << (lost ? "true" : "false") << ",\"ms\":" << ms << "}" << std::endl;
 
       int nodeId = slam.getLastLocationId();
-      if (!lost && added && nodeId > 0 && nodeId != lastNodeId) {
+      // A node RTAB-Map merged or discarded (e.g. too little motion) is
+      // not in the graph: only nodes the graph keeps are keyframes.
+      const auto& graphNow = slam.getLocalOptimizedPoses();
+      bool kept = graphNow.find(nodeId) != graphNow.end();
+      if (!lost && added && kept && nodeId > 0 && nodeId != lastNodeId) {
         lastNodeId = nodeId;
         auto cloud = rtabmap::util3d::cloudFromStereoImages(leftRect, rightRect, stereoModel);
         // Voxel-downsample (~5 cm): keep the first finite point per voxel.
-        std::vector<std::array<float, 3>> kept;
+        // x, y, z (camera frame) + grey sampled from the left rectified image.
+        std::vector<std::array<float, 4>> points;
         if (cloud && !cloud->empty()) {
           std::map<std::tuple<int, int, int>, bool> seen;
           for (const auto& p : cloud->points) {
@@ -253,28 +259,39 @@ int main(int argc, char** argv) {
             auto key = std::make_tuple((int)std::floor(p.x / 0.05f),
                                        (int)std::floor(p.y / 0.05f),
                                        (int)std::floor(p.z / 0.05f));
-            if (seen.emplace(key, true).second) kept.push_back({p.x, p.y, p.z});
+            // Far points come from 1-2 px disparities (1 px ~ 25 m at
+            // 376 px wide): too noisy to map, so keep z within 6 m.
+            if (p.z <= 0.f || p.z > 6.f) continue;
+            if (!seen.emplace(key, true).second) continue;
+            int u = (int)std::lround(fx * p.x / p.z + cx);
+            int v = (int)std::lround(fy * p.y / p.z + cy);
+            float grey = (u >= 0 && v >= 0 && u < leftRect.cols && v < leftRect.rows)
+                             ? (float)leftRect.at<unsigned char>(v, u)
+                             : 160.f;
+            points.push_back({p.x, p.y, p.z, grey});
           }
         }
-        const auto& poses = slam.getLocalOptimizedPoses();
-        auto it = poses.find(nodeId);
-        rtabmap::Transform nodePose = it != poses.end() ? it->second : odomPose;
+        rtabmap::Transform nodePose = graphNow.at(nodeId);
         std::cout << "{\"type\":\"keyframe\",\"node_id\":" << nodeId
                   << ",\"frame_id\":" << frameId << ",\"t_ns\":" << tNs
                   << ",\"pose\":" << poseJson(nodePose) << ",\"points_local\":[";
         bool first = true;
-        for (const auto& p : kept) {
+        for (const auto& p : points) {
           if (!first) std::cout << ",";
           first = false;
-          char buf[96];
-          std::snprintf(buf, sizeof(buf), "[%.3f,%.3f,%.3f]", p[0], p[1], p[2]);
+          char buf[128];
+          int g = (int)p[3];
+          std::snprintf(buf, sizeof(buf), "[%.3f,%.3f,%.3f,%d,%d,%d]", p[0], p[1], p[2], g, g, g);
           std::cout << buf;
         }
         std::cout << "]}" << std::endl;
       }
+      // Re-emit when the node set changes: a merge can keep the size.
       const auto& posesNow = slam.getLocalOptimizedPoses();
-      if (posesNow.size() != lastGraphSize) {
+      int maxId = posesNow.empty() ? 0 : posesNow.rbegin()->first;
+      if (posesNow.size() != lastGraphSize || maxId != lastGraphMaxId) {
         lastGraphSize = posesNow.size();
+        lastGraphMaxId = maxId;
         emitGraph(slam, false);
       }
     }

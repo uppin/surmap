@@ -32,8 +32,8 @@ PAGE = """<!DOCTYPE html>
 <body>
 <header>
   <h1>SurMap demo — {title}</h1>
-  <p class="sub">{description} Stereo scene points are overlaid live; the RTAB-Map map is built
-  live from the same frames as they play.</p>
+  <p class="sub">{description} The RTAB-Map map is built live from the frames as they play, and
+  its points are overlaid on the video by depth.</p>
 </header>
 <main>
   <div class="stage">
@@ -42,7 +42,8 @@ PAGE = """<!DOCTYPE html>
       <span class="dot" style="background:#ff5a3c"></span> near &nbsp;
       <span class="dot" style="background:#ffb03a"></span> mid &nbsp;
       <span class="dot" style="background:#2fd4c4"></span> far
-      &nbsp;— projected stereo detections, sized by depth.
+      &nbsp;— RTAB-Map points seen from the current camera pose, coloured and sized by depth
+      (stereo-matcher points when RTAB-Map is off).
       Yellow boxes: tracked objects from the separate detections stream.
     </p>
   </div>
@@ -52,7 +53,8 @@ PAGE = """<!DOCTYPE html>
     <h2>RTAB-Map</h2>
     <div class="stat" id="rtab">Waiting for playback to finish…</div>
     <canvas id="map" width="340" height="340"></canvas>
-    <p class="legend">Top-down map: grey = RTAB-Map cloud (sampled), amber = camera trajectory.</p>
+    <p class="legend">Top-down floor plan: RTAB-Map cloud (sampled) in each point's camera
+    intensity, amber = camera trajectory.</p>
   </aside>
 </main>
 <script>
@@ -95,7 +97,7 @@ source.addEventListener('frame', (event) => {{
   const fps = (frames / ((performance.now() - started) / 1000)).toFixed(1);
   playback.innerHTML = `Frame <b>${{data.index + 1}} / ${{data.total}}</b><br>`
     + `Stream rate <b>${{fps}} fps</b><br>`
-    + `Stereo scene points this frame <b>${{data.point_count}}</b><br>`
+    + `Scene points in view <b>${{data.point_count}}</b><br>`
     + `Overlay detections drawn <b>${{data.detections.length}}</b>`;
 }});
 let liveExtent = null;
@@ -128,7 +130,9 @@ source.addEventListener('final', (event) => {{
   source.close();
 }});
 source.onerror = () => {{
-  if (frames === 0) playback.textContent = 'Stream unavailable — is another viewer connected?';
+  if (frames === 0) {{
+    playback.textContent = 'Stream unavailable — the server sent no frames; see its log.';
+  }}
 }};
 function drawMap(data, extent) {{
   const canvas = document.getElementById('map');
@@ -144,8 +148,13 @@ function drawMap(data, extent) {{
   const scale = Math.min(320 / Math.max(0.01, maxX - minX),
     320 / Math.max(0.01, maxY - minY));
   const px = p => [10 + (p[0] - minX) * scale, 330 - (p[1] - minY) * scale];
-  ctx.fillStyle = '#8a929c';
-  for (const point of data.cloud_xy) {{ const [x, y] = px(point); ctx.fillRect(x, y, 1.6, 1.6); }}
+  for (const point of data.cloud_xy) {{
+    // [x, y] or [x, y, r, g, b]
+    ctx.fillStyle = point.length === 5
+      ? `rgb(${{point[2]}}, ${{point[3]}}, ${{point[4]}})` : '#8a929c';
+    const [x, y] = px(point);
+    ctx.fillRect(x, y, 1.6, 1.6);
+  }}
   ctx.strokeStyle = '#ffb03a'; ctx.lineWidth = 2; ctx.beginPath();
   data.trajectory_xy.forEach((point, i) => {{
     const [x, y] = px(point); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);

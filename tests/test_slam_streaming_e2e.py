@@ -10,7 +10,9 @@ import os
 import pathlib
 import shutil
 import subprocess
+import time
 
+import numpy as np
 import pytest
 
 from surmap.demo.datasets import scaled_sensor_yaml
@@ -60,8 +62,13 @@ def test_streaming_backend_maps_live_over_the_fixture() -> None:
                 )
             )
             live_updates += len(backend.poll_updates())  # live, before stdin closes
+            # Real-time feed at the recording's 20 Hz: the backend drops
+            # the oldest pairs when fed faster than RTAB-Map runs.
+            time.sleep(1 / 20)
         assert live_updates > 0, "no odometry arrived before flush (batch, not live)"
         results = backend.flush()
+        keyframes = backend.keyframe_count
+        cloud = backend.map_cloud()
     finally:
         backend.close()
 
@@ -93,3 +100,7 @@ def test_streaming_backend_maps_live_over_the_fixture() -> None:
     )
     assert travelled > 0.3
     assert results and len(results[-1].static_points) > 5_000
+    # Only nodes RTAB-Map's graph kept are keyframes
+    assert keyframes == len(trajectory)
+    # Points carry the camera's real intensity, not one flat colour
+    assert len(np.unique(cloud.colors[:, 0])) > 50

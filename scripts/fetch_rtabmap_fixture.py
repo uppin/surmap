@@ -132,7 +132,8 @@ def _scaled_sensor_yaml(text: str) -> str:
 
 
 def _pull_image(image: str) -> None:
-    subprocess.run(["docker", "pull", image], check=True)
+    # The pinned image is amd64-only; arm64 hosts pull it for emulation.
+    subprocess.run(["docker", "pull", "--platform", "linux/amd64", image], check=True)
 
 
 def _fetch_asset(output: Path) -> None:

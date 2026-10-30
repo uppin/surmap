@@ -23,14 +23,16 @@
   - [x] Demo: the live overlay never runs the numpy stereo matcher
   - [x] Demo: a slow detector does not stall playback; detections still arrive after their frame
   - [x] Run the new tests (verify they fail for missing implementation)
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Sidecar: emit a keyframe only for a node present in the optimized graph; `[x,y,z,r,g,b]` points; ready v2
-  - [ ] Protocol v2 + `KeyframeUpdate.colors`
-  - [ ] Streaming backend: numpy map cloud cache, graph-authoritative keyframes, `latest_pose()`, gray8 pairs, platform pin
-  - [ ] Build script uses the shared build argv
-  - [ ] Demo: floor-plane map with colours; RTAB-Map overlay; detector worker; map event from numpy
-  - [ ] Page: per-point map colour, legends, accurate stream-error text
-  - [ ] Rebuild the sidecar image; real-container streaming e2e green
+- [wf 3] ✅ 2026-10-30 `/green` Green — implement until every red test passes · 533 passed, 2 skipped; real-container e2e green on `surmap/rtabmap-stream:4a4a0d3208b8`
+  - [x] Sidecar: emit a keyframe only for a node present in the optimized graph; `[x,y,z,r,g,b]` points; ready v2
+  - [x] Protocol v2 + `KeyframeUpdate.colors`
+  - [x] Streaming backend: numpy map cloud cache, graph-authoritative keyframes, `latest_pose()`, gray8 pairs, platform pin
+  - [x] Build script uses the shared build argv
+  - [x] Demo: floor-plane map with colours; RTAB-Map overlay; detector worker; map event from numpy
+  - [x] Page: per-point map colour, legends, accurate stream-error text
+  - [x] Rebuild the sidecar image; real-container streaming e2e green
+  - [x] Fixture script pulls the pinned image for `linux/amd64` (added: same arm64 failure)
+  - [x] Sidecar caps keyframe points at 6 m depth (added: far-point outliers stretched the floor plan to 25 × 28 m)
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs, then open the PR ready ·
   - [ ] Verification executed — result recorded
   - [ ] `README.md` §Demo — overlay source, colours, Apple Silicon note
@@ -148,3 +150,12 @@ sidecar and `StereoReconstructor` itself are unchanged.
 - **Detector ordering contract changes.** Detections may now lag their
   frame by more than one frame event; the existing test's strict
   interleave becomes "each detections event follows its frame event".
+- **E2E feeds at the recording rate.** `test_slam_streaming_e2e.py` fed
+  90 pairs unpaced; it passed only because per-pair PNG re-encoding
+  slowed the producer. With raw `gray8` the drop-oldest queue dropped
+  71/90 pairs (measured; 0 at 20 Hz). The e2e now sleeps 1/20 s per
+  pair, as real use does, and additionally asserts keyframes == graph
+  nodes and > 50 distinct point intensities. No assertion was relaxed.
+- **6 m keyframe depth cap in the sidecar.** At 376 px width,
+  `fx·b ≈ 25 px·m`; points beyond 6 m come from 1–2 px disparities and
+  stretched the live floor plan to 25 × 28 m (9.5 × 10.8 m after).

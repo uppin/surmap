@@ -15,7 +15,7 @@ from typing import TypeAlias
 
 from surmap.types import Pose, Vec3
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 
 # Colour given to a keyframe point the sidecar sent without one.
 NEUTRAL_GREY = (160, 160, 160)
@@ -173,21 +173,30 @@ def decode_server_line(line: str | bytes) -> ServerMessage:
         if not isinstance(points_raw, list):
             raise ProtocolError("points_local must be a list")
         points = []
+        colors = []
         for entry in points_raw:
-            if not isinstance(entry, list) or len(entry) != 3:
-                raise ProtocolError(f"point must be 3 numbers, got {entry!r}")
+            # [x, y, z] or [x, y, z, r, g, b]
+            if not isinstance(entry, list) or len(entry) not in (3, 6):
+                raise ProtocolError(f"point must be 3 or 6 numbers, got {entry!r}")
             try:
                 point = Vec3(float(entry[0]), float(entry[1]), float(entry[2]))
+                color = (
+                    (int(entry[3]), int(entry[4]), int(entry[5]))
+                    if len(entry) == 6
+                    else NEUTRAL_GREY
+                )
             except (TypeError, ValueError) as exc:
                 raise ProtocolError(f"point is not numeric: {entry!r}") from exc
             if all(math.isfinite(c) for c in (point.x, point.y, point.z)):
                 points.append(point)
+                colors.append(color)
         return KeyframeUpdate(
             node_id=_int(obj, "node_id"),
             frame_id=_int(obj, "frame_id"),
             t_ns=_int(obj, "t_ns"),
             pose=_pose(_req(obj, "pose")),
             points_local=tuple(points),
+            colors=tuple(colors),
         )
     if kind == "graph":
         poses_raw = _req(obj, "poses")
