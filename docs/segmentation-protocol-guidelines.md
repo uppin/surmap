@@ -19,11 +19,64 @@ modules disagree, the disagreement is listed under
 [Open questions for @uppin](#open-questions-for-uppin) and is not resolved
 here.
 
+## What the exchange should preserve
+
+These follow [architecture.md](architecture.md) §5–6 and the types that
+implement them.
+
+### Source pixel
+
+A projected point should keep the pixel it came from and the frame that
+saw it. Architecture §6 `PointCloud` stores `xyz` in the camera frame
+plus `u`, `v`, and source `frame_id` on every point. That link is what
+lets a 2D mask claim a set of 3D points. `ObjectPoints` says the same
+thing: each point retains its source pixel. `points_in_mask` computes
+`u` and `v` to test the polygon, then returns only `Vec3`. The record
+around that call should still carry `(u, v)` and `frame_id` with the
+point.
+
+### Only frames RTAB-Map posed
+
+Projection should use a pose RTAB-Map produced for that `frame_id`.
+Lost tracking yields no pose (`StreamingRtabmapBackend`: stereo-only
+VO, and an `OdomUpdate` with `pose is None` and `lost` is recorded in
+`_lost_frames`, not in the odometry map). `flush` omits a frame that
+has no pose. The mission demo skips the same case (`pose is None`).
+A missing pose should stay missing. Filling it by interpolation, by
+copying a neighbour, or by any other guess would place the mask in a
+frame RTAB-Map did not estimate.
+
+### Left camera only
+
+SAM should run on the left camera. Architecture §5: SAM 3.1 runs on
+one channel; the second channel exists for depth. On-board detection
+is the left eye (§3.3). The mission demo reads `left_ref` and sets
+`RawFrame.channel` to `0`. The right image is the stereo partner for
+depth (`right_ref`, `baseline_m`), not a second segmentation input.
+
+### Track ids are not SAM ids
+
+An on-board `track_id` and a SAM identity should be kept as two ids.
+Architecture §6: track ids are on-board-local, SAM 3.1 video identities
+are base-local, and `surmap_fuse` records the mapping between them
+rather than assuming they are equal. `SamDetection.track_id` is
+optional. Meta SAM writes the wire object id into that field
+(`meta_sam.py`), which is a SAM id, not the Coral track id. A later
+fuse step should store both when it has both.
+
+### Snapshot
+
+The map this exchange feeds should be one
+`surmap.semantic_map_snapshot.v1` file, the schema
+`surmap.map.snapshot.write_snapshot` emits and `read_snapshot` accepts
+([semantic-map-snapshot.md](semantic-map-snapshot.md)). Architecture
+§6 keeps the static scene, the static object layer, and the dynamic
+layer separate. Mask projection refines object points; it should not
+invent a second layout or write those points back into RTAB-Map.
+
 ## What the SLAM side typically sends
 
-One record per camera frame. Segmentation runs on one channel; the other
-channel is for depth ([architecture.md](architecture.md) §5). The live
-path uses the left image.
+One record per camera frame, the left image (see above).
 
 | Recommended field | Where the code already says this | Notes |
 |---|---|---|
@@ -56,13 +109,25 @@ same transform. The code does not store the live pose as a matrix, and
 (body ← sensor) in `sensor.yaml`, which is calibration, not the per-frame
 camera pose.
 
-Odometry messages also carry `map_pose`: the pose after RTAB-Map's
-odometry-to-map correction (`OdomUpdate` in `stream_protocol.py`). The
-demo floor wedge uses `map_pose` when it is present, otherwise `pose`.
-`StreamingRtabmapBackend.flush` returns the odometry `pose`. The assembled
-cloud (`map_snapshot`) is placed with the graph pose. A mask projected
-with the flush pose onto that cloud can disagree with the cloud after a
-loop closure.
+Two pose streams exist, and they diverge after a loop closure. This is
+the main open question below.
+
+- **Odometry pose.** `OdomUpdate.pose` is the pose before the
+  map correction. `StreamingRtabmapBackend.flush` returns that pose
+  (`_odom[frame_id] = message.pose`). The mission demo projects with
+  those flush poses.
+- **Graph / map pose.** `OdomUpdate.map_pose` is the pose after
+  RTAB-Map's odometry-to-map correction. The demo floor wedge uses
+  `map_pose` when it is present, otherwise `pose`. The assembled cloud
+  (`map_cloud`) places each keyframe with the graph pose
+  (`graph.get(node_id, keyframe.pose)`), and drops a node the graph
+  no longer holds.
+
+The cloud is therefore in the graph frame. Projecting that cloud with
+odometry poses drifts once a loop closure moves the graph and leaves
+the odometry poses where they were. Until @uppin confirms which source
+segmentation should multiply by, a projection should use the pose that
+placed the points it is testing, and should not mix the two.
 
 A `frame` string on the pose is worth sending anyway, so the segmentation
 side can tell a RTAB-Map map pose from a body pose or an ENU pose. Suggested
@@ -100,16 +165,25 @@ named by `left_ref`. A mask in another pixel space (raw lens image vs
 rectified) will claim the wrong points. `pixel_space` on the frame is a
 useful label: `rectified` or `raw`.
 
-Image encodings already in use, for the bytes beside `left_ref`:
+### Image encodings per route
 
-| Encoding string | Who uses it |
-|---|---|
-| `mjpeg`, `raw_rgb` | `FrameImage`, station proto, Meta SAM (`meta_sam.py` accepts only these) |
-| `png` | mission demo builds a `RawFrame` with this encoding (`mission/demo.py`) |
-| `gray8` | streaming sidecar pair payload |
+`RawFrame.encoding` is a string the detector interprets. The three SAM
+routes do not accept the same set. A `png` payload sent to Meta SAM
+breaks the call: `_frame_image_data_url` raises
+`unsupported frame encoding` for anything other than `mjpeg` or
+`raw_rgb`. The mission demo builds a `RawFrame` with encoding `png`
+(`mission/demo.py`). On the Meta route that encoding raises
+`MetaSamError`.
 
-`decode_rgb` (`detection/detector.py`) accepts `raw_rgb` or any bytes
-Pillow can open. Meta SAM rejects `png`.
+| Route | Encodings that route accepts | What happens otherwise |
+|---|---|---|
+| `meta-api` | `mjpeg` (jpeg bytes, sent as `image/jpeg`), `raw_rgb` (packed RGB, re-encoded to PNG on the wire) | `MetaSamError`, including for `png`. |
+| `modal` | `jpeg`, `jpg`, `mjpeg` passed through as `image/jpeg`; `png` passed through as `image/png` (`frame_image`) | Any other encoding is opened with Pillow and re-encoded as JPEG. |
+| `station-onnx` | `raw_rgb`, or any bytes Pillow can open, including `png` (`decode_rgb`) | Undecodable bytes raise `ValueError`. |
+
+`gray8` is the streaming sidecar pair payload (`encode_pair`), not a
+SAM input. Station proto names are `mjpeg` and `raw_rgb`
+(`station_server._encoding_name`).
 
 ## What the segmentation side typically sends
 
@@ -166,7 +240,23 @@ says "mask reference", which matches a path better than an inline polygon.
 
 The `model_id` on a semantic-map snapshot landmark is a different string:
 the Muse labeller that named the track (`mission/demo.py` stores
-`labelled.model_id`). It should not be copied into this field.
+`labelled.model_id`). It should not be copied into the SAM `model_id`.
+
+## Known gaps
+
+The fields in this note are recommendations. The types do not carry
+all of them yet:
+
+- `SamDetection` has `label`, `score`, `box_xyxy`, `mask_polygon`, and
+  an optional `track_id`. It has no `source` and no `model_id`.
+- The station echoes `frame_id` and does not echo `t_ns`. `clock`,
+  `frame`, and `pixel_space` have no field on `Pose`, `RawFrame`, or
+  `SamDetection`.
+- Meta SAM stores `score` `1.0` when the response has no confidence
+  field. That value is a placeholder for "missing", not a measured 1.0
+  (`meta_sam.py`).
+- `mask_outline` stops at 96 points (`max_points=96` in `sam3.py`).
+  A finer boundary is dropped before `points_in_mask` sees it.
 
 ## Units
 
@@ -182,12 +272,23 @@ One illustrative exchange. Nothing loads this file.
 [segmentation-protocol-example.json](segmentation-protocol-example.json)
 
 The pose is an identity quaternion, so camera axes and map axes match
-for that frame. The polygon is a rectangle in the 376×240 image. `clock`
-and `frame` are the labels suggested above; both are open questions.
+for that frame. The polygon is a rectangle in the 376×240 left image.
+`encoding` is `mjpeg`, which the Meta route accepts. `clock` and
+`frame` are the labels suggested above; both are open questions.
 
 ## Open questions for @uppin
 
 Please confirm or correct these. The guidelines take no side.
+
+### Pose source for projection (main risk)
+
+The cloud is placed with graph poses. `flush`, and the mission demo
+that reads it, project with odometry poses. After a loop closure those
+two disagree, so a mask tested against the cloud lands on the wrong
+points. Which pose should segmentation use: the odometry `pose`,
+`map_pose`, or the graph pose that placed the cloud? Should a frame
+that has an odometry pose but no graph node be projected at all, or
+only keyframes?
 
 ### Coordinate frame and handedness
 
@@ -208,9 +309,7 @@ Several frames are already named in code, and they are not the same:
    simulated camera (`simulation/calibration.py`).
 
 Which of these is the RTAB-Map map frame on `OdomUpdate.pose` /
-`map_pose`? Is it right-handed, and which axis is up? Should segmentation
-multiply by the odometry pose (what `flush` returns) or by `map_pose` /
-the graph pose (what `map_snapshot` uses to place the cloud)?
+`map_pose`? Is it right-handed, and which axis is up?
 
 ### Units
 
