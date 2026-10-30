@@ -11,7 +11,7 @@ from surmap.mapqa.errors import (
     SnapshotError,
     WonderFullRefused,
 )
-from surmap.mapqa.qa import MapQa
+from surmap.mapqa.qa import MapQa, answer
 from surmap.mapqa.server import start_mapqa_server
 from surmap.mapqa.snapshot import load_snapshot
 
@@ -27,6 +27,7 @@ __all__ = [
     "ModelUsage",
     "SnapshotError",
     "WonderFullRefused",
+    "answer",
     "load_snapshot",
     "main",
     "start_mapqa_server",

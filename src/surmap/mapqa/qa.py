@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import re
 from collections.abc import Mapping
 from pathlib import Path
 
 from surmap.mapqa.answers import HighlightPoint, MapAnswer
 from surmap.mapqa.client import (
     _AUTO_LEDGER,
+    DEFAULT_MODEL,
     MIN_MAX_OUTPUT_TOKENS,
     BeforeCall,
     Clock,
@@ -18,7 +21,28 @@ from surmap.mapqa.client import (
     OnUsage,
 )
 from surmap.mapqa.errors import InvalidMapAnswer, ModelApiError
-from surmap.mapqa.snapshot import MapFeature, MapSnapshot, load_snapshot
+from surmap.mapqa.snapshot import MapFeature, MapSnapshot, Xyz, load_snapshot
+
+_LIVE_META = "SURMAP_LIVE_META"
+_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "where",
+        "is",
+        "are",
+        "was",
+        "what",
+        "which",
+        "show",
+        "me",
+        "of",
+        "in",
+        "on",
+        "at",
+    }
+)
 
 _ASK_INSTRUCTIONS = (
     "You are a humanitarian search-and-rescue assistant reading one civilian "
@@ -116,6 +140,142 @@ class MapQa:
             raise ModelApiError(f"could not read audio {path}: {exc}") from exc
         transcript = self._meta.transcribe(audio, path.name)
         return self.ask(transcript)
+
+
+def answer(question: str, snapshot_path: str | Path | None = None) -> dict[str, object]:
+    """Answer one question the way the mission-demo viewer calls it.
+
+    ``answer(question, snapshot_path=...)`` returns
+    ``{answer, landmark_ids, highlight_points}``. Each highlight point is
+    map-frame metres, ``{"x", "y", "z"}``.
+
+    A live Meta call runs only when ``SURMAP_LIVE_META=1``. Otherwise the
+    same ``MapQa.ask`` parser reads a deterministic label-match fixture
+    and does not open a socket.
+    """
+    if snapshot_path is None:
+        return {
+            "answer": "No semantic map snapshot is loaded.",
+            "landmark_ids": [],
+            "highlight_points": [],
+        }
+    if _live_meta():
+        qa = MapQa(snapshot_path)
+    else:
+        snapshot = load_snapshot(snapshot_path)
+        qa = MapQa(
+            snapshot,
+            api_key="offline",
+            model=DEFAULT_MODEL,
+            transport=_FixtureTransport(_responses_bytes(_offline_fixture(question, snapshot))),
+            usage_ledger=None,
+        )
+    asked = qa.ask(question)
+    return _viewer_dict(asked, qa.snapshot)
+
+
+class _FixtureTransport:
+    """Returns one recorded responses body. Never opens a socket."""
+
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def post(self, url: str, headers: Mapping[str, str], body: bytes) -> bytes:
+        del url, headers, body
+        return self._body
+
+
+def _live_meta() -> bool:
+    return os.environ.get(_LIVE_META, "").strip() == "1"
+
+
+def _offline_fixture(question: str, snapshot: MapSnapshot) -> str:
+    matched = _matched_features(question, snapshot)
+    points = [
+        {"lat": item.lat, "lon": item.lon}
+        for item in matched
+        if item.lat is not None and item.lon is not None
+    ]
+    return json.dumps(
+        {
+            "answer": _offline_text(matched, snapshot),
+            "landmark_ids": [item.id for item in matched],
+            "highlight_points": points,
+        }
+    )
+
+
+def _offline_text(matched: tuple[MapFeature, ...], snapshot: MapSnapshot) -> str:
+    if matched:
+        labels = ", ".join(f"{item.label} ({item.id})" for item in matched)
+        return f"Matched {len(matched)} track(s): {labels}."
+    if snapshot.landmarks or snapshot.dynamic:
+        return (
+            "No landmark label matches that question. "
+            "Map Q&A uses a local label match unless SURMAP_LIVE_META=1."
+        )
+    return "No semantic map snapshot is loaded."
+
+
+def _matched_features(question: str, snapshot: MapSnapshot) -> tuple[MapFeature, ...]:
+    tokens = _tokens(question)
+    return tuple(
+        item
+        for item in (*snapshot.landmarks, *snapshot.dynamic)
+        if any(_mentions(token, f"{item.label} {item.description}".lower()) for token in tokens)
+    )
+
+
+def _tokens(question: str) -> tuple[str, ...]:
+    words = re.findall(r"[a-z0-9]+", question.lower())
+    return tuple(word for word in words if word not in _STOPWORDS and len(word) > 1)
+
+
+def _mentions(token: str, text: str) -> bool:
+    """True when ``token`` appears in ``text``, including a trailing plural s."""
+    if token in text:
+        return True
+    singular = token[:-1] if len(token) > 3 and token.endswith("s") else ""
+    return singular != "" and singular in text
+
+
+def _responses_bytes(text: str) -> bytes:
+    return json.dumps(
+        {
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": text}],
+                }
+            ],
+            "usage": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "output_tokens_details": {"reasoning_tokens": 0},
+            },
+        }
+    ).encode()
+
+
+def _viewer_dict(asked: MapAnswer, snapshot: MapSnapshot) -> dict[str, object]:
+    return {
+        "answer": asked.answer,
+        "landmark_ids": list(asked.landmark_ids),
+        "highlight_points": _viewer_points(asked.landmark_ids, snapshot),
+    }
+
+
+def _viewer_points(ids: tuple[str, ...], snapshot: MapSnapshot) -> list[dict[str, float]]:
+    points: list[dict[str, float]] = []
+    for feature_id in ids:
+        feature = snapshot.feature(feature_id)
+        if feature is None:
+            continue
+        cloud: tuple[Xyz, ...] = feature.mask_points if feature.mask_points else (feature.xyz,)
+        for point in cloud:
+            points.append({"x": point.x, "y": point.y, "z": point.z})
+    return points
 
 
 def _ask_input(snapshot: MapSnapshot, question: str) -> str:
@@ -218,4 +378,4 @@ def _any_geolocated(ids: tuple[str, ...], snapshot: MapSnapshot) -> bool:
     return False
 
 
-__all__ = ["MapQa"]
+__all__ = ["MapQa", "answer"]

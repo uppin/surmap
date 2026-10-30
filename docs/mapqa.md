@@ -106,6 +106,24 @@ Responses include `Access-Control-Allow-Origin: *` so a viewer on
 another local origin can read them. `OPTIONS /ask` answers the
 preflight.
 
+## Viewer hook
+
+The mission demo calls this when `SURMAP_LIVE_META=1` and the package
+imports:
+
+```python
+surmap.mapqa.answer(question, snapshot_path=path)
+```
+
+`snapshot_path` is a local `surmap.semantic_map_snapshot.v1` file, or
+`None`. The return value has the same three fields as `POST /ask`.
+`highlight_points` are map-frame metres, `{"x", "y", "z"}` (x east,
+y north, z up), taken from each cited object's `xyz` or `mask_points`.
+
+A live Meta call runs only when `SURMAP_LIVE_META=1`. Otherwise
+`answer` feeds `MapQa.ask` a deterministic label-match fixture and
+does not open a socket. `snapshot_path=None` cites nothing.
+
 ## Hooks
 
 `MapQa` takes `before_call(model, payload)` and `on_usage(usage)`.
