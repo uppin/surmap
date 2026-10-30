@@ -25,7 +25,7 @@ import math
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -428,6 +428,19 @@ class _Display:
         return [] if given_up else None
 
 
+class PlaybackControls:
+    """Pause, resume or cancel one player from another thread."""
+
+    def pause(self) -> None:
+        raise NotImplementedError("TODO(demo-controls): pause")
+
+    def resume(self) -> None:
+        raise NotImplementedError("TODO(demo-controls): resume")
+
+    def cancel(self) -> None:
+        raise NotImplementedError("TODO(demo-controls): cancel")
+
+
 class DemoPlayer:
     """Plays one prepared dataset as demo events (see module docs)."""
 
@@ -443,6 +456,7 @@ class DemoPlayer:
         detection_source: DetectionSource | None = None,
         rtabmap_mode: str = "live",
         backend_factory: Callable[[], SidecarRtabmapBackend | LiveSlamBackend] | None = None,
+        controls: PlaybackControls | None = None,
     ) -> None:
         fps = prepared.spec.fps if fps is None else fps
         if fps <= 0:
@@ -675,8 +689,11 @@ def _page_tuning(spec: DatasetSpec) -> dict[str, object]:
 
 
 def make_demo_server(
-    prepared: PreparedDataset,
+    prepared: PreparedDataset | None = None,
     *,
+    catalog: Sequence[DatasetSpec] | None = None,
+    cache_dir: Path | None = None,
+    default_dataset: str | None = None,
     host: str = "127.0.0.1",
     port: int = 8765,
     fps: float | None = None,
@@ -688,6 +705,8 @@ def make_demo_server(
     rtabmap_mode: str = "live",
 ) -> ThreadingHTTPServer:
     """The demo HTTP server (not yet serving); caller serves/closes it."""
+    if prepared is None:
+        raise NotImplementedError("TODO(demo-controls): catalog server")
     options: dict[str, object] = {
         "fps": fps,
         "max_frames": max_frames,

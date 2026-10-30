@@ -39,6 +39,16 @@ DISPLAY_HEIGHT = 240
 
 
 @dataclass(frozen=True)
+class PrepareProgress:
+    """One step of preparing a scene: `downloading` (bytes), `verifying`,
+    `extracting` (files) or `ready`."""
+
+    phase: str
+    done: int
+    total: int
+
+
+@dataclass(frozen=True)
 class ZipAsset:
     """One extra downloadable zip a dataset needs, pinned like the main one."""
 
@@ -337,12 +347,18 @@ def _fetch_verified(
         raise ValueError(f"{target} failed SHA-256 verification; refusing to use it")
 
 
+def cached_dataset(spec: DatasetSpec, cache_dir: Path) -> PreparedDataset | None:
+    """`spec` as already prepared in the cache, or None; never downloads."""
+    raise NotImplementedError("TODO(demo-controls): cached_dataset")
+
+
 def ensure_dataset(
     spec: DatasetSpec,
     cache_dir: Path,
     *,
     log: Callable[[str], None] = print,
     fetch: Callable[[str, Path], None] | None = None,
+    progress: Callable[[PrepareProgress], None] | None = None,
 ) -> PreparedDataset:
     """Download (once), verify, extract, and index `spec` in the cache."""
     if spec.dataset_format not in ("euroc", "kitti-raw"):
