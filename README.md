@@ -67,6 +67,16 @@ at the end instead), `--prepare-only`. The live panel shows keyframe
 count, cloud size, odometry state, SLAM lag in frames and dropped
 frames. Add a dataset by adding one registry entry.
 
+Scenes: `euroc-v1-01-easy` (indoor drone flight, ETH Vicon room) and
+`kitti-2011-09-26-drive-0009` (outdoor, a Karlsruhe city drive from a
+car). Each scene sets its own display size, playback rate, overlay
+depth stops and keyframe depth cap (EuRoC 376×240, 20 Hz, 1/3/6 m;
+KITTI 620×188, 10 Hz, 5/15/40 m, 30 m). KITTI raw is fetched from
+KITTI's own host and converted locally into the EuRoC layout (grey
+rectified `image_00`/`image_01`, calibration from `calib_cam_to_cam.txt`)
+and never re-hosted. It is licensed CC BY-NC-SA 3.0 for academic,
+non-commercial use; the page credits it.
+
 The pinned RTAB-Map image is published for amd64 only: `docker build`,
 `run` and `pull` pin `--platform linux/amd64`, so on Apple Silicon the
 sidecar builds and runs under emulation with no extra setup.
