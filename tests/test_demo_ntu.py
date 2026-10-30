@@ -175,16 +175,22 @@ def test_the_registry_offers_an_outdoor_drone_flight() -> None:
     # Given / When the NTU VIRAL entry is read
     spec = DATASETS["ntu-viral-sbs-01"]
 
-    # Then it is the sbs_01 plaza flight, pinned, with the authors'
-    # calibration — the stereo left being the camera recorded on
-    # /right/image_raw (measured: tracking holds only that way round)
+    # Then it is the sbs_01 plaza flight, pinned, topics as named with each
+    # camera's own intrinsics, and extrinsics that put the right camera
+    # 0.259 m along +x of the left (stereoCalibrate on the authors'
+    # checkerboards; the VINS-Fusion extrinsics reverse the rig)
     assert spec.dataset_format == "ros1-stereo"
     assert spec.zip_url.endswith("/sequences/sbs_01.zip")
     assert spec.zip_sha256 == "16063577be7b0d8b6ca89e40cf3ec45d603469048e7d989d25bab88f3950c390"
-    assert spec.ros1_stereo is not None
-    assert spec.ros1_stereo.left_topic == "/right/image_raw"
-    assert spec.ros1_stereo.left.intrinsics[0] == 431.3364265799752
-    assert spec.ros1_stereo.right.intrinsics[0] == 425.0258563372763
+    stereo = spec.ros1_stereo
+    assert stereo is not None
+    assert (stereo.left_topic, stereo.right_topic) == ("/left/image_raw", "/right/image_raw")
+    assert stereo.left.intrinsics[0] == 425.0258563372763
+    assert stereo.right.intrinsics[0] == 431.3364265799752
+    left = np.array(stereo.left.t_bs).reshape(4, 4)
+    right = np.array(stereo.right.t_bs).reshape(4, 4)
+    right_in_left = (np.linalg.inv(left) @ right)[:3, 3]
+    assert 0.258 < right_in_left[0] < 0.260 and np.abs(right_in_left[1:]).max() < 0.01
     assert spec.fps == 10.0
     assert "NTU VIRAL" in spec.credit and "CC BY-NC-SA 4.0" in spec.credit
 

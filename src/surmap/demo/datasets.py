@@ -178,15 +178,51 @@ DATASETS: dict[str, DatasetSpec] = {
         zip_sha256="16063577be7b0d8b6ca89e40cf3ec45d603469048e7d989d25bab88f3950c390",
         official_url="https://ntu-aris.github.io/ntu_viral_dataset/",
         dataset_format="ros1-stereo",
-        # Stereo "left" is the camera whose partner sits at +x in its own
-        # frame. Measured on this flight (frames 1200-1500): mapped by topic
-        # name, odometry lost 299/300 frames; with the camera recorded on
-        # /right/image_raw as left, it lost 1/300. Topics and their
-        # calibrations stay paired; only the stereo roles are assigned.
+        # Intrinsics: the dataset authors' (VINS-Fusion config). Extrinsics:
+        # NOT that config's body_T_cam (an initial guess there, which puts
+        # the rig the wrong way round: 95-97 % negative disparity on real
+        # pairs), but cv2.stereoCalibrate on the authors' own checkerboard
+        # pairs (calibration/calib_stereo.zip: 132 pairs, 9x6 at 80 mm,
+        # intrinsics fixed, RMS 0.359 px): right camera 0.2593 m along +x
+        # of the left, rotated 1.16 deg; 93-99 % positive disparity.
         ros1_stereo=Ros1Stereo(
-            left_topic="/right/image_raw",
-            right_topic="/left/image_raw",
+            left_topic="/left/image_raw",
+            right_topic="/right/image_raw",
             left=CameraCalibration(
+                intrinsics=(
+                    425.0258563372763,
+                    426.7976260903337,
+                    386.015186655088,
+                    241.913033674344,
+                ),
+                distortion=(
+                    -0.288105327549552,
+                    0.074578284234601,
+                    7.784489598138802e-04,
+                    -2.277853975035461e-04,
+                ),
+                resolution=(752, 480),
+                # The left camera is the body frame.
+                t_bs=(
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                ),
+            ),
+            right=CameraCalibration(
                 intrinsics=(
                     431.3364265799752,
                     432.7527965378035,
@@ -201,51 +237,18 @@ DATASETS: dict[str, DatasetSpec] = {
                 ),
                 resolution=(752, 480),
                 t_bs=(
-                    -0.01916508,
-                    -0.01496218,
-                    0.99970437,
-                    0.00519443,
-                    0.99974371,
-                    0.01176483,
-                    0.01934191,
-                    0.1347802,
-                    -0.01205075,
-                    0.99981884,
-                    0.01473287,
-                    0.01465067,
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0,
-                ),
-            ),
-            right=CameraCalibration(
-                intrinsics=(
-                    425.0258563372763,
-                    426.7976260903337,
-                    386.015186655088,
-                    241.913033674344,
-                ),
-                distortion=(
-                    -0.288105327549552,
-                    0.074578284234601,
-                    7.784489598138802e-04,
-                    -2.277853975035461e-04,
-                ),
-                resolution=(752, 480),
-                t_bs=(
-                    0.02183084,
-                    -0.01312053,
-                    0.99967558,
-                    0.00552943,
-                    0.99975965,
-                    0.00230088,
-                    -0.02180248,
-                    -0.12431302,
-                    -0.00201407,
-                    0.99991127,
-                    0.01316761,
-                    0.01614686,
+                    0.9997985489,
+                    0.0095333317,
+                    0.0176628787,
+                    0.2593142767,
+                    -0.0095845646,
+                    0.9999500957,
+                    0.0028182124,
+                    -0.000876373,
+                    -0.0176351303,
+                    -0.0029869357,
+                    0.9998400274,
+                    0.0006552279,
                     0.0,
                     0.0,
                     0.0,
