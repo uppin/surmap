@@ -15,7 +15,9 @@ from surmap.labelling.baseten_muse import BasetenMuseLabelClient, ObjectLabel
 from surmap.labelling.meta_muse import MetaMuseSceneClient
 from surmap.mission.demo import (
     MissionConfigError,
+    _live_segmenter,
     live_map_backend,
+    live_sam_prompt,
     open_live_map,
     resolve_live_session,
     run_live_mission,
@@ -156,6 +158,48 @@ def test_offline_mission_does_not_open_the_streaming_backend(
     # Then the report stays on the fixture cloud
     assert result.metrics.basis == "fixtures"
     assert result.map_backend == "fixture-cloud"
+
+
+def test_the_live_sam_prompt_defaults_to_person(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given no prompt override
+    monkeypatch.delenv("SURMAP_SAM_PROMPT", raising=False)
+
+    # When the live segmenter asks what to look for
+    prompt = live_sam_prompt()
+
+    # Then the noun is person
+    assert prompt == "person"
+
+
+def test_a_blank_sam_prompt_falls_back_to_person(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given a blank override
+    monkeypatch.setenv("SURMAP_SAM_PROMPT", "   ")
+
+    # When the prompt is read
+    prompt = live_sam_prompt()
+
+    # Then the blank value does not replace person
+    assert prompt == "person"
+
+
+def test_the_live_meta_segmenter_is_built_with_that_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a stand-in that records the prompt and does not call Meta
+    prompts: list[str] = []
+
+    class _Recording:
+        def __init__(self, *, prompt: str = "object", **_kwargs: object) -> None:
+            prompts.append(prompt)
+
+    monkeypatch.setattr("surmap.mission.demo.MetaSamDetector", _Recording)
+    monkeypatch.setenv("SURMAP_SAM_PROMPT", "survivor")
+
+    # When the Meta segmenter is built
+    _live_segmenter("meta")
+
+    # Then the detector is asked for that phrase
+    assert prompts == ["survivor"]
 
 
 def test_open_live_map_builds_the_streaming_backend_from_the_capture_calibration(

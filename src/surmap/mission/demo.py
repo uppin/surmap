@@ -385,15 +385,22 @@ def _stream_capture(
     return cloud, poses
 
 
+def live_sam_prompt() -> str:
+    """Noun phrase sent to SAM. ``SURMAP_SAM_PROMPT`` overrides ``person``."""
+    raw = os.environ.get("SURMAP_SAM_PROMPT", "person").strip()
+    return raw or "person"
+
+
 def _live_segmenter(kind: str) -> _Segmenter:
+    prompt = live_sam_prompt()
     if kind == "meta":
-        detector = MetaSamDetector()
+        detector = MetaSamDetector(prompt=prompt)
 
         def segment_meta(frame: RawFrame) -> tuple[SamDetection, ...]:
             return asyncio.run(detector.detect(frame))
 
         return segment_meta
-    detector_modal = ModalSamDetector()
+    detector_modal = ModalSamDetector(prompt=prompt)
 
     def segment_modal(frame: RawFrame) -> tuple[SamDetection, ...]:
         return asyncio.run(detector_modal.detect(frame))
