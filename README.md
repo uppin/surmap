@@ -43,16 +43,32 @@ request.
 ## Demo
 
 ```bash
-uv run python scripts/demo.py            # downloads+caches EuRoC, serves the demo
+uv run python scripts/demo.py            # serves the demo; downloads nothing at start
 # open http://127.0.0.1:8765/ in a browser
 ```
 
-The demo plays a recorded dataset as real-time video with the stereo
-reconstructor's scene points overlaid as depth-coloured detections,
-and builds the RTAB-Map map live from the same frames as they play:
-the map panel grows frame by frame during playback, and a final
-optimized graph is drawn when playback ends. Datasets are registry entries in `surmap.demo.datasets`
-(`--list-datasets`): the first run downloads and SHA-256-verifies
+The page has a scene picker with every registered scene. A scene not yet
+in the cache is downloaded, verified and converted the first time it is
+picked, with a progress bar on the page (MB downloaded, checksum, frames
+extracted); later picks and launches are cache hits. Pause/Resume stops
+feeding RTAB-Map as well as the video, so the map stays consistent;
+Restart replays the scene. A new viewer takes the stream over (the
+running one stops and its sidecar is removed).
+
+The demo plays a recorded dataset as real-time video and builds the
+RTAB-Map map live from the same frames as they play. Each frame is
+shown once its own odometry has arrived, overlaid with the features
+RTAB-Map tracked in that frame — rectified keypoints mapped back onto
+the raw image through the rectification and lens distortion — coloured
+by depth (red near, orange mid, teal far; without RTAB-Map the numpy
+stereo matcher's points are shown instead). The map panel is a
+top-down floor plan of the keyframes RTAB-Map's graph keeps, each point
+in its camera intensity, re-placed whenever the graph is re-optimised;
+a final optimized graph is drawn when playback ends. A yellow wedge on
+the floor plan marks the camera for the frame on screen — its position,
+heading and horizontal field of view. The detector runs
+on its own worker thread, so it never stalls playback. Datasets are registry entries in `surmap.demo.datasets`
+(`--list-datasets`): the first pick downloads and SHA-256-verifies
 the zip into the cache (`~/.cache/surmap/demo-datasets`, override
 `--cache-dir`/`$SURMAP_DEMO_CACHE_DIR`); later runs download nothing.
 Useful flags: `--frames N`, `--start I`, `--fps F`, `--no-rtabmap`,
@@ -60,6 +76,20 @@ Useful flags: `--frames N`, `--start I`, `--fps F`, `--no-rtabmap`,
 at the end instead), `--prepare-only`. The live panel shows keyframe
 count, cloud size, odometry state, SLAM lag in frames and dropped
 frames. Add a dataset by adding one registry entry.
+
+Scenes: `euroc-v1-01-easy` (indoor drone flight, ETH Vicon room) and
+`kitti-2011-09-26-drive-0009` (outdoor, a Karlsruhe city drive from a
+car). Each scene sets its own display size, playback rate, overlay
+depth stops and keyframe depth cap (EuRoC 376×240, 20 Hz, 1/3/6 m;
+KITTI 620×188, 10 Hz, 5/15/40 m, 30 m). KITTI raw is fetched from
+KITTI's own host and converted locally into the EuRoC layout (grey
+rectified `image_00`/`image_01`, calibration from `calib_cam_to_cam.txt`)
+and never re-hosted. It is licensed CC BY-NC-SA 3.0 for academic,
+non-commercial use; the page credits it.
+
+The pinned RTAB-Map image is published for amd64 only: `docker build`,
+`run` and `pull` pin `--platform linux/amd64`, so on Apple Silicon the
+sidecar builds and runs under emulation with no extra setup.
 
 RTAB-Map note: RTAB-Map has no official PyPI package, and no host —
 local or CI — may install it. Two Docker backends exist. The demo's
