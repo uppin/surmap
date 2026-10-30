@@ -47,6 +47,14 @@ uv run python scripts/demo.py            # serves the demo; downloads nothing at
 # open http://127.0.0.1:8765/ in a browser
 ```
 
+The one-command disaster survey (`scripts/mission_demo.py`) is a
+separate command. It does not use this page. Offline, it writes a
+fixture impact report (`"basis": "fixtures"`) and opens the survey
+viewer on port 8770. `--live` feeds a SITL capture through the same
+`StreamingRtabmapBackend` this demo uses. Runbook:
+[docs/mission-demo.md](docs/mission-demo.md). Gazebo scene:
+[docs/simulation/gazebo-disaster-world.md](docs/simulation/gazebo-disaster-world.md).
+
 The page has a scene picker with every registered scene. A scene not yet
 in the cache is downloaded, verified and converted the first time it is
 picked, with a progress bar on the page (MB downloaded, checksum, frames
