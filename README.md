@@ -77,15 +77,23 @@ at the end instead), `--prepare-only`. The live panel shows keyframe
 count, cloud size, odometry state, SLAM lag in frames and dropped
 frames. Add a dataset by adding one registry entry.
 
-Scenes: `euroc-v1-01-easy` (indoor drone flight, ETH Vicon room) and
+Scenes: `euroc-v1-01-easy` (indoor drone flight, ETH Vicon room),
 `kitti-2011-09-26-drive-0009` (outdoor, a Karlsruhe city drive from a
-car). Each scene sets its own display size, playback rate, overlay
+car) and `ntu-viral-sbs-01` (outdoor drone flight over NTU Singapore's
+Biological Sciences plaza). Each scene sets its own display size, playback rate, overlay
 depth stops and keyframe depth cap (EuRoC 376×240, 20 Hz, 1/3/6 m;
 KITTI 620×188, 10 Hz, 5/15/40 m, 30 m). KITTI raw is fetched from
 KITTI's own host and converted locally into the EuRoC layout (grey
 rectified `image_00`/`image_01`, calibration from `calib_cam_to_cam.txt`)
 and never re-hosted. It is licensed CC BY-NC-SA 3.0 for academic,
-non-commercial use; the page credits it.
+non-commercial use; the page credits it. NTU VIRAL ships its stereo
+images in a ROS 1 bag, read once with `rosbags` into the same layout;
+its intrinsics are the dataset authors', its extrinsics come from
+`cv2.stereoCalibrate` on the authors' own checkerboard pairs (the
+published VINS-Fusion extrinsics reverse the rig). It is CC BY-NC-SA
+4.0, non-commercial use; the page credits it. The streaming sidecar
+resets lost odometry after one frame (`Odom/ResetCountdown=1`):
+RTAB-Map's default never recovers.
 
 The pinned RTAB-Map image is published for amd64 only: `docker build`,
 `run` and `pull` pin `--platform linux/amd64`, so on Apple Silicon the

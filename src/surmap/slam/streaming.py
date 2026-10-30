@@ -52,6 +52,11 @@ PINNED_PLATFORM = "linux/amd64"
 # unbounded per-keyframe cloud makes it quadratic in run length.
 MAX_STORED_POINTS_PER_KEYFRAME = 1000
 
+# Odom/ResetCountdown: RTAB-Map's default (0) never resets a lost
+# odometry, so one dropout ends tracking for the rest of a run (measured
+# on NTU VIRAL sbs_01: 719/1200 frames lost; 0/3325 with 1).
+DEFAULT_RTABMAP_PARAMS = {"Rtabmap/DetectionRate": "2", "Odom/ResetCountdown": "1"}
+
 # Per-frame odometry kept for display (~10 s at 20 Hz): a display holds a
 # frame back only until its odometry arrives, never this long.
 FRAME_ODOMETRY_KEPT = 200
@@ -263,7 +268,7 @@ class StreamingRtabmapBackend:
             PINNED_PLATFORM,
             self._image,
         ]
-        for key, value in sorted((params or {"Rtabmap/DetectionRate": "2"}).items()):
+        for key, value in sorted((params or DEFAULT_RTABMAP_PARAMS).items()):
             argv += ["--Param", f"{key}={value}"]
         self._process = (process_factory or _default_factory)(argv)
         self._reader = threading.Thread(target=self._read_loop, daemon=True)

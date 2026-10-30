@@ -460,3 +460,16 @@ def test_the_keyframe_depth_cap_defaults_to_the_indoor_six_metres() -> None:
 
     # Then the hello carries the indoor default
     assert _hello(holder[0])["max_depth_m"] == 6.0
+
+
+def test_odometry_restarts_after_losing_track() -> None:
+    # Given / When a backend starts its sidecar with default parameters
+    holder: list[FakeProcess] = []
+    _backend(holder).close()
+
+    # Then RTAB-Map is told to reset odometry one frame after losing track
+    # (its default, 0, never recovers: a single dropout ends tracking)
+    argv = holder[0].argv
+    params = {argv[i + 1] for i, arg in enumerate(argv) if arg == "--Param"}
+    assert "Odom/ResetCountdown=1" in params
+    assert "Rtabmap/DetectionRate=2" in params
