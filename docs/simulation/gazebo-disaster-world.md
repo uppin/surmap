@@ -89,11 +89,12 @@ EuRoC body +Y points right. Both numbers are the same camera. See
 
 `docs/simulation/gz/worlds/disaster_block_survey.plan` is a
 QGroundControl plan. SurMap does not upload it. Cruise speed in the
-file is 4 m/s. The mission items store altitude 12 m above home. The
-runbook's lanes are east −24, −12, 0, 12, 24 m, each running north from
-18 m to 100 m and alternating direction, then return to launch. At 12 m
-the forward cameras see the street ahead and the vehicle clears the
-8 m roofs. Yaw is left unset so PX4 faces the next waypoint.
+file is 4 m/s. The mission items store altitude 5 m above home. The
+runbook's lanes are east −24, −16, −8, 0, 8, 16, 24 m, each running
+north from 18 m to 100 m and alternating direction, then return to
+launch. At 5 m the forward cameras see the street about 8 m ahead, in a
+strip about 13 m wide, so the 8 m lane spacing overlaps. Solid roofs
+top out at 3.4 m. Yaw is left unset so PX4 faces the next waypoint.
 
 With SITL running, an operator opens the plan in QGroundControl,
 uploads it from there, and starts it from there.

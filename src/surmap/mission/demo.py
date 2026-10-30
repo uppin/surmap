@@ -36,6 +36,7 @@ from surmap.simulation.disaster_world import DisasterGroundTruth, load_disaster_
 from surmap.simulation.euroc_export import export_euroc_session
 from surmap.simulation.sitl_capture import load_sitl_capture
 from surmap.slam.base import FrameResult
+from surmap.slam.streaming import DEFAULT_MAX_DEPTH_M, DEFAULT_MIN_DISPARITY_PX
 from surmap.survey.mask_cloud import points_in_mask
 from surmap.survey.meta_sam import MetaSamDetector
 from surmap.survey.modal_sam import ModalSamDetector
@@ -132,16 +133,64 @@ def live_map_backend() -> str:
     return _MAP_BACKEND_LIVE
 
 
-def open_live_map(calibration: StereoCalibrationSpec) -> LiveMap:
+def open_live_map(
+    calibration: StereoCalibrationSpec,
+    *,
+    max_depth_m: float | None = None,
+    min_disparity_px: float | None = None,
+) -> LiveMap:
     """Open the streaming backend calibrated from a capture. This starts the sidecar."""
     from surmap.slam.streaming import StreamingRtabmapBackend
 
+    depth_m = _resolved_limit(
+        max_depth_m,
+        "SURMAP_MAX_DEPTH_M",
+        DEFAULT_MAX_DEPTH_M,
+        minimum=0.0,
+        exclusive=True,
+    )
+    disparity_px = _resolved_limit(
+        min_disparity_px,
+        "SURMAP_MIN_DISPARITY_PX",
+        DEFAULT_MIN_DISPARITY_PX,
+        minimum=0.0,
+        exclusive=False,
+    )
     return StreamingRtabmapBackend(
         cam0_yaml=render_cam_sensor_yaml(calibration, 0),
         cam1_yaml=render_cam_sensor_yaml(calibration, 1),
         width=calibration.width,
         height=calibration.height,
+        max_depth_m=depth_m,
+        min_disparity_px=disparity_px,
+        fx=calibration.fx,
+        baseline_m=calibration.baseline_m,
     )
+
+
+def _resolved_limit(
+    explicit: float | None,
+    env_name: str,
+    default: float,
+    *,
+    minimum: float,
+    exclusive: bool,
+) -> float:
+    """Explicit argument, otherwise the environment, otherwise `default`."""
+    if explicit is None:
+        raw = os.environ.get(env_name, "").strip()
+        if not raw:
+            return default
+        try:
+            explicit = float(raw)
+        except ValueError as exc:
+            raise MissionConfigError(f"{env_name} must be a number") from exc
+    if exclusive:
+        if explicit <= minimum:
+            raise MissionConfigError(f"{env_name} must be greater than {minimum}")
+    elif explicit < minimum:
+        raise MissionConfigError(f"{env_name} must be at least {minimum}")
+    return explicit
 
 
 def resolve_live_session(capture: Path | None) -> Path:
@@ -158,7 +207,7 @@ def resolve_live_session(capture: Path | None) -> Path:
         )
     raise MissionConfigError(
         "Gazebo is not on PATH and no --capture was given. "
-        "Use a recorded EuRoC session from a SITL dump: --live --capture <dir>."
+        "Record a SITL capture and re-run with --live --capture <dir>."
     )
 
 
@@ -243,16 +292,30 @@ def run_offline_mission(output_dir: Path) -> MissionResult:
     )
 
 
-def run_live_mission(output_dir: Path, capture: Path) -> MissionResult:
+def run_live_mission(
+    output_dir: Path,
+    capture: Path,
+    *,
+    max_depth_m: float | None = None,
+    min_disparity_px: float | None = None,
+) -> MissionResult:
     """Real SAM, labels, and scene note. The cloud is the streaming RTAB-Map map."""
-    services = build_live_services()
     capture_dir = resolve_live_session(capture)
+    try:
+        frames, calibration, gps = load_sitl_capture(capture_dir)
+    except (OSError, ValueError) as exc:
+        raise MissionConfigError(str(exc)) from exc
+    services = build_live_services()
     output_dir.mkdir(parents=True, exist_ok=True)
-    frames, calibration, gps = load_sitl_capture(capture_dir)
     euroc_path = export_euroc_session(output_dir / "euroc", frames, calibration, gps).root
     truth = load_disaster_ground_truth()
     backend = live_map_backend()
-    map_cloud, poses = _stream_capture(frames, calibration)
+    map_cloud, poses = _stream_capture(
+        frames,
+        calibration,
+        max_depth_m=max_depth_m,
+        min_disparity_px=min_disparity_px,
+    )
     segmenter = _live_segmenter(services.sam)
     labeller = BasetenMuseLabelClient()
     note_client = MetaMuseSceneClient()
@@ -371,9 +434,16 @@ def run_live_mission(output_dir: Path, capture: Path) -> MissionResult:
 def _stream_capture(
     frames: list[StereoFramePair],
     calibration: StereoCalibrationSpec,
+    *,
+    max_depth_m: float | None = None,
+    min_disparity_px: float | None = None,
 ) -> tuple[tuple[Vec3, ...], dict[int, Pose]]:
     """Feed the capture to the streaming backend and read its final map."""
-    slam = open_live_map(calibration)
+    slam = open_live_map(
+        calibration,
+        max_depth_m=max_depth_m,
+        min_disparity_px=min_disparity_px,
+    )
     try:
         for frame in frames:
             slam.process_frame(frame)

@@ -104,7 +104,8 @@ def encode_hello(
     width: int,
     height: int,
     params: dict[str, str],
-    max_depth_m: float = 6.0,
+    max_depth_m: float = 30.0,
+    min_disparity_px: float = 2.0,
 ) -> bytes:
     return _frame(
         {
@@ -117,6 +118,8 @@ def encode_hello(
             "params": params,
             # Keyframe points beyond this depth are too noisy to map.
             "max_depth_m": max_depth_m,
+            # Points with a smaller disparity are dropped as well.
+            "min_disparity_px": min_disparity_px,
         }
     )
 
