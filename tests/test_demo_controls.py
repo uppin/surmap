@@ -23,7 +23,7 @@ from surmap.demo.datasets import (
 from surmap.demo.server import DemoEvent, DemoPlayer, PlaybackControls, make_demo_server
 from surmap.slam.base import FrameResult
 from surmap.types import StereoFramePair
-from tests.test_demo import FakeLiveBackend, _prepared_tiny
+from tests.test_demo import FakeLiveBackend, _odom_with, _prepared_tiny
 from tests.test_demo_kitti import a_kitti_drive
 
 
@@ -304,8 +304,8 @@ def test_paused_playback_shows_no_frames_and_feeds_no_pairs(tmp_path: Path) -> N
 
 
 def test_a_cancelled_player_stops_and_closes_its_backend(tmp_path: Path) -> None:
-    # Given a live player
-    fake = FakeLiveBackend()
+    # Given a live player whose frames each get their odometry at once
+    fake = FakeLiveBackend(odometry={1: _odom_with(), 2: _odom_with()})
     controls = PlaybackControls()
     player = DemoPlayer(
         _prepared_tiny(tmp_path),

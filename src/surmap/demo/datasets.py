@@ -48,6 +48,13 @@ class PrepareProgress:
     total: int
 
 
+Report = Callable[[PrepareProgress], None]
+
+
+def _no_report(_: PrepareProgress) -> None:
+    pass
+
+
 @dataclass(frozen=True)
 class ZipAsset:
     """One extra downloadable zip a dataset needs, pinned like the main one."""
@@ -233,15 +240,19 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _download(url: str, target: Path, log: Callable[[str], None]) -> None:
+def _download(
+    url: str, target: Path, log: Callable[[str], None], report: Report = _no_report
+) -> None:
     partial = target.with_suffix(".part")
     with urllib.request.urlopen(url, timeout=120) as response, partial.open("wb") as out:
         total = int(response.headers.get("Content-Length") or 0)
         done = 0
         last_report = -1
+        report(PrepareProgress("downloading", 0, total))
         for chunk in iter(lambda: response.read(1 << 20), b""):
             out.write(chunk)
             done += len(chunk)
+            report(PrepareProgress("downloading", done, total))
             percent = done * 100 // total if total else 0
             if percent >= last_report + 10:
                 last_report = percent
@@ -249,12 +260,16 @@ def _download(url: str, target: Path, log: Callable[[str], None]) -> None:
     partial.replace(target)
 
 
-def _extract(spec: DatasetSpec, zip_path: Path, root: Path) -> None:
+def _extract(zip_path: Path, root: Path, report: Report = _no_report) -> None:
     wanted_prefixes = ("mav0/cam0/", "mav0/cam1/", "mav0/imu0/")
     with zipfile.ZipFile(zip_path) as archive:
-        for member in archive.infolist():
-            if member.is_dir() or not member.filename.startswith(wanted_prefixes):
-                continue
+        wanted = [
+            member
+            for member in archive.infolist()
+            if not member.is_dir() and member.filename.startswith(wanted_prefixes)
+        ]
+        for index, member in enumerate(wanted, start=1):
+            report(PrepareProgress("extracting", index, len(wanted)))
             target = root / member.filename
             if not target.resolve().is_relative_to(root.resolve()):
                 raise ValueError(f"unsafe zip member: {member.filename}")
@@ -297,7 +312,9 @@ def _kitti_sensor_yaml(projection: list[float], size: list[int], x_m: float) -> 
     )
 
 
-def _extract_kitti_raw(zip_path: Path, calibration_path: Path, root: Path) -> None:
+def _extract_kitti_raw(
+    zip_path: Path, calibration_path: Path, root: Path, report: Report = _no_report
+) -> None:
     """A KITTI raw `_sync` drive as the EuRoC layout: grey stereo + calibration.
 
     KITTI sync frames are rectified and aligned by index, so cam0's
@@ -328,6 +345,11 @@ def _extract_kitti_raw(zip_path: Path, calibration_path: Path, root: Path) -> No
                 member = f"{drive}image_0{channel}/data/{index:010d}.png"
                 if member in names:
                     (camera / "data" / f"{t_ns}.png").write_bytes(archive.read(member))
+                report(
+                    PrepareProgress(
+                        "extracting", channel * len(stamps) + index + 1, 2 * len(stamps)
+                    )
+                )
 
 
 def _fetch_verified(
@@ -337,19 +359,36 @@ def _fetch_verified(
     target: Path,
     log: Callable[[str], None],
     fetch: Callable[[str, Path], None] | None,
+    report: Report = _no_report,
 ) -> None:
-    if not (target.is_file() and target.stat().st_size == size_bytes):
-        log(f"  fetching {url}")
-        (fetch or (lambda source, out: _download(source, out, log)))(url, target)
+    """`target` downloaded once from `url`, then size + SHA-256 checked."""
+    if target.is_file() and target.stat().st_size == size_bytes:
+        log(f"  {target.name} cached, verifying…")
+    else:
+        log(f"  fetching {url} ({size_bytes / 1e9:.2f} GB)")
+        if fetch is None:
+            _download(url, target, log, report)
+        else:
+            report(PrepareProgress("downloading", 0, size_bytes))
+            fetch(url, target)
+            report(PrepareProgress("downloading", size_bytes, size_bytes))
+    report(PrepareProgress("verifying", 0, 1))
     if target.stat().st_size != size_bytes:
         raise ValueError(f"{target} has the wrong size; refusing to use it")
     if _sha256(target) != sha256:
         raise ValueError(f"{target} failed SHA-256 verification; refusing to use it")
+    report(PrepareProgress("verifying", 1, 1))
 
 
 def cached_dataset(spec: DatasetSpec, cache_dir: Path) -> PreparedDataset | None:
     """`spec` as already prepared in the cache, or None; never downloads."""
-    raise NotImplementedError("TODO(demo-controls): cached_dataset")
+    root = cache_dir / spec.dataset_id
+    manifest_path = root / "manifest.json"
+    if not manifest_path.is_file():
+        return None
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    timestamps = tuple(int(value) for value in manifest["frame_timestamps_ns"])
+    return PreparedDataset(spec, root, timestamps) if timestamps else None
 
 
 def ensure_dataset(
@@ -363,30 +402,22 @@ def ensure_dataset(
     """Download (once), verify, extract, and index `spec` in the cache."""
     if spec.dataset_format not in ("euroc", "kitti-raw"):
         raise ValueError(f"unsupported dataset format: {spec.dataset_format}")
+    report = progress or _no_report
+    cached = cached_dataset(spec, cache_dir)
+    if cached is not None:
+        log(f"dataset {spec.dataset_id}: cache hit ({len(cached.timestamps_ns)} pairs)")
+        report(PrepareProgress("ready", 1, 1))
+        return cached
     root = cache_dir / spec.dataset_id
     manifest_path = root / "manifest.json"
-    if manifest_path.is_file():
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        timestamps = tuple(int(value) for value in manifest["frame_timestamps_ns"])
-        if timestamps:
-            log(f"dataset {spec.dataset_id}: cache hit ({len(timestamps)} pairs)")
-            return PreparedDataset(spec, root, timestamps)
 
     downloads = cache_dir / "downloads"
     downloads.mkdir(parents=True, exist_ok=True)
     zip_path = downloads / f"{spec.dataset_id}.zip"
-    if zip_path.is_file() and zip_path.stat().st_size == spec.zip_size_bytes:
-        log(f"dataset {spec.dataset_id}: zip cached, verifying…")
-    else:
-        log(f"dataset {spec.dataset_id}: downloading {spec.title}")
-        log(f"  size: {spec.zip_size_bytes / 1e9:.2f} GB")
-        log(f"  source: {spec.zip_url}")
-        log(f"  official: {spec.official_url}")
-        (fetch or (lambda url, target: _download(url, target, log)))(spec.zip_url, zip_path)
-    if zip_path.stat().st_size != spec.zip_size_bytes:
-        raise ValueError(f"{zip_path} has the wrong size; refusing to use it")
-    if _sha256(zip_path) != spec.zip_sha256:
-        raise ValueError(f"{zip_path} failed SHA-256 verification; refusing to use it")
+    log(f"dataset {spec.dataset_id}: {spec.title} (official: {spec.official_url})")
+    _fetch_verified(
+        spec.zip_url, spec.zip_size_bytes, spec.zip_sha256, zip_path, log, fetch, report
+    )
 
     log(f"dataset {spec.dataset_id}: extracting stereo frames…")
     root.mkdir(parents=True, exist_ok=True)
@@ -401,10 +432,11 @@ def ensure_dataset(
             calibration_path,
             log,
             fetch,
+            report,
         )
-        _extract_kitti_raw(zip_path, calibration_path, root)
+        _extract_kitti_raw(zip_path, calibration_path, root, report)
     else:
-        _extract(spec, zip_path, root)
+        _extract(zip_path, root, report)
     cam0 = sorted((root / "mav0" / "cam0" / "data").glob("*.png"))
     cam1_names = {path.name for path in (root / "mav0" / "cam1" / "data").glob("*.png")}
     timestamps = tuple(int(path.stem) for path in cam0 if path.name in cam1_names)
@@ -421,4 +453,5 @@ def ensure_dataset(
     }
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     log(f"dataset {spec.dataset_id}: ready ({len(timestamps)} pairs)")
+    report(PrepareProgress("ready", 1, 1))
     return PreparedDataset(spec, root, timestamps)

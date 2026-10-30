@@ -22,11 +22,11 @@
   - [x] Player: a cancelled player stops and closes its backend
   - [x] Server: `POST /control` pauses and resumes the running stream; bad action 400, no stream 409
   - [x] Run the new tests (verify they fail for missing implementation)
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] `cached_dataset()`, progress callback in `ensure_dataset`; launcher downloads nothing at start
-  - [ ] `PlaybackControls` in the player loop (pause keeps releasing held frames)
-  - [ ] Server catalog, per-scene page/stream, takeover, `/control`
-  - [ ] Page: scene picker (every scene), download/extract progress bar, Pause/Resume, Restart
+- [wf 3] ⏳ `/green` Green — implement until every red test passes · 565 passed, 2 skipped; pause/resume verified over HTTP on the live KITTI stream, browser look pending
+  - [x] `cached_dataset()`, progress callback in `ensure_dataset`; launcher downloads nothing at start
+  - [x] `PlaybackControls` in the player loop (pause keeps releasing held frames)
+  - [x] Server catalog, per-scene page/stream, takeover, `/control`
+  - [x] Page: scene picker (every scene), download/extract progress bar, Pause/Resume, Restart
   - [ ] Real check in the browser on EuRoC and KITTI
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs, then open the PR ready ·
   - [ ] Verification executed — result recorded
