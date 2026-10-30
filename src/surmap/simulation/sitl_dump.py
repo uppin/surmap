@@ -8,6 +8,8 @@ capture rules can be tested with the rest of SurMap.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, TypeVar
 
@@ -103,6 +105,116 @@ def _pack_rows(data: bytes, *, width: int, height: int, channels: int, step: int
             f"image data has {len(data)} bytes, expected at least {step * height} for step {step}"
         )
     return b"".join(data[row * step : row * step + row_bytes] for row in range(height))
+
+
+@dataclass(frozen=True)
+class StampedPose:
+    """Ground-truth camera pose: translation in metres plus quaternion (x, y, z, w)."""
+
+    t_ns: int
+    x_m: float
+    y_m: float
+    z_m: float
+    orientation_xyzw: tuple[float, float, float, float]
+    frame: str = "gazebo_enu"
+
+
+def nearest_stamp(stamps: Sequence[int], t_ns: int, *, slop_ns: int) -> int | None:
+    """Closest stamp within `slop_ns`, or None."""
+    if not stamps:
+        return None
+    chosen = min(stamps, key=lambda stamp: (abs(stamp - t_ns), stamp))
+    if abs(chosen - t_ns) > slop_ns:
+        return None
+    return chosen
+
+
+def nearest_pose(
+    poses: Sequence[StampedPose],
+    t_ns: int,
+    *,
+    slop_ns: int,
+) -> StampedPose | None:
+    """Pose whose stamp is closest to `t_ns` and inside the slop."""
+    chosen = nearest_stamp(tuple(pose.t_ns for pose in poses), t_ns, slop_ns=slop_ns)
+    if chosen is None:
+        return None
+    for pose in poses:
+        if pose.t_ns == chosen:
+            return pose
+    return None
+
+
+def pose_record(pose: StampedPose) -> dict[str, object]:
+    """JSON object stored on a capture frame and in poses.jsonl."""
+    return {
+        "t_ns": pose.t_ns,
+        "position_m": {"x": pose.x_m, "y": pose.y_m, "z": pose.z_m},
+        "orientation_xyzw": list(pose.orientation_xyzw),
+        "frame": pose.frame,
+    }
+
+
+def load_pose_jsonl(path: Path) -> tuple[StampedPose, ...]:
+    """Read poses written by the SITL dumper."""
+    import json
+
+    poses: list[StampedPose] = []
+    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        text = line.strip()
+        if not text:
+            continue
+        raw = json.loads(text)
+        if not isinstance(raw, dict):
+            raise ValueError(f"poses.jsonl line {line_no} must be an object")
+        body = {str(key): value for key, value in raw.items()}
+        position = body.get("position_m")
+        quaternion = body.get("orientation_xyzw")
+        if (
+            not isinstance(position, dict)
+            or not isinstance(quaternion, list)
+            or len(quaternion) != 4
+        ):
+            raise ValueError(f"poses.jsonl line {line_no} is missing a pose")
+        point = {str(key): value for key, value in position.items()}
+        poses.append(
+            StampedPose(
+                t_ns=int(body["t_ns"]),
+                x_m=float(point["x"]),
+                y_m=float(point["y"]),
+                z_m=float(point["z"]),
+                orientation_xyzw=(
+                    float(quaternion[0]),
+                    float(quaternion[1]),
+                    float(quaternion[2]),
+                    float(quaternion[3]),
+                ),
+                frame=str(body.get("frame", "gazebo_enu")),
+            )
+        )
+    return tuple(poses)
+
+
+def label_image_to_png(msg: _ImageMessage, target: Path) -> None:
+    """Write a segmentation image. 16-bit labels stay 16-bit; colour stays PNG."""
+    encoding = str(msg.encoding).lower()
+    if encoding in ("mono16", "16uc1"):
+        _write_mono16(msg, target)
+        return
+    image_msg_to_png(msg, target)
+
+
+def _write_mono16(msg: _ImageMessage, target: Path) -> None:
+    width = int(msg.width)
+    height = int(msg.height)
+    step = int(msg.step or 0)
+    packed = _pack_rows(bytes(msg.data), width=width, height=height, channels=2, step=step)
+    expected = width * height * 2
+    if len(packed) != expected:
+        raise ValueError(f"mono16 image has {len(packed)} bytes, expected {expected}")
+    image = Image.frombytes("I;16", (width, height), packed)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    image.save(target, format="PNG")
 
 
 def _drop_stale_frames(

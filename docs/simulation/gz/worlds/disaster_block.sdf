@@ -6,6 +6,7 @@
      Licences and the WSL2 launch are in docs/simulation/disaster-world.md. -->
 <sdf version="1.9">
   <world name="disaster_block">
+    <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label"/>
     <physics type="ode">
       <max_step_size>0.004</max_step_size>
       <real_time_factor>1.0</real_time_factor>
@@ -1187,6 +1188,9 @@
           </material>
         </visual>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>4</label>
+      </plugin>
     </model>
     <model name="cross_east_debris">
       <static>true</static>
@@ -1423,6 +1427,9 @@
           </material>
         </visual>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>3</label>
+      </plugin>
     </model>
     <model name="avenue_north_pole">
       <static>true</static>
@@ -2520,6 +2527,9 @@
           </geometry>
         </collision>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>3</label>
+      </plugin>
     </model>
     <model name="rubble_mound_northeast">
       <static>true</static>
@@ -3381,6 +3391,9 @@
           </geometry>
         </collision>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>3</label>
+      </plugin>
     </model>
     <model name="ruin_southwest">
       <static>true</static>
@@ -4297,6 +4310,9 @@
           </geometry>
         </collision>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>2</label>
+      </plugin>
     </model>
     <model name="car_odd_angle_north">
       <static>true</static>
@@ -4404,6 +4420,9 @@
           </geometry>
         </collision>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>2</label>
+      </plugin>
     </model>
     <model name="car_overturned">
       <static>true</static>
@@ -4511,6 +4530,9 @@
           </geometry>
         </collision>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>2</label>
+      </plugin>
     </model>
     <model name="car_buried">
       <static>true</static>
@@ -4618,6 +4640,9 @@
           </geometry>
         </collision>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>2</label>
+      </plugin>
     </model>
     <model name="car_in_flood">
       <static>true</static>
@@ -4725,6 +4750,9 @@
           </geometry>
         </collision>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>2</label>
+      </plugin>
     </model>
     <model name="burial_mound">
       <static>true</static>
@@ -4762,6 +4790,9 @@
           </material>
         </visual>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>3</label>
+      </plugin>
     </model>
     <model name="tire_loose_a">
       <static>true</static>
@@ -4793,6 +4824,9 @@
           </material>
         </visual>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>3</label>
+      </plugin>
     </model>
     <model name="tire_loose_b">
       <static>true</static>
@@ -4824,6 +4858,9 @@
           </material>
         </visual>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>3</label>
+      </plugin>
     </model>
     <model name="tire_loose_c">
       <static>true</static>
@@ -4855,6 +4892,9 @@
           </material>
         </visual>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>3</label>
+      </plugin>
     </model>
     <model name="tire_loose_d">
       <static>true</static>
@@ -4886,6 +4926,9 @@
           </material>
         </visual>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>3</label>
+      </plugin>
     </model>
     <model name="plank_loose_a">
       <static>true</static>
@@ -4923,6 +4966,9 @@
           </material>
         </visual>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>3</label>
+      </plugin>
     </model>
     <model name="plank_loose_b">
       <static>true</static>
@@ -4960,6 +5006,9 @@
           </material>
         </visual>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>3</label>
+      </plugin>
     </model>
     <model name="plank_loose_c">
       <static>true</static>
@@ -4997,6 +5046,9 @@
           </material>
         </visual>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>3</label>
+      </plugin>
     </model>
     <model name="survivor_standing_avenue_south">
       <static>true</static>
@@ -5100,6 +5152,9 @@
           </geometry>
         </collision>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>1</label>
+      </plugin>
     </model>
     <model name="survivor_lying_flood_edge">
       <static>true</static>
@@ -5190,6 +5245,9 @@
           </geometry>
         </collision>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>1</label>
+      </plugin>
     </model>
     <model name="survivor_waving_on_rubble">
       <static>true</static>
@@ -5293,6 +5351,9 @@
           </geometry>
         </collision>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>1</label>
+      </plugin>
     </model>
     <model name="survivor_standing_rooftop">
       <static>true</static>
@@ -5396,6 +5457,9 @@
           </geometry>
         </collision>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>1</label>
+      </plugin>
     </model>
     <model name="survivor_lying_north_blockage">
       <static>true</static>
@@ -5486,6 +5550,9 @@
           </geometry>
         </collision>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>1</label>
+      </plugin>
     </model>
     <model name="survivor_waving_plaza">
       <static>true</static>
@@ -5589,6 +5656,9 @@
           </geometry>
         </collision>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>1</label>
+      </plugin>
     </model>
     <model name="survivor_waving_northeast_rubble">
       <static>true</static>
@@ -5692,6 +5762,9 @@
           </geometry>
         </collision>
       </link>
+      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">
+        <label>1</label>
+      </plugin>
     </model>
   </world>
 </sdf>

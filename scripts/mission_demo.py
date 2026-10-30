@@ -9,8 +9,9 @@ not launch Gazebo and it does not call Meta, Baseten, or Modal.
 
 Live calls the services whose flags are already set
 (``SURMAP_LIVE_META``, ``SURMAP_LIVE_BASETEN``, ``SURMAP_LIVE_MODAL``)
-and reads keys only inside those clients. Pass a capture directory.
-This process does not arm PX4.
+and reads keys only inside those clients. ``--sam-route modal`` keeps
+SAM on Modal while Meta still writes the scene note. Pass a capture
+directory. This process does not arm PX4.
 
     uv run python scripts/mission_demo.py --live --capture ~/sitl-runs/disaster-01
 
@@ -38,6 +39,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--live", action="store_true", help="use flagged live services")
     parser.add_argument("--offline", action="store_true", help="recorded fixtures (the default)")
     parser.add_argument("--capture", type=Path, default=None, help="SITL capture directory")
+    parser.add_argument(
+        "--sam-route",
+        choices=("meta", "modal"),
+        default=None,
+        help="SAM adapter. Default: modal when SURMAP_LIVE_MODAL=1, otherwise meta. "
+        "The scene note stays on Meta.",
+    )
     parser.add_argument("--output", type=Path, default=Path("mission-demo-out"))
     parser.add_argument("--report", type=Path, default=None, help="copy of the impact JSON")
     parser.add_argument("--no-viewer", action="store_true")
@@ -55,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
 
                 resolve_live_session(None)
                 return 2
-            result = run_live_mission(args.output, capture)
+            result = run_live_mission(args.output, capture, sam_route=args.sam_route)
         else:
             result = run_offline_mission(args.output)
     except MissionConfigError as exc:
