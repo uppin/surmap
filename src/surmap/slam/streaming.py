@@ -16,9 +16,12 @@ import subprocess
 import threading
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+import numpy as np
+from numpy.typing import NDArray
 from PIL import Image
 
 from surmap.slam.base import FrameResult
@@ -56,6 +59,19 @@ def stream_image_tag(source_dir: Path | None = None) -> str:
             digest.update(name.encode())
             digest.update(path.read_bytes())
     return f"{STREAM_IMAGE_REPO}:{digest.hexdigest()[:12]}"
+
+
+def stream_build_argv(tag: str, source_dir: Path) -> list[str]:
+    """`docker build` command for the derived streaming image."""
+    raise NotImplementedError("TODO(live-map-display): stream_build_argv")
+
+
+@dataclass(frozen=True)
+class MapCloud:
+    """The live map in the map frame: (N, 3) float32 points, (N, 3) uint8 RGB."""
+
+    points: NDArray[np.float32]
+    colors: NDArray[np.uint8]
 
 
 class StreamProcess(Protocol):
@@ -367,6 +383,12 @@ class StreamingRtabmapBackend:
             self._snapshot_cache[kf.node_id] = (pose, transformed)
             points.extend(transformed)
         return tuple(points)
+
+    def map_cloud(self) -> MapCloud:
+        raise NotImplementedError("TODO(live-map-display): map_cloud")
+
+    def latest_pose(self) -> tuple[int, Pose] | None:
+        raise NotImplementedError("TODO(live-map-display): latest_pose")
 
     def trajectory(self) -> list[Pose]:
         with self._state_lock:

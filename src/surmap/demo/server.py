@@ -29,6 +29,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+import numpy as np
+from numpy.typing import NDArray
 from PIL import Image
 
 from surmap.demo.datasets import (
@@ -98,6 +100,16 @@ def project_overlay(
         step = len(visible) / max_points
         visible = [visible[int(index * step)] for index in range(max_points)]
     return visible
+
+
+def project_map_overlay(
+    points: NDArray[np.float32],
+    camera_pose: Pose,
+    calibration: DemoCalibration,
+    max_points: int = MAX_OVERLAY_POINTS,
+) -> list[dict[str, float]]:
+    """Map-frame points seen from `camera_pose`, projected to display pixels."""
+    raise NotImplementedError("TODO(live-map-display): project_map_overlay")
 
 
 def _display_jpeg(prepared: PreparedDataset, channel: int, t_ns: int) -> bytes:

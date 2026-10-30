@@ -17,6 +17,9 @@ from surmap.types import Pose, Vec3
 
 PROTOCOL_VERSION = 1
 
+# Colour given to a keyframe point the sidecar sent without one.
+NEUTRAL_GREY = (160, 160, 160)
+
 
 class ProtocolError(ValueError):
     """Raised when a peer message is malformed or version-mismatched."""
@@ -43,6 +46,7 @@ class KeyframeUpdate:
     t_ns: int
     pose: Pose
     points_local: tuple[Vec3, ...]
+    colors: tuple[tuple[int, int, int], ...] = ()
 
 
 @dataclass(frozen=True)
