@@ -37,6 +37,15 @@ DISPLAY_HEIGHT = 240
 
 
 @dataclass(frozen=True)
+class ZipAsset:
+    """One extra downloadable zip a dataset needs, pinned like the main one."""
+
+    url: str
+    size_bytes: int
+    sha256: str
+
+
+@dataclass(frozen=True)
 class DatasetSpec:
     """One downloadable demo dataset (the registry entry)."""
 
@@ -48,6 +57,13 @@ class DatasetSpec:
     zip_sha256: str
     official_url: str
     dataset_format: str = "euroc"
+    calibration: ZipAsset | None = None
+    display_size: tuple[int, int] = (DISPLAY_WIDTH, DISPLAY_HEIGHT)
+    fps: float = 20.0
+    # Overlay depth ramp (near, mid, far) and the keyframe depth cap, in m.
+    depth_stops_m: tuple[float, float, float] = (1.0, 3.0, 6.0)
+    max_map_depth_m: float = 6.0
+    credit: str = ""
 
 
 # The registry. The EuRoC zip is byte-identical between the official

@@ -215,6 +215,7 @@ class StreamingRtabmapBackend:
         runner: Callable[[list[str]], None] | None = None,
         queue_size: int = 4,
         flush_timeout: float = 120.0,
+        max_depth_m: float = 6.0,
     ) -> None:
         if os.environ.get(SHARED_CONTAINER_ENV, "").strip():
             raise SidecarError(

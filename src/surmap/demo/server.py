@@ -119,7 +119,22 @@ DEPTH_STOPS: tuple[tuple[float, tuple[int, int, int]], ...] = (
 OverlayPoint = dict[str, float | str]
 
 
-def depth_colour(depth_m: float) -> str:
+@dataclass(frozen=True)
+class StreamBackendOptions:
+    """How the live sidecar is configured for one prepared dataset."""
+
+    cam0_yaml: str
+    cam1_yaml: str
+    width: int
+    height: int
+    max_depth_m: float
+
+
+def stream_backend_options(prepared: PreparedDataset) -> StreamBackendOptions:
+    raise NotImplementedError("TODO(kitti-demo): stream_backend_options")
+
+
+def depth_colour(depth_m: float, stops: tuple[float, float, float] = (1.0, 3.0, 6.0)) -> str:
     """Overlay colour for a depth: red near, orange mid, teal far."""
     rgb = DEPTH_STOPS[0][1] if depth_m <= DEPTH_STOPS[0][0] else DEPTH_STOPS[-1][1]
     for (low, low_rgb), (high, high_rgb) in itertools.pairwise(DEPTH_STOPS):
@@ -440,6 +455,10 @@ class DemoPlayer:
                 "dropped_frames": backend.dropped_frames,
             },
         )
+
+    @property
+    def fps(self) -> float:
+        raise NotImplementedError("TODO(kitti-demo): fps")
 
     def _backend(self) -> SidecarRtabmapBackend | LiveSlamBackend:
         if self._backend_factory is not None:

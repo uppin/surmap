@@ -428,3 +428,35 @@ def test_sidecar_image_builds_for_the_pinned_image_platform() -> None:
         "surmap/rtabmap-stream:abc",
         "deploy/rtabmap-stream",
     ]
+
+
+def _hello(fake: FakeProcess) -> dict[str, object]:
+    (length,) = struct.unpack("<I", bytes(fake.written[:4]))
+    hello: dict[str, object] = json.loads(bytes(fake.written[4 : 4 + length]))
+    return hello
+
+
+def test_hello_carries_the_keyframe_depth_cap() -> None:
+    # Given a backend for a street scene, mapping out to 30 m
+    holder: list[FakeProcess] = []
+
+    def factory(argv: list[str]) -> FakeProcess:
+        holder.append(FakeProcess(argv))
+        return holder[-1]
+
+    backend = StreamingRtabmapBackend(
+        cam0_yaml=CAM_YAML, cam1_yaml=CAM_YAML, process_factory=factory, max_depth_m=30.0
+    )
+    backend.close()
+
+    # When / Then the sidecar is told the cap in its hello
+    assert _hello(holder[0])["max_depth_m"] == 30.0
+
+
+def test_the_keyframe_depth_cap_defaults_to_the_indoor_six_metres() -> None:
+    # Given / When a backend starts without a cap
+    holder: list[FakeProcess] = []
+    _backend(holder).close()
+
+    # Then the hello carries the indoor default
+    assert _hello(holder[0])["max_depth_m"] == 6.0
