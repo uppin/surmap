@@ -1,9 +1,13 @@
 # SurMap architecture — passive survey
 
-Status: design, plus a Python scaffold in `src/surmap/` implementing
-the §6 contracts, geometry, motion classification, and the SLAM
-backend interface (RTAB-Map adapter + in-memory backend for tests).
-Stack: Python (uv-managed). Three machines, defined in §2.
+Status: design in this document, plus the Python on `main` under
+`src/surmap/` (survey servers, stereo, Coral detection, RTAB-Map
+sidecar and streaming demo, moving objects, a SAM 3.1 ONNX adapter
+tested with a fake model, and the Muse Spark scene-note client in
+§3.2). GPS-tied map export, mask projection, and the Gazebo world
+are not on `main`. They are on open pull requests named in
+[HACKATHON.md](../HACKATHON.md). Stack: Python (uv-managed). Three
+machines, defined in §2.
 
 ## 1. Scope boundary
 
@@ -48,22 +52,34 @@ Its output is never fed back as a control signal.
 
 ### 2.2 Machine 2 — base station
 
-- ROS2 workstation with an NVIDIA RTX 5060 Ti.
-- Runs SAM 3.1, stereo depth / point-cloud reconstruction, fusion, the
-  semantic map builder, and the client that calls the LLM Models API.
+- A workstation with an NVIDIA RTX 5060 Ti. ROS 2 node names in §4.2
+  are design intent. No ROS 2 package is in this repository.
+- On `main` the station process can serve `StationSamService`. The
+  ONNX SAM adapter is opt-in and is tested with a fake model. The
+  scene-note client is §3.2. Fusion, the semantic map builder, and
+  mask projection are not on `main`.
 - Consumes survey data only; issues no commands to the drone.
 
 ### 2.3 Machine 3 — simulation
 
-- Hardware and software not yet chosen.
 - Purpose: develop and test the pipeline without flying — synthetic
   stereo pairs with known ground-truth geometry and GPS, plus replay of
   sessions recorded by machine 1.
 - Contract: whatever this machine produces must be indistinguishable in
   format from a recorded real session (§5), so base-station code cannot
   tell simulation from flight data.
-- Simulator candidates (Gazebo, Isaac Sim, a simple custom renderer,
-  pure rosbag/session replay) are explicitly not yet evaluated.
+- On `main` there is no Gazebo world and no `docs/simulation/`
+  directory. `GpsCheckpoint` in `surmap.types` has no caller here.
+- Open pull requests, not merged:
+  [PR #18](https://github.com/uppin/surmap/pull/18) exports a
+  Gazebo/PX4 SITL capture to a EuRoC session.
+  [PR #48](https://github.com/uppin/surmap/pull/48) (every commit of
+  [PR #39](https://github.com/uppin/surmap/pull/39), plus
+  `docs/segmentation-protocol-guidelines.md`) adds a fictional
+  civilian earthquake-and-flood block and `docs/simulation/px4-sitl.md`.
+  This file does not link to that runbook, because it is not on `main`.
+- Where those PX4 notes say the vehicle is armed, that is PX4's
+  motor-enable state. SurMap does not set it.
 
 ### 2.4 Optional hardware: Raspberry Pi AI Camera
 
@@ -84,7 +100,7 @@ use it. A non-Meta choice must name the gap it fills, here.
 | Job | Model | Meta? | Notes |
 |---|---|---|---|
 | Segmentation + video tracking (base) | SAM 3.1 | Yes | §3.1 |
-| Semantic labelling (API) | Meta Llama, newest available via the chosen Models API | Yes, preferred | §3.2 |
+| Scene note (API) | Muse Spark `muse-spark-1.3` on the Meta Model API | Yes | §3.2. Per-object labels on PR #48/#39 use Baseten Muse Spark Open |
 | Object detection (Edge TPU) | SSD MobileNet V2 or EfficientDet-Lite, Edge TPU-compiled `.tflite` | No | Meta publishes no Edge TPU detector; Coral requires Edge TPU-compiled TFLite. Final choice by CM5 benchmark |
 | Object tracking (on-board) | Lightweight box tracker (Kalman / IoU association) over detector output | No | Classical algorithm, not a learned model. SAM 3.1 also tracks, but on the base station, after the fact / downstream |
 | Pose and mapping | RTAB-Map | No | SLAM system, not a learned model; no Meta equivalent |
@@ -95,7 +111,8 @@ use it. A non-Meta choice must name the gap it fills, here.
 - SAM 3 (Meta, 2025-11-19) introduced Promptable Concept Segmentation:
   given a short noun phrase, an image exemplar, or both, it detects,
   segments, and tracks every matching instance in image or video, with
-  stable identities, alongside the point/box/mask prompts of earlier SAMs.
+  stable track identities (not a person's identity), alongside the
+  point/box/mask prompts of earlier SAMs.
 - SAM 3.1 (Meta, 2026-03-27) is a drop-in replacement that adds object
   multiplexing — up to 16 objects tracked in one forward pass — roughly
   doubling video throughput.
@@ -105,7 +122,8 @@ use it. A non-Meta choice must name the gap it fills, here.
 - Fit to this project: concept prompts can come from the on-board
   detector's coarse labels (e.g. "car", "roof"), so the Coral's cheap
   detections steer SAM 3.1's expensive, precise segmentation, and SAM
-  3.1's video identities give landmarks temporal consistency.
+  3.1's video track ids give landmarks temporal consistency. Those ids
+  are not a person's identity.
 - RTX 5060 Ti sizing is unverified: Meta's throughput figures (32 fps
   video with multiplexing) are measured on an H100.
   Before committing, measure on the actual card: peak VRAM at the
@@ -116,23 +134,41 @@ use it. A non-Meta choice must name the gap it fills, here.
 - Fallback if 3.1 does not fit or run acceptably: SAM 3, then SAM 2,
   in that order; the fusion contract (§5) does not change.
 
-### 3.2 LLM via Models API (semantic labelling)
+### 3.2 Scene note and labels
 
-- Called from the base station, once per candidate landmark (and again
-  when a landmark gains substantial new observations).
-- Input: object crop(s), SAM mask statistics, on-board coarse label,
-  map position and GPS, neighbouring landmark labels.
-- Output: canonical semantic label, short description, confidence,
-  and optionally concept phrases to re-prompt SAM 3.1 with.
-- Model choice: the newest Meta Llama model the chosen Models API
-  offers at integration time. The API provider and exact model ID are
-  open decisions; the exact model ID, provider, and prompt version are
-  recorded on every `Landmark` (§5) so labels stay reproducible.
-- Non-Meta fallback is permitted only if no Llama model on the API can
-  consume the needed input (e.g. image crops) at acceptable cost/latency;
-  that reason must be recorded here before use.
-- The LLM labels what was observed. It makes no mission or flight
-  decisions in this phase.
+The labeller the code calls is Muse Spark. There is no Llama client
+in this repository.
+
+**Scene note, on `main`.** `MetaMuseSceneClient`
+(`src/surmap/labelling/meta_muse.py`) posts one JPEG and the on-board
+label strings to `POST https://api.meta.ai/v1/responses`. The default
+model id is `muse-spark-1.3`. Auth is `Authorization: Bearer` from
+`MODEL_API_KEY`. `SURMAP_META_MODEL` or the constructor may select
+another covered id. The client refuses Muse Wonder Full and the
+Baseten slug `meta-models/muse-spark-open-1026`. The prompt asks for
+a civilian search-and-rescue description and for no flight advice.
+No demo on `main` calls this client. `SURMAP_LIVE_META=1` gates the
+opt-in test only; the client does not read that variable.
+
+**Per-object labels, not on `main`.** PR #48 (and #39) add
+`BasetenMuseLabelClient` (`src/surmap/labelling/baseten_muse.py`).
+It posts one JPEG crop to Baseten as
+`meta-models/muse-spark-open-1026`. The map point is an argument and
+is not sent. A live `scripts/mission_demo.py --live` start calls
+`build_live_services`, which raises unless `SURMAP_LIVE_BASETEN=1`
+and `BASETEN_API_KEY` is non-blank, and unless `SURMAP_LIVE_META=1`
+and `MODEL_API_KEY` is non-blank. That is the current gate. The
+offline mission uses a fixture label and a fixture scene note and
+does not construct these clients.
+
+**Ask the map, not on `main`.** PR #41 calls `muse-wonder-1.0` for
+questions over a snapshot. That is not the scene-note model and not
+the Baseten labeller.
+
+An earlier draft of this section named the newest Meta Llama model
+and a per-landmark loop that re-prompts SAM. No code does that. The
+clients above do not return a confidence field, and they do not emit
+concept phrases for SAM.
 
 ### 3.3 On-board detection and tracking (CM5 + Coral Edge TPU)
 
@@ -207,7 +243,7 @@ session through the same messages.
 | `surmap_depth` | Stereo matching → depth → point cloud, each point carrying source pixel `(u, v)` and `frame_id` |
 | `surmap_sam` | SAM 3.1 (RTX 5060 Ti): segment/track one video channel; concept prompts from on-board coarse labels |
 | `surmap_fuse` | Project SAM masks onto the point cloud using RTAB-Map poses → 3D object regions with full provenance |
-| `surmap_landmarks` | Cluster fused regions into landmarks; call the LLM Models API for semantic labels |
+| `surmap_landmarks` | Design name only. No such node is in the tree. The scene-note client that exists is §3.2 (`muse-spark-1.3`) |
 | `surmap_map` | Merge landmarks + geometry into the semantic map; anchor to GPS; version and export snapshots |
 
 One drone's footage at a time in this phase.
@@ -239,7 +275,7 @@ Machine 2 (ROS2):
          ─► surmap_sam (SAM 3.1, concept prompts from on-board labels)
          ─► fuse (masks × cloud × RTAB-Map pose; refines the on-board
             box-based object points with true mask boundaries)
-         ─► landmarks ─► LLM via Models API (semantic labels)
+         ─► landmarks ─► Muse Spark scene note (`muse-spark-1.3`, §3.2)
          ─► semantic map (GPS-anchored, incrementally updated)
 ```
 
@@ -268,7 +304,8 @@ wall-clock anchor recorded once per session.
 
 - `Detection`: `frame_id`, box, coarse label, score, detector model ID
 - `Track`: `track_id`, list of `Detection` references, first/last seen
-- Track IDs are on-board-local; SAM 3.1 video identities are base-local.
+- Track IDs are on-board-local. SAM 3.1 video track ids are base-local.
+  Neither id is a person's identity.
   `surmap_fuse` records the mapping between them, never assumes equality
 
 ### `ObjectPoints` (on-board, per track per observation)
@@ -390,12 +427,12 @@ The wire contract for both is `surmap.survey.v1`
 (`proto/surmap/survey/v1/survey.proto`): two bidirectional ConnectRPC
 streams with the same input — a config message (stereo calibration,
 plus what the requester wants) followed by raw per-channel video frames.
-`Cm5SurveyService` (Board API) answers with designated point batches
-and requested video channels; `StationSamService` (GPU API) answers
+`Cm5SurveyService` (Board API) answers with point batches and
+requested video channels; `StationSamService` (GPU API) answers
 with SAM detection vectors keyed by the requester-assigned `frame_id`.
-Outputs are told apart by an int32 designation: `1` is the RTAB-Map
-static scene, `2`/`3` are video channels 0/1, and `100 + track_id`
-groups one tracked object's points. The Board API is served by
+A designation is a map-layer id (the proto field name is unchanged):
+`1` is the RTAB-Map static scene, `2`/`3` are video channels 0/1, and
+`100 + track_id` groups one tracked object's points. The Board API is served by
 `Cm5SurveyService.StreamSurvey` (`surmap.survey.cm5_server`): completed
 stereo pairs drive the `SlamBackend` port and an object-point source,
 and their points are streamed incrementally — spawned only, never
@@ -411,9 +448,12 @@ requester-assigned `frame_id`; the stream's analysis mode decides
 whether frames queue (lag) or drop while the detector is busy. Both
 servers run as processes (`python -m surmap.survey.cm5_main`,
 `python -m surmap.survey.station_main`) and deploy over SSH as systemd
-services — see `docs/deployment.md`. They serve their in-memory
-adapters until the hardware adapters (RTAB-Map, Coral, SAM 3.1) land
-behind the existing ports.
+services — see `docs/deployment.md`. Defaults are still the
+in-memory adapters: CM5 `--slam-backend inmemory` and `--detector none`,
+station `--detector memory` (no boxes). Opt-in flags select the
+RTAB-Map Docker sidecar and the Coral detector. `--detector sam3`
+loads the ONNX adapter; the only ONNX file in the tree is the fake
+model under `tests/fixtures/sam3_fake/`.
 
 ## 11. Deferred, explicitly
 
@@ -435,15 +475,18 @@ Revisit only after the passive pipeline works end to end on real footage:
   procedure in [camera-elp-stereo.md](camera-elp-stereo.md).
   Includes the unpublished-baseline problem; survey altitude envelope
   follows from its measured depth range.
-- Edge TPU detector choice (SSD MobileNet V2 vs. EfficientDet-Lite)
-  and tracker algorithm — by CM5 + Coral benchmark on real footage.
+- On-device benchmark of the Edge TPU profiles. The code default is
+  `efficientdet-lite0`. The tracker in tree is the greedy IoU tracker.
 - SAM 3.1 on the RTX 5060 Ti: installed VRAM variant (8 vs 16 GB),
   measured throughput/VRAM, input resolution, keyframe rate,
   video-mode vs per-image mode.
-- Models API provider; exact Meta Llama model ID; whether image crops
-  are sent; labelling cost/latency budget per session.
+- Scene-note model id is `muse-spark-1.3` (§3.2). Still open: labelling
+  cost and latency per session. Per-object labels, on PR #48/#39, are
+  Baseten `meta-models/muse-spark-open-1026` and are required for a
+  live mission (`SURMAP_LIVE_BASETEN=1`).
 - Link drone ↔ base station (Wi-Fi / LTE / other) and its bandwidth.
-- Simulation machine: hardware and software (§2.3).
+- Simulation machine hardware. Software for the local path is on
+  PR #18 and PR #48, not on `main` (§2.3).
 - GPS receiver model; GPS checkpoint rate and sync procedure.
 - Depth: object-ROI depth is on-board by design (§3.3); whether full-frame
   depth is also computed on the CM5 or only on the base station depends
