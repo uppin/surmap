@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import math
 import os
 import shutil
 from collections.abc import Callable
@@ -60,6 +61,7 @@ _RIG = StereoRig(fx=100.0, fy=100.0, cx=50.0, cy=40.0, baseline_m=0.12)
 _POLYGON = ((20.0, 10.0), (80.0, 10.0), (80.0, 70.0), (20.0, 70.0))
 _FRAME_WIDTH = 120
 _FRAME_HEIGHT = 80
+_LABEL_CROP_PADDING_PX = 16
 _Segmenter = Callable[[RawFrame], tuple[SamDetection, ...]]
 _MAP_BACKEND_FIXTURE = "fixture-cloud"
 _MAP_BACKEND_LIVE = "live-rtabmap"
@@ -309,6 +311,7 @@ def run_live_mission(output_dir: Path, capture: Path) -> MissionResult:
                 raw,
                 claimed,
                 detection.label,
+                detection.box_xyxy,
             )
     scene_note = note_client.note(labels or ["none"], _as_jpeg(first_jpeg))
     origin_gps = gps or (
@@ -469,6 +472,7 @@ def _perceive_fixture(
             raw,
             claimed,
             detection.label,
+            detection.box_xyxy,
         )
     scene_note = _FixtureSceneNote().note(labels, _FIXTURE_JPEG)
     return tracks, detections, clouds, descriptions, model_ids, scene_note
@@ -506,6 +510,38 @@ class _FixtureSceneNote:
         return "Fixture scene note for a civilian search-and-rescue map. Not a live model call."
 
 
+def detection_crop_jpeg(
+    image: bytes,
+    box_xyxy: tuple[float, float, float, float],
+    *,
+    padding_px: int = _LABEL_CROP_PADDING_PX,
+) -> bytes:
+    """JPEG of the detection box plus padding, clamped to the frame.
+
+    Bytes Pillow cannot decode are returned unchanged so a recorded
+    fixture that is not a real image still reaches the fixture labeller.
+    """
+    if padding_px < 0:
+        raise ValueError("padding_px must be non-negative")
+    try:
+        with Image.open(io.BytesIO(image)) as opened:
+            rgb = opened.convert("RGB")
+    except Exception:
+        return image
+    width, height = rgb.size
+    x0, y0, x1, y1 = box_xyxy
+    left = max(0, math.floor(x0) - padding_px)
+    top = max(0, math.floor(y0) - padding_px)
+    right = min(width, math.ceil(x1) + padding_px)
+    bottom = min(height, math.ceil(y1) + padding_px)
+    if right <= left or bottom <= top:
+        return image
+    crop = rgb.crop((left, top, right, bottom))
+    buffer = io.BytesIO()
+    crop.save(buffer, format="JPEG", quality=90)
+    return buffer.getvalue()
+
+
 def _append_track(
     tracks: list[ObjectTrack3D],
     detections: list[SurvivorDetection],
@@ -517,9 +553,10 @@ def _append_track(
     raw: RawFrame,
     claimed: tuple[Vec3, ...],
     coarse_label: str,
+    box_xyxy: tuple[float, float, float, float],
 ) -> None:
     centre = centroid(claimed)
-    labelled = labeller.label(raw.data, coarse_label, centre)
+    labelled = labeller.label(detection_crop_jpeg(raw.data, box_xyxy), coarse_label, centre)
     track_id = len(tracks) + 1
     tracks.append(
         ObjectTrack3D(

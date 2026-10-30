@@ -4,18 +4,21 @@ Live-map tests stand in for ``StreamingRtabmapBackend`` at the opener
 seam. They do not start Docker.
 """
 
+import io
 import json
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from surmap.labelling.baseten_muse import BasetenMuseLabelClient, ObjectLabel
 from surmap.labelling.meta_muse import MetaMuseSceneClient
 from surmap.mission.demo import (
     MissionConfigError,
     _live_segmenter,
+    detection_crop_jpeg,
     live_map_backend,
     live_sam_prompt,
     open_live_map,
@@ -200,6 +203,58 @@ def test_the_live_meta_segmenter_is_built_with_that_prompt(
 
     # Then the detector is asked for that phrase
     assert prompts == ["survivor"]
+
+
+def test_a_detection_crop_is_the_box_plus_padding() -> None:
+    # Given a 64x48 frame and a box inset from every edge
+    image = Image.new("RGB", (64, 48), (12, 24, 36))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+
+    # When the labeller crop is cut with 4 px of padding
+    crop = detection_crop_jpeg(buffer.getvalue(), (10.0, 8.0, 30.0, 28.0), padding_px=4)
+    with Image.open(io.BytesIO(crop)) as opened:
+        size = opened.size
+
+    # Then the JPEG is that padded box
+    assert crop.startswith(b"\xff\xd8")
+    assert size == (28, 28)
+
+
+def test_an_undecodable_fixture_image_is_left_unchanged() -> None:
+    # Given the recorded fixture bytes, which are not a picture
+    fixture = bytes.fromhex("ffd8ffd9")
+
+    # When a crop is requested
+    crop = detection_crop_jpeg(fixture, (1.0, 1.0, 4.0, 4.0))
+
+    # Then the fixture labeller still receives those bytes
+    assert crop == fixture
+
+
+def test_the_live_mission_sends_muse_a_crop_around_the_detection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a capture and a detection whose box does not fill the 64x48 frame
+    _allow_live_flags(monkeypatch)
+    _block_network(monkeypatch)
+    recording = _RecordingMap(snapshot=(_MAP_POINT,))
+    crops: list[bytes] = []
+    monkeypatch.setattr("surmap.mission.demo.open_live_map", lambda _calibration: recording)
+    monkeypatch.setattr(MetaSamDetector, "detect", _detect_inset_person)
+    monkeypatch.setattr(BasetenMuseLabelClient, "label", _remembering_jpeg(crops))
+    monkeypatch.setattr(MetaMuseSceneClient, "note", _scene_note)
+
+    # When the live mission labels the claimed point
+    run_live_mission(tmp_path, _CAPTURE)
+
+    # Then the JPEG is smaller than the capture frame
+    assert crops
+    with Image.open(io.BytesIO(crops[0])) as opened:
+        width, height = opened.size
+    assert width < 64
+    assert height < 48
 
 
 def test_open_live_map_builds_the_streaming_backend_from_the_capture_calibration(
@@ -397,6 +452,37 @@ def _person_mask() -> SamDetection:
 async def _detect_person(self: object, frame: RawFrame) -> tuple[SamDetection, ...]:
     del self, frame
     return (_person_mask(),)
+
+
+async def _detect_inset_person(self: object, frame: RawFrame) -> tuple[SamDetection, ...]:
+    del self, frame
+    return (
+        SamDetection(
+            label="person",
+            score=0.9,
+            box_xyxy=(28.0, 20.0, 36.0, 30.0),
+            mask_polygon=((28.0, 20.0), (36.0, 20.0), (36.0, 30.0), (28.0, 30.0)),
+            track_id=None,
+        ),
+    )
+
+
+def _remembering_jpeg(
+    crops: list[bytes],
+) -> Callable[[object, bytes, str, Vec3], ObjectLabel]:
+    def label(self: object, jpeg: bytes, coarse_label: str, xyz: Vec3) -> ObjectLabel:
+        del self, coarse_label
+        crops.append(jpeg)
+        return ObjectLabel(
+            label="survivor",
+            description="survivor in the disaster block",
+            confidence=None,
+            model_id="test-double",
+            raw_text="survivor",
+            map_point=xyz,
+        )
+
+    return label
 
 
 def _remembering_label(
