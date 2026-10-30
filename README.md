@@ -62,11 +62,15 @@ RTAB-Map tracked in that frame — rectified keypoints mapped back onto
 the raw image through the rectification and lens distortion — coloured
 by depth (red near, orange mid, teal far; without RTAB-Map the numpy
 stereo matcher's points are shown instead). The map panel is a
-top-down floor plan of the keyframes RTAB-Map's graph keeps, each point
-in its camera intensity, re-placed whenever the graph is re-optimised;
+top-down floor plan of the keyframes RTAB-Map's graph keeps, rendered
+server-side from every map point into one image (each pixel the mean
+camera intensity of its points, more opaque where points pile up, so
+walls and edges read as lines) inside an extent that only grows, and
+re-rendered whenever the graph is re-optimised;
 a final optimized graph is drawn when playback ends. A yellow wedge on
-the floor plan marks the camera for the frame on screen — its position,
-heading and horizontal field of view. The detector runs
+the floor plan marks the camera for the frame on screen — its position
+after RTAB-Map's map correction (so it stays on its trajectory after
+loop closures), heading and horizontal field of view. The detector runs
 on its own worker thread, so it never stalls playback. Datasets are registry entries in `surmap.demo.datasets`
 (`--list-datasets`): the first pick downloads and SHA-256-verifies
 the zip into the cache (`~/.cache/surmap/demo-datasets`, override
