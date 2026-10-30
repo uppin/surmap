@@ -11,7 +11,11 @@ from surmap.labelling.baseten_muse import (
     LabelClient,
     ObjectLabel,
 )
-from surmap.labelling.meta_muse import MetaMuseSceneClient, MetaMuseSceneError
+from surmap.labelling.meta_muse import (
+    MetaMuseLabelClient,
+    MetaMuseSceneClient,
+    MetaMuseSceneError,
+)
 from surmap.labelling.modal_muse import (
     ModalMuseClient,
     ModalMuseConfigError,
@@ -24,6 +28,7 @@ __all__ = [
     "BasetenRequestError",
     "EmptyLabelError",
     "LabelClient",
+    "MetaMuseLabelClient",
     "MetaMuseSceneClient",
     "MetaMuseSceneError",
     "ModalMuseClient",

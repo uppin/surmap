@@ -4,18 +4,24 @@ Live-map tests stand in for ``StreamingRtabmapBackend`` at the opener
 seam. They do not start Docker.
 """
 
+import io
 import json
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
-from surmap.labelling.baseten_muse import BasetenMuseLabelClient, ObjectLabel
-from surmap.labelling.meta_muse import MetaMuseSceneClient
+from surmap.labelling.baseten_muse import ObjectLabel
+from surmap.labelling.meta_muse import MetaMuseLabelClient, MetaMuseSceneClient
 from surmap.mission.demo import (
     MissionConfigError,
+    build_live_services,
+    detection_crop_jpeg,
     live_map_backend,
+    live_raw_frame,
+    live_sam_prompt,
     open_live_map,
     resolve_live_session,
     run_live_mission,
@@ -156,6 +162,101 @@ def test_live_mission_names_an_incomplete_capture_before_it_asks_for_provider_fl
 
     # Then the incomplete capture is the error, and no provider is mentioned
     assert "SURMAP_LIVE" not in str(raised.value)
+
+
+def test_meta_alone_selects_meta_sam_labels_and_scene_note(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given only the Meta flag and its key
+    monkeypatch.setenv("SURMAP_LIVE_META", "1")
+    monkeypatch.setenv("MODEL_API_KEY", "secret-model-key")
+    monkeypatch.delenv("SURMAP_LIVE_BASETEN", raising=False)
+    monkeypatch.delenv("BASETEN_API_KEY", raising=False)
+    monkeypatch.delenv("SURMAP_LIVE_MODAL", raising=False)
+
+    # When live services are resolved
+    services = build_live_services()
+
+    # Then SAM, labels, and the scene note are all Meta, and Baseten is not required
+    assert services.sam == "meta"
+    assert services.labels == "meta"
+    assert services.scene_note == "meta"
+
+
+def test_baseten_and_modal_remain_fallbacks_when_meta_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given Modal SAM and Baseten labels, and no Meta flag
+    monkeypatch.delenv("SURMAP_LIVE_META", raising=False)
+    monkeypatch.setenv("SURMAP_LIVE_MODAL", "1")
+    monkeypatch.setenv("MODAL_SAM_URL", "https://modal.example/sam")
+    monkeypatch.setenv("SURMAP_LIVE_BASETEN", "1")
+    monkeypatch.setenv("BASETEN_API_KEY", "secret-baseten-key")
+
+    # When live services are resolved
+    services = build_live_services()
+
+    # Then SAM is Modal, labels are Baseten, and the Meta scene note is not selected
+    assert services.sam == "modal"
+    assert services.labels == "baseten"
+    assert services.scene_note == "none"
+
+
+def test_live_sam_prompt_defaults_to_person(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given no prompt override
+    monkeypatch.delenv("SURMAP_SAM_PROMPT", raising=False)
+
+    # Then the live SAM noun is person
+    assert live_sam_prompt() == "person"
+
+    # When the operator sets a noun
+    monkeypatch.setenv("SURMAP_SAM_PROMPT", "roof")
+
+    # Then that noun is the prompt
+    assert live_sam_prompt() == "roof"
+
+
+def test_a_png_capture_frame_is_sent_as_raw_rgb_not_png() -> None:
+    # Given the checked-in capture's left PNG
+    image = (_CAPTURE / "images" / "left_000.png").read_bytes()
+
+    # When it is prepared for SAM
+    frame = live_raw_frame(0, 1, 64, 48, image)
+
+    # Then Meta SAM sees packed RGB, not a png encoding it rejects
+    assert frame.encoding == "raw_rgb"
+    assert frame.encoding != "png"
+    assert len(frame.data) == frame.width * frame.height * 3
+
+
+def test_a_jpeg_capture_frame_is_sent_as_mjpeg() -> None:
+    # Given JPEG bytes
+    buffer = io.BytesIO()
+    Image.new("RGB", (8, 6), (10, 20, 30)).save(buffer, format="JPEG")
+
+    # When it is prepared for SAM
+    frame = live_raw_frame(0, 1, 8, 6, buffer.getvalue())
+
+    # Then the encoding is mjpeg and the bytes are unchanged
+    assert frame.encoding == "mjpeg"
+    assert frame.data == buffer.getvalue()
+
+
+def test_detection_crop_jpeg_is_a_padded_jpeg_of_the_box() -> None:
+    # Given a wide frame and a box in the corner
+    image = Image.new("RGB", (80, 40), (0, 0, 0))
+    image.paste((255, 0, 0), (10, 10, 20, 20))
+    raw = io.BytesIO()
+    image.save(raw, format="PNG")
+
+    # When the box is cropped with the default pad
+    cropped = detection_crop_jpeg(raw.getvalue(), (10.0, 10.0, 20.0, 20.0))
+
+    # Then the labeller receives a JPEG smaller than the full frame
+    assert cropped.startswith(b"\xff\xd8")
+    with Image.open(io.BytesIO(cropped)) as opened:
+        assert opened.size[0] < 80
+        assert opened.size[1] < 40
 
 
 def test_live_services_refuse_a_provider_whose_flag_is_unset(
@@ -336,6 +437,84 @@ def test_live_mission_forwards_the_depth_cap_to_the_streaming_backend(
     assert seen["min_disparity_px"] == 3.0
 
 
+def test_live_meta_mission_calls_meta_sam_meta_labels_and_records_them(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given Meta only, a streaming map, and fakes that record what they were given
+    monkeypatch.setenv("SURMAP_LIVE_META", "1")
+    monkeypatch.setenv("MODEL_API_KEY", "secret-model-key")
+    monkeypatch.delenv("SURMAP_LIVE_BASETEN", raising=False)
+    monkeypatch.delenv("BASETEN_API_KEY", raising=False)
+    monkeypatch.delenv("SURMAP_LIVE_MODAL", raising=False)
+    _block_network(monkeypatch)
+    recording = _RecordingMap(snapshot=(_MAP_POINT,))
+    seen: dict[str, object] = {}
+
+    async def detect(self: MetaSamDetector, frame: RawFrame) -> tuple[SamDetection, ...]:
+        seen["encoding"] = frame.encoding
+        seen["prompt"] = self._prompt
+        return (
+            SamDetection(
+                label="person",
+                score=None,
+                box_xyxy=(0.0, 0.0, 63.0, 47.0),
+                mask_polygon=((0.0, 0.0), (63.0, 0.0), (63.0, 47.0), (0.0, 47.0)),
+            ),
+        )
+
+    def label(self: object, jpeg: bytes, coarse_label: str, xyz: Vec3) -> ObjectLabel:
+        del self, coarse_label
+        seen["jpeg"] = jpeg
+        seen["label_model"] = "muse-spark-1.3"
+        return ObjectLabel(
+            label="survivor",
+            description="a person in the crop",
+            confidence=None,
+            model_id="muse-spark-1.3",
+            raw_text="survivor",
+            map_point=xyz,
+        )
+
+    def note(self: MetaMuseSceneClient, labels: list[str], frame_jpeg: bytes) -> str:
+        del labels, frame_jpeg
+        seen["scene_model"] = self._model
+        return "Scene note from the test double."
+
+    monkeypatch.setattr("surmap.mission.demo.open_live_map", lambda _calibration: recording)
+    monkeypatch.setattr(MetaSamDetector, "detect", detect)
+    monkeypatch.setattr("surmap.mission.demo.MetaMuseLabelClient.label", label)
+    monkeypatch.setattr(MetaMuseSceneClient, "note", note)
+
+    # When the live mission runs
+    result = run_live_mission(tmp_path, _CAPTURE)
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+    snapshot = json.loads(result.snapshot_path.read_text(encoding="utf-8"))
+
+    # Then SAM saw raw RGB, labels came from Muse Spark, and the report has no developer notes
+    assert seen["encoding"] == "raw_rgb"
+    assert seen["prompt"] == "person"
+    assert isinstance(seen["jpeg"], bytes)
+    assert seen["jpeg"].startswith(b"\xff\xd8")
+    assert "mapqa" not in report
+    assert "live_rtabmap" not in report
+    assert "No pull request merged" not in result.report_path.read_text(encoding="utf-8")
+    calls = report["meta_calls"]
+    roles = {call["role"] for call in calls}
+    assert roles == {"sam", "label", "scene_note"}
+    sam_calls = [call for call in calls if call["role"] == "sam"]
+    assert sam_calls[0]["model_id"] == "sam-3.1"
+    assert sam_calls[0]["confidences"] == [None]
+    assert sam_calls[0]["elapsed_s"] >= 0
+    label_call = next(call for call in calls if call["role"] == "label")
+    assert label_call["model_id"] == "muse-spark-1.3"
+    scene_call = next(call for call in calls if call["role"] == "scene_note")
+    assert scene_call["model_id"] == "muse-spark-1.3"
+    assert snapshot["landmarks"][0]["model_id"] == "muse-spark-1.3"
+    assert snapshot["meta_calls"][0]["model_id"] == "sam-3.1"
+    assert "secret-model-key" not in result.report_path.read_text(encoding="utf-8")
+
+
 def test_live_mission_projects_the_streaming_snapshot_into_the_map(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -349,7 +528,7 @@ def test_live_mission_projects_the_streaming_snapshot_into_the_map(
         "surmap.mission.demo.open_live_map", lambda _calibration, **_kwargs: recording
     )
     monkeypatch.setattr(MetaSamDetector, "detect", _detect_person)
-    monkeypatch.setattr(BasetenMuseLabelClient, "label", _remembering_label(labelled))
+    monkeypatch.setattr(MetaMuseLabelClient, "label", _remembering_label(labelled))
     monkeypatch.setattr(MetaMuseSceneClient, "note", _scene_note)
 
     # When the live mission runs

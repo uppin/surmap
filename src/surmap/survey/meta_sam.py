@@ -32,8 +32,9 @@ Responses call that returned ``output[]`` plus
   stores the half-open box that parser emits, which matches
   `Sam3Detector`. The mask raster is box-local. The polygon is
   `mask_outline` of that raster, shifted onto the box.
-* A missing ``c`` field is not a score of zero. Those detections are
-  kept with score ``1.0``. ``track_id`` is the wire object id.
+* A missing ``c`` field is not a score of zero and not a score of 1.
+  Those detections are kept with ``score is None``. ``track_id`` is
+  the wire object id.
 
 Assumed, because a live ``sam-3.1`` response was not captured:
 
@@ -226,7 +227,7 @@ def detections_from_output_text(
         if box is None:
             continue
         score = _score(box, mask_record)
-        if score < score_threshold:
+        if score is not None and score < score_threshold:
             continue
         detections.append(
             SamDetection(
@@ -475,12 +476,12 @@ def _reasoning(usage: Mapping[str, object]) -> int | None:
     return value
 
 
-def _score(box: SegmentationBoxRecord, mask_record: SegmentationMaskRecord) -> float:
+def _score(box: SegmentationBoxRecord, mask_record: SegmentationMaskRecord) -> float | None:
     if box.confidence is not None:
         return box.confidence
     if mask_record.confidence is not None:
         return mask_record.confidence
-    return 1.0
+    return None
 
 
 def _track_id(object_id: str) -> int | None:
