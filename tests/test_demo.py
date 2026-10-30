@@ -18,20 +18,20 @@ from PIL import Image
 from surmap.demo.datasets import (
     DATASETS,
     DatasetSpec,
-    DemoCalibration,
     ensure_dataset,
     load_calibration,
     scaled_sensor_yaml,
 )
 from surmap.demo.server import (
     DemoPlayer,
+    depth_colour,
     make_demo_server,
-    project_map_overlay,
     project_overlay,
+    rectified_to_raw,
 )
 from surmap.detection.tracker import TrackedDetection
 from surmap.slam.base import FrameResult
-from surmap.slam.stream_protocol import MapUpdate
+from surmap.slam.stream_protocol import Keypoint, MapUpdate, OdomUpdate, Rectification
 from surmap.slam.streaming import MapCloud
 from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
 from surmap.types import Pose, StereoFramePair, Vec3
@@ -61,7 +61,8 @@ class FakeLiveBackend:
         self,
         cloud: list[tuple[tuple[float, float, float], tuple[int, int, int]]] | None = None,
         trajectory: list[Pose] | None = None,
-        latest: tuple[int, Pose] | None = None,
+        odometry: dict[int, OdomUpdate] | None = None,
+        odometry_lag: int = 0,
     ) -> None:
         entries = cloud if cloud is not None else [((1.0, 2.0, 0.0), (128, 128, 128))]
         self._cloud = MapCloud(
@@ -69,16 +70,28 @@ class FakeLiveBackend:
             np.array([rgb for _, rgb in entries], dtype=np.uint8).reshape(-1, 3),
         )
         self._trajectory = trajectory if trajectory is not None else [Pose(Vec3(0.1, 0.0, 0.0))]
-        self._latest = latest
+        self._odometry = odometry or {}
+        self._odometry_lag = odometry_lag
+        self._arrived_through = 0
+        self.rectification: Rectification | None = a_rectification(
+            rectified=(229.0, 228.5, 183.5, 124.0), raw=(229.0, 228.5, 183.5, 124.0)
+        )
         self.closed = False
         self.dropped_frames = 0
         self.odom_state = "tracking"
-        self.last_odom_frame = 0
         self.keyframe_count = 1
 
+    @property
+    def last_odom_frame(self) -> int:
+        return max((f for f in self._odometry if f <= self._arrived_through), default=0)
+
     def process_frame(self, frame: StereoFramePair) -> FrameResult:
-        self.last_odom_frame = frame.frame_id
+        # Odometry for frame f arrives once frame f + lag has been sent
+        self._arrived_through = frame.frame_id - self._odometry_lag
         return FrameResult(frame.frame_id, frame.t_ns, self._trajectory[-1], ())
+
+    def frame_odometry(self, frame_id: int) -> OdomUpdate | None:
+        return self._odometry.get(frame_id) if frame_id <= self._arrived_through else None
 
     def poll_updates(self) -> list[MapUpdate]:
         return []
@@ -89,13 +102,11 @@ class FakeLiveBackend:
     def map_snapshot(self) -> tuple[Vec3, ...]:
         return tuple(Vec3(*map(float, row)) for row in self._cloud.points.tolist())
 
-    def latest_pose(self) -> tuple[int, Pose] | None:
-        return self._latest
-
     def trajectory(self) -> list[Pose]:
         return self._trajectory
 
     def flush(self) -> list[FrameResult]:
+        self._arrived_through = max(self._odometry, default=0)
         last = self._trajectory[-1]
         return [FrameResult(1, 100, last, self.map_snapshot())]
 
@@ -121,11 +132,17 @@ class BlockingDetector:
         return (TrackedDetection("car", 0.9, (1.0, 2.0, 30.0, 40.0), 7, frame_id),)
 
 
-def load_calibration_for_tests() -> DemoCalibration:
-    """The tiny dataset's calibration at display size: fx 229, cx 183.5, cy 124."""
-    return DemoCalibration(
-        width=376, height=240, fx=229.0, fy=228.5, cx=183.5, cy=124.0, baseline_m=0.11
-    )
+def a_rectification(
+    rotation: tuple[float, ...] = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
+    rectified: tuple[float, float, float, float] = (200.0, 200.0, 100.0, 80.0),
+    raw: tuple[float, float, float, float] = (200.0, 200.0, 100.0, 80.0),
+    distortion: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0),
+) -> Rectification:
+    return Rectification(rotation, rectified, raw, distortion)
+
+
+def _odom_with(*keypoints: Keypoint) -> OdomUpdate:
+    return OdomUpdate(0, 0, Pose(Vec3(0.0, 0.0, 0.0)), False, 1.0, keypoints)
 
 
 def _png_bytes() -> bytes:
@@ -295,11 +312,17 @@ def test_live_map_plots_the_floor_plane_in_point_colour(tmp_path: Path) -> None:
     assert map_event.data["trajectory_xy"] == [[0.5, 2.0]]
 
 
-def test_live_overlay_shows_rtabmap_points_at_their_camera_depth(tmp_path: Path) -> None:
-    # Given a map point 4 m straight ahead of a camera that moved 1 m forward
+def test_live_frame_shows_its_own_tracked_keypoints_once_its_odometry_arrived(
+    tmp_path: Path,
+) -> None:
+    # Given odometry that arrives one frame late, tracking word 5 on
+    # each frame at a slightly different pixel and depth
     fake = FakeLiveBackend(
-        cloud=[((0.0, 0.0, 4.0), (90, 90, 90))],
-        latest=(1, Pose(Vec3(0.0, 0.0, 1.0))),
+        odometry={
+            1: _odom_with(Keypoint(5, 183.5, 124.0, 0.5)),
+            2: _odom_with(Keypoint(5, 190.0, 124.0, 0.6)),
+        },
+        odometry_lag=1,
     )
     player = DemoPlayer(
         _prepared_tiny(tmp_path),  # type: ignore[arg-type]
@@ -308,25 +331,66 @@ def test_live_overlay_shows_rtabmap_points_at_their_camera_depth(tmp_path: Path)
         stereo=MatcherThatMustNotRun(),
     )
 
-    # When a frame is played
-    frame = next(event for event in player.events() if event.kind == "frame")
+    # When playback runs to the end
+    frames = [event for event in player.events() if event.kind == "frame"]
 
-    # Then the overlay is that RTAB-Map point, at the principal point, 3 m away
-    assert frame.data["detections"] == [{"x": 183.5, "y": 124.0, "d": 3.0}]
-    assert frame.data["point_count"] == 1
+    # Then each frame, in order, carries its own frame's keypoint
+    assert [frame.data["frame_id"] for frame in frames] == [1, 2]
+    assert frames[0].data["detections"] == [
+        {"x": 183.5, "y": 124.0, "d": 0.5, "c": depth_colour(0.5)}
+    ]
+    assert frames[1].data["detections"] == [
+        {"x": 190.0, "y": 124.0, "d": 0.6, "c": depth_colour(0.6)}
+    ]
 
 
-def test_overlay_projection_keeps_only_points_in_front_of_the_camera() -> None:
-    # Given one point ahead of and one behind a camera turned 180° about y
-    calibration = load_calibration_for_tests()
-    turned = Pose(Vec3(0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0))
-    points = np.array([[0.0, 0.0, -2.0], [0.0, 0.0, 2.0]], dtype=np.float32)
+def test_a_frame_whose_pair_was_dropped_is_shown_without_keypoints(tmp_path: Path) -> None:
+    # Given RTAB-Map dropped frame 1's pair and tracked frame 2
+    fake = FakeLiveBackend(odometry={2: _odom_with(Keypoint(5, 183.5, 124.0, 2.0))})
+    player = DemoPlayer(
+        _prepared_tiny(tmp_path),  # type: ignore[arg-type]
+        fps=1000.0,
+        backend_factory=lambda: fake,
+    )
 
-    # When they are projected
-    overlay = project_map_overlay(points, turned, calibration)
+    # When playback runs to the end
+    frames = [event for event in player.events() if event.kind == "frame"]
 
-    # Then only the point now in front is drawn, at its depth
-    assert overlay == [{"x": 183.5, "y": 124.0, "d": 2.0}]
+    # Then frame 1 is still shown, with no keypoints, and frame 2 has its own
+    assert [frame.data["frame_id"] for frame in frames] == [1, 2]
+    assert frames[0].data["detections"] == []
+    assert frames[1].data["point_count"] == 1
+
+
+def test_rectified_pixels_map_back_through_the_lens_distortion() -> None:
+    # Given a rectification with barrel distortion k1 = -0.2 and no rotation
+    rectification = a_rectification(distortion=(-0.2, 0.0, 0.0, 0.0))
+
+    # When a rectified pixel half a focal length right of centre is mapped
+    raw = rectified_to_raw(np.array([[200.0, 80.0]]), rectification)
+
+    # Then it lands where the distortion pulls it in: x 0.5 -> 0.475
+    assert raw.tolist() == [[195.0, 80.0]]
+
+
+def test_rectified_pixels_map_back_through_the_rectification_rotation() -> None:
+    # Given a rectification that rotated the raw camera 90 degrees about z
+    rectification = a_rectification(rotation=(0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0))
+
+    # When a rectified pixel half a focal length right of centre is mapped
+    raw = rectified_to_raw(np.array([[200.0, 80.0]]), rectification)
+
+    # Then the raw ray is rotated back: half a focal length up
+    assert raw.tolist() == [[100.0, -20.0]]
+
+
+def test_depth_colours_run_red_near_through_orange_to_teal_far() -> None:
+    # Given / When / Then the ramp's stops, clamped beyond them
+    assert depth_colour(0.2) == "#ff5a3c"
+    assert depth_colour(1.0) == "#ff5a3c"
+    assert depth_colour(3.0) == "#ffb03a"
+    assert depth_colour(6.0) == "#2fd4c4"
+    assert depth_colour(9.0) == "#2fd4c4"
 
 
 def test_a_slow_detector_does_not_stall_playback(tmp_path: Path) -> None:

@@ -26,8 +26,34 @@ class ProtocolError(ValueError):
 
 
 @dataclass(frozen=True)
+class Rectification:
+    """The left camera's stereo rectification, at the configured size.
+
+    `rotation` is OpenCV's R1, row-major (rectified = R1 · raw); the
+    intrinsics are (fx, fy, cx, cy); `distortion` is radial-tangential
+    (k1, k2, p1, p2) of the raw camera.
+    """
+
+    rotation: tuple[float, ...]
+    rectified: tuple[float, float, float, float]
+    raw: tuple[float, float, float, float]
+    distortion: tuple[float, float, float, float]
+
+
+@dataclass(frozen=True)
 class Ready:
     version: int
+    rectification: Rectification | None = None
+
+
+@dataclass(frozen=True)
+class Keypoint:
+    """One feature odometry tracked as an inlier: rectified pixel + depth (m)."""
+
+    word_id: int
+    u: float
+    v: float
+    depth: float
 
 
 @dataclass(frozen=True)
@@ -37,6 +63,7 @@ class OdomUpdate:
     pose: Pose | None
     lost: bool
     ms: float
+    keypoints: tuple[Keypoint, ...] = ()
 
 
 @dataclass(frozen=True)

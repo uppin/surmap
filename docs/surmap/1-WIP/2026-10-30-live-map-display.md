@@ -33,7 +33,21 @@
   - [x] Rebuild the sidecar image; real-container streaming e2e green
   - [x] Fixture script pulls the pinned image for `linux/amd64` (added: same arm64 failure)
   - [x] Sidecar caps keyframe points at 6 m depth (added: far-point outliers stretched the floor plan to 25 × 28 m)
-- [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs, then open the PR ready ·
+- [wf 4] ✅ 2026-10-30 `/red` Red — review feedback: stable keypoint overlay, depth colour ramp · 10 red (3 protocol, 2 streaming, 5 demo); 2 map-projection overlay tests replaced
+  - [x] Protocol v3: ready carries the rectification; odom carries the frame's inlier keypoints
+  - [x] Streaming: rectification and per-frame odometry (with keypoints) exposed
+  - [x] Demo: rectified keypoints map to raw display pixels through rotation + radial-tangential distortion
+  - [x] Demo: a live frame is shown with its own frame's keypoints, once its odometry arrived
+  - [x] Demo: a frame whose pair was dropped is still shown, without keypoints
+  - [x] Demo: depth colour ramp — red near, orange mid, teal far — shared by overlay and legend
+  - [x] Run the new tests (verify they fail for missing implementation)
+- [wf 5] ⬜ `/green` Green — keypoint overlay and colour ramp ·
+  - [ ] Sidecar: `OdometryInfo` inlier keypoints with depth; rectification in ready; v3
+  - [ ] Host: protocol v3, per-frame odometry buffer
+  - [ ] Demo: frame hold-back until odometry, keypoint overlay, map-projection overlay removed
+  - [ ] Page: per-point overlay colour from the server; legend from the same stops
+  - [ ] Rebuild the sidecar image; real-container e2e asserts keypoints arrive
+- [wf 6] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs, then open the PR ready ·
   - [ ] Verification executed — result recorded
   - [ ] `README.md` §Demo — overlay source, colours, Apple Silicon note
   - [ ] Changelog entry `docs/surmap/changelog/2026-10-30-live-map-display.md`
@@ -159,3 +173,14 @@ sidecar and `StereoReconstructor` itself are unchanged.
 - **6 m keyframe depth cap in the sidecar.** At 376 px width,
   `fx·b ≈ 25 px·m`; points beyond 6 m come from 1–2 px disparities and
   stretched the live floor plan to 25 × 28 m (9.5 × 10.8 m after).
+- **Overlay = odometry keypoints, not projected map points (review
+  feedback).** Projecting the map from the newest pose sampled different
+  points each frame, used a pose up to ~24 frames stale, and ignored lens
+  distortion: points swam. Each frame now shows RTAB-Map's own inlier
+  keypoints for that very frame (stable word ids on visual features),
+  mapped rectified → raw through R1ᵀ and the radial-tangential model.
+  Display therefore runs one SLAM latency behind playback.
+- **Depth ramp inverted (pre-existing).** The page computed
+  `hue = 180 - t·180`, drawing near points cyan and far ones red, opposite
+  to its legend. The ramp now lives in Python (`depth_colour`) and the
+  page only paints what it is sent.

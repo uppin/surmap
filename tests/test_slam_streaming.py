@@ -13,7 +13,7 @@ import pytest
 from PIL import Image
 
 from surmap.slam.sidecar import SidecarError
-from surmap.slam.stream_protocol import PROTOCOL_VERSION
+from surmap.slam.stream_protocol import PROTOCOL_VERSION, Keypoint
 from surmap.slam.streaming import StreamingRtabmapBackend, stream_build_argv
 from surmap.types import Pose, StereoFramePair, Vec3
 
@@ -33,13 +33,14 @@ def _frame(frame_id: int) -> StereoFramePair:
 class FakeProcess:
     """Scripted process: test pushes stdout lines; stdin is recorded."""
 
-    def __init__(self, argv: list[str]) -> None:
+    def __init__(self, argv: list[str], ready: dict[str, object] | None = None) -> None:
         self.argv = argv
         self.written = bytearray()
         self.stdin_closed = threading.Event()
         self.terminated = False
         self._lines: queue.Queue[bytes] = queue.Queue()
-        self._lines.put(f'{{"type":"ready","version":{PROTOCOL_VERSION}}}\n'.encode())
+        announced = {"type": "ready", "version": PROTOCOL_VERSION, **(ready or {})}
+        self._lines.put((json.dumps(announced) + "\n").encode())
 
     def write(self, data: bytes) -> None:
         self.written.extend(data)
@@ -68,9 +69,10 @@ def _backend(
     *,
     queue_size: int = 4,
     runner: Callable[[list[str]], None] | None = None,
+    ready: dict[str, object] | None = None,
 ) -> StreamingRtabmapBackend:
     def factory(argv: list[str]) -> FakeProcess:
-        proc = FakeProcess(argv)
+        proc = FakeProcess(argv, ready)
         fake_holder.append(proc)
         return proc
 
@@ -338,18 +340,42 @@ def test_map_cloud_returns_map_frame_points_with_their_colours() -> None:
         backend.close()
 
 
-def test_latest_pose_is_the_newest_odometry_pose() -> None:
-    # Given odometry for frames 1 and 2
+def test_frame_odometry_returns_that_frames_pose_and_keypoints() -> None:
+    # Given odometry for frame 2 carrying one tracked keypoint
     holder: list[FakeProcess] = []
     backend = _backend(holder)
     try:
         backend.process_frame(_frame(1))
-        holder[0].emit(_odom(1, IDENTITY))
-        holder[0].emit(_odom(2, [0, 0, 1, 0, 0, 0, 1]))
-        _eventually(lambda: backend.last_odom_frame == 2, backend)
+        holder[0].emit({**_odom(2, [0, 0, 1, 0, 0, 0, 1]), "keypoints": [[7, 10, 20, 3.5]]})
+        _eventually(lambda: backend.frame_odometry(2) is not None, backend)
 
-        # When / Then the newest pose is frame 2's
-        assert backend.latest_pose() == (2, Pose(Vec3(0.0, 0.0, 1.0)))
+        # When frame 2's odometry is read
+        odom = backend.frame_odometry(2)
+
+        # Then it is that frame's pose and keypoints, and frame 1 has none yet
+        assert odom is not None
+        assert odom.pose == Pose(Vec3(0.0, 0.0, 1.0))
+        assert odom.keypoints == (Keypoint(7, 10.0, 20.0, 3.5),)
+        assert backend.frame_odometry(1) is None
+    finally:
+        backend.close()
+
+
+def test_rectification_is_the_one_the_sidecar_announced() -> None:
+    # Given a sidecar announcing its left camera's rectification
+    announced = {
+        "rotation": [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        "rectified": [200, 200, 100, 80],
+        "raw": [210, 209, 101, 79],
+        "distortion": [-0.28, 0.07, 0, 0],
+    }
+    backend = _backend([], ready={"rectification": announced})
+    try:
+        # When / Then the backend exposes it
+        rectification = backend.rectification
+        assert rectification is not None
+        assert rectification.rectified == (200.0, 200.0, 100.0, 80.0)
+        assert rectification.distortion == (-0.28, 0.07, 0.0, 0.0)
     finally:
         backend.close()
 

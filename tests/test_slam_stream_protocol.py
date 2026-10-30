@@ -9,9 +9,11 @@ from surmap.slam.stream_protocol import (
     PROTOCOL_VERSION,
     GraphUpdate,
     KeyframeUpdate,
+    Keypoint,
     OdomUpdate,
     ProtocolError,
     Ready,
+    Rectification,
     decode_server_line,
     encode_hello,
     encode_pair,
@@ -93,15 +95,63 @@ def test_decode_rejects_malformed_and_version_mismatch() -> None:
         decode_server_line('{"type":"odom","frame_id":1}')
 
 
-def test_protocol_version_is_two_for_coloured_keyframes() -> None:
-    # Given / When a v2 sidecar announces itself
-    ready = decode_server_line('{"type":"ready","version":2}')
+def test_protocol_version_is_three_for_keypoints_and_rectification() -> None:
+    # Given / When a v3 sidecar announces itself without a rectification
+    ready = decode_server_line('{"type":"ready","version":3}')
 
-    # Then it is accepted, and v1 is a mismatch
-    assert PROTOCOL_VERSION == 2
-    assert ready == Ready(2)
+    # Then it is accepted, and v2 is a mismatch
+    assert PROTOCOL_VERSION == 3
+    assert ready == Ready(3)
     with pytest.raises(ProtocolError, match="version mismatch"):
-        decode_server_line('{"type":"ready","version":1}')
+        decode_server_line('{"type":"ready","version":2}')
+
+
+def test_ready_carries_the_left_camera_rectification() -> None:
+    # Given a ready line with the left camera's rectification
+    line = (
+        '{"type":"ready","version":3,"rectification":{'
+        '"rotation":[1,0,0,0,1,0,0,0,1],"rectified":[200,200,100,80],'
+        '"raw":[210,209,101,79],"distortion":[-0.28,0.07,0.0002,0.00002]}}'
+    )
+
+    # When it is decoded
+    ready = decode_server_line(line)
+
+    # Then the rectification is kept, value for value
+    assert ready == Ready(
+        3,
+        Rectification(
+            rotation=(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
+            rectified=(200.0, 200.0, 100.0, 80.0),
+            raw=(210.0, 209.0, 101.0, 79.0),
+            distortion=(-0.28, 0.07, 0.0002, 0.00002),
+        ),
+    )
+
+
+def test_odometry_carries_the_frames_tracked_keypoints() -> None:
+    # Given an odom line with two inlier keypoints as [word_id, u, v, depth]
+    line = (
+        '{"type":"odom","frame_id":3,"t_ns":99,"pose":[0,0,0,0,0,0,1],"lost":false,'
+        '"ms":12.5,"keypoints":[[41,10.5,20.25,1.5],[42,30,40,4]]}'
+    )
+
+    # When it is decoded
+    odom = decode_server_line(line)
+
+    # Then each keypoint keeps its word id, rectified pixel and depth
+    assert isinstance(odom, OdomUpdate)
+    assert odom.keypoints == (Keypoint(41, 10.5, 20.25, 1.5), Keypoint(42, 30.0, 40.0, 4.0))
+
+
+def test_odometry_without_keypoints_has_none() -> None:
+    # Given / When an odom line without a keypoints field is decoded
+    odom = decode_server_line(
+        '{"type":"odom","frame_id":3,"t_ns":99,"pose":null,"lost":true,"ms":1.0}'
+    )
+
+    # Then it carries no keypoints
+    assert isinstance(odom, OdomUpdate) and odom.keypoints == ()
 
 
 def test_keyframe_points_carry_their_colour() -> None:

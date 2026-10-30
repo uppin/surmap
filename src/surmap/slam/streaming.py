@@ -34,6 +34,7 @@ from surmap.slam.stream_protocol import (
     MapUpdate,
     OdomUpdate,
     Ready,
+    Rectification,
     decode_server_line,
     encode_hello,
     encode_pair,
@@ -406,6 +407,13 @@ class StreamingRtabmapBackend:
             except queue.Empty:
                 return drained
 
+    @property
+    def rectification(self) -> Rectification | None:
+        raise NotImplementedError("TODO(live-map-display): rectification")
+
+    def frame_odometry(self, frame_id: int) -> OdomUpdate | None:
+        raise NotImplementedError("TODO(live-map-display): frame_odometry")
+
     def map_snapshot(self) -> tuple[Vec3, ...]:
         return tuple(Vec3(x, y, z) for x, y, z in self.map_cloud().points.tolist())
 
@@ -426,13 +434,6 @@ class StreamingRtabmapBackend:
         if not keyframes:
             return MapCloud(np.zeros((0, 3), np.float32), np.zeros((0, 3), np.uint8))
         return MapCloud(np.concatenate(placed), np.concatenate([kf.colors for kf in keyframes]))
-
-    def latest_pose(self) -> tuple[int, Pose] | None:
-        with self._state_lock:
-            if not self._odom_order:
-                return None
-            frame_id = self._odom_order[-1]
-            return frame_id, self._odom[frame_id]
 
     def trajectory(self) -> list[Pose]:
         with self._state_lock:

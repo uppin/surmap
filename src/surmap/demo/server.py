@@ -48,7 +48,7 @@ from surmap.detection.source import CoralDetectionSource, DetectionSource
 from surmap.detection.tracker import TrackedDetection
 from surmap.slam.base import FrameResult
 from surmap.slam.sidecar import SidecarRtabmapBackend
-from surmap.slam.stream_protocol import MapUpdate
+from surmap.slam.stream_protocol import MapUpdate, OdomUpdate, Rectification
 from surmap.slam.streaming import MapCloud, StreamingRtabmapBackend, pose_rotation
 from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
 from surmap.types import Pose, StereoFramePair, Vec3
@@ -65,7 +65,7 @@ class LiveSlamBackend(Protocol):
     def poll_updates(self) -> list[MapUpdate]: ...
     def map_snapshot(self) -> tuple[Vec3, ...]: ...
     def map_cloud(self) -> MapCloud: ...
-    def latest_pose(self) -> tuple[int, Pose] | None: ...
+    def frame_odometry(self, frame_id: int) -> OdomUpdate | None: ...
     def trajectory(self) -> list[Pose]: ...
     def flush(self) -> list[FrameResult]: ...
     def close(self) -> None: ...
@@ -78,6 +78,8 @@ class LiveSlamBackend(Protocol):
     def last_odom_frame(self) -> int: ...
     @property
     def keyframe_count(self) -> int: ...
+    @property
+    def rectification(self) -> Rectification | None: ...
 
 
 @dataclass(frozen=True)
@@ -103,6 +105,18 @@ def project_overlay(
         step = len(visible) / max_points
         visible = [visible[int(index * step)] for index in range(max_points)]
     return visible
+
+
+def depth_colour(depth_m: float) -> str:
+    """Overlay colour for a depth: red near, orange mid, teal far."""
+    raise NotImplementedError("TODO(live-map-display): depth_colour")
+
+
+def rectified_to_raw(
+    pixels: NDArray[np.float64], rectification: Rectification
+) -> NDArray[np.float64]:
+    """Rectified left-camera pixels to raw (distorted) display pixels."""
+    raise NotImplementedError("TODO(live-map-display): rectified_to_raw")
 
 
 def project_map_overlay(
@@ -318,13 +332,7 @@ class DemoPlayer:
         )
 
     def _map_overlay(self, backend: LiveSlamBackend) -> tuple[list[dict[str, float]], int]:
-        latest = backend.latest_pose()
-        if latest is None:
-            return [], 0
-        pixels, depth = _visible_map_points(
-            backend.map_cloud().points, latest[1], self._calibration
-        )
-        return _overlay_entries(pixels, depth), len(depth)
+        return [], 0  # TODO(live-map-display): keypoint overlay
 
     def _backend(self) -> SidecarRtabmapBackend | LiveSlamBackend:
         if self._backend_factory is not None:
