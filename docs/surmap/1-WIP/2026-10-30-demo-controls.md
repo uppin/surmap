@@ -27,7 +27,8 @@
   - [x] `PlaybackControls` in the player loop (pause keeps releasing held frames)
   - [x] Server catalog, per-scene page/stream, takeover, `/control`
   - [x] Page: scene picker (every scene), download/extract progress bar, Pause/Resume, Restart
-  - [ ] Real check in the browser on EuRoC and KITTI
+  - [x] Real check in the browser on EuRoC — picker, Pause, Restart render; frame 314/2912 at 17.4 fps, 248 overlay points, 0 dropped (user screenshot, 2026-10-30)
+  - [ ] Real check in the browser on KITTI, and a first-pick download with its progress bar
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs, then open the PR ready ·
   - [ ] Verification executed — result recorded
   - [ ] `README.md` §Demo — scene picker and playback controls
