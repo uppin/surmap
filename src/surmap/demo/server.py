@@ -251,10 +251,10 @@ class FloorExtent:
         if not len(xs):
             return self
         return FloorExtent(
-            min(self.min_x, float(xs.min())),
-            max(self.max_x, float(xs.max())),
-            min(self.min_z, float(zs.min())),
-            max(self.max_z, float(zs.max())),
+            min(self.min_x, float(np.min(xs))),
+            max(self.max_x, float(np.max(xs))),
+            min(self.min_z, float(np.min(zs))),
+            max(self.max_z, float(np.max(zs))),
         )
 
     def as_list(self) -> list[float]:
@@ -262,7 +262,7 @@ class FloorExtent:
 
 
 def _first_extent(xs: NDArray[np.float32], zs: NDArray[np.float32]) -> FloorExtent:
-    return FloorExtent(float(xs.min()), float(xs.max()), float(zs.min()), float(zs.max()))
+    return FloorExtent(float(np.min(xs)), float(np.max(xs)), float(np.min(zs)), float(np.max(zs)))
 
 
 def render_floor_plan(xz: NDArray[np.float32], grey: NDArray[np.uint8], extent: FloorExtent) -> str:
