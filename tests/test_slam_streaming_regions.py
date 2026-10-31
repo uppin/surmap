@@ -107,26 +107,29 @@ def test_a_region_query_returns_the_sidecars_answer_for_that_query() -> None:
         backend.close()
 
 
+def ask_concurrently(backend: StreamingRtabmapBackend, *query_ids: int) -> dict[int, RegionResult]:
+    """Ask each query from its own thread at once; their results by query id."""
+    results: dict[int, RegionResult] = {}
+
+    def ask(query_id: int) -> None:
+        results[query_id] = backend.region_points(a_region_query(query_id), timeout=5.0)
+
+    askers = [threading.Thread(target=ask, args=(query_id,)) for query_id in query_ids]
+    for asker in askers:
+        asker.start()
+    for asker in askers:
+        asker.join(timeout=5)
+    return results
+
+
 def test_concurrent_region_queries_each_get_their_own_answer_even_out_of_order() -> None:
     # Given a sidecar that answers query 2 before query 1
     holder: list[RegionAnsweringProcess] = []
     answers = {1: a_region_answer(1, [[1, 1, 1]]), 2: a_region_answer(2, [[2, 2, 2]])}
     backend = _answering_backend(holder, answers, answer_order=[2, 1])
-    results: dict[int, RegionResult] = {}
     try:
         # When both queries are asked from separate threads
-        askers = [
-            threading.Thread(
-                target=lambda q=q: results.__setitem__(
-                    q, backend.region_points(a_region_query(q), timeout=5.0)
-                )
-            )
-            for q in (1, 2)
-        ]
-        for asker in askers:
-            asker.start()
-        for asker in askers:
-            asker.join(timeout=5)
+        results = ask_concurrently(backend, 1, 2)
 
         # Then each query got its own points, never the other's
         assert results[1].points == (Vec3(1.0, 1.0, 1.0),)

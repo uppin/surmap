@@ -389,13 +389,8 @@ function attachListeners() {{
   source.addEventListener('detections', (event) => {{
     latestDetections = JSON.parse(event.data);
   }});
-  source.addEventListener('sam', (event) => {{
-    drawSamPane(JSON.parse(event.data));
-  }});
-  source.addEventListener('region', (event) => {{
-    // Each SAM result's regions replace the previous shape: no accumulation.
-    if (mode === 'live') setRegionLayer(JSON.parse(event.data).regions);
-  }});
+  source.addEventListener('sam', (event) => drawSamPane(JSON.parse(event.data)));
+  listenForRegions(source);
   source.addEventListener('frame', (event) => {{
     const data = JSON.parse(event.data);
     frames += 1;

@@ -34,7 +34,8 @@ from surmap.rpc.routes import health_routes
 from surmap.slam.base import SlamBackend
 from surmap.slam.regions import RegionPointSource
 from surmap.slam.sidecar import PINNED_RTABMAP_IMAGE, SidecarRtabmapBackend
-from surmap.slam.streaming import StreamingRtabmapBackend, StreamProcess
+from surmap.slam.stream_process import StreamProcess
+from surmap.slam.streaming import StreamingRtabmapBackend
 from surmap.survey.cm5_server import cm5_service_module
 from surmap.survey.object_points import ObjectPointSource
 from surmap.survey.stereo import StereoReconstructor

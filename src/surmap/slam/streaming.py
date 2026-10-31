@@ -12,14 +12,11 @@ from __future__ import annotations
 import io
 import os
 import queue
-import subprocess
 import threading
 import uuid
-from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -28,6 +25,8 @@ from PIL import Image
 from surmap.slam.base import FrameResult
 from surmap.slam.regions import RegionQuery, RegionResult
 from surmap.slam.sidecar import SHARED_CONTAINER_ENV, SidecarError, _subprocess_runner
+from surmap.slam.stream_outbox import RegionReplies, SidecarOutbox
+from surmap.slam.stream_process import StreamProcess, _default_factory
 from surmap.slam.stream_protocol import (
     NEUTRAL_GREY,
     ErrorUpdate,
@@ -119,54 +118,6 @@ class _Keyframe:
         return _Keyframe(update.node_id, update.pose, points, colors)
 
 
-class StreamProcess(Protocol):
-    def write(self, data: bytes) -> None: ...
-    def close_stdin(self) -> None: ...
-    def readline(self) -> bytes: ...
-    def terminate(self) -> None: ...
-    def wait(self, timeout: float | None = None) -> int | None: ...
-
-
-class _PopenProcess:
-    def __init__(self, argv: list[str]) -> None:
-        self._proc = subprocess.Popen(
-            argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-
-    def write(self, data: bytes) -> None:
-        assert self._proc.stdin is not None
-        self._proc.stdin.write(data)
-        self._proc.stdin.flush()
-
-    def close_stdin(self) -> None:
-        assert self._proc.stdin is not None
-        self._proc.stdin.close()
-
-    def readline(self) -> bytes:
-        assert self._proc.stdout is not None
-        return self._proc.stdout.readline()
-
-    def terminate(self) -> None:
-        self._proc.terminate()
-
-    def wait(self, timeout: float | None = None) -> int | None:
-        try:
-            return self._proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            return None
-
-    def stderr_tail(self) -> str:
-        try:
-            assert self._proc.stderr is not None
-            return self._proc.stderr.read()[-2000:].decode(errors="replace")
-        except Exception:
-            return ""
-
-
-def _default_factory(argv: list[str]) -> StreamProcess:
-    return _PopenProcess(argv)
-
-
 def _to_gray8(frame: StereoFramePair, channel: int, width: int, height: int) -> bytes:
     """Raw 8-bit grey pixels at the sidecar's configured size (no re-encode)."""
     data = frame.left_data if channel == 0 else frame.right_data
@@ -239,7 +190,6 @@ class StreamingRtabmapBackend:
         self._container_name = f"surmap-rtabmap-stream-{self._instance_id}"
         self._live_containers: list[str] = [self._container_name]
         self.closed = False
-        self._dropped = 0
         self._state_lock = threading.Lock()
         self._odom: dict[int, Pose] = {}
         self._odom_order: list[int] = []
@@ -251,15 +201,10 @@ class StreamingRtabmapBackend:
         self._placed_cache: dict[int, tuple[Pose, NDArray[np.float32]]] = {}
         self._frames: list[StereoFramePair] = []
         self._updates: queue.Queue[MapUpdate] = queue.Queue()
-        # The writer's two lanes: control requests (region queries) go
-        # out first and are never dropped; pairs drop oldest when RTAB-Map
-        # falls behind, and `None` closes stdin once they are written.
-        self._outbox = threading.Condition()
-        self._controls: deque[bytes] = deque()
-        self._pairs: deque[tuple[StereoFramePair, bytes, bytes] | None] = deque()
-        self._queue_size = max(1, queue_size)
-        # query_id -> (answered, answer slot), filled by the reader.
-        self._regions: dict[int, tuple[threading.Event, list[RegionResult]]] = {}
+        self._outbox: SidecarOutbox[tuple[StereoFramePair, bytes, bytes]] = SidecarOutbox(
+            queue_size
+        )
+        self._regions = RegionReplies()
         self._error: str | None = None
         self._rectification: Rectification | None = None
         # Newest odometry per frame, keypoints included, for the display.
@@ -312,8 +257,7 @@ class StreamingRtabmapBackend:
 
     @property
     def dropped_frames(self) -> int:
-        with self._outbox:
-            return self._dropped
+        return self._outbox.dropped
 
     @property
     def last_input_frame(self) -> int:
@@ -341,38 +285,23 @@ class StreamingRtabmapBackend:
         left = _to_gray8(frame, 0, self._width, self._height)
         right = _to_gray8(frame, 1, self._width, self._height)
         self._frames.append(frame)
-        with self._outbox:
-            if len(self._pairs) >= self._queue_size and self._pairs[0] is not None:
-                self._pairs.popleft()
-                self._dropped += 1
-            self._pairs.append((frame, left, right))
-            self._outbox.notify()
+        self._outbox.put_pair((frame, left, right))
         with self._state_lock:
             pose = self._odom.get(frame.frame_id)
         return FrameResult(frame.frame_id, frame.t_ns, pose, ())
 
-    def _close_outbox(self) -> None:
-        with self._outbox:
-            self._pairs.append(None)
-            self._outbox.notify()
-
     def _write_loop(self) -> None:
         while True:
-            with self._outbox:
-                while not self._controls and not self._pairs:
-                    self._outbox.wait()
-                control = self._controls.popleft() if self._controls else None
-                item = self._pairs.popleft() if control is None else None
-            if control is None and item is None:
+            item = self._outbox.take()
+            if item is None:
                 try:
                     self._process.close_stdin()
                 except Exception:
                     pass
                 return
-            if control is not None:
-                data = control
+            if isinstance(item, bytes):
+                data = item
             else:
-                assert item is not None
                 frame, left, right = item
                 data = encode_pair(
                     frame.frame_id,
@@ -404,11 +333,7 @@ class StreamingRtabmapBackend:
                 self._ready.set()  # a bad hello (e.g. version mismatch) fails fast
                 continue
             if isinstance(message, RegionResult):
-                with self._state_lock:
-                    waiter = self._regions.get(message.query_id)
-                if waiter is not None:
-                    waiter[1].append(message)
-                    waiter[0].set()
+                self._regions.deliver(message)
                 continue
             if isinstance(message, Ready):
                 self._rectification = message.rectification
@@ -455,22 +380,12 @@ class StreamingRtabmapBackend:
             raise SidecarError("cannot query regions after close()")
         if self._error is not None:
             raise SidecarError(f"streaming sidecar error: {self._error}")
-        answered = threading.Event()
-        slot: list[RegionResult] = []
-        with self._state_lock:
-            self._regions[query.query_id] = (answered, slot)
-        try:
-            with self._outbox:
-                self._controls.append(encode_region(query))
-                self._outbox.notify()
-            if not answered.wait(timeout=timeout):
-                raise SidecarError(
-                    f"region query {query.query_id} got no answer within {timeout:g} s"
-                )
-            return slot[0]
-        finally:
-            with self._state_lock:
-                self._regions.pop(query.query_id, None)
+        self._regions.expect(query.query_id)
+        self._outbox.put_control(encode_region(query))
+        result = self._regions.wait(query.query_id, timeout)
+        if result is None:
+            raise SidecarError(f"region query {query.query_id} got no answer within {timeout:g} s")
+        return result
 
     def poll_updates(self) -> list[MapUpdate]:
         drained: list[MapUpdate] = []
@@ -518,7 +433,7 @@ class StreamingRtabmapBackend:
 
     def flush(self) -> list[FrameResult]:
         # Sentinel closes stdin after queued pairs are written.
-        self._close_outbox()
+        self._outbox.close()
         if not self._final.wait(timeout=self._flush_timeout):
             raise SidecarError("streaming sidecar flush timed out waiting for the final graph")
         if self._error is not None:
@@ -541,7 +456,7 @@ class StreamingRtabmapBackend:
         if self.closed and not self._live_containers:
             return
         self.closed = True
-        self._close_outbox()
+        self._outbox.close()
         try:
             self._process.terminate()
         except Exception:

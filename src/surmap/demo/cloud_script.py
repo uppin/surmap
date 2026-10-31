@@ -69,6 +69,12 @@ function setRegionLayer(regions) {{
   }}
   drawCloud();
 }}
+function listenForRegions(source) {{
+  // Each SAM result's regions replace the previous shape: no accumulation.
+  source.addEventListener('region', (event) => {{
+    if (mode === 'live') setRegionLayer(JSON.parse(event.data).regions);
+  }});
+}}
 function drawPoints(buffer, count, mvp) {{
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
   const pos = gl.getAttribLocation(cloudProgram, 'aPos');

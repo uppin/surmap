@@ -51,6 +51,8 @@ from surmap.demo.datasets import (
     load_calibration,
     scaled_sensor_yaml,
 )
+from surmap.demo.events import DemoEvent as DemoEvent
+from surmap.demo.events import RegionPlacer, sam_event
 from surmap.demo.history import RunHistoryStore
 from surmap.demo.page import PAGE
 from surmap.detection.detector import CoralDetector, decode_rgb
@@ -58,14 +60,13 @@ from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
 from surmap.detection.source import CoralDetectionSource, DetectionSource
 from surmap.detection.tracker import TrackedDetection
 from surmap.slam.base import FrameResult
-from surmap.slam.regions import RegionPointSource, RegionQuery
-from surmap.slam.sidecar import SidecarError, SidecarRtabmapBackend
+from surmap.slam.regions import RegionPointSource
+from surmap.slam.sidecar import SidecarRtabmapBackend
 from surmap.slam.stream_protocol import Keypoint, MapUpdate, OdomUpdate, Rectification
 from surmap.slam.streaming import MapCloud, StreamingRtabmapBackend, pose_rotation
 from surmap.survey.sam import (
     CentredBoxVideoSamDetector,
     RawFrame,
-    SamDetection,
     VideoSamDetector,
     VideoSamStreamer,
 )
@@ -116,13 +117,6 @@ class LiveSlamBackend(Protocol):
     def keyframe_count(self) -> int: ...
     @property
     def rectification(self) -> Rectification | None: ...
-
-
-@dataclass(frozen=True)
-class DemoEvent:
-    kind: str  # "frame" | "status" | "final" | "map" | "detections" | "sam"
-    data: dict[str, object]
-    jpeg: bytes = b""
 
 
 def project_overlay(
@@ -503,7 +497,7 @@ class _SamWorker:
                 self._busy = True
             try:
                 width, height = self._size
-                event = _sam_event(
+                event = sam_event(
                     frame_id,
                     t_ns,
                     self._source.track(RawFrame(frame_id, t_ns, 0, width, height, "mjpeg", jpeg)),
@@ -517,28 +511,6 @@ class _SamWorker:
                 self._results.append(event)
                 self._busy = False
                 self._condition.notify_all()
-
-
-def _sam_event(frame_id: int, t_ns: int, detections: tuple[SamDetection, ...]) -> DemoEvent:
-    # A separate event, keyed by frame_id like `detections` — the page
-    # joins SAM masks to the frame on screen by frame_id.
-    return DemoEvent(
-        "sam",
-        {
-            "frame_id": frame_id,
-            "t_ns": t_ns,
-            "objects": [
-                {
-                    "label": detection.label,
-                    "score": round(detection.score, 2),
-                    "track_id": detection.track_id,
-                    "box": [round(value, 1) for value in detection.box_xyxy],
-                    "mask_polygon": [[round(x, 1), round(y, 1)] for x, y in detection.mask_polygon],
-                }
-                for detection in detections
-            ],
-        },
-    )
 
 
 class _SamStreamWorker:
@@ -595,7 +567,7 @@ class _SamStreamWorker:
                     break
                 frame_id, t_ns = self._frame_keys[index]
                 with self._condition:
-                    self._results.append(_sam_event(frame_id, t_ns, detections))
+                    self._results.append(sam_event(frame_id, t_ns, detections))
                     self._condition.notify_all()
         except BaseException as exc:  # surfaced on the playback thread
             with self._condition:
@@ -633,12 +605,6 @@ HOLD_MAX_S = 2.0
 # image to the separate SAM pane, whenever it lands.
 SAM_FRAME_CACHE = 256
 
-# Cap on one region event's points for the browser (evenly sampled).
-MAX_REGION_POINTS = 50_000
-
-# How long a SAM region may wait for the sidecar's dense stereo.
-REGION_TIMEOUT_S = 2.0
-
 
 @dataclass
 class _HeldFrame:
@@ -669,12 +635,10 @@ class _Display:
         size: tuple[int, int] = (DISPLAY_WIDTH, DISPLAY_HEIGHT),
     ) -> None:
         self._total = total
-        self._size = size
         # Regions are placed only by a backend that can answer them.
-        self._regions: RegionPointSource | None = (
-            backend if isinstance(backend, RegionPointSource) else None
+        self._regions: RegionPlacer | None = (
+            RegionPlacer(backend, size) if isinstance(backend, RegionPointSource) else None
         )
-        self._next_query = 1
         self._stops = stops
         self._backend = backend
         self._calibration = calibration
@@ -743,41 +707,7 @@ class _Display:
             frame_id = int(str(event.data["frame_id"]))
             yield DemoEvent("sam", event.data, jpeg=self._jpegs.get(frame_id, b""))
             if self._regions is not None:
-                yield self._region_event(self._regions, event)
-
-    def _region_event(self, source: RegionPointSource, sam: DemoEvent) -> DemoEvent:
-        """Each SAM mask's dense points on its own frame (left channel, display px)."""
-        frame_id = int(str(sam.data["frame_id"]))
-        objects = sam.data["objects"]
-        assert isinstance(objects, list)
-        regions: list[dict[str, object]] = []
-        for obj in objects:
-            query = RegionQuery(
-                query_id=self._next_query,
-                frame_id=frame_id,
-                channel=0,
-                width=self._size[0],
-                height=self._size[1],
-                polygon=tuple((float(x), float(y)) for x, y in obj["mask_polygon"]),
-            )
-            self._next_query += 1
-            try:
-                result = source.region_points(query, timeout=REGION_TIMEOUT_S)
-            except SidecarError:
-                continue  # a region that never came back is not drawn
-            points = result.points
-            if len(points) > MAX_REGION_POINTS:
-                step = len(points) / MAX_REGION_POINTS
-                points = tuple(points[int(i * step)] for i in range(MAX_REGION_POINTS))
-            regions.append(
-                {
-                    "track_id": obj["track_id"],
-                    "label": obj["label"],
-                    "status": result.status.value,
-                    "points": [[round(p.x, 3), round(p.y, 3), round(p.z, 3)] for p in points],
-                }
-            )
-        return DemoEvent("region", {"frame_id": frame_id, "regions": regions})
+                yield self._regions.region_event(event)
 
     def _overlay_for(
         self, frame: _HeldFrame, final: bool
