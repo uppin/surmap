@@ -335,12 +335,88 @@ def render_floor_plan(xz: NDArray[np.float32], grey: NDArray[np.uint8], extent: 
     mean[seen] = total[seen] / count[seen]
     alpha = np.zeros(size * size)
     alpha[seen] = np.clip(255 * np.log1p(count[seen]) / np.log1p(FLOOR_SOLID_POINTS), 0, 255)
-    rgba = np.zeros((size * size, 4), np.uint8)
-    rgba[:, 0] = rgba[:, 1] = rgba[:, 2] = np.round(mean).astype(np.uint8)
-    rgba[:, 3] = np.round(alpha).astype(np.uint8)
+    rgba = np.zeros((size, size, 4), np.uint8)
+    rgba[:, :, 0] = rgba[:, :, 1] = rgba[:, :, 2] = (
+        np.round(mean).astype(np.uint8).reshape(size, size)
+    )
+    rgba[:, :, 3] = np.round(alpha).astype(np.uint8).reshape(size, size)
+    return _png_base64(rgba)
+
+
+def _png_base64(rgba: NDArray[np.uint8]) -> str:
+    """An (H, W, 4) RGBA array as a base64 PNG (the panes' shared encoding)."""
     out = io.BytesIO()
-    Image.fromarray(rgba.reshape(size, size, 4), "RGBA").save(out, format="PNG")
+    Image.fromarray(rgba, "RGBA").save(out, format="PNG")
     return base64.b64encode(out.getvalue()).decode()
+
+
+@dataclass(frozen=True)
+class CloudPose:
+    """The 3D pane's PTZ pose: orbit angles, zoom and ground-plane pan.
+
+    The floor plan is this same pose family fixed at top-down; the
+    cloud view is the one the viewer orbits.
+    """
+
+    azimuth: float = -0.8
+    elevation: float = 0.85
+    zoom: float = 1.0
+    pan_x: float = 0.0
+    pan_z: float = 0.0
+
+
+CLOUD_VIEW_PX = (880, 440)
+
+
+def render_cloud_view(
+    points: NDArray[np.float32],
+    colors: NDArray[np.uint8],
+    pose: CloudPose,
+    bounds: tuple[NDArray[np.float32], NDArray[np.float32]],
+    size: tuple[int, int] = CLOUD_VIEW_PX,
+) -> str:
+    """Every map point rendered server-side from `pose`, as base64 PNG.
+
+    The 3D sibling of `render_floor_plan`: same contract — the whole
+    cloud, no sampling (so nothing flickers between updates), a
+    deterministic function of (cloud, pose). Only the projection
+    differs: an orbit camera instead of top-down. Nearest point wins
+    each pixel. Background matches the old WebGL clear colour.
+    """
+    width, height = size
+    rgba = np.zeros((height, width, 4), np.uint8)
+    rgba[:, :] = (10, 12, 14, 255)
+    if len(points):
+        lo, hi = (np.asarray(bound, dtype=np.float64) for bound in bounds)
+        centre = (lo + hi) / 2.0
+        centre[0] += pose.pan_x
+        centre[2] += pose.pan_z
+        span = max(float(np.max(hi - lo)), 0.5)
+        rel = points.astype(np.float64) - centre
+        # Map frame (x right, y down, z forward) -> view (x, up, fwd).
+        x, up, fwd = rel[:, 0], -rel[:, 1], rel[:, 2]
+        ca, sa = math.cos(pose.azimuth), math.sin(pose.azimuth)
+        x, fwd = x * ca - fwd * sa, x * sa + fwd * ca
+        ce, se = math.cos(pose.elevation), math.sin(pose.elevation)
+        up, fwd = up * ce - fwd * se, up * se + fwd * ce
+        distance = span * 1.9 * pose.zoom
+        depth = distance - fwd
+        focal = 1.0 / math.tan(0.35)
+        inside = depth > distance * 0.05
+        if np.any(inside):
+            u = np.floor(width / 2 + focal * x[inside] / depth[inside] * (height / 2))
+            v = np.floor(height / 2 - focal * up[inside] / depth[inside] * (height / 2))
+            ui, vi = u.astype(np.int64), v.astype(np.int64)
+            on = (ui >= 0) & (ui < width) & (vi >= 0) & (vi < height)
+            order = np.argsort(depth[inside][on])[::-1]  # far first; near overwrites
+            pixels = (vi[on][order] * width + ui[on][order]).astype(np.int64)
+            chosen = np.flatnonzero(inside)[on][order]
+            flat = rgba.reshape(-1, 4)
+            flat[pixels, 0] = colors[chosen, 0]
+            flat[pixels, 1] = colors[chosen, 1]
+            flat[pixels, 2] = colors[chosen, 2]
+            flat[pixels, 3] = 255
+    return _png_base64(rgba)
 
 
 FloorCamera = dict[str, float]
@@ -769,6 +845,9 @@ class PlaybackControls:
         self._playing = threading.Event()
         self._playing.set()
         self._cancelled = threading.Event()
+        self._cloud_pose = CloudPose()
+        self._cloud_version = 0
+        self._cloud_lock = threading.Lock()
 
     @property
     def paused(self) -> bool:
@@ -790,6 +869,59 @@ class PlaybackControls:
 
     def wait_while_paused(self, timeout: float) -> None:
         self._playing.wait(timeout)
+
+    @property
+    def cloud_version(self) -> int:
+        return self._cloud_version
+
+    def cloud_pose(self) -> CloudPose:
+        with self._cloud_lock:
+            return self._cloud_pose
+
+    def _set_cloud_pose(self, pose: CloudPose) -> CloudPose:
+        with self._cloud_lock:
+            self._cloud_pose = pose
+            self._cloud_version += 1
+            return pose
+
+    def cloud_orbit(self, d_azimuth: float, d_elevation: float) -> CloudPose:
+        pose = self.cloud_pose()
+        return self._set_cloud_pose(
+            CloudPose(
+                azimuth=pose.azimuth + d_azimuth,
+                elevation=max(-1.5, min(1.5, pose.elevation + d_elevation)),
+                zoom=pose.zoom,
+                pan_x=pose.pan_x,
+                pan_z=pose.pan_z,
+            )
+        )
+
+    def cloud_zoom(self, factor: float) -> CloudPose:
+        pose = self.cloud_pose()
+        return self._set_cloud_pose(
+            CloudPose(
+                azimuth=pose.azimuth,
+                elevation=pose.elevation,
+                zoom=max(0.2, min(20.0, pose.zoom * factor)),
+                pan_x=pose.pan_x,
+                pan_z=pose.pan_z,
+            )
+        )
+
+    def cloud_pan(self, dx: float, dz: float) -> CloudPose:
+        pose = self.cloud_pose()
+        return self._set_cloud_pose(
+            CloudPose(
+                azimuth=pose.azimuth,
+                elevation=pose.elevation,
+                zoom=pose.zoom,
+                pan_x=pose.pan_x + dx,
+                pan_z=pose.pan_z + dz,
+            )
+        )
+
+    def cloud_reset(self) -> CloudPose:
+        return self._set_cloud_pose(CloudPose())
 
 
 class DemoPlayer:
@@ -814,6 +946,8 @@ class DemoPlayer:
     ) -> None:
         self._controls = controls if controls is not None else PlaybackControls()
         self._extent: FloorExtent | None = None
+        self._cloud_bounds: tuple[NDArray[np.float32], NDArray[np.float32]] | None = None
+        self._cloud_version = -1
         fps = prepared.spec.fps if fps is None else fps
         if fps <= 0:
             raise ValueError("fps must be positive")
@@ -863,12 +997,30 @@ class DemoPlayer:
         cloud = backend.map_cloud()
         points, colors = cloud_points(cloud)
         trajectory = backend.trajectory()
+        if len(cloud.points):
+            lo = cloud.points.min(axis=0)
+            hi = cloud.points.max(axis=0)
+            self._cloud_bounds = (
+                (lo, hi)
+                if self._cloud_bounds is None
+                else (
+                    np.minimum(self._cloud_bounds[0], lo),
+                    np.maximum(self._cloud_bounds[1], hi),
+                )
+            )
+        bounds = self._cloud_bounds or (
+            np.zeros(3, dtype=np.float32),
+            np.ones(3, dtype=np.float32),
+        )
         return DemoEvent(
             "map",
             {
                 "frame_id": frame_id,
                 "points": points,
                 "point_colors": colors,
+                "cloud_png": render_cloud_view(
+                    cloud.points, cloud.colors, self._controls.cloud_pose(), bounds
+                ),
                 **self._floor_plan(
                     cloud.points[:, [0, 2]], cloud.colors[:, 0], _floor_plane_trajectory(trajectory)
                 ),
@@ -992,8 +1144,10 @@ class DemoPlayer:
                 yield from display.release()
                 if isinstance(backend, LiveSlamBackend):
                     now = time.monotonic()
-                    if now - last_map_emit >= 0.33:
+                    pose_changed = self._controls.cloud_version != self._cloud_version
+                    if now - last_map_emit >= 0.33 or pose_changed:
                         last_map_emit = now
+                        self._cloud_version = self._controls.cloud_version
                         yield self._map_event(backend, index + 1)
                 # Server-side pacing: one frame interval per frame,
                 # however long processing took — never a catch-up burst.
@@ -1032,10 +1186,28 @@ class DemoPlayer:
                         )
                         for pose in trajectory
                     )
+                cloud_png = ""
                 if isinstance(backend, LiveSlamBackend):
                     live_cloud = backend.map_cloud()
                     final_points, final_colors = cloud_points(live_cloud)
                     final_count = len(live_cloud.points)
+                    if len(live_cloud.points):
+                        lo = live_cloud.points.min(axis=0)
+                        hi = live_cloud.points.max(axis=0)
+                        bounds = (
+                            (lo, hi)
+                            if self._cloud_bounds is None
+                            else (
+                                np.minimum(self._cloud_bounds[0], lo),
+                                np.maximum(self._cloud_bounds[1], hi),
+                            )
+                        )
+                        cloud_png = render_cloud_view(
+                            live_cloud.points,
+                            live_cloud.colors,
+                            self._controls.cloud_pose(),
+                            bounds,
+                        )
                     plan = self._floor_plan(
                         live_cloud.points[:, [0, 2]],
                         live_cloud.colors[:, 0],
@@ -1065,6 +1237,7 @@ class DemoPlayer:
                         "cloud_points": final_count,
                         "points": final_points,
                         "point_colors": final_colors,
+                        "cloud_png": cloud_png,
                         **plan,
                     },
                 )
@@ -1373,6 +1546,19 @@ class _DemoHandler(BaseHTTPRequestHandler):
                 if snapshot is None:
                     self._send(404, "text/plain", b"unknown moment")
                 else:
+                    cloud = snapshot.get("cloud")
+                    if isinstance(cloud, dict) and isinstance(cloud.get("points"), list):
+                        snap_points = np.array(cloud["points"], dtype=np.float32).reshape(-1, 3)
+                        snap_colors = np.array(cloud.get("colors") or [], dtype=np.uint8)
+                        if len(snap_points) and len(snap_colors) == len(snap_points):
+                            controls = self.server.current
+                            pose = controls.cloud_pose() if controls is not None else CloudPose()
+                            cloud["cloud_png"] = render_cloud_view(
+                                snap_points,
+                                snap_colors.reshape(-1, 3),
+                                pose,
+                                (snap_points.min(axis=0), snap_points.max(axis=0)),
+                            )
                     self._send_json(200, snapshot)
                 return
             self._send(404, "text/plain", b"not found")
@@ -1422,17 +1608,42 @@ class _DemoHandler(BaseHTTPRequestHandler):
         if url.path == "/control":
             length = int(self.headers.get("Content-Length") or 0)
             try:
-                action = json.loads(self.rfile.read(length) or b"{}").get("action")
+                body = json.loads(self.rfile.read(length) or b"{}")
+                action = body.get("action")
             except (ValueError, AttributeError):
-                action = None
+                body, action = {}, None
             controls = self.server.current
-            if action not in ("pause", "resume"):
-                self._send(400, "text/plain", b"action must be pause or resume")
+            cloud_actions = ("cloud_orbit", "cloud_zoom", "cloud_pan", "cloud_reset")
+            if action not in ("pause", "resume", *cloud_actions):
+                self._send(400, "text/plain", b"action must be pause, resume or a cloud_* action")
             elif controls is None:
                 self._send(409, "text/plain", b"nothing is playing")
-            else:
+            elif action in ("pause", "resume"):
                 controls.pause() if action == "pause" else controls.resume()
                 self._send_json(200, {"state": "paused" if controls.paused else "playing"})
+            else:
+                if action == "cloud_orbit":
+                    pose = controls.cloud_orbit(
+                        float(body.get("d_azimuth") or 0.0), float(body.get("d_elevation") or 0.0)
+                    )
+                elif action == "cloud_zoom":
+                    pose = controls.cloud_zoom(float(body.get("factor") or 1.0))
+                elif action == "cloud_pan":
+                    pose = controls.cloud_pan(
+                        float(body.get("dx") or 0.0), float(body.get("dz") or 0.0)
+                    )
+                else:
+                    pose = controls.cloud_reset()
+                self._send_json(
+                    200,
+                    {
+                        "azimuth": pose.azimuth,
+                        "elevation": pose.elevation,
+                        "zoom": pose.zoom,
+                        "pan_x": pose.pan_x,
+                        "pan_z": pose.pan_z,
+                    },
+                )
             return
         self._send(404, "text/plain", b"not found")
 

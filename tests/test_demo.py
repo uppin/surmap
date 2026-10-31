@@ -668,6 +668,50 @@ def test_the_demo_cli_names_the_sam_gpu_device_argument() -> None:
     assert "--sam-device" in missing.stderr
 
 
+def test_the_cloud_view_is_the_floor_plan_renderer_from_a_ptz_pose() -> None:
+    # Given a coloured surface cloud
+    from surmap.demo.server import CloudPose, render_cloud_view
+
+    rng = np.random.default_rng(3)
+    points = rng.uniform(-5.0, 5.0, size=(2_000, 3)).astype(np.float32)
+    colors = rng.integers(0, 255, size=(2_000, 3), dtype=np.uint8)
+    bounds = (points.min(axis=0), points.max(axis=0))
+
+    # When the same cloud is rendered from the same pose twice, and
+    # once from a different azimuth
+    first = render_cloud_view(points, colors, CloudPose(), bounds)
+    again = render_cloud_view(points, colors, CloudPose(), bounds)
+    turned = render_cloud_view(points, colors, CloudPose(azimuth=1.2), bounds)
+
+    # Then rendering is deterministic (no sampling churn), the pose
+    # changes the picture, and points actually land in it
+    assert first == again
+    assert turned != first
+    import base64
+    import io
+
+    from PIL import Image
+
+    image = Image.open(io.BytesIO(base64.b64decode(first)))
+    assert image.size == (880, 440)
+    pixels = np.array(image.convert("RGB")).reshape(-1, 3)
+    assert int(np.count_nonzero(np.any(pixels != (10, 12, 14), axis=1))) > 500
+
+
+def test_map_events_carry_the_server_rendered_cloud_view(tmp_path: Path) -> None:
+    # Given a live backend with a coloured cloud
+    fake = FakeLiveBackend(odometry={1: _odom_with(), 2: _odom_with()})
+    player = DemoPlayer(_prepared_tiny(tmp_path), fps=1000.0, backend_factory=lambda: fake)
+
+    # When playback runs
+    map_event = next(event for event in player.events() if event.kind == "map")
+
+    # Then the map event carries the cloud rendered server-side from
+    # the shared PTZ pose, like the floor plan image it also carries
+    assert isinstance(map_event.data["cloud_png"], str)
+    assert len(str(map_event.data["cloud_png"])) > 100
+
+
 def test_the_sampled_cloud_is_dense_and_stable_as_the_map_grows() -> None:
     # Given a map cloud well above the draw cap, on surfaces (as
     # RTAB-Map clouds lie on walls/floors, not through volumes)
