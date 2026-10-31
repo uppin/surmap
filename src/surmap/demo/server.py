@@ -367,6 +367,36 @@ class CloudPose:
 
 CLOUD_VIEW_PX = (880, 440)
 
+# SAM region overlay colours in the cloud view, by track id.
+REGION_COLOURS = ((255, 64, 153), (51, 230, 255), (255, 217, 26), (128, 255, 77))
+
+
+def _project_points(
+    points: NDArray[np.float32],
+    pose: CloudPose,
+    centre: NDArray[np.float64],
+    span: float,
+    size: tuple[int, int],
+) -> tuple[NDArray[np.int64], NDArray[np.int64], NDArray[np.float64], NDArray[np.int64]]:
+    """Map-frame points to (u, v, depth, point indices) under the orbit pose."""
+    width, height = size
+    rel = points.astype(np.float64) - centre
+    x, up, fwd = rel[:, 0], -rel[:, 1], rel[:, 2]
+    ca, sa = math.cos(pose.azimuth), math.sin(pose.azimuth)
+    x, fwd = x * ca - fwd * sa, x * sa + fwd * ca
+    ce, se = math.cos(pose.elevation), math.sin(pose.elevation)
+    up, fwd = up * ce - fwd * se, up * se + fwd * ce
+    distance = span * 1.9 * pose.zoom
+    depth = distance - fwd
+    focal = 1.0 / math.tan(0.35)
+    inside = depth > distance * 0.05
+    indices = np.flatnonzero(inside)
+    u = np.floor(width / 2 + focal * x[inside] / depth[inside] * (height / 2))
+    v = np.floor(height / 2 - focal * up[inside] / depth[inside] * (height / 2))
+    ui, vi = u.astype(np.int64), v.astype(np.int64)
+    on = (ui >= 0) & (ui < width) & (vi >= 0) & (vi < height)
+    return ui[on], vi[on], depth[inside][on], indices[on]
+
 
 def render_cloud_view(
     points: NDArray[np.float32],
@@ -374,6 +404,7 @@ def render_cloud_view(
     pose: CloudPose,
     bounds: tuple[NDArray[np.float32], NDArray[np.float32]],
     size: tuple[int, int] = CLOUD_VIEW_PX,
+    regions: tuple[tuple[int, NDArray[np.float32]], ...] = (),
 ) -> str:
     """Every map point rendered server-side from `pose`, as base64 PNG.
 
@@ -386,36 +417,32 @@ def render_cloud_view(
     width, height = size
     rgba = np.zeros((height, width, 4), np.uint8)
     rgba[:, :] = (10, 12, 14, 255)
-    if len(points):
+    if len(points) or regions:
         lo, hi = (np.asarray(bound, dtype=np.float64) for bound in bounds)
         centre = (lo + hi) / 2.0
         centre[0] += pose.pan_x
         centre[2] += pose.pan_z
         span = max(float(np.max(hi - lo)), 0.5)
-        rel = points.astype(np.float64) - centre
-        # Map frame (x right, y down, z forward) -> view (x, up, fwd).
-        x, up, fwd = rel[:, 0], -rel[:, 1], rel[:, 2]
-        ca, sa = math.cos(pose.azimuth), math.sin(pose.azimuth)
-        x, fwd = x * ca - fwd * sa, x * sa + fwd * ca
-        ce, se = math.cos(pose.elevation), math.sin(pose.elevation)
-        up, fwd = up * ce - fwd * se, up * se + fwd * ce
-        distance = span * 1.9 * pose.zoom
-        depth = distance - fwd
-        focal = 1.0 / math.tan(0.35)
-        inside = depth > distance * 0.05
-        if np.any(inside):
-            u = np.floor(width / 2 + focal * x[inside] / depth[inside] * (height / 2))
-            v = np.floor(height / 2 - focal * up[inside] / depth[inside] * (height / 2))
-            ui, vi = u.astype(np.int64), v.astype(np.int64)
-            on = (ui >= 0) & (ui < width) & (vi >= 0) & (vi < height)
-            order = np.argsort(depth[inside][on])[::-1]  # far first; near overwrites
-            pixels = (vi[on][order] * width + ui[on][order]).astype(np.int64)
-            chosen = np.flatnonzero(inside)[on][order]
-            flat = rgba.reshape(-1, 4)
+        flat = rgba.reshape(-1, 4)
+        if len(points):
+            ui, vi, depth, indices = _project_points(points, pose, centre, span, size)
+            order = np.argsort(depth)[::-1]  # far first; near overwrites
+            pixels = (vi[order] * width + ui[order]).astype(np.int64)
+            chosen = indices[order]
             flat[pixels, 0] = colors[chosen, 0]
             flat[pixels, 1] = colors[chosen, 1]
             flat[pixels, 2] = colors[chosen, 2]
             flat[pixels, 3] = 255
+        for track_id, region_points in regions:
+            if not len(region_points):
+                continue
+            ru, rv, _, _ = _project_points(region_points, pose, centre, span, size)
+            colour = REGION_COLOURS[track_id % len(REGION_COLOURS)]
+            # A 2x2 splat makes the (sparse, depth-filtered) region read over the cloud.
+            for du, dv in ((0, 0), (1, 0), (0, 1), (1, 1)):
+                uu, vv = ru + du, rv + dv
+                on = (uu < width) & (vv < height)
+                flat[vv[on] * width + uu[on]] = (*colour, 255)
     return _png_base64(rgba)
 
 
@@ -846,6 +873,7 @@ class PlaybackControls:
         self._playing.set()
         self._cancelled = threading.Event()
         self._cloud_pose = CloudPose()
+        self._cloud_regions: tuple[tuple[int, NDArray[np.float32]], ...] = ()
         self._cloud_version = 0
         self._cloud_lock = threading.Lock()
 
@@ -922,6 +950,16 @@ class PlaybackControls:
 
     def cloud_reset(self) -> CloudPose:
         return self._set_cloud_pose(CloudPose())
+
+    def cloud_regions(self) -> tuple[tuple[int, NDArray[np.float32]], ...]:
+        with self._cloud_lock:
+            return self._cloud_regions
+
+    def set_cloud_regions(self, regions: tuple[tuple[int, NDArray[np.float32]], ...]) -> None:
+        """Latest SAM regions to composite (replaced, never accumulated)."""
+        with self._cloud_lock:
+            self._cloud_regions = regions
+            self._cloud_version += 1
 
 
 class DemoPlayer:
@@ -1019,7 +1057,11 @@ class DemoPlayer:
                 "points": points,
                 "point_colors": colors,
                 "cloud_png": render_cloud_view(
-                    cloud.points, cloud.colors, self._controls.cloud_pose(), bounds
+                    cloud.points,
+                    cloud.colors,
+                    self._controls.cloud_pose(),
+                    bounds,
+                    regions=self._controls.cloud_regions(),
                 ),
                 **self._floor_plan(
                     cloud.points[:, [0, 2]], cloud.colors[:, 0], _floor_plane_trajectory(trajectory)
@@ -1207,6 +1249,7 @@ class DemoPlayer:
                             live_cloud.colors,
                             self._controls.cloud_pose(),
                             bounds,
+                            regions=self._controls.cloud_regions(),
                         )
                     plan = self._floor_plan(
                         live_cloud.points[:, [0, 2]],
@@ -1613,7 +1656,13 @@ class _DemoHandler(BaseHTTPRequestHandler):
             except (ValueError, AttributeError):
                 body, action = {}, None
             controls = self.server.current
-            cloud_actions = ("cloud_orbit", "cloud_zoom", "cloud_pan", "cloud_reset")
+            cloud_actions = (
+                "cloud_orbit",
+                "cloud_zoom",
+                "cloud_pan",
+                "cloud_reset",
+                "cloud_regions",
+            )
             if action not in ("pause", "resume", *cloud_actions):
                 self._send(400, "text/plain", b"action must be pause, resume or a cloud_* action")
             elif controls is None:
@@ -1632,6 +1681,24 @@ class _DemoHandler(BaseHTTPRequestHandler):
                     pose = controls.cloud_pan(
                         float(body.get("dx") or 0.0), float(body.get("dz") or 0.0)
                     )
+                elif action == "cloud_regions":
+                    regions: list[tuple[int, NDArray[np.float32]]] = []
+                    raw_regions = body.get("regions")
+                    if isinstance(raw_regions, list):
+                        for raw in raw_regions[:32]:
+                            if not isinstance(raw, dict):
+                                continue
+                            raw_points = raw.get("points")
+                            if not isinstance(raw_points, list) or not raw_points:
+                                continue
+                            try:
+                                track_id = int(raw.get("track_id") or 0)
+                                parsed = np.array(raw_points, dtype=np.float32).reshape(-1, 3)
+                            except (TypeError, ValueError):
+                                continue
+                            regions.append((track_id, parsed))
+                    controls.set_cloud_regions(tuple(regions))
+                    pose = controls.cloud_pose()
                 else:
                     pose = controls.cloud_reset()
                 self._send_json(

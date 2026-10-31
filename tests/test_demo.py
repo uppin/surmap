@@ -698,6 +698,29 @@ def test_the_cloud_view_is_the_floor_plan_renderer_from_a_ptz_pose() -> None:
     assert int(np.count_nonzero(np.any(pixels != (10, 12, 14), axis=1))) > 500
 
 
+def test_the_cloud_view_composites_region_points_in_the_track_colour() -> None:
+    # Given a cloud and one SAM region placed inside it
+    from surmap.demo.server import REGION_COLOURS, CloudPose, render_cloud_view
+
+    points = np.zeros((4, 3), np.float32)
+    colors = np.full((4, 3), 90, np.uint8)
+    bounds = (np.full(3, -5.0, np.float32), np.full(3, 5.0, np.float32))
+    region = np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]], np.float32)
+
+    # When the cloud is rendered with the region
+    import base64
+    import io
+
+    from PIL import Image
+
+    png = render_cloud_view(points, colors, CloudPose(), bounds, regions=((1, region),))
+    image = np.array(Image.open(io.BytesIO(base64.b64decode(png))).convert("RGB"))
+
+    # Then the region's colour is drawn (track 1 -> second palette entry)
+    wanted = np.array(REGION_COLOURS[1])
+    assert bool(np.any(np.all(image == wanted, axis=2)))
+
+
 def test_map_events_carry_the_server_rendered_cloud_view(tmp_path: Path) -> None:
     # Given a live backend with a coloured cloud
     fake = FakeLiveBackend(odometry={1: _odom_with(), 2: _odom_with()})

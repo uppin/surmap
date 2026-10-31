@@ -106,4 +106,16 @@ cloudCanvas.addEventListener('wheel', (event) => {{
   postCloudDebounced({{action: 'cloud_zoom', factor: Math.exp(event.deltaY * 0.001)}});
 }}, {{passive: false}});
 cloudCanvas.addEventListener('contextmenu', (event) => event.preventDefault());
+// SAM regions: the server composites the latest region's 3D points into
+// the cloud image; this script only forwards them (replaced wholesale).
+function setRegionLayer(regions) {{
+  postCloudDebounced({{action: 'cloud_regions', regions: (regions || []).map((region) => ({{
+    track_id: region.track_id, points: region.points,
+  }}))}});
+}}
+function listenForRegions(source) {{
+  source.addEventListener('region', (event) => {{
+    if (mode === 'live') setRegionLayer(JSON.parse(event.data).regions);
+  }});
+}}
 """
