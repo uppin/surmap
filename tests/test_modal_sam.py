@@ -317,7 +317,7 @@ def test_the_deploy_function_is_defined_at_module_scope() -> None:
     assert method.value.value == "POST"
     source = _APP_SOURCE.read_text(encoding="utf-8")
     assert 'DEFAULT_GPU = "L4"' in source
-    assert '"300"' in source
+    assert '"900"' in source
     assert '"60"' in source
     assert 'Secret.from_name("huggingface")' in source or "HF_SECRET" in source
     assert "surmap-sam3" in source

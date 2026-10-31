@@ -181,6 +181,13 @@ def parse_detections(raw: bytes) -> tuple[tuple[SamDetection, ...], float]:
     return tuple(found), elapsed
 
 
+class _ModalRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Modal web endpoints answer long calls with repeated 303s; follow them."""
+
+    max_repeats = 20
+    max_redirections = 30
+
+
 def post_json(url: str, body: bytes, *, timeout_s: float) -> bytes:
     """POST JSON with the stdlib client. No Modal SDK."""
     request = urllib.request.Request(
@@ -189,8 +196,9 @@ def post_json(url: str, body: bytes, *, timeout_s: float) -> bytes:
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
+    opener = urllib.request.build_opener(_ModalRedirectHandler())
     try:
-        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+        with opener.open(request, timeout=timeout_s) as response:
             return cast(bytes, response.read())
     except urllib.error.HTTPError as exc:
         raise Sam3Unavailable(f"Modal SAM endpoint returned HTTP {exc.code}") from exc

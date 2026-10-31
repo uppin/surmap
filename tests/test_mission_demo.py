@@ -481,7 +481,7 @@ def test_live_meta_mission_calls_meta_sam_meta_labels_and_records_them(
         seen["scene_model"] = self._model
         return "Scene note from the test double."
 
-    monkeypatch.setattr("surmap.mission.demo.open_live_map", lambda _calibration: recording)
+    monkeypatch.setattr("surmap.mission.demo.open_live_map", lambda _calibration, **_kwargs: recording)
     monkeypatch.setattr(MetaSamDetector, "detect", detect)
     monkeypatch.setattr("surmap.mission.demo.MetaMuseLabelClient.label", label)
     monkeypatch.setattr(MetaMuseSceneClient, "note", note)

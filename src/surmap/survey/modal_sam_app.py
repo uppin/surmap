@@ -33,7 +33,7 @@ MODEL_MOUNT = "/models"
 HF_SECRET = "huggingface"
 
 _GPU = os.environ.get("SURMAP_MODAL_GPU", DEFAULT_GPU)
-_TIMEOUT_S = int(os.environ.get("SURMAP_MODAL_TIMEOUT", "300"))
+_TIMEOUT_S = int(os.environ.get("SURMAP_MODAL_TIMEOUT", "900"))
 _SCALEDOWN_S = int(os.environ.get("SURMAP_MODAL_SCALEDOWN_WINDOW", "60"))
 
 app = modal.App(APP_NAME)
@@ -41,6 +41,12 @@ app = modal.App(APP_NAME)
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("git")
+    .env(
+        {
+            "HF_HOME": f"{MODEL_MOUNT}/hf",
+            "HUGGINGFACE_HUB_CACHE": f"{MODEL_MOUNT}/hf/hub",
+        }
+    )
     .pip_install(
         "torch",
         "torchvision",
@@ -80,6 +86,7 @@ def _load_sam() -> tuple[Any, Any]:
     from sam3.model_builder import build_sam3_image_model, download_ckpt_from_hf
 
     checkpoint = download_ckpt_from_hf(version="sam3.1")
+    volume.commit()  # keep the checkpoint even if model build fails later
     _MODEL = build_sam3_image_model(
         checkpoint_path=checkpoint,
         load_from_HF=False,
