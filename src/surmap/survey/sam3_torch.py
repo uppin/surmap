@@ -79,7 +79,7 @@ class Sam31VideoStreamer:
         *,
         prompt: str = "object",
         device: str = "cuda:0",
-        chunk_frames: int = 32,
+        chunk_frames: int = 16,
         autocast: Callable[[], AbstractContextManager[Any]] | None = None,
         on_chunk_end: Callable[[], None] | None = None,
         on_close: Callable[[], None] | None = None,

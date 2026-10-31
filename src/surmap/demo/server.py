@@ -558,6 +558,7 @@ class _SamStreamWorker:
         self._condition = threading.Condition()
         self._results: list[DemoEvent] = []
         self._done = False
+        self._closed = False
         self._error: BaseException | None = None
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -576,11 +577,18 @@ class _SamStreamWorker:
         return self.poll()
 
     def close(self) -> None:
+        # Cooperative cancellation, checked per yielded frame: a
+        # closed worker stops at the next frame instead of running
+        # its whole video on the GPU behind the next viewer's worker
+        # (stacked sessions OOM'd the card and starved the live one).
+        self._closed = True
         self._thread.join(timeout=5)
 
     def _run(self) -> None:
         try:
             for index, detections in self._streamer.stream(self._frame_paths):
+                if self._closed:
+                    break
                 frame_id, t_ns = self._frame_keys[index]
                 with self._condition:
                     self._results.append(_sam_event(frame_id, t_ns, detections))
