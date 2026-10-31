@@ -139,6 +139,20 @@ feeding RTAB-Map as well as the video, so the map stays consistent;
 Restart replays the scene. A new viewer takes the stream over (the
 running one stops and its sidecar is removed).
 
+The page is a generic test console: every run is persisted as it streams
+to a SQLite database (`<cache-dir>/demo-history.db`, override with
+`--history-db`), with one row per shown frame (image, overlay points,
+camera), its detections, and a point-cloud snapshot per map update. The
+timeline under the video rewinds and winds forward through the persisted
+run — each moment shows that frame's image and overlay points with the
+point cloud as it was at that moment — and earlier runs can be re-opened
+from the persisted-runs picker (`GET /runs`,
+`GET /runs/<id>/snapshot?seq=N`). The point-cloud pane is a 3D WebGL view
+(sampled to 12,000 points for display): drag its corner to resize it,
+use Fullscreen to expand it, and drive it with the Pan/Tilt/Zoom buttons,
+drag to orbit, Shift+drag to pan and wheel to zoom. The top-down floor
+plan remains alongside it as a mini-map.
+
 The demo plays a recorded dataset as real-time video and builds the
 RTAB-Map map live from the same frames as they play. Each frame is
 shown once its own odometry has arrived, overlaid with the features
