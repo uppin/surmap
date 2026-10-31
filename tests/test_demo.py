@@ -668,21 +668,111 @@ def test_the_demo_cli_names_the_sam_gpu_device_argument() -> None:
     assert "--sam-device" in missing.stderr
 
 
-def test_the_sampled_cloud_is_stable_as_the_map_grows() -> None:
-    # Given a map cloud well above the draw cap, on a regular grid
+def test_the_cloud_view_is_the_floor_plan_renderer_from_a_ptz_pose() -> None:
+    # Given a coloured surface cloud
+    from surmap.demo.server import CloudPose, render_cloud_view
+
+    rng = np.random.default_rng(3)
+    points = rng.uniform(-5.0, 5.0, size=(2_000, 3)).astype(np.float32)
+    colors = rng.integers(0, 255, size=(2_000, 3), dtype=np.uint8)
+    bounds = (points.min(axis=0), points.max(axis=0))
+
+    # When the same cloud is rendered from the same pose twice, and
+    # once from a different azimuth
+    first = render_cloud_view(points, colors, CloudPose(), bounds)
+    again = render_cloud_view(points, colors, CloudPose(), bounds)
+    turned = render_cloud_view(points, colors, CloudPose(azimuth=1.2), bounds)
+
+    # Then rendering is deterministic (no sampling churn), the pose
+    # changes the picture, and points actually land in it
+    assert first == again
+    assert turned != first
+    import base64
+    import io
+
+    from PIL import Image
+
+    image = Image.open(io.BytesIO(base64.b64decode(first)))
+    assert image.size == (880, 440)
+    pixels = np.array(image.convert("RGB")).reshape(-1, 3)
+    assert int(np.count_nonzero(np.any(pixels != (10, 12, 14), axis=1))) > 500
+
+
+def test_the_cloud_view_composites_region_points_in_the_track_colour() -> None:
+    # Given a cloud and one SAM region placed inside it
+    from surmap.demo.server import REGION_COLOURS, CloudPose, render_cloud_view
+
+    points = np.zeros((4, 3), np.float32)
+    colors = np.full((4, 3), 90, np.uint8)
+    bounds = (np.full(3, -5.0, np.float32), np.full(3, 5.0, np.float32))
+    region = np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]], np.float32)
+
+    # When the cloud is rendered with the region
+    import base64
+    import io
+
+    from PIL import Image
+
+    png = render_cloud_view(points, colors, CloudPose(), bounds, regions=((1, region),))
+    image = np.array(Image.open(io.BytesIO(base64.b64decode(png))).convert("RGB"))
+
+    # Then the region's colour is drawn (track 1 -> second palette entry)
+    wanted = np.array(REGION_COLOURS[1])
+    assert bool(np.any(np.all(image == wanted, axis=2)))
+
+
+def test_cloud_regions_replace_and_bump_the_cloud_version() -> None:
+    # Given playback controls with no regions
+    from surmap.demo.server import PlaybackControls
+
+    controls = PlaybackControls()
+    before = controls.cloud_version
+
+    # When regions are set twice
+    controls.set_cloud_regions(((1, np.zeros((2, 3), np.float32)),))
+    controls.set_cloud_regions(((2, np.ones((3, 3), np.float32)),))
+
+    # Then the latest replaces the earlier set and the player re-renders
+    assert [track for track, _ in controls.cloud_regions()] == [2]
+    assert controls.cloud_version > before
+
+
+def test_map_events_carry_the_server_rendered_cloud_view(tmp_path: Path) -> None:
+    # Given a live backend with a coloured cloud
+    fake = FakeLiveBackend(odometry={1: _odom_with(), 2: _odom_with()})
+    player = DemoPlayer(_prepared_tiny(tmp_path), fps=1000.0, backend_factory=lambda: fake)
+
+    # When playback runs
+    map_event = next(event for event in player.events() if event.kind == "map")
+
+    # Then the map event carries the cloud rendered server-side from
+    # the shared PTZ pose, like the floor plan image it also carries
+    assert isinstance(map_event.data["cloud_png"], str)
+    assert len(str(map_event.data["cloud_png"])) > 100
+
+
+def test_the_sampled_cloud_is_dense_and_stable_as_the_map_grows() -> None:
+    # Given a map cloud well above the draw cap, on surfaces (as
+    # RTAB-Map clouds lie on walls/floors, not through volumes)
     rng = np.random.default_rng(7)
-    base = rng.uniform(-10.0, 10.0, size=(30_000, 3)).astype(np.float32)
+
+    def surface(count: int) -> NDArray[np.float32]:
+        directions = rng.normal(size=(count, 3))
+        directions /= np.linalg.norm(directions, axis=1, keepdims=True)
+        return (directions * 8.0).astype(np.float32)
+
+    base = surface(30_000)
     colors = np.full((30_000, 3), 128, dtype=np.uint8)
-    grown = np.concatenate([base, rng.uniform(-10.0, 10.0, size=(5_000, 3)).astype(np.float32)])
-    grown_colors = np.full((35_000, 3), 128, dtype=np.uint8)
+    grown = np.concatenate([base, surface(1_000)])
+    grown_colors = np.full((31_000, 3), 128, dtype=np.uint8)
 
     # When the cloud is sampled, then sampled again after it grows
     first, _ = cloud_points(MapCloud(base, colors), max_points=1_000)
     second, _ = cloud_points(MapCloud(grown, grown_colors), max_points=1_000)
 
-    # Then the cap holds, the sample is not starved, and every point
-    # drawn before is still drawn: the 3D pixels must not jump
-    # between map updates
-    assert 500 <= len(first) <= 1_000
-    assert len(second) <= 1_000
-    assert {tuple(point) for point in first} <= {tuple(point) for point in second}
+    # Then the cap is fully used in both samples (dense, not voxel-
+    # starved), and at least 90% of the drawn points survive the
+    # growth: the 3D pixels must not jump between map updates
+    assert len(first) == len(second) == 1_000
+    kept = {tuple(point) for point in first} & {tuple(point) for point in second}
+    assert len(kept) >= 900

@@ -317,7 +317,7 @@ async function showSnapshot(seq) {{
     drawImageFrame(snap.image_b64, snap.overlay, snap.objects, snap.camera,
       {{index: snap.seq, total: maxSeq + 1}});
     if (snap.cloud) {{
-      setCloud(snap.cloud.points, snap.cloud.colors);
+      setCloud(snap.cloud.cloud_png);
       lastMap = {{image: null, extent: snap.cloud.extent, trajectory: snap.cloud.trajectory_xy,
         points: snap.cloud.points}};
       drawMap(lastMap, snap.camera);
@@ -325,7 +325,7 @@ async function showSnapshot(seq) {{
         + `<b>${{snap.cloud.cloud_points}}</b> pts · Odometry <b>${{snap.cloud.odom_state}}</b> `
         + `(at frame ${{snap.cloud.frame_id}})`;
     }} else {{
-      setCloud([], []);
+      setCloud(null);
       rtab.textContent = 'No map snapshot at this point in the run yet.';
     }}
     updateHistoryLabel(
@@ -373,7 +373,6 @@ $('run-load').addEventListener('click', async () => {{
   slider.max = String(Math.max(0, maxSeq));
   runInfo.innerHTML = `Run: <b>${{runId.slice(0, 12)}}…</b> · `
     + `persisted frames: <b>${{detail.frame_count}}</b>`;
-  cloudCentered = false;
   showSnapshot(0);
   updateHistoryLabel('loaded persisted run');
 }});
@@ -382,7 +381,6 @@ function attachListeners() {{
   source.addEventListener('run', (event) => {{
     const data = JSON.parse(event.data);
     currentRunId = data.run_id; frames = 0; maxSeq = -1; started = performance.now();
-    cloudCentered = false;
     runInfo.innerHTML = `Run: <b>${{currentRunId.slice(0, 12)}}…</b> · persisting to SQLite…`;
     refreshRuns(currentRunId);
   }});
@@ -413,7 +411,7 @@ function attachListeners() {{
       rtab.innerHTML = `Keyframes <b>${{data.keyframes}}</b> · cloud `
         + `<b>${{data.cloud_points}}</b> pts<br>Odometry <b>${{data.odom_state}}</b> `
         + `· lag <b>${{data.lag_frames}}</b> · dropped <b>${{data.dropped_frames}}</b>`;
-      setCloud(data.points, data.point_colors);
+      setCloud(data.cloud_png);
       showMap(data);
     }}
   }});
@@ -426,7 +424,7 @@ function attachListeners() {{
       rtab.innerHTML = `Optimized poses <b>${{data.poses}}</b><br>`
         + `Trajectory travelled <b>${{data.travelled_m}} m</b><br>`
         + `Assembled cloud <b>${{data.cloud_points}} points</b>`;
-      setCloud(data.points, data.point_colors);
+      setCloud(data.cloud_png);
       showMap(data);
     }}
     pauseButton.disabled = true;
