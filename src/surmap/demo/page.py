@@ -439,7 +439,9 @@ function attachListeners() {{
   }};
 }}
 function openStream() {{
-  source = new EventSource('/stream?dataset=' + encodeURIComponent(SCENE));
+  const samPrompt = document.getElementById('sam-prompt');
+  source = new EventSource('/stream?dataset=' + encodeURIComponent(SCENE)
+    + (samPrompt ? '&prompt=' + encodeURIComponent(samPrompt.value) : ''));
   attachListeners();
   pauseButton.disabled = false;
 }}

@@ -12,6 +12,7 @@
 | Run | Lines | Note |
 |---|---|---|
 | 2026-10-31 | 526 → 525 | `feat/sam-region-points`: the region listener went into `cloud_script.py` (`listenForRegions`), so this PR did not grow the page |
+| 2026-10-31 | 523 → 525 | `feat/demo-sam-prompt`: the stream URL carries the SAM prompt box's value (+2); the prompt form itself is rendered by `demo/sam_prompt.py` |
 
 ## What the tool found
 

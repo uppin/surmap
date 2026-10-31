@@ -13,6 +13,7 @@
 |---|---|---|
 | 2026-10-31 | 1524 → 1514 | `feat/sam-region-points`: base already 1524 (grown by #53, #54); this PR moved `DemoEvent` and `sam_event` out into `demo/events.py` with its own region placement, so it did not grow the file |
 | 2026-10-31 | 1819 → 1814 | `feat/sam-surfaces`: surface assignment, persistence and rendering went to `survey/surfaces.py`, `demo/events.py`, `demo/history.py` and the new `demo/surface_render.py`; the browser `cloud_regions` round-trip it replaced was deleted |
+| 2026-10-31 | 1814 → 1836 | `feat/demo-sam-prompt` (after merging `feat/sam-surfaces`): prompt resolution and the SAM pane markup went into `demo/sam_prompt.py`; the +22 is the per-run prompt plumbed through `DemoPlayer`, `make_demo_server` and the stream handler |
 
 ## What the tool found
 

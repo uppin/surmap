@@ -17,7 +17,8 @@ builds live, with Pause/Resume and Restart.
 
 With `--sam-device` the frame preview also shows SAM detections
 for each frame, segmented in continuous (video) mode on that GPU
-device. The model defaults to the real SAM 3.1 checkpoint
+device. SAM looks for each scene's default concept (`car` on KITTI);
+the SAM pane's prompt box restarts the run with another one. The model defaults to the real SAM 3.1 checkpoint
 (`facebook/sam3.1`, downloaded with `$HF_TOKEN` from the project
 `.env`); `--sam-model` overrides it with another HF id, a local
 SAM 3.1 `.pt`, or an `.onnx` export (or set `$SURMAP_SAM_MODEL`).
@@ -109,8 +110,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--sam-label",
-        default="object",
-        help="label attached to SAM detections (concept prompt of the export)",
+        default=None,
+        help="SAM concept prompt for every scene (default: each scene's own, e.g. "
+        "car on KITTI; the page's SAM prompt box changes it per run). For an "
+        ".onnx export it names the export's fixed concept",
     )
     parser.add_argument(
         "--sam-fake",

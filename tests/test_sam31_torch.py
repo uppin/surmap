@@ -155,3 +155,16 @@ def test_a_missing_sam3_stack_fails_by_name() -> None:
 
 def _missing(name: str) -> object:
     raise ImportError(f"no module named {name!r}")
+
+
+def test_a_runs_prompt_replaces_the_configured_one(tmp_path: Path) -> None:
+    # Given a streamer configured for "car"
+    model = FakeModel()
+    streamer = Sam31VideoStreamer(model, prompt="car")
+
+    # When a video is streamed prompted "person"
+    frames = list(streamer.stream(_frame_files(tmp_path), prompt="person"))
+
+    # Then SAM was prompted for people and labels its detections so
+    assert model.prompts == [(0, "person")]
+    assert {detection.label for _, detections in frames for detection in detections} == {"person"}
