@@ -620,8 +620,11 @@ HOLD_MAX_S = 2.0
 # With SAM on, a frame also waits this long for its SAM result before
 # it is shown without one. SAM propagates slower than playback, so
 # without the hold every mask would arrive after its frame had left
-# the screen and never be drawn.
-SAM_HOLD_MAX_S = 10.0
+# the screen and never be drawn. The wait is measured from when the
+# frame reaches the head of the display queue, not from when it was
+# played: frames queued behind a slow SAM window must not age out
+# and burst through maskless.
+SAM_HOLD_MAX_S = 30.0
 
 
 @dataclass
@@ -660,6 +663,7 @@ class _Display:
         self._detections: list[DemoEvent] = []
         self._sam: list[DemoEvent] = []
         self._sam_frames: set[int] = set()
+        self._head_since: float | None = None
         self._shown = 0
 
     def add_frame(self, frame: _HeldFrame) -> None:
@@ -678,15 +682,14 @@ class _Display:
             shown = self._overlay_for(head, final)
             if shown is None:
                 break
-            if (
-                self._sam_expected
-                and not final
-                and head.frame_id not in self._sam_frames
-                and time.monotonic() - head.held_at <= SAM_HOLD_MAX_S
-            ):
-                break  # its SAM result is still coming; show them together
+            if self._sam_expected and not final and head.frame_id not in self._sam_frames:
+                if self._head_since is None:
+                    self._head_since = time.monotonic()
+                if time.monotonic() - self._head_since <= SAM_HOLD_MAX_S:
+                    break  # its SAM result is still coming; show them together
             overlay, camera = shown
             self._frames.popleft()
+            self._head_since = None
             self._shown = head.frame_id
             yield DemoEvent(
                 "frame",
