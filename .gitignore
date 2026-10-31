@@ -1,4 +1,5 @@
 .venv/
+.env
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -15,3 +16,6 @@ tests/fixtures/euroc_v101_rtabmap/
 
 # Prepared by scripts/fetch_coral_model.py (generated, uncommitted)
 tests/fixtures/coral_model/
+
+.worktrees
+

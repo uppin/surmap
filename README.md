@@ -175,7 +175,16 @@ the zip into the cache (`~/.cache/surmap/demo-datasets`, override
 `--cache-dir`/`$SURMAP_DEMO_CACHE_DIR`); later runs download nothing.
 Useful flags: `--frames N`, `--start I`, `--fps F`, `--no-rtabmap`,
 `--rtabmap-mode live|batch` (default `live`; `batch` builds the map
-at the end instead), `--prepare-only`. The live panel shows keyframe
+at the end instead), `--prepare-only`. `--sam-device cuda:0`
+additionally runs the real SAM 3.1 (`facebook/sam3.1`, downloaded
+with `HF_TOKEN` from the project `.env`) in continuous (video) mode
+on that GPU and draws its masks, with SAM's persistent object ids,
+on the frame preview for each frame; `--sam-label` is the concept
+prompt (`car` on KITTI) and `--sam-model` can name another HF id, a
+local `.pt`, or an `.onnx` export instead. SAM propagates in
+16-frame windows so a long video fits a 16 GB card (ids restart per
+window). The PyTorch stack is an optional install in `.venv` (see
+`scripts/demo.py --help`). The live panel shows keyframe
 count, cloud size, odometry state, SLAM lag in frames and dropped
 frames. Add a dataset by adding one registry entry.
 

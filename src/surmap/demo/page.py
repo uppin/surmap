@@ -19,6 +19,9 @@ PAGE = """<!DOCTYPE html>
     flex-wrap: wrap; align-items: flex-start; }}
   .stage {{ flex: 1 1 620px; max-width: 880px; min-width: 320px; }}
   canvas#view {{ width: 100%; background: #000; border: 1px solid #34383e; display: block; }}
+  .sam-pane {{ margin-top: 18px; }}
+  .sam-pane h2 {{ font-size: 14px; margin: 0 0 6px; font-weight: 650; }}
+  canvas#sam-view {{ width: 100%; background: #000; border: 1px solid #34383e; display: block; }}
   aside {{ flex: 1 1 380px; min-width: 320px; max-width: 760px; }}
   h2 {{ font-size: 14px; margin: 18px 0 6px; font-weight: 650; }}
   h2:first-child {{ margin-top: 2px; }}
@@ -98,9 +101,10 @@ PAGE = """<!DOCTYPE html>
       <span class="dot" style="background:{mid}"></span> {mid_label} &nbsp;
       <span class="dot" style="background:{far}"></span> far ({far_label})
       &nbsp;— features tracked in this frame, coloured and sized by depth.
-      Yellow boxes: tracked objects from the separate detections stream.
+      Yellow boxes: tracked objects from the separate detections stream.{sam_legend}
     </p>
     <p class="legend">{credit}</p>
+    {sam_pane}
     <div class="history">
       <div class="history-row">
         <button class="btn" id="history-back10" type="button" title="Back 10 frames">⏪ 10</button>
@@ -164,6 +168,9 @@ const runInfo = $('run-info');
 const runSelect = $('run-select');
 let frames = 0, started = performance.now(), scrubSeq = 0, maxSeq = -1;
 let latestDetections = null, source = null, currentRunId = null;
+const samCanvas = document.getElementById('sam-view');
+const samView = samCanvas ? samCanvas.getContext('2d') : null;
+const samStatus = document.getElementById('sam-status');
 let mode = 'live', scrubFetch = 0;
 const SCENE = '{dataset_id}';
 let lastMap = null, lastCamera = null;
@@ -187,6 +194,43 @@ function drawBoxes(objects) {{
     view.strokeRect(x1, y1, x2 - x1, y2 - y1);
     view.fillText(`${{object.label}} #${{object.track_id}}`, x1 + 2, Math.max(10, y1 - 3));
   }}
+}}
+function drawSamObjects(ctx, objects) {{
+  if (!ctx || !objects) return;
+  ctx.strokeStyle = '#22d3ee'; ctx.lineWidth = 1.6;
+  ctx.fillStyle = 'rgba(34, 211, 238, 0.16)';
+  ctx.font = '11px system-ui';
+  for (const object of objects) {{
+    const polygon = object.mask_polygon || [];
+    if (polygon.length > 1) {{
+      ctx.beginPath();
+      polygon.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }} else {{
+      const [x1, y1, x2, y2] = object.box;
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    }}
+    const [lx, ly] = polygon.length ? polygon[0] : object.box;
+    ctx.fillStyle = '#22d3ee';
+    ctx.fillText(`SAM ${{object.label}} #${{object.track_id}}`, lx + 2, Math.max(10, ly - 3));
+    ctx.fillStyle = 'rgba(34, 211, 238, 0.16)';
+  }}
+}}
+function drawSamPane(data) {{
+  if (!samView) return;
+  if (samStatus) {{
+    samStatus.textContent = `SAM frame ${{data.frame_id}} · ${{data.objects.length}} object(s) · `
+      + `updated ${{new Date().toLocaleTimeString()}} (SAM runs at its own rate; `
+      + `the main preview above is not delayed by it)`;
+  }}
+  if (!data.image_b64) return;
+  const image = new Image();
+  image.onload = () => {{
+    samView.drawImage(image, 0, 0, samCanvas.width, samCanvas.height);
+    drawSamObjects(samView, data.objects);
+    URL.revokeObjectURL(image.src);
+  }};
+  image.src = 'data:image/jpeg;base64,' + data.image_b64;
 }}
 function drawImageFrame(imageB64, overlay, objects, camera, labelData) {{
   const image = new Image();
@@ -344,6 +388,9 @@ function attachListeners() {{
   }});
   source.addEventListener('detections', (event) => {{
     latestDetections = JSON.parse(event.data);
+  }});
+  source.addEventListener('sam', (event) => {{
+    drawSamPane(JSON.parse(event.data));
   }});
   source.addEventListener('frame', (event) => {{
     const data = JSON.parse(event.data);

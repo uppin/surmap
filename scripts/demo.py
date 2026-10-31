@@ -13,6 +13,18 @@ builds live, with Pause/Resume and Restart.
     uv run python scripts/demo.py --frames 200         # first 200 pairs only
     uv run python scripts/demo.py --prepare-only       # just download+cache --dataset
     uv run python scripts/demo.py --list-datasets
+    uv run python scripts/demo.py --sam-device cuda:0 --sam-model /models/sam3.1.onnx
+
+With `--sam-device` the frame preview also shows SAM detections
+for each frame, segmented in continuous (video) mode on that GPU
+device. The model defaults to the real SAM 3.1 checkpoint
+(`facebook/sam3.1`, downloaded with `$HF_TOKEN` from the project
+`.env`); `--sam-model` overrides it with another HF id, a local
+SAM 3.1 `.pt`, or an `.onnx` export (or set `$SURMAP_SAM_MODEL`).
+Without `--sam-device` no SAM runs. The real model needs the
+PyTorch stack in the project env (see `sam3_torch`); the `.onnx`
+path needs `onnxruntime-gpu` for a GPU device. Startup fails by
+name when a runtime, model or provider is missing.
 
 Add a dataset by adding one entry to `DATASETS` in
 `surmap.demo.datasets`; it then appears in the page's picker, in
@@ -31,10 +43,12 @@ from pathlib import Path
 
 from surmap.demo.datasets import DATASETS, default_cache_dir, ensure_dataset
 from surmap.demo.server import make_demo_server
+from surmap.env import load_env
 from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_env()  # project .env fills gaps (HF_TOKEN, SURMAP_SAM_MODEL, ...)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=sorted(DATASETS), default="euroc-v1-01-easy")
     parser.add_argument(
@@ -74,6 +88,31 @@ def main(argv: list[str] | None = None) -> int:
         help="detector model profile for the overlay",
     )
     parser.add_argument(
+        "--sam-device",
+        "--sam-gpu",
+        "--gpu-device",
+        dest="sam_device",
+        default=None,
+        metavar="DEVICE",
+        help="run SAM in continuous (video) mode on this GPU device, "
+        "e.g. cuda:0 or 0, and show its detections on the frame preview "
+        "(without it no SAM runs)",
+    )
+    parser.add_argument(
+        "--sam-model",
+        "--sam3-model",
+        dest="sam_model",
+        type=Path,
+        default=None,
+        help="SAM model for --sam-device: an HF id, a local SAM 3.1 .pt, "
+        "or an .onnx export (default: facebook/sam3.1, or $SURMAP_SAM_MODEL)",
+    )
+    parser.add_argument(
+        "--sam-label",
+        default="object",
+        help="label attached to SAM detections (concept prompt of the export)",
+    )
+    parser.add_argument(
         "--history-db",
         type=Path,
         default=None,
@@ -83,6 +122,14 @@ def main(argv: list[str] | None = None) -> int:
         "--prepare-only", action="store_true", help="download+cache the dataset and exit"
     )
     args = parser.parse_args(argv)
+
+    sam_model = args.sam_model
+    if sam_model is None and os.environ.get("SURMAP_SAM_MODEL"):
+        sam_model = Path(os.environ["SURMAP_SAM_MODEL"])
+    if sam_model is None and os.environ.get("SURMAP_SAM3_MODEL"):
+        sam_model = Path(os.environ["SURMAP_SAM3_MODEL"])
+    if sam_model is not None and args.sam_device is None:
+        parser.error("--sam-model requires --sam-device (e.g. --sam-device cuda:0)")
 
     if args.list_datasets:
         for spec in DATASETS.values():
@@ -112,9 +159,14 @@ def main(argv: list[str] | None = None) -> int:
         rtabmap_mode=args.rtabmap_mode,
         coral_model_dir=coral_dir,
         coral_model=args.coral_model,
+        sam_model=sam_model,
+        sam_device=args.sam_device,
+        sam_label=args.sam_label,
         history_db=args.history_db,
     )
     host, port = server.server_address[:2]
+    if args.sam_device is not None:
+        print(f"SAM (video): {sam_model or 'facebook/sam3.1'} on {args.sam_device}")
     print(f"SurMap demo: open http://{host}:{port}/ in a browser (Ctrl+C to stop)")
     try:
         server.serve_forever()
