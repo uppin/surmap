@@ -13,7 +13,6 @@ from surmap.slam.streaming import StreamingRtabmapBackend
 from surmap.types import Vec3
 from tests.test_slam_streaming import CAM_YAML, FakeProcess, _backend, _frame, _hello
 
-
 SQUARE = ((10.0, 10.0), (50.0, 10.0), (50.0, 50.0), (10.0, 50.0))
 
 
@@ -195,7 +194,7 @@ def test_a_region_query_is_written_ahead_of_pairs_still_queued() -> None:
 
         # Then the region query went out before the queued pair 2, and was answered
         kinds = [
-            (r["type"], r.get("frame_id", r.get("query_id")))
+            (r["type"], r.get("query_id") if r["type"] == "region" else r.get("frame_id"))
             for r in _requests(bytes(holder[0].written))
         ]
         assert kinds[1:] == [("pair", 1), ("region", 6), ("pair", 2)]

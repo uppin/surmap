@@ -15,6 +15,7 @@ import queue
 import subprocess
 import threading
 import uuid
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,7 @@ from numpy.typing import NDArray
 from PIL import Image
 
 from surmap.slam.base import FrameResult
+from surmap.slam.regions import RegionQuery, RegionResult
 from surmap.slam.sidecar import SHARED_CONTAINER_ENV, SidecarError, _subprocess_runner
 from surmap.slam.stream_protocol import (
     NEUTRAL_GREY,
@@ -38,6 +40,7 @@ from surmap.slam.stream_protocol import (
     decode_server_line,
     encode_hello,
     encode_pair,
+    encode_region,
 )
 from surmap.types import Pose, StereoFramePair, Vec3
 
@@ -221,6 +224,7 @@ class StreamingRtabmapBackend:
         queue_size: int = 4,
         flush_timeout: float = 120.0,
         max_depth_m: float = 6.0,
+        region_buffer_s: float = 10.0,
     ) -> None:
         if os.environ.get(SHARED_CONTAINER_ENV, "").strip():
             raise SidecarError(
@@ -236,7 +240,6 @@ class StreamingRtabmapBackend:
         self._live_containers: list[str] = [self._container_name]
         self.closed = False
         self._dropped = 0
-        self._dropped_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._odom: dict[int, Pose] = {}
         self._odom_order: list[int] = []
@@ -248,9 +251,15 @@ class StreamingRtabmapBackend:
         self._placed_cache: dict[int, tuple[Pose, NDArray[np.float32]]] = {}
         self._frames: list[StereoFramePair] = []
         self._updates: queue.Queue[MapUpdate] = queue.Queue()
-        self._in_queue: queue.Queue[tuple[StereoFramePair, bytes, bytes] | None] = queue.Queue(
-            maxsize=max(1, queue_size)
-        )
+        # The writer's two lanes: control requests (region queries) go
+        # out first and are never dropped; pairs drop oldest when RTAB-Map
+        # falls behind, and `None` closes stdin once they are written.
+        self._outbox = threading.Condition()
+        self._controls: deque[bytes] = deque()
+        self._pairs: deque[tuple[StereoFramePair, bytes, bytes] | None] = deque()
+        self._queue_size = max(1, queue_size)
+        # query_id -> (answered, answer slot), filled by the reader.
+        self._regions: dict[int, tuple[threading.Event, list[RegionResult]]] = {}
         self._error: str | None = None
         self._rectification: Rectification | None = None
         # Newest odometry per frame, keypoints included, for the display.
@@ -277,7 +286,9 @@ class StreamingRtabmapBackend:
         self._writer.start()
         try:
             self._process.write(
-                encode_hello(cam0_yaml, cam1_yaml, width, height, params or {}, max_depth_m)
+                encode_hello(
+                    cam0_yaml, cam1_yaml, width, height, params or {}, max_depth_m, region_buffer_s
+                )
             )
         except Exception as exc:
             raise SidecarError(f"streaming sidecar hello failed: {exc}") from exc
@@ -301,7 +312,7 @@ class StreamingRtabmapBackend:
 
     @property
     def dropped_frames(self) -> int:
-        with self._dropped_lock:
+        with self._outbox:
             return self._dropped
 
     @property
@@ -330,43 +341,50 @@ class StreamingRtabmapBackend:
         left = _to_gray8(frame, 0, self._width, self._height)
         right = _to_gray8(frame, 1, self._width, self._height)
         self._frames.append(frame)
-        item = (frame, left, right)
-        try:
-            self._in_queue.put_nowait(item)
-        except queue.Full:
-            try:
-                self._in_queue.get_nowait()
-                with self._dropped_lock:
-                    self._dropped += 1
-            except queue.Empty:
-                pass
-            self._in_queue.put_nowait(item)
+        with self._outbox:
+            if len(self._pairs) >= self._queue_size and self._pairs[0] is not None:
+                self._pairs.popleft()
+                self._dropped += 1
+            self._pairs.append((frame, left, right))
+            self._outbox.notify()
         with self._state_lock:
             pose = self._odom.get(frame.frame_id)
         return FrameResult(frame.frame_id, frame.t_ns, pose, ())
 
+    def _close_outbox(self) -> None:
+        with self._outbox:
+            self._pairs.append(None)
+            self._outbox.notify()
+
     def _write_loop(self) -> None:
         while True:
-            item = self._in_queue.get()
-            if item is None:
+            with self._outbox:
+                while not self._controls and not self._pairs:
+                    self._outbox.wait()
+                control = self._controls.popleft() if self._controls else None
+                item = self._pairs.popleft() if control is None else None
+            if control is None and item is None:
                 try:
                     self._process.close_stdin()
                 except Exception:
                     pass
                 return
-            frame, left, right = item
-            try:
-                self._process.write(
-                    encode_pair(
-                        frame.frame_id,
-                        frame.t_ns,
-                        self._width,
-                        self._height,
-                        left,
-                        right,
-                        encoding="gray8",
-                    )
+            if control is not None:
+                data = control
+            else:
+                assert item is not None
+                frame, left, right = item
+                data = encode_pair(
+                    frame.frame_id,
+                    frame.t_ns,
+                    self._width,
+                    self._height,
+                    left,
+                    right,
+                    encoding="gray8",
                 )
+            try:
+                self._process.write(data)
             except Exception as exc:  # process died
                 self._error = str(exc)
                 return
@@ -384,6 +402,13 @@ class StreamingRtabmapBackend:
             except Exception as exc:
                 self._error = str(exc)
                 self._ready.set()  # a bad hello (e.g. version mismatch) fails fast
+                continue
+            if isinstance(message, RegionResult):
+                with self._state_lock:
+                    waiter = self._regions.get(message.query_id)
+                if waiter is not None:
+                    waiter[1].append(message)
+                    waiter[0].set()
                 continue
             if isinstance(message, Ready):
                 self._rectification = message.rectification
@@ -418,6 +443,34 @@ class StreamingRtabmapBackend:
                 self._updates.put(message)
                 if isinstance(message, GraphUpdate) and message.final:
                     self._final.set()
+
+    def region_points(self, query: RegionQuery, timeout: float = 5.0) -> RegionResult:
+        """Every point the sidecar's stereo recovers inside `query`'s polygon.
+
+        The request jumps ahead of pairs still queued, and blocks this
+        thread (never playback) until the answer for this `query_id`
+        arrives; concurrent queries each get their own answer.
+        """
+        if self.closed:
+            raise SidecarError("cannot query regions after close()")
+        if self._error is not None:
+            raise SidecarError(f"streaming sidecar error: {self._error}")
+        answered = threading.Event()
+        slot: list[RegionResult] = []
+        with self._state_lock:
+            self._regions[query.query_id] = (answered, slot)
+        try:
+            with self._outbox:
+                self._controls.append(encode_region(query))
+                self._outbox.notify()
+            if not answered.wait(timeout=timeout):
+                raise SidecarError(
+                    f"region query {query.query_id} got no answer within {timeout:g} s"
+                )
+            return slot[0]
+        finally:
+            with self._state_lock:
+                self._regions.pop(query.query_id, None)
 
     def poll_updates(self) -> list[MapUpdate]:
         drained: list[MapUpdate] = []
@@ -465,7 +518,7 @@ class StreamingRtabmapBackend:
 
     def flush(self) -> list[FrameResult]:
         # Sentinel closes stdin after queued pairs are written.
-        self._in_queue.put(None)
+        self._close_outbox()
         if not self._final.wait(timeout=self._flush_timeout):
             raise SidecarError("streaming sidecar flush timed out waiting for the final graph")
         if self._error is not None:
@@ -488,10 +541,7 @@ class StreamingRtabmapBackend:
         if self.closed and not self._live_containers:
             return
         self.closed = True
-        try:
-            self._in_queue.put_nowait(None)
-        except Exception:
-            pass
+        self._close_outbox()
         try:
             self._process.terminate()
         except Exception:

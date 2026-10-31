@@ -113,6 +113,12 @@ def main(argv: list[str] | None = None) -> int:
         help="label attached to SAM detections (concept prompt of the export)",
     )
     parser.add_argument(
+        "--sam-fake",
+        action="store_true",
+        help="no model: a fake SAM outlines the centre of every frame, so each "
+        "region's dense 3D points show on the 3D pane without a GPU",
+    )
+    parser.add_argument(
         "--history-db",
         type=Path,
         default=None,
@@ -128,7 +134,11 @@ def main(argv: list[str] | None = None) -> int:
         sam_model = Path(os.environ["SURMAP_SAM_MODEL"])
     if sam_model is None and os.environ.get("SURMAP_SAM3_MODEL"):
         sam_model = Path(os.environ["SURMAP_SAM3_MODEL"])
-    if sam_model is not None and args.sam_device is None:
+    if args.sam_fake:
+        if args.sam_device is not None or args.sam_model is not None:
+            parser.error("--sam-fake replaces SAM: drop --sam-device / --sam-model")
+        sam_model = None  # a model from the environment is not used either
+    elif sam_model is not None and args.sam_device is None:
         parser.error("--sam-model requires --sam-device (e.g. --sam-device cuda:0)")
 
     if args.list_datasets:
@@ -162,9 +172,12 @@ def main(argv: list[str] | None = None) -> int:
         sam_model=sam_model,
         sam_device=args.sam_device,
         sam_label=args.sam_label,
+        sam_fake=args.sam_fake,
         history_db=args.history_db,
     )
     host, port = server.server_address[:2]
+    if args.sam_fake:
+        print("SAM (fake): the centre of every frame, placed in 3D on the 3D pane")
     if args.sam_device is not None:
         print(f"SAM (video): {sam_model or 'facebook/sam3.1'} on {args.sam_device}")
     print(f"SurMap demo: open http://{host}:{port}/ in a browser (Ctrl+C to stop)")

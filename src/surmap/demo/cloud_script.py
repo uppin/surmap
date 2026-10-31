@@ -13,6 +13,9 @@ const gl = cloudCanvas.getContext('webgl', {{antialias: true}});
 const ptz = {{az: -0.8, el: 0.85, dist: 12, target: [0, 0, 0]}};
 let cloudData = null, cloudBuffer = null, cloudCount = 0;
 let cloudProgram = null, cloudCentered = false;
+// The latest SAM region(s) in 3D: replaced by each region event, never accumulated.
+let regionBuffer = null, regionCount = 0;
+const REGION_COLOURS = [[1, 0.25, 0.6], [0.2, 0.9, 1], [1, 0.85, 0.1], [0.5, 1, 0.3]];
 function cloudShader(type, text) {{
   const shader = gl.createShader(type);
   gl.shaderSource(shader, text); gl.compileShader(shader);
@@ -30,6 +33,7 @@ function initCloud() {{
   gl.attachShader(cloudProgram, cloudShader(gl.FRAGMENT_SHADER, fs));
   gl.linkProgram(cloudProgram);
   cloudBuffer = gl.createBuffer();
+  regionBuffer = gl.createBuffer();
 }}
 function setCloud(points, colors) {{
   cloudData = {{points: points || [], colors: colors || []}};
@@ -46,6 +50,34 @@ function setCloud(points, colors) {{
   gl.bufferData(gl.ARRAY_BUFFER, flat, gl.DYNAMIC_DRAW);
   if (!cloudCentered) resetCloudView();
   drawCloud();
+}}
+function setRegionLayer(regions) {{
+  const placed = (regions || []).filter((r) => r.points && r.points.length);
+  regionCount = placed.reduce((n, r) => n + r.points.length, 0);
+  if (gl && regionCount) {{
+    const flat = new Float32Array(regionCount * 6);
+    let i = 0;
+    placed.forEach((region, k) => {{
+      const c = REGION_COLOURS[(region.track_id ?? k) % REGION_COLOURS.length];
+      for (const p of region.points) {{
+        flat.set([p[0], p[2], -p[1], c[0], c[1], c[2]], i * 6);
+        i += 1;
+      }}
+    }});
+    gl.bindBuffer(gl.ARRAY_BUFFER, regionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flat, gl.DYNAMIC_DRAW);
+  }}
+  drawCloud();
+}}
+function drawPoints(buffer, count, mvp) {{
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  const pos = gl.getAttribLocation(cloudProgram, 'aPos');
+  const col = gl.getAttribLocation(cloudProgram, 'aCol');
+  gl.enableVertexAttribArray(pos); gl.enableVertexAttribArray(col);
+  gl.vertexAttribPointer(pos, 3, gl.FLOAT, false, 24, 0);
+  gl.vertexAttribPointer(col, 3, gl.FLOAT, false, 24, 12);
+  gl.uniformMatrix4fv(gl.getUniformLocation(cloudProgram, 'uMvp'), false, mvp);
+  gl.drawArrays(gl.POINTS, 0, count);
 }}
 function cloudBounds() {{
   if (!cloudData || !cloudData.points.length) return null;
@@ -110,18 +142,13 @@ function drawCloud() {{
   gl.viewport(0, 0, cloudCanvas.width, cloudCanvas.height);
   gl.clearColor(0.04, 0.05, 0.06, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST);
-  if (!cloudCount) return;
+  if (!cloudCount && !regionCount) return;
   gl.useProgram(cloudProgram);
-  gl.bindBuffer(gl.ARRAY_BUFFER, cloudBuffer);
-  const pos = gl.getAttribLocation(cloudProgram, 'aPos');
-  const col = gl.getAttribLocation(cloudProgram, 'aCol');
-  gl.enableVertexAttribArray(pos); gl.enableVertexAttribArray(col);
-  gl.vertexAttribPointer(pos, 3, gl.FLOAT, false, 24, 0);
-  gl.vertexAttribPointer(col, 3, gl.FLOAT, false, 24, 12);
-  gl.uniformMatrix4fv(gl.getUniformLocation(cloudProgram, 'uMvp'), false, mvpMatrix());
-  gl.drawArrays(gl.POINTS, 0, cloudCount);
+  const mvp = mvpMatrix();
+  if (cloudCount) drawPoints(cloudBuffer, cloudCount, mvp);
+  if (regionCount) drawPoints(regionBuffer, regionCount, mvp);
   $('ptz-readout').textContent =
-    `${{cloudCount}} pts · pan ${{Math.round(ptz.az * 57.3)}}° · `
+    `${{cloudCount}} pts · region ${{regionCount}} pts · pan ${{Math.round(ptz.az * 57.3)}}° · `
     + `tilt ${{Math.round(ptz.el * 57.3)}}° · zoom ${{ptz.dist.toFixed(1)}} m`;
 }}
 function resizeCloud() {{

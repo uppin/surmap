@@ -39,6 +39,8 @@ from PIL import Image
 
 from surmap.demo.datasets import (
     DATASETS,
+    DISPLAY_HEIGHT,
+    DISPLAY_WIDTH,
     DatasetSpec,
     DemoCalibration,
     PreparedDataset,
@@ -56,10 +58,12 @@ from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
 from surmap.detection.source import CoralDetectionSource, DetectionSource
 from surmap.detection.tracker import TrackedDetection
 from surmap.slam.base import FrameResult
-from surmap.slam.sidecar import SidecarRtabmapBackend
+from surmap.slam.regions import RegionPointSource, RegionQuery
+from surmap.slam.sidecar import SidecarError, SidecarRtabmapBackend
 from surmap.slam.stream_protocol import Keypoint, MapUpdate, OdomUpdate, Rectification
 from surmap.slam.streaming import MapCloud, StreamingRtabmapBackend, pose_rotation
 from surmap.survey.sam import (
+    CentredBoxVideoSamDetector,
     RawFrame,
     SamDetection,
     VideoSamDetector,
@@ -629,6 +633,12 @@ HOLD_MAX_S = 2.0
 # image to the separate SAM pane, whenever it lands.
 SAM_FRAME_CACHE = 256
 
+# Cap on one region event's points for the browser (evenly sampled).
+MAX_REGION_POINTS = 50_000
+
+# How long a SAM region may wait for the sidecar's dense stereo.
+REGION_TIMEOUT_S = 2.0
+
 
 @dataclass
 class _HeldFrame:
@@ -656,8 +666,15 @@ class _Display:
         backend: LiveSlamBackend | None,
         calibration: DemoCalibration,
         stops: DepthStops,
+        size: tuple[int, int] = (DISPLAY_WIDTH, DISPLAY_HEIGHT),
     ) -> None:
         self._total = total
+        self._size = size
+        # Regions are placed only by a backend that can answer them.
+        self._regions: RegionPointSource | None = (
+            backend if isinstance(backend, RegionPointSource) else None
+        )
+        self._next_query = 1
         self._stops = stops
         self._backend = backend
         self._calibration = calibration
@@ -725,6 +742,42 @@ class _Display:
         for event in sam_ready:
             frame_id = int(str(event.data["frame_id"]))
             yield DemoEvent("sam", event.data, jpeg=self._jpegs.get(frame_id, b""))
+            if self._regions is not None:
+                yield self._region_event(self._regions, event)
+
+    def _region_event(self, source: RegionPointSource, sam: DemoEvent) -> DemoEvent:
+        """Each SAM mask's dense points on its own frame (left channel, display px)."""
+        frame_id = int(str(sam.data["frame_id"]))
+        objects = sam.data["objects"]
+        assert isinstance(objects, list)
+        regions: list[dict[str, object]] = []
+        for obj in objects:
+            query = RegionQuery(
+                query_id=self._next_query,
+                frame_id=frame_id,
+                channel=0,
+                width=self._size[0],
+                height=self._size[1],
+                polygon=tuple((float(x), float(y)) for x, y in obj["mask_polygon"]),
+            )
+            self._next_query += 1
+            try:
+                result = source.region_points(query, timeout=REGION_TIMEOUT_S)
+            except SidecarError:
+                continue  # a region that never came back is not drawn
+            points = result.points
+            if len(points) > MAX_REGION_POINTS:
+                step = len(points) / MAX_REGION_POINTS
+                points = tuple(points[int(i * step)] for i in range(MAX_REGION_POINTS))
+            regions.append(
+                {
+                    "track_id": obj["track_id"],
+                    "label": obj["label"],
+                    "status": result.status.value,
+                    "points": [[round(p.x, 3), round(p.y, 3), round(p.z, 3)] for p in points],
+                }
+            )
+        return DemoEvent("region", {"frame_id": frame_id, "regions": regions})
 
     def _overlay_for(
         self, frame: _HeldFrame, final: bool
@@ -926,7 +979,9 @@ class DemoPlayer:
             else None
         )
         live = backend if isinstance(backend, LiveSlamBackend) else None
-        display = _Display(len(timestamps), live, calibration, prepared.spec.depth_stops_m)
+        display = _Display(
+            len(timestamps), live, calibration, prepared.spec.depth_stops_m, self._size
+        )
         last_map_emit = 0.0
         try:
             for index, t_ns in enumerate(timestamps):
@@ -1222,6 +1277,7 @@ def make_demo_server(
     sam_source: VideoSamDetector | None = None,
     sam_detector: VideoSamDetector | None = None,
     sam_streamer: VideoSamStreamer | None = None,
+    sam_fake: bool = False,
     history_db: Path | None = None,
     history_store: RunHistoryStore | None = None,
     backend_factory: Callable[[], SidecarRtabmapBackend | LiveSlamBackend] | None = None,
@@ -1243,6 +1299,10 @@ def make_demo_server(
     if video_sam is not None and sam_streamer is not None:
         raise ValueError("pass only one of sam_source and sam_streamer")
     video_streamer = sam_streamer
+    if sam_fake:
+        if video_sam is not None or video_streamer is not None or sam_device is not None:
+            raise ValueError("sam_fake replaces SAM: pass no other SAM source or device")
+        video_sam = CentredBoxVideoSamDetector(sam_label)
     if video_sam is None and video_streamer is None and sam_device is not None:
         # Built eagerly so a missing model or GPU provider fails by
         # name at startup, not mid-stream. An `.onnx` model runs the

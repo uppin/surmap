@@ -1,7 +1,7 @@
 # Changeset: SAM region → dense 3D points (`StreamRegionPoints`)
 
 **Date**: 2026-10-31
-**Status**: 🚧 In Progress
+**Status**: ✅ Complete
 **Type**: Feature
 **Behaviour**: adds
 **Complexity**: 5 — proto contract change + native sidecar protocol v4 + cross-thread request/response in the streaming backend + CM5 backend mode + demo, across `deploy`, `slam`, `survey`, `demo`
@@ -18,17 +18,17 @@
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Proto: `RegionQuery`, `RegionPoints`, `RegionStatus`, `rpc StreamRegionPoints`; bindings regenerated (`scripts/gen_survey_rpc.py`)
-  - [ ] `surmap.slam.regions`: `RegionQuery`, `RegionResult`, `RegionStatus`, `RegionPointSource` port, `InMemoryRegionPointSource`, `invalid_reason()`
-  - [ ] Stream protocol v4: `encode_region`, `region` line → `RegionResult`, hello `region_buffer_s`
-  - [ ] `StreamingRtabmapBackend.region_points()` — non-dropping request path through the writer, reply matched by `query_id`, timeout → `SidecarError`
-  - [ ] Sidecar: ring of rectified pairs + odom pose bounded by `region_buffer_s`; polygon raw→rectified (`cv::undistortPoints` with K, D, R, P of the channel); SGBM disparity referenced to the requested channel over the polygon's bbox rows; back-project; `getMapCorrection() * odomPose` (+ baseline for channel 1); depth-capped by `max_depth_m`
-  - [ ] CM5: `stream_region_points` handler mounted on `Cm5SurveyService`; chunks of ≤ 10 000 points, `final` on the last; no source → stream rejected
-  - [ ] CM5: `--slam-backend streaming` builds `StreamingRtabmapBackend` as both `SlamBackend` and `RegionPointSource`
-  - [ ] Demo: `LiveSlamBackend.region_points`; each released `sam` event → `region` event (per object: track id, label, status, points); 3D pane draws the latest region layer, replacing the previous one
-  - [ ] Demo: `--sam-fake` (launcher + `build_server(sam_fake=True)`) runs `InMemoryVideoSamDetector` with a fixed centred polygon
-  - [ ] Real-container e2e green (dense > sparse, inside-polygon reprojection, channel 0 ≈ channel 1)
+- [wf 3] ✅ 2026-10-31 `/green` Green — implement until every red test passes · gates green: 680 passed / 3 skipped with `SURMAP_REQUIRE_RTABMAP_STREAM_E2E=1`; region e2e green on the real sidecar
+  - [x] Proto: `RegionQuery`, `RegionPoints`, `RegionStatus`, `rpc StreamRegionPoints`; bindings regenerated (`scripts/gen_survey_rpc.py`)
+  - [x] `surmap.slam.regions`: `RegionQuery`, `RegionResult`, `RegionStatus`, `RegionPointSource` port, `InMemoryRegionPointSource`, `invalid_reason()`
+  - [x] Stream protocol v4: `encode_region`, `region` line → `RegionResult`, hello `region_buffer_s`
+  - [x] `StreamingRtabmapBackend.region_points()` — non-dropping request path through the writer, reply matched by `query_id`, timeout → `SidecarError`
+  - [x] Sidecar: ring of rectified pairs + odom pose bounded by `region_buffer_s`; polygon raw→rectified (`cv::undistortPoints` with K, D, R, P of the channel); SGBM disparity referenced to the requested channel over the polygon's bbox rows; back-project; `getMapCorrection() * odomPose` (+ baseline for channel 1); depth-capped by `max_depth_m`
+  - [x] CM5: `stream_region_points` handler mounted on `Cm5SurveyService`; chunks of ≤ 10 000 points, `final` on the last; no source → stream rejected
+  - [x] CM5: `--slam-backend streaming` builds `StreamingRtabmapBackend` as both `SlamBackend` and `RegionPointSource`
+  - [x] Demo: `LiveSlamBackend.region_points`; each released `sam` event → `region` event (per object: track id, label, status, points); 3D pane draws the latest region layer, replacing the previous one
+  - [x] Demo: `--sam-fake` (launcher + `build_server(sam_fake=True)`) runs `InMemoryVideoSamDetector` with a fixed centred polygon
+  - [x] Real-container e2e green (dense > sparse, inside-polygon reprojection, channel 0 ≈ channel 1)
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs, then open the PR ready ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/connectrpc.md` / `README.md` — the new rpc and `--slam-backend streaming`
@@ -255,3 +255,40 @@ out-of-order answers, timeout by name, region written ahead of queued pairs, hel
 - **Lint at red**: `ruff check tests` reports I001 in the six new files only because
   `surmap.slam.regions` does not exist yet (sorted as third-party); `mypy` likewise fails
   on the missing module. Both clear when the module lands in Green; no ignore added.
+- **Green (2026-10-31)**: ruff, format, mypy strict green; `SURMAP_REQUIRE_RTABMAP_STREAM_E2E=1
+  uv run pytest -q` → 680 passed, 3 skipped (the real-container streaming and region e2e
+  ran). Sidecar image `surmap/rtabmap-stream:99d17b40764f` built locally.
+- **Region probe** (EuRoC fixture, 376×240, frame 85, amd64 emulated on Apple Silicon):
+  centre 140×100 box → 15 330 points (ch0, 65 ms) / 15 578 (ch1, 36 ms) vs 40 sparse
+  inliers; whole 336×200 box → 67 066 (ch0, 138 ms) / 70 229 (ch1, 162 ms) vs 140 sparse;
+  channel-1 → channel-0 nearest-neighbour median 0.7 cm, p90 1.8 cm; frame 1 `expired`
+  with a 2 s ring. Point counts can exceed the raw box's pixel count: the polygon maps to
+  a slightly larger area in the rectified image.
+- **Demo probe** (cached EuRoC V1_01, 200 frames from index 300, `CentredBoxVideoSamDetector`,
+  live sidecar): 200 `sam` and 200 `region` events; 199 regions `ok`, 8 289–8 775 points
+  each (median 8 761); the last SAM result is released after the sidecar's stdin closed,
+  so its query fails and that region is omitted (empty `regions`).
+
+### Decided during Green
+
+- **Implementation names differ from the plan**: the fake SAM is `CentredBoxVideoSamDetector`
+  (`survey/sam.py`: track 1, centre 30 % of each frame) rather than a configured
+  `InMemoryVideoSamDetector`, so the polygon follows each scene's display size. The demo
+  checks the backend against `RegionPointSource` instead of extending `LiveSlamBackend`,
+  so existing live-backend doubles without `region_points` keep working.
+- **Version-pinned tests updated** (planned contract change): `test_slam_stream_protocol.py`
+  `test_protocol_version_is_three_…` became `test_a_current_sidecar_is_accepted_and_a_pre_region_one_is_not`
+  (v4 accepted, v3 rejected); the rectification test's ready line moved to version 4.
+- **Red-test defect fixed**: `test_a_region_query_is_written_ahead_of_pairs_still_queued`
+  keyed requests by `frame_id`, which region headers also carry; it now keys regions by
+  `query_id` (assertion unchanged).
+- **Tests added during Green** for the CM5 live mode (not in Red): it needs a calibration
+  dir; it starts the streaming sidecar at the frame size with scaled cameras and serves
+  regions.
+- **Demo regions are queried synchronously** when a `sam` event is released (timeout 2 s;
+  a failed query omits that region); SAM results are rare relative to frames. Region events
+  are capped at 50 000 points for the browser, evenly sampled.
+- **CM5 live mode**: `StreamSurvey` gets a pose only once that frame's odometry has arrived;
+  scene points still arrive via `flush()` at stream end, as in batch mode.
+- **Sidecar SGBM**: block 5, `numDisparities = max(64, width/5 rounded up to 16)`, P1/P2
+  8·b²/32·b², uniqueness 10, speckle 100/2, `MODE_SGBM`; computed on the polygon's rows ± block.

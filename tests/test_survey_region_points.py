@@ -1,16 +1,19 @@
 """`Cm5SurveyService.StreamRegionPoints`: SAM polygon in, dense map-frame points out."""
 
 from collections.abc import AsyncIterable
+from pathlib import Path
 from typing import cast
 
 import pytest
 
 from surmap.rpc.hosts.in_memory import InMemoryHost
 from surmap.slam.regions import InMemoryRegionPointSource, RegionPointSource
-from surmap.survey.cm5_main import build_description
+from surmap.survey.cm5_main import build_description, main, streaming_backend
 from surmap.survey.cm5_server import stream_region_points
 from surmap.survey.v1 import survey_pb2
 from surmap.types import Vec3
+from tests.test_demo import CAM0_YAML
+from tests.test_slam_streaming import FakeProcess, _hello
 
 SQUARE = ((10.0, 10.0), (50.0, 10.0), (50.0, 50.0), (10.0, 50.0))
 OK = survey_pb2.REGION_STATUS_OK
@@ -172,3 +175,34 @@ async def test_the_region_stream_is_mounted_on_the_cm5_survey_service() -> None:
 
     # Then the CM5 answers it over the service
     assert [(r.query_id, r.status, len(r.points)) for r in responses] == [(3, OK, 2)]
+
+
+def test_the_cm5_live_mode_needs_a_calibration_dir() -> None:
+    # Given / When / Then the live RTAB-Map mode cannot start uncalibrated
+    with pytest.raises(SystemExit):
+        main(["--slam-backend", "streaming"])
+
+
+def test_the_cm5_live_mode_starts_the_streaming_sidecar_at_the_frame_size(
+    tmp_path: Path,
+) -> None:
+    # Given a EuRoC-layout calibration dir
+    for camera in ("cam0", "cam1"):
+        (tmp_path / "mav0" / camera).mkdir(parents=True)
+        (tmp_path / "mav0" / camera / "sensor.yaml").write_text(CAM0_YAML, encoding="utf-8")
+    started: list[FakeProcess] = []
+
+    def factory(argv: list[str]) -> FakeProcess:
+        started.append(FakeProcess(argv))
+        return started[-1]
+
+    # When the CM5's live backend is built for 376 x 240 frames
+    backend = streaming_backend(tmp_path, (376, 240), process_factory=factory)
+    backend.close()
+
+    # Then the sidecar is told that size, with the camera scaled to it,
+    # and the backend serves both poses and regions
+    hello = _hello(started[0])
+    assert (hello["width"], hello["height"]) == (376, 240)
+    assert "resolution: [376, 240]" in str(hello["cam0_yaml"])
+    assert isinstance(backend, RegionPointSource)
