@@ -56,6 +56,7 @@ image = (
         "sam3 @ git+https://github.com/facebookresearch/sam3.git",
         "fastapi[standard]",
         "pillow",
+        "setuptools<81",  # sam3 imports pkg_resources, removed in setuptools 81
     )
     .add_local_python_source("surmap")
 )
