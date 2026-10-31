@@ -721,6 +721,22 @@ def test_the_cloud_view_composites_region_points_in_the_track_colour() -> None:
     assert bool(np.any(np.all(image == wanted, axis=2)))
 
 
+def test_cloud_regions_replace_and_bump_the_cloud_version() -> None:
+    # Given playback controls with no regions
+    from surmap.demo.server import PlaybackControls
+
+    controls = PlaybackControls()
+    before = controls.cloud_version
+
+    # When regions are set twice
+    controls.set_cloud_regions(((1, np.zeros((2, 3), np.float32)),))
+    controls.set_cloud_regions(((2, np.ones((3, 3), np.float32)),))
+
+    # Then the latest replaces the earlier set and the player re-renders
+    assert [track for track, _ in controls.cloud_regions()] == [2]
+    assert controls.cloud_version > before
+
+
 def test_map_events_carry_the_server_rendered_cloud_view(tmp_path: Path) -> None:
     # Given a live backend with a coloured cloud
     fake = FakeLiveBackend(odometry={1: _odom_with(), 2: _odom_with()})
