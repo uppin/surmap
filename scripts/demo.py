@@ -74,6 +74,12 @@ def main(argv: list[str] | None = None) -> int:
         help="detector model profile for the overlay",
     )
     parser.add_argument(
+        "--history-db",
+        type=Path,
+        default=None,
+        help="SQLite file for persisted runs (default: <cache-dir>/demo-history.db)",
+    )
+    parser.add_argument(
         "--prepare-only", action="store_true", help="download+cache the dataset and exit"
     )
     args = parser.parse_args(argv)
@@ -106,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         rtabmap_mode=args.rtabmap_mode,
         coral_model_dir=coral_dir,
         coral_model=args.coral_model,
+        history_db=args.history_db,
     )
     host, port = server.server_address[:2]
     print(f"SurMap demo: open http://{host}:{port}/ in a browser (Ctrl+C to stop)")
