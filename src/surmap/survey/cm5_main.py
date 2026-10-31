@@ -9,14 +9,22 @@ EuRoC `sensor.yaml` files under `--calibration-dir`:
 
     python -m surmap.survey.cm5_main --slam-backend sidecar \
         --calibration-dir tests/fixtures/euroc_v101_rtabmap
+
+`--slam-backend streaming` runs the live RTAB-Map sidecar instead: poses
+arrive while the stream runs (the batch sidecar only has them at the
+end), and the same sidecar serves `StreamRegionPoints` — dense points
+under a SAM polygon on a recent frame. Frames are resized to
+`--frame-size` (default 376x240) for it.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+from collections.abc import Callable
 from pathlib import Path
 
+from surmap.demo.datasets import scaled_sensor_yaml
 from surmap.detection.detector import CoralDetector
 from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
 from surmap.detection.source import CoralDetectionSource, DetectionSource
@@ -24,7 +32,10 @@ from surmap.rpc.description import Closeable, ServerDescription
 from surmap.rpc.hosts.hypercorn import HypercornHost
 from surmap.rpc.routes import health_routes
 from surmap.slam.base import SlamBackend
+from surmap.slam.regions import RegionPointSource
 from surmap.slam.sidecar import PINNED_RTABMAP_IMAGE, SidecarRtabmapBackend
+from surmap.slam.stream_process import StreamProcess
+from surmap.slam.streaming import StreamingRtabmapBackend
 from surmap.survey.cm5_server import cm5_service_module
 from surmap.survey.object_points import ObjectPointSource
 from surmap.survey.stereo import StereoReconstructor
@@ -56,13 +67,14 @@ def build_description(
     *,
     use_stereo: bool = True,
     detections: DetectionSource | None = None,
+    regions: RegionPointSource | None = None,
 ) -> ServerDescription[None]:
     """The CM5 server's description: survey service plus health routes."""
     if stereo is None and use_stereo:
         stereo = StereoReconstructor()
     closeables: tuple[Closeable, ...] = (_BackendCloseable(slam),) if slam is not None else ()
     return ServerDescription(
-        services=(cm5_service_module(slam, objects, stereo, detections),),
+        services=(cm5_service_module(slam, objects, stereo, detections, regions),),
         http_routes=health_routes(lambda: False),
         closeables=lambda _ctx: closeables,
     )
@@ -114,6 +126,44 @@ def sidecar_backend(
     )
 
 
+def streaming_backend(
+    calibration_dir: Path,
+    frame_size: tuple[int, int] = (376, 240),
+    *,
+    region_buffer_s: float = 10.0,
+    process_factory: Callable[[list[str]], StreamProcess] | None = None,
+) -> StreamingRtabmapBackend:
+    """The live RTAB-Map sidecar calibrated from a EuRoC dataset dir.
+
+    It is both the CM5's `SlamBackend` (poses while streaming) and its
+    `RegionPointSource`; frames stay queryable for `region_buffer_s`.
+    """
+    mav0 = calibration_dir / "mav0"
+    width, height = frame_size
+
+    def camera(name: str) -> str:
+        return scaled_sensor_yaml(
+            (mav0 / name / "sensor.yaml").read_text(encoding="utf-8"), width, height
+        )
+
+    return StreamingRtabmapBackend(
+        cam0_yaml=camera("cam0"),
+        cam1_yaml=camera("cam1"),
+        width=width,
+        height=height,
+        region_buffer_s=region_buffer_s,
+        process_factory=process_factory,
+    )
+
+
+def _frame_size(text: str) -> tuple[int, int]:
+    width, _, height = text.partition("x")
+    try:
+        return int(width), int(height)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected WIDTHxHEIGHT, got {text!r}") from exc
+
+
 async def serve(host: str, port: int, description: ServerDescription[None] | None = None) -> None:
     """Serve the CM5 description until cancelled; always stop the host."""
     server = HypercornHost(description or build_description(), None, host=host, port=port)
@@ -129,7 +179,9 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="surmap.survey.cm5_main")
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--slam-backend", choices=("inmemory", "sidecar"), default="inmemory")
+    parser.add_argument(
+        "--slam-backend", choices=("inmemory", "sidecar", "streaming"), default="inmemory"
+    )
     parser.add_argument(
         "--calibration-dir",
         type=Path,
@@ -137,6 +189,18 @@ def main(argv: list[str] | None = None) -> None:
         help="EuRoC dataset dir holding mav0/{cam0,cam1,imu0} for the sidecar backend",
     )
     parser.add_argument("--rtabmap-image", default=PINNED_RTABMAP_IMAGE)
+    parser.add_argument(
+        "--frame-size",
+        type=_frame_size,
+        default=(376, 240),
+        help="WIDTHxHEIGHT the streaming sidecar works at (default 376x240)",
+    )
+    parser.add_argument(
+        "--region-buffer-s",
+        type=float,
+        default=10.0,
+        help="how long frames stay queryable for StreamRegionPoints (streaming backend)",
+    )
     parser.add_argument(
         "--rtabmap-shared-container",
         default=None,
@@ -179,6 +243,15 @@ def main(argv: list[str] | None = None) -> None:
             ),
             use_stereo=False,
             detections=detections,
+        )
+    elif args.slam_backend == "streaming":
+        if args.calibration_dir is None:
+            parser.error("--slam-backend streaming requires --calibration-dir")
+        live = streaming_backend(
+            args.calibration_dir, args.frame_size, region_buffer_s=args.region_buffer_s
+        )
+        description = build_description(
+            slam=live, use_stereo=False, detections=detections, regions=live
         )
     elif detections is not None:
         description = build_description(detections=detections)

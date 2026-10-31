@@ -176,3 +176,37 @@ class InMemoryVideoSamStreamer:
 
     def close(self) -> None:
         pass
+
+
+class CentredBoxVideoSamDetector:
+    """`VideoSamDetector` stand-in with no model: one fixed object per frame.
+
+    Outlines the centre of every frame (the middle `fraction` of its
+    width and height) as track 1, so the downstream path — region
+    queries, the 3D region layer — runs without a GPU or SAM weights.
+    """
+
+    def __init__(self, label: str = "object", fraction: float = 0.3) -> None:
+        self._label = label
+        self._fraction = fraction
+
+    def reset(self) -> None:
+        pass
+
+    def track(self, frame: RawFrame) -> tuple[SamDetection, ...]:
+        half_w = frame.width * self._fraction / 2
+        half_h = frame.height * self._fraction / 2
+        cx, cy = frame.width / 2, frame.height / 2
+        x0, y0, x1, y1 = cx - half_w, cy - half_h, cx + half_w, cy + half_h
+        return (
+            SamDetection(
+                self._label,
+                1.0,
+                (x0, y0, x1, y1),
+                ((x0, y0), (x1, y0), (x1, y1), (x0, y1)),
+                track_id=1,
+            ),
+        )
+
+    def close(self) -> None:
+        pass

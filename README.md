@@ -184,7 +184,11 @@ prompt (`car` on KITTI) and `--sam-model` can name another HF id, a
 local `.pt`, or an `.onnx` export instead. SAM propagates in
 16-frame windows so a long video fits a 16 GB card (ids restart per
 window). The PyTorch stack is an optional install in `.venv` (see
-`scripts/demo.py --help`). The live panel shows keyframe
+`scripts/demo.py --help`). With the live map, each SAM result's masks
+are also placed in 3D: the sidecar's dense stereo under each mask on
+that frame is drawn on the 3D pane, replacing the previous region.
+`--sam-fake` does the same without a GPU or model — a stand-in SAM
+outlines the centre of every frame. The live panel shows keyframe
 count, cloud size, odometry state, SLAM lag in frames and dropped
 frames. Add a dataset by adding one registry entry.
 
@@ -230,6 +234,13 @@ RTAB-Map's optimized poses and assembled cloud at end of stream. Run
 `uv run python scripts/fetch_rtabmap_fixture.py` to pull the pinned
 image and cut the EuRoC V1_01 test subset; the CM5 server selects the
 sidecar with `--slam-backend sidecar --calibration-dir <dataset>`.
+`--slam-backend streaming --calibration-dir <dataset>` runs the live
+sidecar instead (`--frame-size`, default `376x240`): poses arrive while
+the survey streams, and the same sidecar serves
+`Cm5SurveyService.StreamRegionPoints` — a frame id, channel and polygon
+(e.g. a SAM mask) in, every dense-stereo point inside it on that frame
+out, in the map frame. Frames stay queryable for `--region-buffer-s`
+(default 10 s); older ones are answered `FRAME_EXPIRED`.
 Teardown is ownership-based: the backend removes only the containers
 it started (exact names, never a prefix/image sweep). To borrow a
 reusable already-running container instead, set

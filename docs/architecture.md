@@ -441,7 +441,22 @@ from the pair's own frames by `surmap.survey.stereo` (decode,
 principal-point alignment, block matching, back-projection —
 numpy/Pillow, no native dependency), then placed in the map frame
 with the SLAM pose — alongside the video channels the
-requester asked to see. The GPU API is served by
+requester asked to see. `Cm5SurveyService.StreamRegionPoints` is the
+Board API's region-of-interest stream: each `RegionQuery` names a
+`frame_id` sent on `StreamSurvey`, the channel (0/1) a polygon — a SAM
+mask — was drawn on, that image's size and the polygon; each answer
+(`RegionPoints`, chunked, `final` on the last) is every point dense
+stereo recovers inside the polygon **on that one frame**, in the map
+frame, never accumulated across frames or queries. It is served by the
+live RTAB-Map sidecar (`--slam-backend streaming`): the sidecar keeps a
+time-bounded ring (`--region-buffer-s`, default 10 s) of rectified pairs
+and odometry poses, maps the polygon onto the requested channel's
+rectified image, runs SGBM with that channel as the reference, and
+places the points with RTAB-Map's current map correction × the frame's
+odometry pose. A frame no longer in the ring is answered
+`FRAME_EXPIRED`, a lost one `NO_POSE`, a malformed query
+`INVALID_QUERY` — never a guess. Region points are a read-only layer on
+RTAB-Map's output; nothing is written back into its map. The GPU API is served by
 `StationSamService.StreamAnalysis` (`surmap.survey.station_server`):
 the same frames in, SAM detection vectors out, each repeating the
 requester-assigned `frame_id`; the stream's analysis mode decides

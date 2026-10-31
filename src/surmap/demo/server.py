@@ -39,6 +39,8 @@ from PIL import Image
 
 from surmap.demo.datasets import (
     DATASETS,
+    DISPLAY_HEIGHT,
+    DISPLAY_WIDTH,
     DatasetSpec,
     DemoCalibration,
     PreparedDataset,
@@ -49,6 +51,8 @@ from surmap.demo.datasets import (
     load_calibration,
     scaled_sensor_yaml,
 )
+from surmap.demo.events import DemoEvent as DemoEvent
+from surmap.demo.events import RegionPlacer, sam_event
 from surmap.demo.history import RunHistoryStore
 from surmap.demo.page import PAGE
 from surmap.detection.detector import CoralDetector, decode_rgb
@@ -56,12 +60,13 @@ from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
 from surmap.detection.source import CoralDetectionSource, DetectionSource
 from surmap.detection.tracker import TrackedDetection
 from surmap.slam.base import FrameResult
+from surmap.slam.regions import RegionPointSource
 from surmap.slam.sidecar import SidecarRtabmapBackend
 from surmap.slam.stream_protocol import Keypoint, MapUpdate, OdomUpdate, Rectification
 from surmap.slam.streaming import MapCloud, StreamingRtabmapBackend, pose_rotation
 from surmap.survey.sam import (
+    CentredBoxVideoSamDetector,
     RawFrame,
-    SamDetection,
     VideoSamDetector,
     VideoSamStreamer,
 )
@@ -139,13 +144,6 @@ class LiveSlamBackend(Protocol):
     def keyframe_count(self) -> int: ...
     @property
     def rectification(self) -> Rectification | None: ...
-
-
-@dataclass(frozen=True)
-class DemoEvent:
-    kind: str  # "frame" | "status" | "final" | "map" | "detections" | "sam"
-    data: dict[str, object]
-    jpeg: bytes = b""
 
 
 def project_overlay(
@@ -526,7 +524,7 @@ class _SamWorker:
                 self._busy = True
             try:
                 width, height = self._size
-                event = _sam_event(
+                event = sam_event(
                     frame_id,
                     t_ns,
                     self._source.track(RawFrame(frame_id, t_ns, 0, width, height, "mjpeg", jpeg)),
@@ -540,28 +538,6 @@ class _SamWorker:
                 self._results.append(event)
                 self._busy = False
                 self._condition.notify_all()
-
-
-def _sam_event(frame_id: int, t_ns: int, detections: tuple[SamDetection, ...]) -> DemoEvent:
-    # A separate event, keyed by frame_id like `detections` — the page
-    # joins SAM masks to the frame on screen by frame_id.
-    return DemoEvent(
-        "sam",
-        {
-            "frame_id": frame_id,
-            "t_ns": t_ns,
-            "objects": [
-                {
-                    "label": detection.label,
-                    "score": round(detection.score, 2),
-                    "track_id": detection.track_id,
-                    "box": [round(value, 1) for value in detection.box_xyxy],
-                    "mask_polygon": [[round(x, 1), round(y, 1)] for x, y in detection.mask_polygon],
-                }
-                for detection in detections
-            ],
-        },
-    )
 
 
 class _SamStreamWorker:
@@ -618,7 +594,7 @@ class _SamStreamWorker:
                     break
                 frame_id, t_ns = self._frame_keys[index]
                 with self._condition:
-                    self._results.append(_sam_event(frame_id, t_ns, detections))
+                    self._results.append(sam_event(frame_id, t_ns, detections))
                     self._condition.notify_all()
         except BaseException as exc:  # surfaced on the playback thread
             with self._condition:
@@ -683,8 +659,13 @@ class _Display:
         backend: LiveSlamBackend | None,
         calibration: DemoCalibration,
         stops: DepthStops,
+        size: tuple[int, int] = (DISPLAY_WIDTH, DISPLAY_HEIGHT),
     ) -> None:
         self._total = total
+        # Regions are placed only by a backend that can answer them.
+        self._regions: RegionPlacer | None = (
+            RegionPlacer(backend, size) if isinstance(backend, RegionPointSource) else None
+        )
         self._stops = stops
         self._backend = backend
         self._calibration = calibration
@@ -752,6 +733,8 @@ class _Display:
         for event in sam_ready:
             frame_id = int(str(event.data["frame_id"]))
             yield DemoEvent("sam", event.data, jpeg=self._jpegs.get(frame_id, b""))
+            if self._regions is not None:
+                yield self._regions.region_event(event)
 
     def _overlay_for(
         self, frame: _HeldFrame, final: bool
@@ -953,7 +936,9 @@ class DemoPlayer:
             else None
         )
         live = backend if isinstance(backend, LiveSlamBackend) else None
-        display = _Display(len(timestamps), live, calibration, prepared.spec.depth_stops_m)
+        display = _Display(
+            len(timestamps), live, calibration, prepared.spec.depth_stops_m, self._size
+        )
         last_map_emit = 0.0
         try:
             for index, t_ns in enumerate(timestamps):
@@ -1249,6 +1234,7 @@ def make_demo_server(
     sam_source: VideoSamDetector | None = None,
     sam_detector: VideoSamDetector | None = None,
     sam_streamer: VideoSamStreamer | None = None,
+    sam_fake: bool = False,
     history_db: Path | None = None,
     history_store: RunHistoryStore | None = None,
     backend_factory: Callable[[], SidecarRtabmapBackend | LiveSlamBackend] | None = None,
@@ -1270,6 +1256,10 @@ def make_demo_server(
     if video_sam is not None and sam_streamer is not None:
         raise ValueError("pass only one of sam_source and sam_streamer")
     video_streamer = sam_streamer
+    if sam_fake:
+        if video_sam is not None or video_streamer is not None or sam_device is not None:
+            raise ValueError("sam_fake replaces SAM: pass no other SAM source or device")
+        video_sam = CentredBoxVideoSamDetector(sam_label)
     if video_sam is None and video_streamer is None and sam_device is not None:
         # Built eagerly so a missing model or GPU provider fails by
         # name at startup, not mid-stream. An `.onnx` model runs the

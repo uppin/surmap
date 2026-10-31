@@ -25,6 +25,7 @@ from surmap.rpc.compose import Brick
 from surmap.rpc.description import ServiceModule
 from surmap.slam.base import FrameResult, SlamBackend
 from surmap.slam.fake import InMemorySlamBackend
+from surmap.slam.regions import RegionPointSource, RegionQuery, RegionStatus, invalid_reason
 from surmap.survey.designations import object_designation, video_designation
 from surmap.survey.moving_stream import _encoding_name as _encoding_name
 from surmap.survey.moving_stream import stream_moving_areas as stream_moving_areas
@@ -42,6 +43,18 @@ class Cm5Context:
     slam: SlamBackend
     objects: ObjectPointSource
     stereo: StereoReconstructor | None = None
+    regions: RegionPointSource | None = None
+
+
+# A region is streamed in chunks of at most this many points.
+MAX_REGION_POINTS_PER_MESSAGE = 10_000
+
+_REGION_STATUS = {
+    RegionStatus.OK: survey_pb2.REGION_STATUS_OK,
+    RegionStatus.FRAME_EXPIRED: survey_pb2.REGION_STATUS_FRAME_EXPIRED,
+    RegionStatus.NO_POSE: survey_pb2.REGION_STATUS_NO_POSE,
+    RegionStatus.INVALID_QUERY: survey_pb2.REGION_STATUS_INVALID_QUERY,
+}
 
 
 def _point_responses(
@@ -238,11 +251,54 @@ async def stream_detections(
         raise ValueError("first request must be config")
 
 
+async def stream_region_points(
+    requests: AsyncIterable[survey_pb2.RegionQuery],
+    source: RegionPointSource | None,
+    max_points_per_message: int = MAX_REGION_POINTS_PER_MESSAGE,
+) -> AsyncIterator[survey_pb2.RegionPoints]:
+    """Serve the region stream: SAM polygons in, dense map-frame points out.
+
+    Each query is answered from its own frame only — nothing accumulates
+    across frames or queries — in chunks whose last one is `final`. An
+    invalid query is refused without asking for depth; a server with no
+    region source configured rejects the stream.
+    """
+    if source is None:
+        raise ValueError("no region source configured on this CM5 server")
+    async for request in requests:
+        query = RegionQuery(
+            query_id=request.query_id,
+            frame_id=request.frame_id,
+            channel=request.channel,
+            width=request.width,
+            height=request.height,
+            polygon=tuple((point.x, point.y) for point in request.polygon),
+        )
+        points: tuple[Vec3, ...] = ()
+        if invalid_reason(query) is not None:
+            status = RegionStatus.INVALID_QUERY
+        else:
+            result = await asyncio.to_thread(source.region_points, query)
+            status, points = result.status, result.points
+        step = max(1, max_points_per_message)
+        chunks = [points[start : start + step] for start in range(0, len(points), step)] or [()]
+        for index, chunk in enumerate(chunks):
+            yield survey_pb2.RegionPoints(
+                query_id=query.query_id,
+                frame_id=query.frame_id,
+                channel=query.channel,
+                status=_REGION_STATUS[status],
+                points=[survey_pb2.Point3(x=p.x, y=p.y, z=p.z) for p in chunk],
+                final=index == len(chunks) - 1,
+            )
+
+
 def cm5_service_module(
     slam: SlamBackend | None = None,
     objects: ObjectPointSource | None = None,
     stereo: StereoReconstructor | None = None,
     detections: DetectionSource | None = None,
+    regions: RegionPointSource | None = None,
 ) -> ServiceModule[Any]:
     """The `surmap.rpc` service module mounting `Cm5SurveyService`."""
     default_slam: SlamBackend = slam if slam is not None else InMemorySlamBackend()
@@ -281,12 +337,21 @@ def cm5_service_module(
             ):
                 yield response
 
+        effective_regions: RegionPointSource | None = getattr(ctx, "regions", None) or regions
+
+        async def region_points_handler(
+            requests: AsyncIterable[survey_pb2.RegionQuery], _ctx: Any
+        ) -> AsyncIterator[survey_pb2.RegionPoints]:
+            async for response in stream_region_points(requests, effective_regions):
+                yield response
+
         return (
             Brick(
                 methods={
                     "StreamSurvey": handler,
                     "StreamDetections": detections_handler,
                     "StreamMovingAreas": moving_areas_handler,
+                    "StreamRegionPoints": region_points_handler,
                 }
             ),
         )

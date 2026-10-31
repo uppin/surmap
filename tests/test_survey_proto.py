@@ -25,6 +25,7 @@ def test_both_survey_services_are_bidirectional_streams() -> None:
         "StreamSurvey",
         "StreamDetections",
         "StreamMovingAreas",
+        "StreamRegionPoints",
     ]
 
 
@@ -111,3 +112,43 @@ def test_cm5_detections_are_keyed_by_frame_id_with_tracks() -> None:
 def test_analysis_modes_cover_every_frame_and_best_effort_drop() -> None:
     assert survey_pb2.ANALYSIS_MODE_EVERY_FRAME == 1
     assert survey_pb2.ANALYSIS_MODE_BEST_EFFORT_DROP == 2
+
+
+def test_a_region_query_names_frame_channel_image_size_and_polygon() -> None:
+    # When a requester asks for the points under SAM's polygon on the right image
+    query = survey_pb2.RegionQuery(
+        query_id=5,
+        frame_id=42,
+        channel=1,
+        width=376,
+        height=240,
+        polygon=[survey_pb2.Point2(x=1.0, y=2.0), survey_pb2.Point2(x=3.0, y=4.0)],
+    )
+
+    # Then every field survives the wire
+    decoded = survey_pb2.RegionQuery.FromString(query.SerializeToString())
+    assert (decoded.query_id, decoded.frame_id, decoded.channel) == (5, 42, 1)
+    assert (decoded.width, decoded.height) == (376, 240)
+    assert [(p.x, p.y) for p in decoded.polygon] == [(1.0, 2.0), (3.0, 4.0)]
+
+
+def test_region_points_carry_status_map_points_and_the_last_chunk_flag() -> None:
+    # When the CM5 answers query 5 with the final chunk of its points
+    answer = survey_pb2.RegionPoints(
+        query_id=5,
+        frame_id=42,
+        channel=1,
+        status=survey_pb2.REGION_STATUS_OK,
+        points=[survey_pb2.Point3(x=1.0, y=2.0, z=3.0)],
+        final=True,
+    )
+
+    # Then every field survives the wire, and each failure has its own status
+    decoded = survey_pb2.RegionPoints.FromString(answer.SerializeToString())
+    assert decoded.status == survey_pb2.REGION_STATUS_OK and decoded.final
+    assert [(p.x, p.y, p.z) for p in decoded.points] == [(1.0, 2.0, 3.0)]
+    assert {
+        survey_pb2.REGION_STATUS_FRAME_EXPIRED,
+        survey_pb2.REGION_STATUS_NO_POSE,
+        survey_pb2.REGION_STATUS_INVALID_QUERY,
+    } == {2, 3, 4}
