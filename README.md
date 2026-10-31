@@ -182,7 +182,7 @@ on that GPU and draws its masks, with SAM's persistent object ids,
 on the frame preview for each frame; `--sam-label` is the concept
 prompt (`car` on KITTI) and `--sam-model` can name another HF id, a
 local `.pt`, or an `.onnx` export instead. SAM propagates in
-8-frame windows so a long video fits a 16 GB card (ids restart per
+32-frame windows so a long video fits a 16 GB card (ids restart per
 window). The PyTorch stack is an optional install in `.venv` (see
 `scripts/demo.py --help`). The live panel shows keyframe
 count, cloud size, odometry state, SLAM lag in frames and dropped

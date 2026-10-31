@@ -705,6 +705,11 @@ class _Display:
                 jpeg=head.jpeg,
             )
             yield from self._ready(final=False)
+            if not final:
+                # One frame per release: a backlog that built up while
+                # SAM (or odometry) was slow drains at the caller's
+                # playback pace instead of flashing past in a burst.
+                break
         yield from self._ready(final=final)
 
     def _ready(self, *, final: bool) -> Iterator[DemoEvent]:
