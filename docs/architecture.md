@@ -359,6 +359,21 @@ Layered — the layers are never merged into one undifferentiated cloud:
    timestamped snapshots with track IDs — queryable history,
    excluded from layers 1–2 by construction.
 
+- On `main` the browser demo builds a **SAM surface layer** as the
+  station-side precursor of layers 2–3 (`surmap.survey.surfaces`):
+  every dense region point (§10, `StreamRegionPoints`) is assigned to
+  one object surface. Identity is continuation — a region's 10 cm match
+  voxels already owned by a surface vote for it, and ≥ 20 % continues
+  it — never SAM's track id, which restarts per propagation window. A
+  voxel has one owner, and points are deduplicated per 2 cm. A surface
+  whose region centroid drifts ≥ 0.4 m from its first observation is
+  marked moving for good and keeps accumulating as a smear, drawn red
+  so it reads as motion. That is a display choice. It departs from
+  layer 3 above (moving objects as snapshots, never accumulated), and
+  it never reaches layer 1 or RTAB-Map's map. Known limit: an object
+  that moves more than its own overlap per frame never continues a
+  surface, so it leaves one static surface per frame. Surfaces are
+  persisted per demo run in SQLite (`surface_points`).
 - "Adding object points to RTAB-Map's output" means layers 2–3 are
   added to the output product (`augment_map` on-board, `surmap_map`
   on the base). Object points are never written back into RTAB-Map's
@@ -456,7 +471,8 @@ places the points with RTAB-Map's current map correction × the frame's
 odometry pose. A frame no longer in the ring is answered
 `FRAME_EXPIRED`, a lost one `NO_POSE`, a malformed query
 `INVALID_QUERY` — never a guess. Region points are a read-only layer on
-RTAB-Map's output; nothing is written back into its map. The GPU API is served by
+RTAB-Map's output; nothing is written back into its map. The station
+side assigns them to persistent object surfaces (§6, SAM surface layer). The GPU API is served by
 `StationSamService.StreamAnalysis` (`surmap.survey.station_server`):
 the same frames in, SAM detection vectors out, each repeating the
 requester-assigned `frame_id`; the stream's analysis mode decides
