@@ -388,7 +388,6 @@ function attachListeners() {{
     latestDetections = JSON.parse(event.data);
   }});
   source.addEventListener('sam', (event) => drawSamPane(JSON.parse(event.data)));
-  listenForRegions(source);
   source.addEventListener('frame', (event) => {{
     const data = JSON.parse(event.data);
     frames += 1;
