@@ -511,3 +511,112 @@ def test_without_rtabmap_frames_carry_no_camera(tmp_path: Path) -> None:
 
     # Then there is no camera pose to show
     assert frame.data["camera"] is None
+
+
+def test_sam_video_events_arrive_for_each_frame_in_order(tmp_path: Path) -> None:
+    # Given a SAM video source that segments every frame of the stream
+    from surmap.survey.sam import InMemoryVideoSamDetector, SamDetection
+
+    sam = InMemoryVideoSamDetector(
+        (SamDetection("car", 0.9, (1.0, 2.0, 30.0, 40.0), ((1.0, 2.0), (30.0, 40.0))),)
+    )
+    player = DemoPlayer(_prepared_tiny(tmp_path), fps=1000.0, with_rtabmap=False, sam_source=sam)
+
+    # When playback runs to the end
+    events = list(player.events())
+
+    # Then each frame has its own SAM event, in frame order, after the
+    # first frame (SAM runs off the frame loop, like the Coral stream)
+    kinds = [event.kind for event in events]
+    assert kinds.count("frame") == 2 and kinds.count("sam") == 2
+    assert kinds.index("sam") > kinds.index("frame")
+    sam_events = [event for event in events if event.kind == "sam"]
+    assert [event.data["frame_id"] for event in sam_events] == [1, 2]
+    objects = sam_events[0].data["objects"]
+    assert isinstance(objects, list)
+    assert objects[0]["label"] == "car"
+    assert objects[0]["track_id"] == 1
+    assert objects[0]["mask_polygon"] == [[1.0, 2.0], [30.0, 40.0]]
+    assert [frame.frame_id for frame in sam.frames] == [1, 2]
+
+
+def test_the_page_shows_sam_masks_when_sam_is_enabled(tmp_path: Path) -> None:
+    # Given a demo server with a SAM video source
+    from surmap.survey.sam import InMemoryVideoSamDetector, SamDetection
+
+    sam = InMemoryVideoSamDetector(
+        (SamDetection("car", 0.9, (1.0, 2.0, 30.0, 40.0), ((1.0, 2.0), (30.0, 40.0))),)
+    )
+    server = make_demo_server(
+        _prepared_tiny(tmp_path), host="127.0.0.1", port=0, with_rtabmap=False, sam_source=sam
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = str(server.server_address[0]), int(server.server_address[1])
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/", timeout=5) as response:
+            page = response.read().decode()
+        with urllib.request.urlopen(f"http://{host}:{port}/stream", timeout=10) as response:
+            body = response.read().decode()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    # Then the preview page draws SAM results and the stream sends them per frame
+    assert "addEventListener('sam'" in page
+    assert "SAM (video)" in page
+    assert body.count("event: sam") == 2
+    assert '"track_id": 1' in body
+
+
+def test_sam_streamer_events_arrive_for_each_frame_in_order(tmp_path: Path) -> None:
+    # Given a whole-video SAM streamer (SAM 3.1's native session mode)
+    from surmap.survey.sam import InMemoryVideoSamStreamer, SamDetection
+
+    streamer = InMemoryVideoSamStreamer(
+        (SamDetection("car", 0.9, (1.0, 2.0, 30.0, 40.0), ((1.0, 2.0), (30.0, 40.0))),)
+    )
+    player = DemoPlayer(
+        _prepared_tiny(tmp_path), fps=1000.0, with_rtabmap=False, sam_streamer=streamer
+    )
+
+    # When playback runs to the end
+    events = list(player.events())
+
+    # Then each played frame has its own SAM event, in frame order
+    sam_events = [event for event in events if event.kind == "sam"]
+    assert [event.data["frame_id"] for event in sam_events] == [1, 2]
+    assert len(streamer.videos) == 1 and len(streamer.videos[0]) == 2
+
+
+def test_the_demo_cli_names_the_sam_gpu_device_argument() -> None:
+    # Given / When the launcher is asked for its help
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "scripts/demo.py", "--help"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    # Then the optional SAM device argument is listed, defaulting to
+    # the real SAM 3.1 checkpoint, with --sam-model as an override
+    assert result.returncode == 0
+    assert "--sam-device" in result.stdout
+    assert "--sam-model" in result.stdout
+    assert "facebook/sam3.1" in result.stdout
+
+    # And a model without a device is a clear command-line error, not a silent no-op
+    missing = subprocess.run(
+        [sys.executable, "scripts/demo.py", "--sam-model", "facebook/sam3.1"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert missing.returncode == 2
+    assert "--sam-device" in missing.stderr

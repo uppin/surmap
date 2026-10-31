@@ -58,6 +58,12 @@ from surmap.slam.base import FrameResult
 from surmap.slam.sidecar import SidecarRtabmapBackend
 from surmap.slam.stream_protocol import Keypoint, MapUpdate, OdomUpdate, Rectification
 from surmap.slam.streaming import MapCloud, StreamingRtabmapBackend, pose_rotation
+from surmap.survey.sam import (
+    RawFrame,
+    SamDetection,
+    VideoSamDetector,
+    VideoSamStreamer,
+)
 from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
 from surmap.types import Pose, StereoFramePair, Vec3
 
@@ -91,7 +97,7 @@ class LiveSlamBackend(Protocol):
 
 @dataclass(frozen=True)
 class DemoEvent:
-    kind: str  # "frame" | "status" | "final" | "map" | "detections"
+    kind: str  # "frame" | "status" | "final" | "map" | "detections" | "sam"
     data: dict[str, object]
     jpeg: bytes = b""
 
@@ -416,6 +422,160 @@ def _detections_event(frame_id: int, t_ns: int, tracked: tuple[TrackedDetection,
     )
 
 
+class _SamWorker:
+    """Runs the SAM video session off the frame loop, in frame order.
+
+    Continuous (video) mode is stateful, so unlike the Coral worker
+    this one never drops or reorders: every submitted frame is queued
+    FIFO and tracked sequentially, however far behind playback it
+    falls. Results come back in frame order.
+    """
+
+    def __init__(self, source: VideoSamDetector, size: tuple[int, int]) -> None:
+        self._source = source
+        self._size = size
+        self._condition = threading.Condition()
+        self._pending: deque[tuple[int, int, bytes]] = deque()
+        self._busy = False
+        self._closed = False
+        self._results: list[DemoEvent] = []
+        self._error: BaseException | None = None
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def submit(self, frame_id: int, t_ns: int, jpeg: bytes) -> None:
+        with self._condition:
+            self._pending.append((frame_id, t_ns, jpeg))
+            self._condition.notify_all()
+
+    def poll(self) -> list[DemoEvent]:
+        with self._condition:
+            if self._error is not None:
+                raise self._error
+            done, self._results = self._results, []
+            return done
+
+    def drain(self, timeout: float = 120.0) -> list[DemoEvent]:
+        """Wait for every queued frame to be tracked, then return results."""
+        with self._condition:
+            self._condition.wait_for(
+                lambda: (not self._pending and not self._busy) or self._error is not None,
+                timeout=timeout,
+            )
+        return self.poll()
+
+    def close(self) -> None:
+        with self._condition:
+            self._closed = True
+            self._condition.notify_all()
+        self._thread.join(timeout=5)
+
+    def _run(self) -> None:
+        while True:
+            with self._condition:
+                self._condition.wait_for(lambda: bool(self._pending) or self._closed)
+                if self._closed:
+                    return
+                frame_id, t_ns, jpeg = self._pending.popleft()
+                self._busy = True
+            try:
+                width, height = self._size
+                event = _sam_event(
+                    frame_id,
+                    t_ns,
+                    self._source.track(RawFrame(frame_id, t_ns, 0, width, height, "mjpeg", jpeg)),
+                )
+            except BaseException as exc:  # surfaced on the playback thread
+                with self._condition:
+                    self._error, self._busy = exc, False
+                    self._condition.notify_all()
+                return
+            with self._condition:
+                self._results.append(event)
+                self._busy = False
+                self._condition.notify_all()
+
+
+def _sam_event(frame_id: int, t_ns: int, detections: tuple[SamDetection, ...]) -> DemoEvent:
+    # A separate event, keyed by frame_id like `detections` — the page
+    # joins SAM masks to the frame on screen by frame_id.
+    return DemoEvent(
+        "sam",
+        {
+            "frame_id": frame_id,
+            "t_ns": t_ns,
+            "objects": [
+                {
+                    "label": detection.label,
+                    "score": round(detection.score, 2),
+                    "track_id": detection.track_id,
+                    "box": [round(value, 1) for value in detection.box_xyxy],
+                    "mask_polygon": [[round(x, 1), round(y, 1)] for x, y in detection.mask_polygon],
+                }
+                for detection in detections
+            ],
+        },
+    )
+
+
+class _SamStreamWorker:
+    """Runs a whole-video SAM streamer off the frame loop.
+
+    SAM 3.1's session propagates over the whole video at its own
+    pace; results are queued in frame order and released by the
+    display once their frame has been shown, exactly like the
+    per-frame SAM worker's.
+    """
+
+    def __init__(
+        self,
+        streamer: VideoSamStreamer,
+        frame_paths: list[Path],
+        frame_keys: list[tuple[int, int]],
+    ) -> None:
+        self._streamer = streamer
+        self._frame_paths = frame_paths
+        self._frame_keys = frame_keys
+        self._condition = threading.Condition()
+        self._results: list[DemoEvent] = []
+        self._done = False
+        self._error: BaseException | None = None
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def poll(self) -> list[DemoEvent]:
+        with self._condition:
+            if self._error is not None:
+                raise self._error
+            done, self._results = self._results, []
+            return done
+
+    def drain(self, timeout: float = 1800.0) -> list[DemoEvent]:
+        """Wait for propagation to finish, then return remaining results."""
+        with self._condition:
+            self._condition.wait_for(lambda: self._done or self._error is not None, timeout)
+        return self.poll()
+
+    def close(self) -> None:
+        self._thread.join(timeout=5)
+
+    def _run(self) -> None:
+        try:
+            for index, detections in self._streamer.stream(self._frame_paths):
+                frame_id, t_ns = self._frame_keys[index]
+                with self._condition:
+                    self._results.append(_sam_event(frame_id, t_ns, detections))
+                    self._condition.notify_all()
+        except BaseException as exc:  # surfaced on the playback thread
+            with self._condition:
+                self._error = exc
+                self._condition.notify_all()
+        finally:
+            with self._condition:
+                self._done = True
+                self._condition.notify_all()
+
+
 def _display_jpeg(prepared: PreparedDataset, channel: int, t_ns: int) -> bytes:
     """The half-res JPEG for one frame, generated once and cached."""
     width, height = prepared.spec.display_size
@@ -425,6 +585,13 @@ def _display_jpeg(prepared: PreparedDataset, channel: int, t_ns: int) -> bytes:
         with Image.open(prepared.frame_path(channel, t_ns)) as frame:
             frame.resize((width, height)).convert("L").save(target, format="JPEG", quality=85)
     return target.read_bytes()
+
+
+def _display_jpeg_path(prepared: PreparedDataset, channel: int, t_ns: int) -> Path:
+    """The cached display-JPEG file for one frame (generated if needed)."""
+    _display_jpeg(prepared, channel, t_ns)
+    width, height = prepared.spec.display_size
+    return prepared.root / f"display-{width}x{height}" / f"cam{channel}" / f"{t_ns}.jpg"
 
 
 # A live frame waits at most this long for its odometry before it is
@@ -463,6 +630,7 @@ class _Display:
         self._calibration = calibration
         self._frames: deque[_HeldFrame] = deque()
         self._detections: list[DemoEvent] = []
+        self._sam: list[DemoEvent] = []
         self._shown = 0
 
     def add_frame(self, frame: _HeldFrame) -> None:
@@ -470,6 +638,9 @@ class _Display:
 
     def add_detections(self, events: list[DemoEvent]) -> None:
         self._detections.extend(events)
+
+    def add_sam(self, events: list[DemoEvent]) -> None:
+        self._sam.extend(events)
 
     def release(self, *, final: bool = False) -> Iterator[DemoEvent]:
         while self._frames:
@@ -500,6 +671,11 @@ class _Display:
         ]
         self._detections = [event for event in self._detections if event not in ready]
         yield from ready
+        sam_ready = [
+            event for event in self._sam if final or int(str(event.data["frame_id"])) <= self._shown
+        ]
+        self._sam = [event for event in self._sam if event not in sam_ready]
+        yield from sam_ready
 
     def _overlay_for(
         self, frame: _HeldFrame, final: bool
@@ -570,6 +746,9 @@ class DemoPlayer:
         with_rtabmap: bool = True,
         stereo: StereoReconstructor | None = None,
         detection_source: DetectionSource | None = None,
+        sam_source: VideoSamDetector | None = None,
+        sam_detector: VideoSamDetector | None = None,
+        sam_streamer: VideoSamStreamer | None = None,
         rtabmap_mode: str = "live",
         backend_factory: Callable[[], SidecarRtabmapBackend | LiveSlamBackend] | None = None,
         controls: PlaybackControls | None = None,
@@ -589,6 +768,12 @@ class DemoPlayer:
         self._with_rtabmap = with_rtabmap
         self._stereo = stereo if stereo is not None else StereoReconstructor()
         self._detection_source = detection_source
+        if sam_source is not None and sam_detector is not None:
+            raise ValueError("pass only one of sam_source and sam_detector")
+        self._sam_source = sam_source if sam_source is not None else sam_detector
+        if self._sam_source is not None and sam_streamer is not None:
+            raise ValueError("pass only one of sam_source and sam_streamer")
+        self._sam_streamer = sam_streamer
         if rtabmap_mode not in ("live", "batch"):
             raise ValueError("rtabmap_mode must be 'live' or 'batch'")
         if with_rtabmap and rtabmap_mode == "batch" and not prepared.has_imu:
@@ -676,6 +861,18 @@ class DemoPlayer:
             if self._detection_source is not None
             else None
         )
+        sam_worker = _SamWorker(self._sam_source, self._size) if self._sam_source else None
+        if self._sam_source is not None:
+            self._sam_source.reset()  # a new playback is a new video
+        stream_worker = (
+            _SamStreamWorker(
+                self._sam_streamer,
+                [_display_jpeg_path(prepared, 0, t_ns) for t_ns in timestamps],
+                [(index + 1, t_ns) for index, t_ns in enumerate(timestamps)],
+            )
+            if self._sam_streamer is not None
+            else None
+        )
         live = backend if isinstance(backend, LiveSlamBackend) else None
         display = _Display(len(timestamps), live, calibration, prepared.spec.depth_stops_m)
         last_map_emit = 0.0
@@ -695,6 +892,8 @@ class DemoPlayer:
                 right_jpeg = _display_jpeg(prepared, 1, t_ns)
                 if worker is not None:
                     worker.submit(index + 1, t_ns, left_jpeg)
+                if sam_worker is not None:
+                    sam_worker.submit(index + 1, t_ns, left_jpeg)
                 if backend is not None:
                     backend.process_frame(
                         StereoFramePair(
@@ -720,6 +919,10 @@ class DemoPlayer:
                 display.add_frame(held)
                 if worker is not None:
                     display.add_detections(worker.poll())
+                if sam_worker is not None:
+                    display.add_sam(sam_worker.poll())
+                if stream_worker is not None:
+                    display.add_sam(stream_worker.poll())
                 if isinstance(backend, LiveSlamBackend):
                     backend.poll_updates()
                 yield from display.release()
@@ -735,6 +938,10 @@ class DemoPlayer:
                     time.sleep(remaining)
             if worker is not None:
                 display.add_detections(worker.drain())
+            if sam_worker is not None:
+                display.add_sam(sam_worker.drain())
+            if stream_worker is not None:
+                display.add_sam(stream_worker.drain())
             yield from display.release()
             if backend is not None:
                 yield DemoEvent(
@@ -789,6 +996,14 @@ class DemoPlayer:
         finally:
             if worker is not None:
                 worker.close()
+            if sam_worker is not None:
+                sam_worker.close()
+            if stream_worker is not None:
+                stream_worker.close()
+            # The streamer itself outlives one playback (its owner is
+            # the server); only this playback's worker thread stops.
+            if self._sam_source is not None:
+                self._sam_source.close()
             if backend is not None:
                 backend.close()
 
@@ -813,6 +1028,8 @@ class _DemoHttpServer(ThreadingHTTPServer):
     cache_dir: Path
     fetch: Callable[[str, Path], None] | None
     player_options: dict[str, object]
+    sam_enabled: bool
+    sam_label: str
     stream_lock: threading.Lock
     state_lock: threading.Lock
     prepared: dict[str, PreparedDataset]
@@ -934,6 +1151,12 @@ def make_demo_server(
     coral_model_dir: Path | None = None,
     coral_model: str = DEFAULT_PROFILE,
     rtabmap_mode: str = "live",
+    sam_model: Path | str | None = None,
+    sam_device: str | None = None,
+    sam_label: str = "object",
+    sam_source: VideoSamDetector | None = None,
+    sam_detector: VideoSamDetector | None = None,
+    sam_streamer: VideoSamStreamer | None = None,
 ) -> ThreadingHTTPServer:
     """The demo HTTP server (not yet serving); caller serves/closes it.
 
@@ -946,6 +1169,34 @@ def make_demo_server(
         specs.insert(0, prepared.spec)
     if not specs:
         raise ValueError("the demo needs at least one scene")
+    if sam_source is not None and sam_detector is not None:
+        raise ValueError("pass only one of sam_source and sam_detector")
+    video_sam = sam_source if sam_source is not None else sam_detector
+    if video_sam is not None and sam_streamer is not None:
+        raise ValueError("pass only one of sam_source and sam_streamer")
+    video_streamer = sam_streamer
+    if video_sam is None and video_streamer is None and sam_device is not None:
+        # Built eagerly so a missing model or GPU provider fails by
+        # name at startup, not mid-stream. An `.onnx` model runs the
+        # ONNX per-frame adapter; anything else (an HF id such as the
+        # default facebook/sam3.1, a local .pt or its directory) runs
+        # the real SAM 3.1 whole-video streamer on that device.
+        from surmap.survey.sam3_torch import DEFAULT_SAM31_MODEL
+
+        model_spec = str(sam_model) if sam_model is not None else DEFAULT_SAM31_MODEL
+        if model_spec.endswith(".onnx"):
+            from surmap.survey.sam3 import sam3_video_detector
+
+            video_sam = sam3_video_detector(Path(model_spec), device=sam_device, label=sam_label)
+        else:
+            from surmap.survey.sam3_torch import sam31_video_streamer
+
+            video_streamer = sam31_video_streamer(model_spec, device=sam_device, prompt=sam_label)
+    elif video_sam is None and video_streamer is None and sam_model is not None:
+        raise ValueError(
+            "a SAM model without a device does nothing: pass sam_device "
+            "(the launcher's --sam-device, e.g. cuda:0) alongside sam_model"
+        )
     options: dict[str, object] = {
         "fps": fps,
         "max_frames": max_frames,
@@ -955,6 +1206,8 @@ def make_demo_server(
         "detection_source": (
             coral_detection_source(coral_model_dir, coral_model) if coral_model_dir else None
         ),
+        "sam_source": video_sam,
+        "sam_streamer": video_streamer,
     }
     server = _DemoHttpServer((host, port), _DemoHandler)
     server.catalog = {spec.dataset_id: spec for spec in specs}
@@ -968,6 +1221,8 @@ def make_demo_server(
     )
     server.fetch = fetch
     server.player_options = options
+    server.sam_enabled = video_sam is not None or video_streamer is not None
+    server.sam_label = sam_label
     server.stream_lock = threading.Lock()
     server.state_lock = threading.Lock()
     server.prepared = {prepared.spec.dataset_id: prepared} if prepared is not None else {}
@@ -1016,6 +1271,12 @@ class _DemoHandler(BaseHTTPRequestHandler):
                     title=html.escape(spec.title),
                     description=html.escape(spec.description),
                     dataset_id=dataset_id,
+                    sam_legend=(
+                        " Cyan outlines: SAM (video) masks for this frame, "
+                        "with persistent track ids."
+                        if self.server.sam_enabled
+                        else ""
+                    ),
                     **_page_tuning(spec),
                 )
                 self._send(200, "text/html; charset=utf-8", page.encode())

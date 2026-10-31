@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -41,11 +42,30 @@ class Sam3Unavailable(RuntimeError):
     """Raised when the SAM 3.1 runtime or model cannot be used."""
 
 
+def parse_sam_device(device: str) -> tuple[str, int | None]:
+    """A SAM device string as (kind, CUDA index): `cuda:2`, `cuda`, `2`,
+    `gpu:1`, `cpu` or `auto`. Anything else is a `ValueError`."""
+    spec = device.strip().lower()
+    if spec in ("cpu", "auto"):
+        return spec, None
+    if spec.isdigit():
+        return "cuda", int(spec)
+    for prefix in ("cuda", "gpu"):
+        if spec == prefix:
+            return "cuda", 0
+        if spec.startswith(f"{prefix}:") and spec[len(prefix) + 1 :].isdigit():
+            return "cuda", int(spec[len(prefix) + 1 :])
+    raise ValueError(f"unknown SAM device: {device!r} (use cpu, auto, cuda or cuda:<index>)")
+
+
 class Sam3Session(Protocol):
     """One loaded model: image tensor in, (masks, scores) out."""
 
     @property
     def provider(self) -> str: ...
+
+    @property
+    def device(self) -> str: ...
 
     @property
     def input_size(self) -> tuple[int, int]: ...
@@ -69,21 +89,25 @@ class OnnxSam3Session:
         except ImportError as exc:
             raise Sam3Unavailable("onnxruntime is not importable") from exc
         available = cast(list[str], ort.get_available_providers())
-        if device == "cuda":
+        kind, device_id = parse_sam_device(device)
+        self._device = f"cuda:{device_id}" if kind == "cuda" else kind
+        providers: list[Any]
+        if kind == "cuda":
             if "CUDAExecutionProvider" not in available:
                 raise Sam3Unavailable(
                     "CUDA execution provider is not available; install onnxruntime-gpu "
                     "on the station (the same session code runs, only the provider differs)"
                 )
-            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-        elif device == "cpu":
+            providers = [
+                ("CUDAExecutionProvider", {"device_id": device_id or 0}),
+                "CPUExecutionProvider",
+            ]
+        elif kind == "cpu":
             providers = ["CPUExecutionProvider"]
-        elif device == "auto":
+        else:  # auto
             providers = [
                 p for p in ("CUDAExecutionProvider", "CPUExecutionProvider") if p in available
             ]
-        else:
-            raise ValueError(f"unknown device: {device}")
         self._session: Any = ort.InferenceSession(str(model_path), providers=providers)
         self._provider = str(self._session.get_providers()[0])
         input_shape = self._session.get_inputs()[0].shape
@@ -94,6 +118,11 @@ class OnnxSam3Session:
     @property
     def provider(self) -> str:
         return self._provider
+
+    @property
+    def device(self) -> str:
+        """The requested device, normalised (`cuda:<index>`, `cpu`, `auto`)."""
+        return self._device
 
     @property
     def input_size(self) -> tuple[int, int]:
@@ -193,11 +222,116 @@ class Sam3Detector:
             )
         return tuple(detections)
 
+    def segment(self, frame: RawFrame) -> tuple[SamDetection, ...]:
+        """Segment one frame, synchronously (the video session's step)."""
+        return self._segment(frame)
+
     async def detect(self, frame: RawFrame) -> tuple[SamDetection, ...]:
         """Segment one frame (inference runs off the event loop)."""
         return await asyncio.to_thread(self._segment, frame)
 
 
+def _box_iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+    x_min, y_min = max(a[0], b[0]), max(a[1], b[1])
+    x_max, y_max = min(a[2], b[2]), min(a[3], b[3])
+    intersection = max(0.0, x_max - x_min) * max(0.0, y_max - y_min)
+    area_a = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+    area_b = max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+    union = area_a + area_b - intersection
+    return intersection / union if union > 0 else 0.0
+
+
+class Sam3VideoDetector:
+    """`VideoSamDetector` adapter: SAM 3.1 in continuous (video) mode.
+
+    One session serves the whole stream: frames arrive strictly in
+    order through `track()`, and each frame's masks are associated
+    with the previous frames' by box overlap (same label, best pair
+    first), so a visible object keeps one persistent, never-reused
+    track id — the base-local video ids of docs/architecture.md §3.1.
+    Tracks unseen for more than `max_missed` frames expire. `reset()`
+    starts a new video. This is the state the per-frame `Sam3Detector`
+    deliberately does not carry.
+    """
+
+    def __init__(
+        self,
+        session: Sam3Session,
+        *,
+        label: str = "object",
+        iou_threshold: float = 0.3,
+        max_missed: int = 5,
+    ) -> None:
+        self._session = session
+        self._detector = Sam3Detector(session, label=label)
+        self._iou_threshold = iou_threshold
+        self._max_missed = max_missed
+        self._tracks: dict[int, tuple[str, tuple[float, float, float, float], int]] = {}
+        self._next_id = 1
+
+    @property
+    def provider(self) -> str:
+        return self._session.provider
+
+    @property
+    def device(self) -> str:
+        return self._session.device
+
+    def reset(self) -> None:
+        self._tracks = {}
+        self._next_id = 1
+
+    def track(self, frame: RawFrame) -> tuple[SamDetection, ...]:
+        detections = self._detector.segment(frame)
+        candidates = sorted(
+            (
+                (_box_iou(box, detection.box_xyxy), track_id, index)
+                for track_id, (label, box, _seen) in self._tracks.items()
+                for index, detection in enumerate(detections)
+                if detection.label == label
+            ),
+            reverse=True,
+        )
+        matched: dict[int, int] = {}
+        used: set[int] = set()
+        for iou, track_id, index in candidates:
+            if iou < self._iou_threshold:
+                break
+            if track_id in used or index in matched:
+                continue
+            used.add(track_id)
+            matched[index] = track_id
+        tracked: list[SamDetection] = []
+        for index, detection in enumerate(detections):
+            assigned = matched.get(index)
+            track_id = assigned if assigned is not None else self._next_id
+            if assigned is None:
+                self._next_id += 1
+            self._tracks[track_id] = (detection.label, detection.box_xyxy, frame.frame_id)
+            tracked.append(replace(detection, track_id=track_id))
+        self._tracks = {
+            track_id: state
+            for track_id, state in self._tracks.items()
+            if frame.frame_id - state[2] <= self._max_missed
+        }
+        return tuple(tracked)
+
+    def close(self) -> None:
+        self.reset()
+
+
 def sam3_detector(model_path: Path, *, device: str = "auto", label: str = "object") -> Sam3Detector:
     """A `Sam3Detector` over an ONNX Runtime session for `model_path`."""
     return Sam3Detector(OnnxSam3Session(model_path, device=device), label=label)
+
+
+def sam3_video_detector(
+    model_path: Path, *, device: str = "cuda:0", label: str = "object"
+) -> Sam3VideoDetector:
+    """A `Sam3VideoDetector` (continuous video mode) for `model_path`.
+
+    `device` names the GPU, e.g. `cuda:0` (see `parse_sam_device`);
+    the session fails by name (`Sam3Unavailable`) when the model or
+    the CUDA provider is not provisioned on this host.
+    """
+    return Sam3VideoDetector(OnnxSam3Session(model_path, device=device), label=label)

@@ -65,7 +65,7 @@ PAGE = """<!DOCTYPE html>
       <span class="dot" style="background:{far}"></span> far ({far_label})
       &nbsp;— features RTAB-Map tracked in this frame, coloured and sized by depth
       (stereo-matcher points when RTAB-Map is off).
-      Yellow boxes: tracked objects from the separate detections stream.
+      Yellow boxes: tracked objects from the separate detections stream.{sam_legend}
     </p>
     <p class="legend">{credit}</p>
   </div>
@@ -86,6 +86,7 @@ const playback = document.getElementById('playback');
 const rtab = document.getElementById('rtab');
 let frames = 0, started = performance.now(), lastPoints = 0;
 let latestDetections = null;
+let latestSam = null, shownFrameId = null;
 const SCENE = '{dataset_id}';
 // Latest floor plan and the shown frame's camera: the map is redrawn
 // with every frame so the camera marker moves with the video.
@@ -101,14 +102,40 @@ function drawBoxes() {{
     view.fillText(`${{object.label}} #${{object.track_id}}`, x1 + 2, Math.max(10, y1 - 3));
   }}
 }}
+function drawSam() {{
+  if (!latestSam || latestSam.frame_id !== shownFrameId) return;
+  view.strokeStyle = '#22d3ee'; view.lineWidth = 1.6;
+  view.fillStyle = 'rgba(34, 211, 238, 0.16)';
+  view.font = '11px system-ui';
+  for (const object of latestSam.objects) {{
+    const polygon = object.mask_polygon || [];
+    if (polygon.length > 1) {{
+      view.beginPath();
+      polygon.forEach(([x, y], i) => i ? view.lineTo(x, y) : view.moveTo(x, y));
+      view.closePath(); view.fill(); view.stroke();
+    }} else {{
+      const [x1, y1, x2, y2] = object.box;
+      view.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    }}
+    const [lx, ly] = polygon.length ? polygon[0] : object.box;
+    view.fillStyle = '#22d3ee';
+    view.fillText(`SAM ${{object.label}} #${{object.track_id}}`, lx + 2, Math.max(10, ly - 3));
+    view.fillStyle = 'rgba(34, 211, 238, 0.16)';
+  }}
+}}
 function attachListeners() {{
 source.addEventListener('detections', (event) => {{
   latestDetections = JSON.parse(event.data);
+}});
+source.addEventListener('sam', (event) => {{
+  latestSam = JSON.parse(event.data);
+  drawSam();
 }});
 source.addEventListener('frame', (event) => {{
   const data = JSON.parse(event.data);
   const image = new Image();
   image.onload = () => {{
+    shownFrameId = data.frame_id;
     view.drawImage(image, 0, 0, view.canvas.width, view.canvas.height);
     for (const point of data.detections) {{
       view.fillStyle = point.c;  // depth colour, from the server's ramp
@@ -117,6 +144,7 @@ source.addEventListener('frame', (event) => {{
       view.fill();
     }}
     drawBoxes();
+    drawSam();
     URL.revokeObjectURL(image.src);
   }};
   image.src = 'data:image/jpeg;base64,' + data.image_b64;
