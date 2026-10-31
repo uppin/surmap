@@ -52,9 +52,15 @@ from surmap.demo.datasets import (
     scaled_sensor_yaml,
 )
 from surmap.demo.events import DemoEvent as DemoEvent
-from surmap.demo.events import RegionPlacer, sam_event
+from surmap.demo.events import RegionPlacer, SurfaceAssigner, sam_event, surface_layer
 from surmap.demo.history import RunHistoryStore
 from surmap.demo.page import PAGE
+from surmap.demo.surface_render import MOVING_ALPHA as MOVING_ALPHA
+from surmap.demo.surface_render import MOVING_COLOUR as MOVING_COLOUR
+from surmap.demo.surface_render import SURFACE_ALPHA as SURFACE_ALPHA
+from surmap.demo.surface_render import SURFACE_COLOURS as SURFACE_COLOURS
+from surmap.demo.surface_render import SurfaceLayer, draw_surfaces
+from surmap.demo.surface_render import surface_tint as surface_tint
 from surmap.detection.detector import CoralDetector, decode_rgb
 from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
 from surmap.detection.source import CoralDetectionSource, DetectionSource
@@ -367,9 +373,6 @@ class CloudPose:
 
 CLOUD_VIEW_PX = (880, 440)
 
-# SAM region overlay colours in the cloud view, by track id.
-REGION_COLOURS = ((255, 64, 153), (51, 230, 255), (255, 217, 26), (128, 255, 77))
-
 
 def _project_points(
     points: NDArray[np.float32],
@@ -404,7 +407,7 @@ def render_cloud_view(
     pose: CloudPose,
     bounds: tuple[NDArray[np.float32], NDArray[np.float32]],
     size: tuple[int, int] = CLOUD_VIEW_PX,
-    regions: tuple[tuple[int, NDArray[np.float32]], ...] = (),
+    surfaces: SurfaceLayer = (),
 ) -> str:
     """Every map point rendered server-side from `pose`, as base64 PNG.
 
@@ -417,7 +420,7 @@ def render_cloud_view(
     width, height = size
     rgba = np.zeros((height, width, 4), np.uint8)
     rgba[:, :] = (10, 12, 14, 255)
-    if len(points) or regions:
+    if len(points) or surfaces:
         lo, hi = (np.asarray(bound, dtype=np.float64) for bound in bounds)
         centre = (lo + hi) / 2.0
         centre[0] += pose.pan_x
@@ -433,16 +436,9 @@ def render_cloud_view(
             flat[pixels, 1] = colors[chosen, 1]
             flat[pixels, 2] = colors[chosen, 2]
             flat[pixels, 3] = 255
-        for track_id, region_points in regions:
-            if not len(region_points):
-                continue
-            ru, rv, _, _ = _project_points(region_points, pose, centre, span, size)
-            colour = REGION_COLOURS[track_id % len(REGION_COLOURS)]
-            # A 2x2 splat makes the (sparse, depth-filtered) region read over the cloud.
-            for du, dv in ((0, 0), (1, 0), (0, 1), (1, 1)):
-                uu, vv = ru + du, rv + dv
-                on = (uu < width) & (vv < height)
-                flat[vv[on] * width + uu[on]] = (*colour, 255)
+        draw_surfaces(
+            flat, size, surfaces, lambda part: _project_points(part, pose, centre, span, size)[:2]
+        )
     return _png_base64(rgba)
 
 
@@ -769,6 +765,7 @@ class _Display:
         self._regions: RegionPlacer | None = (
             RegionPlacer(backend, size) if isinstance(backend, RegionPointSource) else None
         )
+        self.surfaces = SurfaceAssigner()  # the run's surfaces, assigned from regions
         self._stops = stops
         self._backend = backend
         self._calibration = calibration
@@ -837,7 +834,10 @@ class _Display:
             frame_id = int(str(event.data["frame_id"]))
             yield DemoEvent("sam", event.data, jpeg=self._jpegs.get(frame_id, b""))
             if self._regions is not None:
-                yield self._regions.region_event(event)
+                region = self._regions.region_event(event)
+                yield region
+                if (surface := self.surfaces.surface_event(region)) is not None:
+                    yield surface
 
     def _overlay_for(
         self, frame: _HeldFrame, final: bool
@@ -873,7 +873,7 @@ class PlaybackControls:
         self._playing.set()
         self._cancelled = threading.Event()
         self._cloud_pose = CloudPose()
-        self._cloud_regions: tuple[tuple[int, NDArray[np.float32]], ...] = ()
+        self._surfaces_visible = True
         self._cloud_version = 0
         self._cloud_lock = threading.Lock()
 
@@ -951,15 +951,18 @@ class PlaybackControls:
     def cloud_reset(self) -> CloudPose:
         return self._set_cloud_pose(CloudPose())
 
-    def cloud_regions(self) -> tuple[tuple[int, NDArray[np.float32]], ...]:
-        with self._cloud_lock:
-            return self._cloud_regions
+    @property
+    def surfaces_visible(self) -> bool:
+        return self._surfaces_visible
 
-    def set_cloud_regions(self, regions: tuple[tuple[int, NDArray[np.float32]], ...]) -> None:
-        """Latest SAM regions to composite (replaced, never accumulated)."""
+    def set_surfaces_visible(self, visible: bool | None) -> None:
+        """Show, hide (or, with None, toggle) the surface layer; re-renders the cloud."""
         with self._cloud_lock:
-            self._cloud_regions = regions
+            self._surfaces_visible = (not self._surfaces_visible) if visible is None else visible
             self._cloud_version += 1
+
+    def shown_surfaces(self, layer: SurfaceLayer) -> SurfaceLayer:
+        return layer if self._surfaces_visible else ()
 
 
 class DemoPlayer:
@@ -985,7 +988,7 @@ class DemoPlayer:
         self._controls = controls if controls is not None else PlaybackControls()
         self._extent: FloorExtent | None = None
         self._cloud_bounds: tuple[NDArray[np.float32], NDArray[np.float32]] | None = None
-        self._cloud_version = -1
+        self._cloud_version = (-1, -1)  # (viewer pose / layers, surfaces) last drawn
         fps = prepared.spec.fps if fps is None else fps
         if fps <= 0:
             raise ValueError("fps must be positive")
@@ -1031,7 +1034,9 @@ class DemoPlayer:
             "trajectory_xy": trajectory_xz,
         }
 
-    def _map_event(self, backend: LiveSlamBackend, frame_id: int) -> DemoEvent:
+    def _map_event(
+        self, backend: LiveSlamBackend, frame_id: int, surfaces: SurfaceLayer
+    ) -> DemoEvent:
         cloud = backend.map_cloud()
         points, colors = cloud_points(cloud)
         trajectory = backend.trajectory()
@@ -1061,7 +1066,7 @@ class DemoPlayer:
                     cloud.colors,
                     self._controls.cloud_pose(),
                     bounds,
-                    regions=self._controls.cloud_regions(),
+                    surfaces=self._controls.shown_surfaces(surfaces),
                 ),
                 **self._floor_plan(
                     cloud.points[:, [0, 2]], cloud.colors[:, 0], _floor_plane_trajectory(trajectory)
@@ -1186,11 +1191,11 @@ class DemoPlayer:
                 yield from display.release()
                 if isinstance(backend, LiveSlamBackend):
                     now = time.monotonic()
-                    pose_changed = self._controls.cloud_version != self._cloud_version
-                    if now - last_map_emit >= 0.33 or pose_changed:
+                    version = (self._controls.cloud_version, display.surfaces.version)
+                    if now - last_map_emit >= 0.33 or version != self._cloud_version:
                         last_map_emit = now
-                        self._cloud_version = self._controls.cloud_version
-                        yield self._map_event(backend, index + 1)
+                        self._cloud_version = version
+                        yield self._map_event(backend, index + 1, display.surfaces.layer())
                 # Server-side pacing: one frame interval per frame,
                 # however long processing took — never a catch-up burst.
                 remaining = 1.0 / self._fps - (time.monotonic() - frame_started)
@@ -1249,7 +1254,7 @@ class DemoPlayer:
                             live_cloud.colors,
                             self._controls.cloud_pose(),
                             bounds,
-                            regions=self._controls.cloud_regions(),
+                            surfaces=self._controls.shown_surfaces(display.surfaces.layer()),
                         )
                     plan = self._floor_plan(
                         live_cloud.points[:, [0, 2]],
@@ -1594,13 +1599,14 @@ class _DemoHandler(BaseHTTPRequestHandler):
                         snap_points = np.array(cloud["points"], dtype=np.float32).reshape(-1, 3)
                         snap_colors = np.array(cloud.get("colors") or [], dtype=np.uint8)
                         if len(snap_points) and len(snap_colors) == len(snap_points):
-                            controls = self.server.current
-                            pose = controls.cloud_pose() if controls is not None else CloudPose()
+                            live = self.server.current or PlaybackControls()
+                            layer = surface_layer(snapshot.get("surfaces"))
                             cloud["cloud_png"] = render_cloud_view(
                                 snap_points,
                                 snap_colors.reshape(-1, 3),
-                                pose,
+                                live.cloud_pose(),
                                 (snap_points.min(axis=0), snap_points.max(axis=0)),
+                                surfaces=live.shown_surfaces(layer),
                             )
                     self._send_json(200, snapshot)
                 return
@@ -1661,7 +1667,7 @@ class _DemoHandler(BaseHTTPRequestHandler):
                 "cloud_zoom",
                 "cloud_pan",
                 "cloud_reset",
-                "cloud_regions",
+                "cloud_surfaces",
             )
             if action not in ("pause", "resume", *cloud_actions):
                 self._send(400, "text/plain", b"action must be pause, resume or a cloud_* action")
@@ -1681,23 +1687,9 @@ class _DemoHandler(BaseHTTPRequestHandler):
                     pose = controls.cloud_pan(
                         float(body.get("dx") or 0.0), float(body.get("dz") or 0.0)
                     )
-                elif action == "cloud_regions":
-                    regions: list[tuple[int, NDArray[np.float32]]] = []
-                    raw_regions = body.get("regions")
-                    if isinstance(raw_regions, list):
-                        for raw in raw_regions[:32]:
-                            if not isinstance(raw, dict):
-                                continue
-                            raw_points = raw.get("points")
-                            if not isinstance(raw_points, list) or not raw_points:
-                                continue
-                            try:
-                                track_id = int(raw.get("track_id") or 0)
-                                parsed = np.array(raw_points, dtype=np.float32).reshape(-1, 3)
-                            except (TypeError, ValueError):
-                                continue
-                            regions.append((track_id, parsed))
-                    controls.set_cloud_regions(tuple(regions))
+                elif action == "cloud_surfaces":
+                    visible = body.get("visible")
+                    controls.set_surfaces_visible(visible if isinstance(visible, bool) else None)
                     pose = controls.cloud_pose()
                 else:
                     pose = controls.cloud_reset()
@@ -1709,6 +1701,7 @@ class _DemoHandler(BaseHTTPRequestHandler):
                         "zoom": pose.zoom,
                         "pan_x": pose.pan_x,
                         "pan_z": pose.pan_z,
+                        "surfaces_visible": controls.surfaces_visible,
                     },
                 )
             return
@@ -1768,6 +1761,8 @@ class _DemoHandler(BaseHTTPRequestHandler):
                     last_frame_id = int(str(event.data["frame_id"]))
                     last_map = dict(event.data)
                     _record_map(store, run_id, event.data, last_frame_id)
+                elif event.kind == "surface":
+                    store.record_surface_event(run_id, event.data)
                 elif event.kind == "detections":
                     objects_raw = event.data["objects"]
                     store.record_detections(
