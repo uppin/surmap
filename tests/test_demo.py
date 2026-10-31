@@ -590,6 +590,47 @@ def test_sam_streamer_events_arrive_for_each_frame_in_order(tmp_path: Path) -> N
     assert len(streamer.videos) == 1 and len(streamer.videos[0]) == 2
 
 
+def test_a_shown_frame_waits_for_its_sam_result(tmp_path: Path) -> None:
+    # Given a SAM streamer that holds its results until released
+    # (SAM propagates slower than playback)
+    from collections.abc import Iterator, Sequence
+
+    from surmap.survey.sam import SamDetection
+
+    class BlockingStreamer:
+        def __init__(self) -> None:
+            self.release = threading.Event()
+
+        def stream(
+            self, frame_paths: Sequence[Path]
+        ) -> Iterator[tuple[int, tuple[SamDetection, ...]]]:
+            assert self.release.wait(timeout=15), "streamer was never released"
+            for index in range(len(frame_paths)):
+                yield index, (SamDetection("car", 0.9, (1.0, 2.0, 30.0, 40.0), ((1.0, 2.0),)),)
+
+        def close(self) -> None:
+            pass
+
+    streamer = BlockingStreamer()
+    player = DemoPlayer(
+        _prepared_tiny(tmp_path), fps=1000.0, with_rtabmap=False, sam_streamer=streamer
+    )
+
+    # When playback starts, no frame is shown while its SAM result is pending
+    kinds: list[str] = []
+    collector = threading.Thread(
+        target=lambda: kinds.extend(event.kind for event in player.events()), daemon=True
+    )
+    collector.start()
+    collector.join(timeout=2.0)
+    assert kinds == []
+
+    # And once SAM delivers, each frame is followed by its own SAM event
+    streamer.release.set()
+    collector.join(timeout=15)
+    assert kinds == ["frame", "sam", "frame", "sam"]
+
+
 def test_the_demo_cli_names_the_sam_gpu_device_argument() -> None:
     # Given / When the launcher is asked for its help
     import subprocess

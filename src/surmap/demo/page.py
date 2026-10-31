@@ -226,6 +226,7 @@ function drawImageFrame(imageB64, overlay, objects, camera, labelData, sam) {{
     }}
     drawBoxes(objects);
     drawSamObjects(sam);
+    drawSam();
     URL.revokeObjectURL(image.src);
   }};
   image.src = 'data:image/jpeg;base64,' + imageB64;

@@ -617,6 +617,12 @@ def _display_jpeg_path(prepared: PreparedDataset, channel: int, t_ns: int) -> Pa
 # shown without keypoints (its pair may have been dropped).
 HOLD_MAX_S = 2.0
 
+# With SAM on, a frame also waits this long for its SAM result before
+# it is shown without one. SAM propagates slower than playback, so
+# without the hold every mask would arrive after its frame had left
+# the screen and never be drawn.
+SAM_HOLD_MAX_S = 10.0
+
 
 @dataclass
 class _HeldFrame:
@@ -642,14 +648,18 @@ class _Display:
         backend: LiveSlamBackend | None,
         calibration: DemoCalibration,
         stops: DepthStops,
+        *,
+        sam_expected: bool = False,
     ) -> None:
         self._total = total
         self._stops = stops
         self._backend = backend
         self._calibration = calibration
+        self._sam_expected = sam_expected
         self._frames: deque[_HeldFrame] = deque()
         self._detections: list[DemoEvent] = []
         self._sam: list[DemoEvent] = []
+        self._sam_frames: set[int] = set()
         self._shown = 0
 
     def add_frame(self, frame: _HeldFrame) -> None:
@@ -660,6 +670,7 @@ class _Display:
 
     def add_sam(self, events: list[DemoEvent]) -> None:
         self._sam.extend(events)
+        self._sam_frames.update(int(str(event.data["frame_id"])) for event in events)
 
     def release(self, *, final: bool = False) -> Iterator[DemoEvent]:
         while self._frames:
@@ -667,6 +678,13 @@ class _Display:
             shown = self._overlay_for(head, final)
             if shown is None:
                 break
+            if (
+                self._sam_expected
+                and not final
+                and head.frame_id not in self._sam_frames
+                and time.monotonic() - head.held_at <= SAM_HOLD_MAX_S
+            ):
+                break  # its SAM result is still coming; show them together
             overlay, camera = shown
             self._frames.popleft()
             self._shown = head.frame_id
@@ -683,6 +701,11 @@ class _Display:
                 },
                 jpeg=head.jpeg,
             )
+            yield from self._ready(final=False)
+        yield from self._ready(final=final)
+
+    def _ready(self, *, final: bool) -> Iterator[DemoEvent]:
+        """Detections/SAM events whose frame has been shown, in order."""
         ready = [
             event
             for event in self._detections
@@ -896,7 +919,13 @@ class DemoPlayer:
             else None
         )
         live = backend if isinstance(backend, LiveSlamBackend) else None
-        display = _Display(len(timestamps), live, calibration, prepared.spec.depth_stops_m)
+        display = _Display(
+            len(timestamps),
+            live,
+            calibration,
+            prepared.spec.depth_stops_m,
+            sam_expected=self._sam_source is not None or self._sam_streamer is not None,
+        )
         last_map_emit = 0.0
         try:
             for index, t_ns in enumerate(timestamps):
