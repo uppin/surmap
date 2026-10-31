@@ -12,6 +12,7 @@
 | Run | Lines | Note |
 |---|---|---|
 | 2026-10-31 | 1524 → 1514 | `feat/sam-region-points`: base already 1524 (grown by #53, #54); this PR moved `DemoEvent` and `sam_event` out into `demo/events.py` with its own region placement, so it did not grow the file |
+| 2026-10-31 | 1819 → 1841 | `feat/demo-sam-prompt`: prompt resolution and the SAM pane markup went into `demo/sam_prompt.py`; the +22 is the per-run prompt plumbed through `DemoPlayer`, `make_demo_server` and the stream handler |
 
 ## What the tool found
 

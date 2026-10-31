@@ -179,8 +179,12 @@ at the end instead), `--prepare-only`. `--sam-device cuda:0`
 additionally runs the real SAM 3.1 (`facebook/sam3.1`, downloaded
 with `HF_TOKEN` from the project `.env`) in continuous (video) mode
 on that GPU and draws its masks, with SAM's persistent object ids,
-on the frame preview for each frame; `--sam-label` is the concept
-prompt (`car` on KITTI) and `--sam-model` can name another HF id, a
+on the frame preview for each frame. SAM looks for one concept per
+run: each scene has its own default (`box` on EuRoC, `car` on KITTI,
+`person` on NTU VIRAL), the SAM pane's **SAM prompt** box restarts the
+run with another (`/?dataset=…&prompt=…`), and `--sam-label` replaces
+every scene's default. An `.onnx` export's concept is fixed at export,
+so the box is read-only there. `--sam-model` can name another HF id, a
 local `.pt`, or an `.onnx` export instead. SAM propagates in
 16-frame windows so a long video fits a 16 GB card (ids restart per
 window). The PyTorch stack is an optional install in `.venv` (see
