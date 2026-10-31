@@ -186,9 +186,18 @@ local `.pt`, or an `.onnx` export instead. SAM propagates in
 window). The PyTorch stack is an optional install in `.venv` (see
 `scripts/demo.py --help`). With the live map, each SAM result's masks
 are also placed in 3D: the sidecar's dense stereo under each mask on
-that frame is drawn on the 3D pane, replacing the previous region.
-`--sam-fake` does the same without a GPU or model — a stand-in SAM
-outlines the centre of every frame. The live panel shows keyframe
+that frame, and the station assigns every one of those points to a
+persistent object *surface* (`surmap.survey.surfaces`). A mask whose
+points land where an earlier frame's points were already assigned
+continues that surface (so SAM's id restarts do not split an object),
+otherwise it starts a new one. The 3D pane draws the surface layer:
+static surfaces translucent, one colour per surface; a surface that has
+drifted 40 cm or more from where it was first seen is a moving object's
+smear, drawn red and more opaque. The Hide/Show surfaces button toggles
+the layer. Surfaces are persisted with the run (`surface_points` in
+`demo-history.db`), so scrubbing and re-opened runs show them as they
+were at each frame. `--sam-fake` does the same without a GPU or model —
+a stand-in SAM outlines the centre of every frame. The live panel shows keyframe
 count, cloud size, odometry state, SLAM lag in frames and dropped
 frames. Add a dataset by adding one registry entry.
 

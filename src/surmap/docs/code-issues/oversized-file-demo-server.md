@@ -12,6 +12,7 @@
 | Run | Lines | Note |
 |---|---|---|
 | 2026-10-31 | 1524 → 1514 | `feat/sam-region-points`: base already 1524 (grown by #53, #54); this PR moved `DemoEvent` and `sam_event` out into `demo/events.py` with its own region placement, so it did not grow the file |
+| 2026-10-31 | 1819 → 1814 | `feat/sam-surfaces`: surface assignment, persistence and rendering went to `survey/surfaces.py`, `demo/events.py`, `demo/history.py` and the new `demo/surface_render.py`; the browser `cloud_regions` round-trip it replaced was deleted |
 
 ## What the tool found
 
