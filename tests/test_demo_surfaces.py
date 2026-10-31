@@ -384,3 +384,17 @@ def test_the_page_toggles_the_surface_layer_and_no_longer_posts_regions(tmp_path
     # Then the page offers the surfaces toggle, which is a known action; regions are gone
     assert "cloud_surfaces" in page and "setRegionLayer" not in page
     assert (surfaces_status, regions_status) == (409, 400)
+
+
+def test_the_page_calls_no_function_it_does_not_define(tmp_path: Path) -> None:
+    # Given the test console page
+    with a_running_console(tmp_path, a_map_around_the_region()) as base:
+        with urllib.request.urlopen(f"{base}/", timeout=5) as response:
+            page = response.read().decode()
+
+    # When the page's listener wiring runs, every helper it calls must
+    # exist — a call to a removed helper throws and silently stops the
+    # remaining listeners (frame, map, final) from ever registering
+    assert "listenForRegions(" not in page
+    assert "addEventListener('frame'" in page
+    assert "addEventListener('map'" in page
