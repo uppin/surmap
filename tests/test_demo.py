@@ -269,7 +269,7 @@ def test_demo_server_serves_page_health_and_stream_then_closes(tmp_path: Path) -
         with urllib.request.urlopen(f"http://{host}:{port}/health", timeout=5) as response:
             assert json.loads(response.read()) == {"status": "ok"}
         with urllib.request.urlopen(f"http://{host}:{port}/", timeout=5) as response:
-            assert b"SurMap demo" in response.read()
+            assert b"SurMap Test Console" in response.read()
         with urllib.request.urlopen(f"http://{host}:{port}/stream", timeout=10) as response:
             body = response.read().decode()
         assert body.count("event: frame") == 2

@@ -49,6 +49,7 @@ from surmap.demo.datasets import (
     load_calibration,
     scaled_sensor_yaml,
 )
+from surmap.demo.history import RunHistoryStore
 from surmap.demo.page import PAGE
 from surmap.detection.detector import CoralDetector, decode_rgb
 from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
@@ -68,6 +69,24 @@ from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
 from surmap.types import Pose, StereoFramePair, Vec3
 
 MAX_OVERLAY_POINTS = 600
+
+# Cap on raw cloud points sent to the browser 3D view (and persisted per
+# map snapshot): the full count still travels as `cloud_points`.
+MAX_CLOUD_POINTS = 12000
+
+
+def cloud_points(
+    cloud: MapCloud, max_points: int = MAX_CLOUD_POINTS
+) -> tuple[list[list[float]], list[list[int]]]:
+    """A cloud as JSON-ready (points, colours), evenly sampled to the cap."""
+    points, colors = cloud.points, cloud.colors
+    if len(points) > max_points:
+        pick = (np.arange(max_points) * len(points) // max_points).astype(np.int64)
+        points, colors = points[pick], colors[pick]
+    return (
+        [[round(float(v), 3) for v in row] for row in points.tolist()],
+        [[int(v) for v in row] for row in colors.tolist()],
+    )
 
 
 @runtime_checkable
@@ -802,11 +821,14 @@ class DemoPlayer:
 
     def _map_event(self, backend: LiveSlamBackend, frame_id: int) -> DemoEvent:
         cloud = backend.map_cloud()
+        points, colors = cloud_points(cloud)
         trajectory = backend.trajectory()
         return DemoEvent(
             "map",
             {
                 "frame_id": frame_id,
+                "points": points,
+                "point_colors": colors,
                 **self._floor_plan(
                     cloud.points[:, [0, 2]], cloud.colors[:, 0], _floor_plane_trajectory(trajectory)
                 ),
@@ -970,6 +992,8 @@ class DemoPlayer:
                     )
                 if isinstance(backend, LiveSlamBackend):
                     live_cloud = backend.map_cloud()
+                    final_points, final_colors = cloud_points(live_cloud)
+                    final_count = len(live_cloud.points)
                     plan = self._floor_plan(
                         live_cloud.points[:, [0, 2]],
                         live_cloud.colors[:, 0],
@@ -978,6 +1002,14 @@ class DemoPlayer:
                 else:
                     # The batch sidecar's map is z-up (EuRoC base frame).
                     xy = np.array([(p.x, p.y) for p in cloud], np.float32).reshape(-1, 2)
+                    final_points = [[round(p.x, 3), round(p.y, 3), round(p.z, 3)] for p in cloud]
+                    if len(final_points) > MAX_CLOUD_POINTS:
+                        step = len(final_points) / MAX_CLOUD_POINTS
+                        final_points = [
+                            final_points[int(i * step)] for i in range(MAX_CLOUD_POINTS)
+                        ]
+                    final_colors = [[160, 160, 160]] * len(final_points)
+                    final_count = len(cloud)
                     plan = self._floor_plan(
                         xy,
                         np.full(len(xy), 160, np.uint8),
@@ -988,7 +1020,9 @@ class DemoPlayer:
                     {
                         "poses": len(trajectory),
                         "travelled_m": round(travelled, 3),
-                        "cloud_points": len(cloud),
+                        "cloud_points": final_count,
+                        "points": final_points,
+                        "point_colors": final_colors,
                         **plan,
                     },
                 )
@@ -1035,6 +1069,7 @@ class _DemoHttpServer(ThreadingHTTPServer):
     prepared: dict[str, PreparedDataset]
     preparations: dict[str, _Preparation]
     current: PlaybackControls | None
+    history_store: RunHistoryStore
 
     def prepared_scene(self, dataset_id: str) -> PreparedDataset | None:
         with self.state_lock:
@@ -1157,6 +1192,9 @@ def make_demo_server(
     sam_source: VideoSamDetector | None = None,
     sam_detector: VideoSamDetector | None = None,
     sam_streamer: VideoSamStreamer | None = None,
+    history_db: Path | None = None,
+    history_store: RunHistoryStore | None = None,
+    backend_factory: Callable[[], SidecarRtabmapBackend | LiveSlamBackend] | None = None,
 ) -> ThreadingHTTPServer:
     """The demo HTTP server (not yet serving); caller serves/closes it.
 
@@ -1219,7 +1257,12 @@ def make_demo_server(
     server.cache_dir = cache_dir or (
         prepared.root.parent if prepared is not None else default_cache_dir()
     )
+    if backend_factory is not None:
+        options["backend_factory"] = backend_factory
     server.fetch = fetch
+    server.history_store = history_store or RunHistoryStore(
+        history_db or (server.cache_dir / "demo-history.db")
+    )
     server.player_options = options
     server.sam_enabled = video_sam is not None or video_streamer is not None
     server.sam_label = sam_label
@@ -1260,6 +1303,32 @@ class _DemoHandler(BaseHTTPRequestHandler):
             return
         if url.path == "/datasets":
             self._send_json(200, self.server.scene_listing())
+            return
+        if url.path == "/runs":
+            self._send_json(200, {"runs": self.server.history_store.list_runs()})
+            return
+        if url.path.startswith("/runs/"):
+            parts = [part for part in url.path.split("/") if part]
+            store = self.server.history_store
+            if len(parts) == 2:
+                run = store.get_run(parts[1])
+                if run is None:
+                    self._send(404, "text/plain", b"unknown run")
+                else:
+                    self._send_json(200, {**run, "timeline": store.timeline(parts[1])})
+                return
+            if len(parts) == 3 and parts[2] == "snapshot":
+                try:
+                    seq = int(query.get("seq", ["0"])[0])
+                except ValueError:
+                    seq = -1
+                snapshot = store.snapshot_at(parts[1], seq) if seq >= 0 else None
+                if snapshot is None:
+                    self._send(404, "text/plain", b"unknown moment")
+                else:
+                    self._send_json(200, snapshot)
+                return
+            self._send(404, "text/plain", b"not found")
             return
         if url.path in ("/", "/stream"):
             dataset_id = self._scene(query)
@@ -1328,28 +1397,88 @@ class _DemoHandler(BaseHTTPRequestHandler):
         controls = PlaybackControls()
         with self.server.state_lock:
             self.server.current = controls
+        store = self.server.history_store
+        run_id = store.create_run(dataset_id, prepared.spec.title)
+        completed = False
+        last_frame_id = 0
+        last_map: dict[str, object] = {}
         try:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
+            run_chunk = (
+                f"event: run\ndata: {json.dumps({'run_id': run_id, 'dataset_id': dataset_id})}\n\n"
+            ).encode()
+            self.wfile.write(run_chunk)
+            self.wfile.flush()
             player = DemoPlayer(prepared, controls=controls, **self.server.player_options)  # type: ignore[arg-type]
             for event in player.events():
                 payload = dict(event.data)
                 if event.kind == "frame":
                     payload["image_b64"] = base64.b64encode(event.jpeg).decode()
+                    last_frame_id = int(str(event.data["frame_id"]))
+                    overlay_raw = event.data["detections"]
+                    camera_raw = event.data.get("camera")
+                    store.record_frame(
+                        run_id,
+                        index=int(str(event.data["index"])),
+                        frame_id=last_frame_id,
+                        t_ns=int(str(event.data["t_ns"])),
+                        jpeg=event.jpeg,
+                        overlay=overlay_raw if isinstance(overlay_raw, list) else [],
+                        camera=camera_raw if isinstance(camera_raw, dict) else None,
+                    )
+                elif event.kind == "map":
+                    last_frame_id = int(str(event.data["frame_id"]))
+                    last_map = dict(event.data)
+                    _record_map(store, run_id, event.data, last_frame_id)
+                elif event.kind == "detections":
+                    objects_raw = event.data["objects"]
+                    store.record_detections(
+                        run_id,
+                        frame_id=int(str(event.data["frame_id"])),
+                        t_ns=int(str(event.data["t_ns"])),
+                        objects=objects_raw if isinstance(objects_raw, list) else [],
+                    )
+                elif event.kind == "final":
+                    # The final cloud keeps the last map's keyframe/odom stats.
+                    _record_map(store, run_id, {**last_map, **event.data}, last_frame_id)
+                    completed = True
                 chunk = f"event: {event.kind}\ndata: {json.dumps(payload)}\n\n".encode()
                 self.wfile.write(chunk)
                 self.wfile.flush()
+            completed = True
         except (BrokenPipeError, ConnectionResetError):
             pass  # viewer went away; the player's finally tears down
         finally:
+            store.finish_run(run_id, "completed" if completed else "interrupted")
             with self.server.state_lock:
                 if self.server.current is controls:
                     self.server.current = None
             self.server.stream_lock.release()
 
 
+def _record_map(
+    store: RunHistoryStore, run_id: str, data: dict[str, object], frame_id: int
+) -> None:
+    points = data.get("points")
+    colors = data.get("point_colors")
+    trajectory = data.get("trajectory_xy")
+    extent = data.get("extent")
+    store.record_map(
+        run_id,
+        frame_id=frame_id,
+        points=points if isinstance(points, list) else [],
+        colors=colors if isinstance(colors, list) else [],
+        trajectory_xy=trajectory if isinstance(trajectory, list) else [],
+        extent=extent if isinstance(extent, list) else [],
+        cloud_points=int(str(data.get("cloud_points", 0))),
+        keyframes=int(str(data.get("keyframes", 0))),
+        odom_state=str(data.get("odom_state", "")),
+    )
+
+
 def page_title(prepared: PreparedDataset) -> str:
-    """The demo page's heading for `prepared` (used by the launcher log)."""
-    return f"SurMap demo — {prepared.spec.title}"
+    """The test console page's heading for `prepared` (used by the launcher log)."""
+    return f"SurMap Test Console — {prepared.spec.title}"

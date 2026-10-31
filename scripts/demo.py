@@ -113,6 +113,12 @@ def main(argv: list[str] | None = None) -> int:
         help="label attached to SAM detections (concept prompt of the export)",
     )
     parser.add_argument(
+        "--history-db",
+        type=Path,
+        default=None,
+        help="SQLite file for persisted runs (default: <cache-dir>/demo-history.db)",
+    )
+    parser.add_argument(
         "--prepare-only", action="store_true", help="download+cache the dataset and exit"
     )
     args = parser.parse_args(argv)
@@ -156,6 +162,7 @@ def main(argv: list[str] | None = None) -> int:
         sam_model=sam_model,
         sam_device=args.sam_device,
         sam_label=args.sam_label,
+        history_db=args.history_db,
     )
     host, port = server.server_address[:2]
     if args.sam_device is not None:
