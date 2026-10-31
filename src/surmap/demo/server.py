@@ -78,15 +78,42 @@ MAX_CLOUD_POINTS = 12000
 def cloud_points(
     cloud: MapCloud, max_points: int = MAX_CLOUD_POINTS
 ) -> tuple[list[list[float]], list[list[int]]]:
-    """A cloud as JSON-ready (points, colours), evenly sampled to the cap."""
+    """A cloud as JSON-ready (points, colours), voxel-sampled to the cap.
+
+    The sample must be *stable* as the cloud grows: the previous
+    stride-over-the-list sampler changed its subset wholesale on
+    every map update (only ~10–25 % of drawn points survived), so
+    the 3D view flickered. Here the first point of each voxel of a
+    fixed grid is kept; the grid edge depends only on the cloud's
+    extent (snapped to a power of two), so appending points never
+    un-draws a point already shown — new points only fill new
+    voxels. The edge doubles only while occupied voxels exceed the
+    cap (dense clusters), which is rare and one-way as maps grow.
+    """
     points, colors = cloud.points, cloud.colors
     if len(points) > max_points:
-        pick = (np.arange(max_points) * len(points) // max_points).astype(np.int64)
+        pick = _voxel_pick(points, max_points)
         points, colors = points[pick], colors[pick]
     return (
         [[round(float(v), 3) for v in row] for row in points.tolist()],
         [[int(v) for v in row] for row in colors.tolist()],
     )
+
+
+def _voxel_pick(points: NDArray[np.float32], max_points: int) -> NDArray[np.int64]:
+    """Indices of the first point in each voxel, capped at `max_points`."""
+    span = float(np.max(points.max(axis=0) - points.min(axis=0)))
+    if span <= 0.0:
+        return np.arange(max_points, dtype=np.int64)
+    # Aim a little under the cap: occupied voxels are fewer than grid cells.
+    target = span / (max_points ** (1.0 / 3.0) * 1.6)
+    edge = float(2.0 ** np.ceil(np.log2(max(target, 1e-6))))
+    while True:
+        keys = np.floor(points / edge).astype(np.int64)
+        _, first = np.unique(keys, axis=0, return_index=True)
+        if len(first) <= max_points or edge > span:
+            return np.sort(first.astype(np.int64))
+        edge *= 2.0
 
 
 @runtime_checkable
