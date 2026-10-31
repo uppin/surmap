@@ -26,6 +26,7 @@ from surmap.demo.datasets import (
     scaled_sensor_yaml,
 )
 from surmap.demo.server import (
+    DemoEvent,
     DemoPlayer,
     FloorExtent,
     depth_colour,
@@ -563,9 +564,11 @@ def test_the_page_shows_sam_masks_when_sam_is_enabled(tmp_path: Path) -> None:
         server.server_close()
         thread.join(timeout=5)
 
-    # Then the preview page draws SAM results and the stream sends them per frame
+    # Then the page has a separate SAM pane and the stream sends
+    # SAM results per frame, each with its frame image
     assert "addEventListener('sam'" in page
     assert "SAM (video)" in page
+    assert 'id="sam-view"' in page
     assert body.count("event: sam") == 2
     assert '"track_id": 1' in body
 
@@ -590,9 +593,9 @@ def test_sam_streamer_events_arrive_for_each_frame_in_order(tmp_path: Path) -> N
     assert len(streamer.videos) == 1 and len(streamer.videos[0]) == 2
 
 
-def test_a_shown_frame_waits_for_its_sam_result(tmp_path: Path) -> None:
+def test_frames_play_at_their_own_rate_without_waiting_for_sam(tmp_path: Path) -> None:
     # Given a SAM streamer that holds its results until released
-    # (SAM propagates slower than playback)
+    # (SAM propagates much slower than playback, on its own pane)
     from collections.abc import Iterator, Sequence
 
     from surmap.survey.sam import SamDetection
@@ -616,19 +619,20 @@ def test_a_shown_frame_waits_for_its_sam_result(tmp_path: Path) -> None:
         _prepared_tiny(tmp_path), fps=1000.0, with_rtabmap=False, sam_streamer=streamer
     )
 
-    # When playback starts, no frame is shown while its SAM result is pending
-    kinds: list[str] = []
-    collector = threading.Thread(
-        target=lambda: kinds.extend(event.kind for event in player.events()), daemon=True
-    )
+    # When playback runs, the main frames are shown without waiting for SAM
+    events: list[DemoEvent] = []
+    collector = threading.Thread(target=lambda: events.extend(player.events()), daemon=True)
     collector.start()
     collector.join(timeout=2.0)
-    assert kinds == []
+    assert [event.kind for event in events] == ["frame", "frame"]
 
-    # And once SAM delivers, each frame is followed by its own SAM event
+    # And once SAM delivers, its events arrive on their own cadence,
+    # each carrying the frame image for the separate SAM pane
     streamer.release.set()
     collector.join(timeout=15)
-    assert kinds == ["frame", "sam", "frame", "sam"]
+    sam_events = [event for event in events if event.kind == "sam"]
+    assert [event.data["frame_id"] for event in sam_events] == [1, 2]
+    assert all(event.jpeg for event in sam_events)
 
 
 def test_the_demo_cli_names_the_sam_gpu_device_argument() -> None:

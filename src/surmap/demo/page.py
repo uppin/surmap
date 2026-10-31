@@ -19,6 +19,9 @@ PAGE = """<!DOCTYPE html>
     flex-wrap: wrap; align-items: flex-start; }}
   .stage {{ flex: 1 1 620px; max-width: 880px; min-width: 320px; }}
   canvas#view {{ width: 100%; background: #000; border: 1px solid #34383e; display: block; }}
+  .sam-pane {{ margin-top: 18px; }}
+  .sam-pane h2 {{ font-size: 14px; margin: 0 0 6px; font-weight: 650; }}
+  canvas#sam-view {{ width: 100%; background: #000; border: 1px solid #34383e; display: block; }}
   aside {{ flex: 1 1 380px; min-width: 320px; max-width: 760px; }}
   h2 {{ font-size: 14px; margin: 18px 0 6px; font-weight: 650; }}
   h2:first-child {{ margin-top: 2px; }}
@@ -101,6 +104,7 @@ PAGE = """<!DOCTYPE html>
       Yellow boxes: tracked objects from the separate detections stream.{sam_legend}
     </p>
     <p class="legend">{credit}</p>
+    {sam_pane}
     <div class="history">
       <div class="history-row">
         <button class="btn" id="history-back10" type="button" title="Back 10 frames">⏪ 10</button>
@@ -164,7 +168,9 @@ const runInfo = $('run-info');
 const runSelect = $('run-select');
 let frames = 0, started = performance.now(), scrubSeq = 0, maxSeq = -1;
 let latestDetections = null, source = null, currentRunId = null;
-let latestSam = null, shownFrameId = null;
+const samCanvas = document.getElementById('sam-view');
+const samView = samCanvas ? samCanvas.getContext('2d') : null;
+const samStatus = document.getElementById('sam-status');
 let mode = 'live', scrubFetch = 0;
 const SCENE = '{dataset_id}';
 let lastMap = null, lastCamera = null;
@@ -189,32 +195,44 @@ function drawBoxes(objects) {{
     view.fillText(`${{object.label}} #${{object.track_id}}`, x1 + 2, Math.max(10, y1 - 3));
   }}
 }}
-function drawSamObjects(objects) {{
-  if (!objects) return;
-  view.strokeStyle = '#22d3ee'; view.lineWidth = 1.6;
-  view.fillStyle = 'rgba(34, 211, 238, 0.16)';
-  view.font = '11px system-ui';
+function drawSamObjects(ctx, objects) {{
+  if (!ctx || !objects) return;
+  ctx.strokeStyle = '#22d3ee'; ctx.lineWidth = 1.6;
+  ctx.fillStyle = 'rgba(34, 211, 238, 0.16)';
+  ctx.font = '11px system-ui';
   for (const object of objects) {{
     const polygon = object.mask_polygon || [];
     if (polygon.length > 1) {{
-      view.beginPath();
-      polygon.forEach(([x, y], i) => i ? view.lineTo(x, y) : view.moveTo(x, y));
-      view.closePath(); view.fill(); view.stroke();
+      ctx.beginPath();
+      polygon.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+      ctx.closePath(); ctx.fill(); ctx.stroke();
     }} else {{
       const [x1, y1, x2, y2] = object.box;
-      view.strokeRect(x1, y1, x2 - x1, y2 - y1);
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
     }}
     const [lx, ly] = polygon.length ? polygon[0] : object.box;
-    view.fillStyle = '#22d3ee';
-    view.fillText(`SAM ${{object.label}} #${{object.track_id}}`, lx + 2, Math.max(10, ly - 3));
-    view.fillStyle = 'rgba(34, 211, 238, 0.16)';
+    ctx.fillStyle = '#22d3ee';
+    ctx.fillText(`SAM ${{object.label}} #${{object.track_id}}`, lx + 2, Math.max(10, ly - 3));
+    ctx.fillStyle = 'rgba(34, 211, 238, 0.16)';
   }}
 }}
-function drawSam() {{
-  if (!latestSam || latestSam.frame_id !== shownFrameId) return;
-  drawSamObjects(latestSam.objects);
+function drawSamPane(data) {{
+  if (!samView) return;
+  if (samStatus) {{
+    samStatus.textContent = `SAM frame ${{data.frame_id}} · ${{data.objects.length}} object(s) · `
+      + `updated ${{new Date().toLocaleTimeString()}} (SAM runs at its own rate; `
+      + `the main preview above is not delayed by it)`;
+  }}
+  if (!data.image_b64) return;
+  const image = new Image();
+  image.onload = () => {{
+    samView.drawImage(image, 0, 0, samCanvas.width, samCanvas.height);
+    drawSamObjects(samView, data.objects);
+    URL.revokeObjectURL(image.src);
+  }};
+  image.src = 'data:image/jpeg;base64,' + data.image_b64;
 }}
-function drawImageFrame(imageB64, overlay, objects, camera, labelData, sam) {{
+function drawImageFrame(imageB64, overlay, objects, camera, labelData) {{
   const image = new Image();
   image.onload = () => {{
     view.drawImage(image, 0, 0, view.canvas.width, view.canvas.height);
@@ -225,8 +243,6 @@ function drawImageFrame(imageB64, overlay, objects, camera, labelData, sam) {{
       view.fill();
     }}
     drawBoxes(objects);
-    drawSamObjects(sam);
-    drawSam();
     URL.revokeObjectURL(image.src);
   }};
   image.src = 'data:image/jpeg;base64,' + imageB64;
@@ -374,12 +390,10 @@ function attachListeners() {{
     latestDetections = JSON.parse(event.data);
   }});
   source.addEventListener('sam', (event) => {{
-    latestSam = JSON.parse(event.data);
-    drawSam();
+    drawSamPane(JSON.parse(event.data));
   }});
   source.addEventListener('frame', (event) => {{
     const data = JSON.parse(event.data);
-    shownFrameId = data.frame_id;
     frames += 1;
     maxSeq = Math.max(maxSeq, data.index);
     slider.max = String(maxSeq);
@@ -389,8 +403,7 @@ function attachListeners() {{
     scrubSeq = data.index; slider.value = String(scrubSeq);
     const fps = (frames / ((performance.now() - started) / 1000)).toFixed(1);
     drawImageFrame(data.image_b64, data.detections, null, data.camera,
-      {{index: data.index, total: data.total}},
-      latestSam && latestSam.frame_id === data.frame_id ? latestSam.objects : null);
+      {{index: data.index, total: data.total}});
     playback.innerHTML = `Frame <b>${{data.index + 1}} / ${{data.total}}</b><br>`
       + `Stream rate <b>${{fps}} fps</b><br>Overlay points this frame <b>${{data.point_count}}</b>`;
     updateHistoryLabel();

@@ -625,14 +625,9 @@ def _display_jpeg_path(prepared: PreparedDataset, channel: int, t_ns: int) -> Pa
 # shown without keypoints (its pair may have been dropped).
 HOLD_MAX_S = 2.0
 
-# With SAM on, a frame also waits this long for its SAM result before
-# it is shown without one. SAM propagates slower than playback, so
-# without the hold every mask would arrive after its frame had left
-# the screen and never be drawn. The wait is measured from when the
-# frame reaches the head of the display queue, not from when it was
-# played: frames queued behind a slow SAM window must not age out
-# and burst through maskless.
-SAM_HOLD_MAX_S = 30.0
+# Recent frame JPEGs kept so a SAM result can carry its own frame's
+# image to the separate SAM pane, whenever it lands.
+SAM_FRAME_CACHE = 256
 
 
 @dataclass
@@ -651,6 +646,8 @@ class _Display:
     With live SLAM a frame waits for its own odometry, so its keypoints
     are the ones RTAB-Map tracked on that very image; detections are
     released only once their frame has been shown, never ahead of it.
+    SAM results are on their own cadence (a separate pane): they are
+    released as soon as they arrive, each with its frame's JPEG.
     """
 
     def __init__(
@@ -659,19 +656,15 @@ class _Display:
         backend: LiveSlamBackend | None,
         calibration: DemoCalibration,
         stops: DepthStops,
-        *,
-        sam_expected: bool = False,
     ) -> None:
         self._total = total
         self._stops = stops
         self._backend = backend
         self._calibration = calibration
-        self._sam_expected = sam_expected
         self._frames: deque[_HeldFrame] = deque()
         self._detections: list[DemoEvent] = []
         self._sam: list[DemoEvent] = []
-        self._sam_frames: set[int] = set()
-        self._head_since: float | None = None
+        self._jpegs: dict[int, bytes] = {}
         self._shown = 0
 
     def add_frame(self, frame: _HeldFrame) -> None:
@@ -682,7 +675,6 @@ class _Display:
 
     def add_sam(self, events: list[DemoEvent]) -> None:
         self._sam.extend(events)
-        self._sam_frames.update(int(str(event.data["frame_id"])) for event in events)
 
     def release(self, *, final: bool = False) -> Iterator[DemoEvent]:
         while self._frames:
@@ -690,15 +682,12 @@ class _Display:
             shown = self._overlay_for(head, final)
             if shown is None:
                 break
-            if self._sam_expected and not final and head.frame_id not in self._sam_frames:
-                if self._head_since is None:
-                    self._head_since = time.monotonic()
-                if time.monotonic() - self._head_since <= SAM_HOLD_MAX_S:
-                    break  # its SAM result is still coming; show them together
             overlay, camera = shown
             self._frames.popleft()
-            self._head_since = None
             self._shown = head.frame_id
+            self._jpegs[head.frame_id] = head.jpeg
+            while len(self._jpegs) > SAM_FRAME_CACHE:
+                self._jpegs.pop(next(iter(self._jpegs)))
             yield DemoEvent(
                 "frame",
                 {
@@ -721,7 +710,7 @@ class _Display:
         yield from self._ready(final=final)
 
     def _ready(self, *, final: bool) -> Iterator[DemoEvent]:
-        """Detections/SAM events whose frame has been shown, in order."""
+        """Detections for shown frames; SAM results as they arrive."""
         ready = [
             event
             for event in self._detections
@@ -730,10 +719,12 @@ class _Display:
         self._detections = [event for event in self._detections if event not in ready]
         yield from ready
         sam_ready = [
-            event for event in self._sam if final or int(str(event.data["frame_id"])) <= self._shown
+            event for event in self._sam if final or int(str(event.data["frame_id"])) in self._jpegs
         ]
         self._sam = [event for event in self._sam if event not in sam_ready]
-        yield from sam_ready
+        for event in sam_ready:
+            frame_id = int(str(event.data["frame_id"]))
+            yield DemoEvent("sam", event.data, jpeg=self._jpegs.get(frame_id, b""))
 
     def _overlay_for(
         self, frame: _HeldFrame, final: bool
@@ -935,13 +926,7 @@ class DemoPlayer:
             else None
         )
         live = backend if isinstance(backend, LiveSlamBackend) else None
-        display = _Display(
-            len(timestamps),
-            live,
-            calibration,
-            prepared.spec.depth_stops_m,
-            sam_expected=self._sam_source is not None or self._sam_streamer is not None,
-        )
+        display = _Display(len(timestamps), live, calibration, prepared.spec.depth_stops_m)
         last_map_emit = 0.0
         try:
             for index, t_ns in enumerate(timestamps):
@@ -1381,17 +1366,26 @@ class _DemoHandler(BaseHTTPRequestHandler):
                 self._send(404, "text/plain", b"unknown scene")
             elif url.path == "/":
                 spec = self.server.catalog[dataset_id]
+                tuning = _page_tuning(spec)
                 page = PAGE.format(
                     title=html.escape(spec.title),
                     description=html.escape(spec.description),
                     dataset_id=dataset_id,
                     sam_legend=(
-                        " Cyan outlines: SAM (video) masks for this frame, "
-                        "with persistent track ids."
+                        " SAM (video) masks run in the separate pane below, at SAM's own rate."
                         if self.server.sam_enabled
                         else ""
                     ),
-                    **_page_tuning(spec),
+                    sam_pane=(
+                        '<div class="sam-pane"><h2>SAM 3.1 (video) — own rate</h2>'
+                        f'<canvas id="sam-view" width="{tuning["width"]}" '
+                        f'height="{tuning["height"]}"></canvas>'
+                        '<p class="legend" id="sam-status">SAM: waiting for '
+                        "the first result…</p></div>"
+                        if self.server.sam_enabled
+                        else ""
+                    ),
+                    **tuning,
                 )
                 self._send(200, "text/html; charset=utf-8", page.encode())
             else:
@@ -1460,8 +1454,9 @@ class _DemoHandler(BaseHTTPRequestHandler):
             player = DemoPlayer(prepared, controls=controls, **self.server.player_options)  # type: ignore[arg-type]
             for event in player.events():
                 payload = dict(event.data)
-                if event.kind == "frame":
+                if event.kind in ("frame", "sam") and event.jpeg:
                     payload["image_b64"] = base64.b64encode(event.jpeg).decode()
+                if event.kind == "frame" and event.jpeg:
                     last_frame_id = int(str(event.data["frame_id"]))
                     overlay_raw = event.data["detections"]
                     camera_raw = event.data.get("camera")
