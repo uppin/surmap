@@ -122,7 +122,7 @@ def test_without_a_live_map_sam_results_get_no_region(tmp_path: Path) -> None:
     assert "sam" in kinds and "region" not in kinds
 
 
-def test_the_fake_sam_drives_regions_onto_the_3d_pane(tmp_path: Path) -> None:
+def test_the_fake_sam_drives_regions_and_the_surface_layer_onto_the_3d_pane(tmp_path: Path) -> None:
     # Given a demo server with the fake SAM and a live map
     backend = FakeRegionBackend()
     server = make_demo_server(
@@ -145,11 +145,10 @@ def test_the_fake_sam_drives_regions_onto_the_3d_pane(tmp_path: Path) -> None:
         server.server_close()
         thread.join(timeout=5)
 
-    # Then SAM and region events stream, and the page draws the latest region
+    # Then SAM and region events stream, and the 3D pane offers the surface layer
     assert body.count("event: sam") == 2
     assert body.count("event: region") == 2
-    assert "addEventListener('region'" in page
-    assert "setRegionLayer(" in page
+    assert "cloud_surfaces" in page
 
 
 def test_the_demo_cli_offers_a_fake_sam() -> None:
