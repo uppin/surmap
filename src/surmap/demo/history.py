@@ -1,10 +1,12 @@
 """Persisted demo runs: every streamed run stored in SQLite for replay.
 
 A run is the frame timeline exactly as shown (JPEG, overlay points,
-camera), the detections per frame, and a map snapshot per map update.
-`snapshot_at` joins them at one moment: the frame at that position plus
-the newest map snapshot at or before its frame — so rewinding shows the
-points as they were then, not the final cloud.
+camera), the detections per frame, a map snapshot per map update, and
+each surface assignment (the points a frame added to a SAM object's
+surface). `snapshot_at` joins them at one moment: the frame at that
+position plus the newest map snapshot at or before its frame and every
+surface point assigned by then — so rewinding shows the points and
+surfaces as they were then, not the final cloud.
 """
 
 from __future__ import annotations
@@ -61,6 +63,17 @@ CREATE TABLE IF NOT EXISTS detections (
     t_ns INTEGER NOT NULL,
     objects TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS surface_points (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    frame_id INTEGER NOT NULL,
+    surface_id INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    track_id INTEGER NOT NULL,
+    moving INTEGER NOT NULL,
+    points TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS surface_points_run_frame ON surface_points (run_id, frame_id, id);
 CREATE INDEX IF NOT EXISTS maps_run_frame ON maps (run_id, frame_id, id);
 CREATE INDEX IF NOT EXISTS detections_run_frame ON detections (run_id, frame_id, id);
 """
@@ -159,6 +172,65 @@ class RunHistoryStore:
                 "INSERT INTO detections (run_id, frame_id, t_ns, objects) VALUES (?, ?, ?, ?)",
                 (run_id, frame_id, t_ns, json.dumps(list(objects))),
             )
+
+    def record_surface(
+        self,
+        run_id: str,
+        *,
+        frame_id: int,
+        surface_id: int,
+        label: str,
+        track_id: int,
+        points: PointList,
+        moving: bool,
+    ) -> None:
+        """The points `frame_id` newly assigned to `surface_id`, and whether the
+        surface was moving by then (append-only)."""
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO surface_points"
+                " (run_id, frame_id, surface_id, label, track_id, moving, points)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (run_id, frame_id, surface_id, label, track_id, int(moving), json.dumps(points)),
+            )
+
+    def record_surface_event(self, run_id: str, data: dict[str, object]) -> None:
+        """Every assignment of one streamed `surface` event."""
+        surfaces = data.get("surfaces")
+        for surface in surfaces if isinstance(surfaces, list) else []:
+            self.record_surface(
+                run_id,
+                frame_id=int(str(data["frame_id"])),
+                surface_id=int(surface["surface_id"]),
+                label=str(surface["label"]),
+                track_id=int(surface["track_id"]),
+                points=list(surface["points"]),
+                moving=bool(surface.get("moving")),
+            )
+
+    def surfaces_at(self, run_id: str, frame_id: int) -> list[dict[str, object]]:
+        """Every surface with all points assigned to it at or before `frame_id`;
+        `moving` as it was by then (once moving, a surface stays moving)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT surface_id, label, moving, points FROM surface_points"
+                " WHERE run_id = ? AND frame_id <= ? ORDER BY id",
+                (run_id, frame_id),
+            ).fetchall()
+        surfaces: dict[int, dict[str, object]] = {}
+        for row in rows:
+            surface = surfaces.setdefault(
+                int(row["surface_id"]),
+                {
+                    "surface_id": int(row["surface_id"]),
+                    "label": str(row["label"]),
+                    "moving": False,
+                    "points": [],
+                },
+            )
+            surface["moving"] = surface["moving"] or bool(row["moving"])
+            cast(PointList, surface["points"]).extend(json.loads(str(row["points"])))
+        return [surfaces[surface_id] for surface_id in sorted(surfaces)]
 
     def finish_run(self, run_id: str, status: str = "completed") -> None:
         with self._lock, self._db:
@@ -263,5 +335,6 @@ class RunHistoryStore:
             "camera": (json.loads(str(frame["camera"])) if frame["camera"] is not None else None),
             "objects": (json.loads(str(det_row["objects"])) if det_row is not None else []),
             "cloud": cloud,
+            "surfaces": self.surfaces_at(run_id, frame_id),
             "frame_count": self._frame_count(run_id),
         }

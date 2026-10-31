@@ -8,7 +8,9 @@ floor plan is the PTZ pose, which lives server-side in
 `PlaybackControls`: buttons, drag and wheel post pose deltas to
 `/control`, and the player re-renders with the next map event
 (and immediately when the pose version changes). No sampling,
-no client-side geometry — nothing can flicker or go sparse.
+no client-side geometry — nothing can flicker or go sparse. The SAM
+surface layer is drawn into the same image server-side; the
+Surfaces button only shows or hides it (`cloud_surfaces`).
 
 Kept separate from page.py so both files stay under the 500-line
 gate; page.py splices CLOUD_SCRIPT into PAGE before the server
@@ -29,6 +31,7 @@ async function postCloud(body) {{
     }});
     if (!response.ok) return;
     const pose = await response.json();
+    surfacesButton.textContent = pose.surfaces_visible ? 'Hide surfaces' : 'Show surfaces';
     $('ptz-readout').textContent =
       `az ${{Math.round(pose.azimuth * 57.3)}}° · el ${{Math.round(pose.elevation * 57.3)}}° `
       + `· zoom ${{pose.zoom.toFixed(2)}}× — re-rendered with the next map update`;
@@ -106,16 +109,12 @@ cloudCanvas.addEventListener('wheel', (event) => {{
   postCloudDebounced({{action: 'cloud_zoom', factor: Math.exp(event.deltaY * 0.001)}});
 }}, {{passive: false}});
 cloudCanvas.addEventListener('contextmenu', (event) => event.preventDefault());
-// SAM regions: the server composites the latest region's 3D points into
-// the cloud image; this script only forwards them (replaced wholesale).
-function setRegionLayer(regions) {{
-  postCloudDebounced({{action: 'cloud_regions', regions: (regions || []).map((region) => ({{
-    track_id: region.track_id, points: region.points,
-  }}))}});
-}}
-function listenForRegions(source) {{
-  source.addEventListener('region', (event) => {{
-    if (mode === 'live') setRegionLayer(JSON.parse(event.data).regions);
-  }});
-}}
+// SAM surfaces: the server draws the station's surface layer into the
+// cloud image; this button only toggles it.
+const surfacesButton = document.createElement('button');
+surfacesButton.className = 'btn';
+surfacesButton.type = 'button';
+surfacesButton.textContent = 'Hide surfaces';
+$('cloud-reset').before(surfacesButton);
+surfacesButton.addEventListener('click', () => postCloud({{action: 'cloud_surfaces'}}));
 """
