@@ -83,21 +83,24 @@ MAX_CLOUD_POINTS = 12000
 def cloud_points(
     cloud: MapCloud, max_points: int = MAX_CLOUD_POINTS
 ) -> tuple[list[list[float]], list[list[int]]]:
-    """A cloud as JSON-ready (points, colours), voxel-sampled to the cap.
+    """A cloud as JSON-ready (points, colours), stably sampled to the cap.
 
-    The sample must be *stable* as the cloud grows: the previous
-    stride-over-the-list sampler changed its subset wholesale on
-    every map update (only ~10–25 % of drawn points survived), so
-    the 3D view flickered. Here the first point of each voxel of a
-    fixed grid is kept; the grid edge depends only on the cloud's
-    extent (snapped to a power of two), so appending points never
-    un-draws a point already shown — new points only fill new
-    voxels. The edge doubles only while occupied voxels exceed the
-    cap (dense clusters), which is rare and one-way as maps grow.
+    The sample must be *dense* (the cap fully used) and *stable* as
+    the cloud grows. Two earlier samplers failed one each: a
+    stride-over-the-list resampled wholesale per update (10–25 %
+    of drawn points survived — flicker), and first-point-per-voxel
+    starved surface clouds (far fewer voxels than the cap — sparse).
+
+    Each point instead gets a rank that depends only on itself:
+    a hash of its centimetre-quantised coordinates. The cap's
+    lowest ranks are drawn. A point's rank never changes as the
+    cloud grows, so growth only displaces the few drawn points a
+    newcomer out-ranks (a few percent per update), while the cap
+    always stays exactly filled.
     """
     points, colors = cloud.points, cloud.colors
     if len(points) > max_points:
-        pick = _voxel_pick(points, max_points)
+        pick = _stable_pick(points, max_points)
         points, colors = points[pick], colors[pick]
     return (
         [[round(float(v), 3) for v in row] for row in points.tolist()],
@@ -105,20 +108,17 @@ def cloud_points(
     )
 
 
-def _voxel_pick(points: NDArray[np.float32], max_points: int) -> NDArray[np.int64]:
-    """Indices of the first point in each voxel, capped at `max_points`."""
-    span = float(np.max(points.max(axis=0) - points.min(axis=0)))
-    if span <= 0.0:
-        return np.arange(max_points, dtype=np.int64)
-    # Aim a little under the cap: occupied voxels are fewer than grid cells.
-    target = span / (max_points ** (1.0 / 3.0) * 1.6)
-    edge = float(2.0 ** np.ceil(np.log2(max(target, 1e-6))))
-    while True:
-        keys = np.floor(points / edge).astype(np.int64)
-        _, first = np.unique(keys, axis=0, return_index=True)
-        if len(first) <= max_points or edge > span:
-            return np.sort(first.astype(np.int64))
-        edge *= 2.0
+def _stable_pick(points: NDArray[np.float32], max_points: int) -> NDArray[np.int64]:
+    """Indices of the `max_points` lowest coordinate-hash ranks."""
+    quantized = np.rint(points * 100.0).astype(np.int64).view(np.uint64)
+    rank = quantized[:, 0] * np.uint64(0x9E3779B97F4A7C15)
+    rank ^= quantized[:, 1] * np.uint64(0xC2B2AE3D27D4EB4F)
+    rank ^= quantized[:, 2] * np.uint64(0x165667B19E3779F9)
+    rank ^= rank >> np.uint64(29)
+    rank *= np.uint64(0xBF58476D1CE4E5B9)
+    rank ^= rank >> np.uint64(32)
+    lowest = np.argpartition(rank, max_points)[:max_points]
+    return np.sort(lowest.astype(np.int64))
 
 
 @runtime_checkable

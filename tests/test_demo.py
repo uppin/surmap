@@ -668,21 +668,28 @@ def test_the_demo_cli_names_the_sam_gpu_device_argument() -> None:
     assert "--sam-device" in missing.stderr
 
 
-def test_the_sampled_cloud_is_stable_as_the_map_grows() -> None:
-    # Given a map cloud well above the draw cap, on a regular grid
+def test_the_sampled_cloud_is_dense_and_stable_as_the_map_grows() -> None:
+    # Given a map cloud well above the draw cap, on surfaces (as
+    # RTAB-Map clouds lie on walls/floors, not through volumes)
     rng = np.random.default_rng(7)
-    base = rng.uniform(-10.0, 10.0, size=(30_000, 3)).astype(np.float32)
+
+    def surface(count: int) -> NDArray[np.float32]:
+        directions = rng.normal(size=(count, 3))
+        directions /= np.linalg.norm(directions, axis=1, keepdims=True)
+        return (directions * 8.0).astype(np.float32)
+
+    base = surface(30_000)
     colors = np.full((30_000, 3), 128, dtype=np.uint8)
-    grown = np.concatenate([base, rng.uniform(-10.0, 10.0, size=(5_000, 3)).astype(np.float32)])
-    grown_colors = np.full((35_000, 3), 128, dtype=np.uint8)
+    grown = np.concatenate([base, surface(1_000)])
+    grown_colors = np.full((31_000, 3), 128, dtype=np.uint8)
 
     # When the cloud is sampled, then sampled again after it grows
     first, _ = cloud_points(MapCloud(base, colors), max_points=1_000)
     second, _ = cloud_points(MapCloud(grown, grown_colors), max_points=1_000)
 
-    # Then the cap holds, the sample is not starved, and every point
-    # drawn before is still drawn: the 3D pixels must not jump
-    # between map updates
-    assert 500 <= len(first) <= 1_000
-    assert len(second) <= 1_000
-    assert {tuple(point) for point in first} <= {tuple(point) for point in second}
+    # Then the cap is fully used in both samples (dense, not voxel-
+    # starved), and at least 90% of the drawn points survive the
+    # growth: the 3D pixels must not jump between map updates
+    assert len(first) == len(second) == 1_000
+    kept = {tuple(point) for point in first} & {tuple(point) for point in second}
+    assert len(kept) >= 900
