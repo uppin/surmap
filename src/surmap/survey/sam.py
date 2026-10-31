@@ -69,9 +69,11 @@ class VideoSamDetector(Protocol):
     and the returned detections carry track ids that persist while an
     object stays visible. Unlike `SamDetector`, calls are synchronous
     and stateful — video mode is a session, not per-frame inference.
+    `reset(prompt=...)` names the concept the new video looks for;
+    `None` keeps the adapter's configured one.
     """
 
-    def reset(self) -> None: ...
+    def reset(self, prompt: str | None = None) -> None: ...
     def track(self, frame: RawFrame) -> tuple[SamDetection, ...]: ...
     def close(self) -> None: ...
 
@@ -85,11 +87,12 @@ class VideoSamStreamer(Protocol):
     the video's frame image files in playback order and yields
     `(frame_index, detections)` in frame order, where `frame_index`
     is 0-based into that sequence and detections carry the model's
-    own persistent object ids.
+    own persistent object ids. `prompt` names the concept this video
+    looks for; `None` keeps the adapter's configured one.
     """
 
     def stream(
-        self, frame_paths: Sequence[Path]
+        self, frame_paths: Sequence[Path], prompt: str | None = None
     ) -> Iterator[tuple[int, tuple[SamDetection, ...]]]: ...
     def close(self) -> None: ...
 
@@ -139,9 +142,11 @@ class InMemoryVideoSamDetector:
     def __init__(self, detections: tuple[SamDetection, ...] = ()) -> None:
         self._detections = detections
         self.frames: list[RawFrame] = []
+        self.prompts: list[str | None] = []
 
-    def reset(self) -> None:
+    def reset(self, prompt: str | None = None) -> None:
         self.frames = []
+        self.prompts.append(prompt)
 
     def track(self, frame: RawFrame) -> tuple[SamDetection, ...]:
         self.frames.append(frame)
@@ -160,9 +165,13 @@ class InMemoryVideoSamStreamer:
     def __init__(self, detections: tuple[SamDetection, ...] = ()) -> None:
         self._detections = detections
         self.videos: list[list[Path]] = []
+        self.prompts: list[str | None] = []
 
-    def stream(self, frame_paths: Sequence[Path]) -> Iterator[tuple[int, tuple[SamDetection, ...]]]:
+    def stream(
+        self, frame_paths: Sequence[Path], prompt: str | None = None
+    ) -> Iterator[tuple[int, tuple[SamDetection, ...]]]:
         self.videos.append(list(frame_paths))
+        self.prompts.append(prompt)
         for index in range(len(frame_paths)):
             yield (
                 index,
@@ -190,8 +199,9 @@ class CentredBoxVideoSamDetector:
         self._label = label
         self._fraction = fraction
 
-    def reset(self) -> None:
-        pass
+    def reset(self, prompt: str | None = None) -> None:
+        if prompt is not None:
+            self._label = prompt
 
     def track(self, frame: RawFrame) -> tuple[SamDetection, ...]:
         half_w = frame.width * self._fraction / 2

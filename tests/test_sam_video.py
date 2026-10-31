@@ -11,7 +11,13 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from surmap.survey.sam import InMemoryVideoSamDetector, RawFrame, SamDetection
+from surmap.survey.sam import (
+    CentredBoxVideoSamDetector,
+    InMemoryVideoSamDetector,
+    InMemoryVideoSamStreamer,
+    RawFrame,
+    SamDetection,
+)
 from surmap.survey.sam3 import (
     OnnxSam3Session,
     Sam3Unavailable,
@@ -113,3 +119,43 @@ def test_the_in_memory_video_detector_records_frames_in_order() -> None:
     # And a reset starts the next video's recording afresh
     detector.reset()
     assert detector.frames == []
+
+
+def test_an_onnx_exports_concept_cannot_be_reprompted() -> None:
+    # Given a video detector over an export labelled "fixture"
+    detector = Sam3VideoDetector(OnnxSam3Session(FAKE_MODEL, device="cpu"), label="fixture")
+
+    # When / Then a new video asking for another concept is refused by name,
+    # while its own concept (or none) starts a new video as before
+    with pytest.raises(ValueError, match="fixed"):
+        detector.reset(prompt="person")
+    detector.reset(prompt="fixture")
+    detector.reset()
+
+
+def test_the_centred_stand_in_labels_with_the_videos_prompt() -> None:
+    # Given the model-free stand-in configured for "object"
+    detector = CentredBoxVideoSamDetector("object")
+
+    # When a new video is prompted "car"
+    detector.reset(prompt="car")
+    (detection,) = detector.track(_frame_with_bright_box(1, x0=30))
+
+    # Then its outline is labelled "car"
+    assert detection.label == "car"
+
+
+def test_the_in_memory_adapters_record_each_videos_prompt(tmp_path: Path) -> None:
+    # Given both in-memory SAM adapters
+    detector = InMemoryVideoSamDetector()
+    streamer = InMemoryVideoSamStreamer()
+
+    # When each starts a video prompted "car", then one with no prompt
+    detector.reset(prompt="car")
+    detector.reset()
+    list(streamer.stream([tmp_path / "0.jpg"], prompt="car"))
+    list(streamer.stream([tmp_path / "0.jpg"]))
+
+    # Then the prompts are recorded per video, None where none was given
+    assert detector.prompts == ["car", None]
+    assert streamer.prompts == ["car", None]

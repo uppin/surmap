@@ -102,15 +102,20 @@ class Sam31VideoStreamer:
     def device(self) -> str:
         return self._device
 
-    def stream(self, frame_paths: Sequence[Path]) -> Iterator[tuple[int, tuple[SamDetection, ...]]]:
+    def stream(
+        self, frame_paths: Sequence[Path], prompt: str | None = None
+    ) -> Iterator[tuple[int, tuple[SamDetection, ...]]]:
         paths = list(frame_paths)
+        concept = self._prompt if prompt is None else prompt
         for start in range(0, len(paths), self._chunk_frames):
-            yield from self._stream_window(paths[start : start + self._chunk_frames], start)
+            yield from self._stream_window(
+                paths[start : start + self._chunk_frames], start, concept
+            )
             if self._on_chunk_end is not None:
                 self._on_chunk_end()
 
     def _stream_window(
-        self, window: list[Path], offset: int
+        self, window: list[Path], offset: int, prompt: str
     ) -> Iterator[tuple[int, tuple[SamDetection, ...]]]:
         scratch = Path(tempfile.mkdtemp(prefix="surmap-sam31-"))
         try:
@@ -132,13 +137,13 @@ class Sam31VideoStreamer:
             # with a BFloat16/Float dtype mismatch.
             context = self._autocast() if self._autocast is not None else nullcontext()
             with context:
-                self._model.add_prompt(state, 0, text_str=self._prompt)
-                for frame_index, detections in self._propagate(state):
+                self._model.add_prompt(state, 0, text_str=prompt)
+                for frame_index, detections in self._propagate(state, prompt):
                     yield offset + frame_index, detections
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
 
-    def _propagate(self, state: Any) -> Iterator[tuple[int, tuple[SamDetection, ...]]]:
+    def _propagate(self, state: Any, prompt: str) -> Iterator[tuple[int, tuple[SamDetection, ...]]]:
         for frame_index, outputs in self._model.propagate_in_video(
             state, start_frame_idx=0, reverse=False
         ):
@@ -149,7 +154,7 @@ class Sam31VideoStreamer:
             height, width = masks.shape[1], masks.shape[2]
             detections = tuple(
                 SamDetection(
-                    label=self._prompt,
+                    label=prompt,
                     score=float(probs[position]),
                     box_xyxy=(
                         float(box[0]) * width,

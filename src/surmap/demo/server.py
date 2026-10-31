@@ -55,6 +55,7 @@ from surmap.demo.events import DemoEvent as DemoEvent
 from surmap.demo.events import RegionPlacer, sam_event
 from surmap.demo.history import RunHistoryStore
 from surmap.demo.page import PAGE
+from surmap.demo.sam_prompt import SamPromptPolicy, sam_pane
 from surmap.detection.detector import CoralDetector, decode_rgb
 from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
 from surmap.detection.source import CoralDetectionSource, DetectionSource
@@ -657,9 +658,11 @@ class _SamStreamWorker:
         streamer: VideoSamStreamer,
         frame_paths: list[Path],
         frame_keys: list[tuple[int, int]],
+        prompt: str | None = None,
     ) -> None:
         self._streamer = streamer
         self._frame_paths = frame_paths
+        self._prompt = prompt
         self._frame_keys = frame_keys
         self._condition = threading.Condition()
         self._results: list[DemoEvent] = []
@@ -692,7 +695,7 @@ class _SamStreamWorker:
 
     def _run(self) -> None:
         try:
-            for index, detections in self._streamer.stream(self._frame_paths):
+            for index, detections in self._streamer.stream(self._frame_paths, self._prompt):
                 if self._closed:
                     break
                 frame_id, t_ns = self._frame_keys[index]
@@ -978,6 +981,7 @@ class DemoPlayer:
         sam_source: VideoSamDetector | None = None,
         sam_detector: VideoSamDetector | None = None,
         sam_streamer: VideoSamStreamer | None = None,
+        sam_prompt: str | None = None,
         rtabmap_mode: str = "live",
         backend_factory: Callable[[], SidecarRtabmapBackend | LiveSlamBackend] | None = None,
         controls: PlaybackControls | None = None,
@@ -1005,6 +1009,7 @@ class DemoPlayer:
         if self._sam_source is not None and sam_streamer is not None:
             raise ValueError("pass only one of sam_source and sam_streamer")
         self._sam_streamer = sam_streamer
+        self._sam_prompt = sam_prompt
         if rtabmap_mode not in ("live", "batch"):
             raise ValueError("rtabmap_mode must be 'live' or 'batch'")
         if with_rtabmap and rtabmap_mode == "batch" and not prepared.has_imu:
@@ -1119,12 +1124,13 @@ class DemoPlayer:
         )
         sam_worker = _SamWorker(self._sam_source, self._size) if self._sam_source else None
         if self._sam_source is not None:
-            self._sam_source.reset()  # a new playback is a new video
+            self._sam_source.reset(self._sam_prompt)  # a new playback is a new video
         stream_worker = (
             _SamStreamWorker(
                 self._sam_streamer,
                 [_display_jpeg_path(prepared, 0, t_ns) for t_ns in timestamps],
                 [(index + 1, t_ns) for index, t_ns in enumerate(timestamps)],
+                self._sam_prompt,
             )
             if self._sam_streamer is not None
             else None
@@ -1321,7 +1327,7 @@ class _DemoHttpServer(ThreadingHTTPServer):
     fetch: Callable[[str, Path], None] | None
     player_options: dict[str, object]
     sam_enabled: bool
-    sam_label: str
+    sam_prompts: SamPromptPolicy
     stream_lock: threading.Lock
     state_lock: threading.Lock
     prepared: dict[str, PreparedDataset]
@@ -1338,6 +1344,12 @@ class _DemoHttpServer(ThreadingHTTPServer):
                 with self.state_lock:
                     self.prepared[dataset_id] = found
         return found
+
+    def sam_prompt(self, dataset_id: str, requested: str | None = None) -> str | None:
+        """The concept SAM looks for on this run, or None without SAM."""
+        if not self.sam_enabled:
+            return None
+        return self.sam_prompts.resolve(requested, self.catalog[dataset_id].sam_prompt)
 
     def scene_listing(self) -> dict[str, object]:
         scenes = []
@@ -1446,7 +1458,7 @@ def make_demo_server(
     rtabmap_mode: str = "live",
     sam_model: Path | str | None = None,
     sam_device: str | None = None,
-    sam_label: str = "object",
+    sam_label: str | None = None,
     sam_source: VideoSamDetector | None = None,
     sam_detector: VideoSamDetector | None = None,
     sam_streamer: VideoSamStreamer | None = None,
@@ -1460,6 +1472,7 @@ def make_demo_server(
     Every `catalog` scene (default: the registry) is offered; one not yet
     in `cache_dir` is prepared there the first time it is picked.
     `prepared`, when given, is served as the default scene.
+    `sam_label`, when given, replaces every scene's default SAM prompt.
     """
     specs = list(catalog) if catalog is not None else list(DATASETS.values())
     if prepared is not None and prepared.spec.dataset_id not in {s.dataset_id for s in specs}:
@@ -1472,10 +1485,11 @@ def make_demo_server(
     if video_sam is not None and sam_streamer is not None:
         raise ValueError("pass only one of sam_source and sam_streamer")
     video_streamer = sam_streamer
+    fixed_prompt: str | None = None
     if sam_fake:
         if video_sam is not None or video_streamer is not None or sam_device is not None:
             raise ValueError("sam_fake replaces SAM: pass no other SAM source or device")
-        video_sam = CentredBoxVideoSamDetector(sam_label)
+        video_sam = CentredBoxVideoSamDetector(sam_label or "object")
     if video_sam is None and video_streamer is None and sam_device is not None:
         # Built eagerly so a missing model or GPU provider fails by
         # name at startup, not mid-stream. An `.onnx` model runs the
@@ -1488,11 +1502,15 @@ def make_demo_server(
         if model_spec.endswith(".onnx"):
             from surmap.survey.sam3 import sam3_video_detector
 
-            video_sam = sam3_video_detector(Path(model_spec), device=sam_device, label=sam_label)
+            # The export's concept was fixed when it was exported.
+            fixed_prompt = sam_label or "object"
+            video_sam = sam3_video_detector(Path(model_spec), device=sam_device, label=fixed_prompt)
         else:
             from surmap.survey.sam3_torch import sam31_video_streamer
 
-            video_streamer = sam31_video_streamer(model_spec, device=sam_device, prompt=sam_label)
+            video_streamer = sam31_video_streamer(
+                model_spec, device=sam_device, prompt=sam_label or "object"
+            )
     elif video_sam is None and video_streamer is None and sam_model is not None:
         raise ValueError(
             "a SAM model without a device does nothing: pass sam_device "
@@ -1528,7 +1546,7 @@ def make_demo_server(
     )
     server.player_options = options
     server.sam_enabled = video_sam is not None or video_streamer is not None
-    server.sam_label = sam_label
+    server.sam_prompts = SamPromptPolicy(override=sam_label, fixed=fixed_prompt)
     server.stream_lock = threading.Lock()
     server.state_lock = threading.Lock()
     server.prepared = {prepared.spec.dataset_id: prepared} if prepared is not None else {}
@@ -1622,20 +1640,17 @@ class _DemoHandler(BaseHTTPRequestHandler):
                         if self.server.sam_enabled
                         else ""
                     ),
-                    sam_pane=(
-                        '<div class="sam-pane"><h2>SAM 3.1 (video) — own rate</h2>'
-                        f'<canvas id="sam-view" width="{tuning["width"]}" '
-                        f'height="{tuning["height"]}"></canvas>'
-                        '<p class="legend" id="sam-status">SAM: waiting for '
-                        "the first result…</p></div>"
-                        if self.server.sam_enabled
-                        else ""
+                    sam_pane=sam_pane(
+                        dataset_id,
+                        self.server.sam_prompt(dataset_id, query.get("prompt", [None])[0]),
+                        fixed=self.server.sam_prompts.fixed is not None,
+                        size=spec.display_size,
                     ),
                     **tuning,
                 )
                 self._send(200, "text/html; charset=utf-8", page.encode())
             else:
-                self._stream(dataset_id)
+                self._stream(dataset_id, query.get("prompt", [None])[0])
             return
         self._send(404, "text/plain", b"not found")
 
@@ -1714,7 +1729,7 @@ class _DemoHandler(BaseHTTPRequestHandler):
             return
         self._send(404, "text/plain", b"not found")
 
-    def _stream(self, dataset_id: str) -> None:
+    def _stream(self, dataset_id: str, requested_prompt: str | None) -> None:
         prepared = self.server.prepared_scene(dataset_id)
         if prepared is None:
             self._send(409, "text/plain", b"scene not downloaded yet; POST /prepare first")
@@ -1732,7 +1747,9 @@ class _DemoHandler(BaseHTTPRequestHandler):
         with self.server.state_lock:
             self.server.current = controls
         store = self.server.history_store
-        run_id = store.create_run(dataset_id, prepared.spec.title)
+        sam_prompt = self.server.sam_prompt(dataset_id, requested_prompt)
+        title = prepared.spec.title + (f" · SAM: {sam_prompt}" if sam_prompt else "")
+        run_id = store.create_run(dataset_id, title)
         completed = False
         last_frame_id = 0
         last_map: dict[str, object] = {}
@@ -1746,7 +1763,12 @@ class _DemoHandler(BaseHTTPRequestHandler):
             ).encode()
             self.wfile.write(run_chunk)
             self.wfile.flush()
-            player = DemoPlayer(prepared, controls=controls, **self.server.player_options)  # type: ignore[arg-type]
+            player = DemoPlayer(
+                prepared,
+                controls=controls,
+                sam_prompt=sam_prompt,
+                **self.server.player_options,  # type: ignore[arg-type]
+            )
             for event in player.events():
                 payload = dict(event.data)
                 if event.kind in ("frame", "sam") and event.jpeg:

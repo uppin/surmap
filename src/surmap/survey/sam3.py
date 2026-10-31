@@ -251,7 +251,8 @@ class Sam3VideoDetector:
     track id — the base-local video ids of docs/architecture.md §3.1.
     Tracks unseen for more than `max_missed` frames expire. `reset()`
     starts a new video. This is the state the per-frame `Sam3Detector`
-    deliberately does not carry.
+    deliberately does not carry. The concept is fixed by the export,
+    so a new video cannot ask for another one.
     """
 
     def __init__(
@@ -263,6 +264,7 @@ class Sam3VideoDetector:
         max_missed: int = 5,
     ) -> None:
         self._session = session
+        self._label = label
         self._detector = Sam3Detector(session, label=label)
         self._iou_threshold = iou_threshold
         self._max_missed = max_missed
@@ -277,7 +279,12 @@ class Sam3VideoDetector:
     def device(self) -> str:
         return self._session.device
 
-    def reset(self) -> None:
+    def reset(self, prompt: str | None = None) -> None:
+        if prompt is not None and prompt != self._label:
+            raise ValueError(
+                f"the ONNX export's concept is fixed ({self._label!r}); "
+                f"it cannot look for {prompt!r}"
+            )
         self._tracks = {}
         self._next_id = 1
 

@@ -606,7 +606,7 @@ def test_frames_play_at_their_own_rate_without_waiting_for_sam(tmp_path: Path) -
             self.release = threading.Event()
 
         def stream(
-            self, frame_paths: Sequence[Path]
+            self, frame_paths: Sequence[Path], prompt: str | None = None
         ) -> Iterator[tuple[int, tuple[SamDetection, ...]]]:
             assert self.release.wait(timeout=15), "streamer was never released"
             for index in range(len(frame_paths)):
