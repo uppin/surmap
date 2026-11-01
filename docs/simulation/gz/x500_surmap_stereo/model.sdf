@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- x500 + SurMap stereo.
+     Spawn with the x500 quadrotor airframe, overriding the model name:
+       PX4_SIM_MODEL=x500_surmap_stereo make px4_sitl gz_x500
+     PX4 looks up file://$PX4_GZ_MODELS/x500_surmap_stereo/model.sdf
+     (Tools/simulation/gz/models). PX4_GZ_MODEL_NAME only attaches to a
+     model that is already running. See docs/simulation/px4-sitl.md.
+-->
+<sdf version="1.9">
+  <model name="x500_surmap_stereo">
+    <include merge="true">
+      <uri>x500</uri>
+    </include>
+    <include merge="true">
+      <uri>model://surmap_stereo_cam</uri>
+      <pose>0.12 0 0.242 0 0 0</pose>
+    </include>
+    <joint name="SurmapStereoJoint" type="fixed">
+      <parent>base_link</parent>
+      <child>camera_link</child>
+      <pose relative_to="base_link">0.12 0 0.242 0 0 0</pose>
+    </joint>
+  </model>
+</sdf>

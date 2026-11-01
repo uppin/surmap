@@ -46,7 +46,7 @@ def sam_event(frame_id: int, t_ns: int, detections: tuple[SamDetection, ...]) ->
             "objects": [
                 {
                     "label": detection.label,
-                    "score": round(detection.score, 2),
+                    "score": None if detection.score is None else round(detection.score, 2),
                     "track_id": detection.track_id,
                     "box": [round(value, 1) for value in detection.box_xyxy],
                     "mask_polygon": [[round(x, 1), round(y, 1)] for x, y in detection.mask_polygon],

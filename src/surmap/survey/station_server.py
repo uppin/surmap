@@ -58,10 +58,11 @@ def _to_proto_detection(detection: SamDetection) -> survey_pb2.SamDetection:
     x_min, y_min, x_max, y_max = detection.box_xyxy
     proto = survey_pb2.SamDetection(
         label=detection.label,
-        score=detection.score,
         box=survey_pb2.Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max),
         mask_polygon=[survey_pb2.Point2(x=x, y=y) for x, y in detection.mask_polygon],
     )
+    if detection.score is not None:
+        proto.score = detection.score
     if detection.track_id is not None:
         proto.track_id = detection.track_id
     return proto

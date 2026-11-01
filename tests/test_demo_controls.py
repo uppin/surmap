@@ -140,6 +140,20 @@ def stream_kinds(url: str, out: "queue.Queue[str]") -> None:
     out.put("end")
 
 
+def test_a_manifest_still_being_written_is_not_a_prepared_dataset(tmp_path: Path) -> None:
+    # Given a cache whose manifest exists but is still empty
+    spec = a_local_scene(tmp_path, "street")
+    root = tmp_path / "cache" / spec.dataset_id
+    root.mkdir(parents=True)
+    (root / "manifest.json").write_text("", encoding="utf-8")
+
+    # When the cache is read while that write is in progress
+    found = cached_dataset(spec, tmp_path / "cache")
+
+    # Then the scene is not prepared yet, and the read does not raise
+    assert found is None
+
+
 def test_an_already_prepared_scene_is_found_without_downloading(tmp_path: Path) -> None:
     # Given a scene prepared once into the cache
     spec = a_local_scene(tmp_path, "street")

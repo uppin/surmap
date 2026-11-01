@@ -105,8 +105,9 @@ def encode_hello(
     width: int,
     height: int,
     params: dict[str, str],
-    max_depth_m: float = 6.0,
+    max_depth_m: float = 30.0,
     region_buffer_s: float = 10.0,
+    min_disparity_px: float = 2.0,
 ) -> bytes:
     return _frame(
         {
@@ -121,6 +122,8 @@ def encode_hello(
             "max_depth_m": max_depth_m,
             # Frames stay queryable for regions this long (by t_ns).
             "region_buffer_s": region_buffer_s,
+            # Points with a smaller disparity are dropped as well.
+            "min_disparity_px": min_disparity_px,
         }
     )
 

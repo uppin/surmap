@@ -325,10 +325,11 @@ int main(int argc, char** argv) {
     }
     int width = (int)jsonLong(header, "width", 376);
     int height = (int)jsonLong(header, "height", 240);
-    // Keyframe points beyond this come from 1-2 px disparities: too noisy
-    // to map (6 m suits EuRoC at 376 px; a street with a wide baseline
-    // maps further).
-    float maxDepth = (float)jsonDouble(header, "max_depth_m", 6.0);
+    // Keyframe points beyond this come from tiny disparities: too noisy
+    // to map. 30 m is the street-survey cap; EuRoC callers send 6.
+    // min_disparity_px drops the noisy tail inside that cap (2 px).
+    float maxDepth = (float)jsonDouble(header, "max_depth_m", 30.0);
+    float minDisparity = (float)jsonDouble(header, "min_disparity_px", 2.0);
     // Frames stay queryable for regions this long, by their t_ns.
     long regionBufferNs = (long)(jsonDouble(header, "region_buffer_s", 10.0) * 1e9);
     CamCalib left = parseCam(cam0Yaml, width, height);
@@ -461,6 +462,7 @@ int main(int argc, char** argv) {
                                        (int)std::floor(p.y / 0.05f),
                                        (int)std::floor(p.z / 0.05f));
             if (p.z <= 0.f || p.z > maxDepth) continue;
+            if (minDisparity > 0.f && (float)(fx * baseline) / p.z < minDisparity) continue;
             if (!seen.emplace(key, true).second) continue;
             int u = (int)std::lround(fx * p.x / p.z + cx);
             int v = (int)std::lround(fy * p.y / p.z + cy);

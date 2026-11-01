@@ -7,6 +7,7 @@ scripted double through the backend's `process_factory`.
 from __future__ import annotations
 
 import subprocess
+import threading
 from typing import Protocol
 
 
@@ -23,6 +24,24 @@ class _PopenProcess:
         self._proc = subprocess.Popen(
             argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
+        self._stderr = bytearray()
+        self._stderr_lock = threading.Lock()
+        self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
+        self._stderr_thread.start()
+
+    def _drain_stderr(self) -> None:
+        """Keep the stderr pipe from filling. A full pipe stalls the sidecar."""
+        stderr = self._proc.stderr
+        if stderr is None:
+            return
+        while True:
+            chunk = stderr.read(4096)
+            if not chunk:
+                return
+            with self._stderr_lock:
+                self._stderr.extend(chunk)
+                if len(self._stderr) > 8000:
+                    del self._stderr[:-4000]
 
     def write(self, data: bytes) -> None:
         assert self._proc.stdin is not None
@@ -47,11 +66,8 @@ class _PopenProcess:
             return None
 
     def stderr_tail(self) -> str:
-        try:
-            assert self._proc.stderr is not None
-            return self._proc.stderr.read()[-2000:].decode(errors="replace")
-        except Exception:
-            return ""
+        with self._stderr_lock:
+            return bytes(self._stderr[-2000:]).decode(errors="replace")
 
 
 def _default_factory(argv: list[str]) -> StreamProcess:

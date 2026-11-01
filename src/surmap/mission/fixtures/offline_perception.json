@@ -1,0 +1,10 @@
+{
+  "east_offset_m": 0.6,
+  "north_offset_m": 0.8,
+  "up_offset_m": 0.0,
+  "mission_start_ns": 1000000000,
+  "first_detection_ns": 4000000000,
+  "step_ns": 500000000,
+  "skip_ids": [],
+  "match_radius_m": 3.0
+}
