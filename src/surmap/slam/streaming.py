@@ -176,19 +176,30 @@ class StreamingRtabmapBackend:
         flush_timeout: float = 120.0,
         max_depth_m: float = 6.0,
         region_buffer_s: float = 10.0,
+        native_binary: Path | None = None,
     ) -> None:
         if os.environ.get(SHARED_CONTAINER_ENV, "").strip():
             raise SidecarError(
                 "StreamingRtabmapBackend does not support shared-container mode "
                 f"({SHARED_CONTAINER_ENV} is set); unset it or use the batch sidecar"
             )
+        if native_binary is not None and not (
+            native_binary.is_file() and os.access(native_binary, os.X_OK)
+        ):
+            raise SidecarError(
+                f"native RTAB-Map stream binary not found or not executable: "
+                f"{native_binary}; build it on this machine with "
+                "`scripts/build_rtabmap_native.sh` (system RTAB-Map, no Docker)"
+            )
         self._width, self._height = width, height
         self._flush_timeout = flush_timeout
         self._runner = runner if runner is not None else _subprocess_runner
-        self._image = image or stream_image_tag()
+        self._image = image or ("" if native_binary is not None else stream_image_tag())
         self._instance_id = uuid.uuid4().hex[:12]
         self._container_name = f"surmap-rtabmap-stream-{self._instance_id}"
-        self._live_containers: list[str] = [self._container_name]
+        self._live_containers: list[str] = (
+            [] if native_binary is not None else [self._container_name]
+        )
         self.closed = False
         self._state_lock = threading.Lock()
         self._odom: dict[int, Pose] = {}
@@ -211,17 +222,20 @@ class StreamingRtabmapBackend:
         self._frame_odometry: dict[int, OdomUpdate] = {}
         self._final = threading.Event()
         self._ready = threading.Event()
-        argv = [
-            "docker",
-            "run",
-            "-i",
-            "--rm",
-            "--name",
-            self._container_name,
-            "--platform",
-            PINNED_PLATFORM,
-            self._image,
-        ]
+        if native_binary is not None:
+            argv = [str(native_binary)]
+        else:
+            argv = [
+                "docker",
+                "run",
+                "-i",
+                "--rm",
+                "--name",
+                self._container_name,
+                "--platform",
+                PINNED_PLATFORM,
+                self._image,
+            ]
         for key, value in sorted((params or DEFAULT_RTABMAP_PARAMS).items()):
             argv += ["--Param", f"{key}={value}"]
         self._process = (process_factory or _default_factory)(argv)

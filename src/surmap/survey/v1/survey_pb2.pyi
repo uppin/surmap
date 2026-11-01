@@ -121,12 +121,18 @@ class RawVideoFrame(_message.Message):
     def __init__(self, frame_id: _Optional[int] = ..., t_ns: _Optional[int] = ..., channel: _Optional[int] = ..., width: _Optional[int] = ..., height: _Optional[int] = ..., encoding: _Optional[_Union[FrameEncoding, str]] = ..., data: _Optional[bytes] = ...) -> None: ...
 
 class Cm5StreamConfig(_message.Message):
-    __slots__ = ("calibration", "video_channels")
+    __slots__ = ("calibration", "video_channels", "cam0_yaml", "cam1_yaml", "max_depth_m")
     CALIBRATION_FIELD_NUMBER: _ClassVar[int]
     VIDEO_CHANNELS_FIELD_NUMBER: _ClassVar[int]
+    CAM0_YAML_FIELD_NUMBER: _ClassVar[int]
+    CAM1_YAML_FIELD_NUMBER: _ClassVar[int]
+    MAX_DEPTH_M_FIELD_NUMBER: _ClassVar[int]
     calibration: StereoCalibration
     video_channels: _containers.RepeatedScalarFieldContainer[int]
-    def __init__(self, calibration: _Optional[_Union[StereoCalibration, _Mapping[str, _Any]]] = ..., video_channels: _Optional[_Iterable[int]] = ...) -> None: ...
+    cam0_yaml: str
+    cam1_yaml: str
+    max_depth_m: float
+    def __init__(self, calibration: _Optional[_Union[StereoCalibration, _Mapping[str, _Any]]] = ..., video_channels: _Optional[_Iterable[int]] = ..., cam0_yaml: _Optional[str] = ..., cam1_yaml: _Optional[str] = ..., max_depth_m: _Optional[float] = ...) -> None: ...
 
 class Cm5Request(_message.Message):
     __slots__ = ("config", "frame")
@@ -156,13 +162,59 @@ class VideoFrameOut(_message.Message):
     frame: RawVideoFrame
     def __init__(self, designation: _Optional[int] = ..., frame: _Optional[_Union[RawVideoFrame, _Mapping[str, _Any]]] = ...) -> None: ...
 
+class TrackedKeypoint(_message.Message):
+    __slots__ = ("word_id", "u", "v", "depth")
+    WORD_ID_FIELD_NUMBER: _ClassVar[int]
+    U_FIELD_NUMBER: _ClassVar[int]
+    V_FIELD_NUMBER: _ClassVar[int]
+    DEPTH_FIELD_NUMBER: _ClassVar[int]
+    word_id: int
+    u: float
+    v: float
+    depth: float
+    def __init__(self, word_id: _Optional[int] = ..., u: _Optional[float] = ..., v: _Optional[float] = ..., depth: _Optional[float] = ...) -> None: ...
+
+class RectificationOut(_message.Message):
+    __slots__ = ("rotation", "rectified", "raw", "distortion")
+    ROTATION_FIELD_NUMBER: _ClassVar[int]
+    RECTIFIED_FIELD_NUMBER: _ClassVar[int]
+    RAW_FIELD_NUMBER: _ClassVar[int]
+    DISTORTION_FIELD_NUMBER: _ClassVar[int]
+    rotation: _containers.RepeatedScalarFieldContainer[float]
+    rectified: _containers.RepeatedScalarFieldContainer[float]
+    raw: _containers.RepeatedScalarFieldContainer[float]
+    distortion: _containers.RepeatedScalarFieldContainer[float]
+    def __init__(self, rotation: _Optional[_Iterable[float]] = ..., rectified: _Optional[_Iterable[float]] = ..., raw: _Optional[_Iterable[float]] = ..., distortion: _Optional[_Iterable[float]] = ...) -> None: ...
+
+class OdomUpdateOut(_message.Message):
+    __slots__ = ("frame_id", "t_ns", "position", "orientation_xyzw", "map_position", "map_orientation_xyzw", "keypoints", "rectification")
+    FRAME_ID_FIELD_NUMBER: _ClassVar[int]
+    T_NS_FIELD_NUMBER: _ClassVar[int]
+    POSITION_FIELD_NUMBER: _ClassVar[int]
+    ORIENTATION_XYZW_FIELD_NUMBER: _ClassVar[int]
+    MAP_POSITION_FIELD_NUMBER: _ClassVar[int]
+    MAP_ORIENTATION_XYZW_FIELD_NUMBER: _ClassVar[int]
+    KEYPOINTS_FIELD_NUMBER: _ClassVar[int]
+    RECTIFICATION_FIELD_NUMBER: _ClassVar[int]
+    frame_id: int
+    t_ns: int
+    position: Point3
+    orientation_xyzw: _containers.RepeatedScalarFieldContainer[float]
+    map_position: Point3
+    map_orientation_xyzw: _containers.RepeatedScalarFieldContainer[float]
+    keypoints: _containers.RepeatedCompositeFieldContainer[TrackedKeypoint]
+    rectification: RectificationOut
+    def __init__(self, frame_id: _Optional[int] = ..., t_ns: _Optional[int] = ..., position: _Optional[_Union[Point3, _Mapping[str, _Any]]] = ..., orientation_xyzw: _Optional[_Iterable[float]] = ..., map_position: _Optional[_Union[Point3, _Mapping[str, _Any]]] = ..., map_orientation_xyzw: _Optional[_Iterable[float]] = ..., keypoints: _Optional[_Iterable[_Union[TrackedKeypoint, _Mapping[str, _Any]]]] = ..., rectification: _Optional[_Union[RectificationOut, _Mapping[str, _Any]]] = ...) -> None: ...
+
 class Cm5Response(_message.Message):
-    __slots__ = ("points", "video")
+    __slots__ = ("points", "video", "odom")
     POINTS_FIELD_NUMBER: _ClassVar[int]
     VIDEO_FIELD_NUMBER: _ClassVar[int]
+    ODOM_FIELD_NUMBER: _ClassVar[int]
     points: PointBatch
     video: VideoFrameOut
-    def __init__(self, points: _Optional[_Union[PointBatch, _Mapping[str, _Any]]] = ..., video: _Optional[_Union[VideoFrameOut, _Mapping[str, _Any]]] = ...) -> None: ...
+    odom: OdomUpdateOut
+    def __init__(self, points: _Optional[_Union[PointBatch, _Mapping[str, _Any]]] = ..., video: _Optional[_Union[VideoFrameOut, _Mapping[str, _Any]]] = ..., odom: _Optional[_Union[OdomUpdateOut, _Mapping[str, _Any]]] = ...) -> None: ...
 
 class ObjectDetection(_message.Message):
     __slots__ = ("label", "score", "box", "track_id")
@@ -277,12 +329,16 @@ class SamDetection(_message.Message):
     def __init__(self, label: _Optional[str] = ..., score: _Optional[float] = ..., box: _Optional[_Union[Box, _Mapping[str, _Any]]] = ..., mask_polygon: _Optional[_Iterable[_Union[Point2, _Mapping[str, _Any]]]] = ..., track_id: _Optional[int] = ...) -> None: ...
 
 class SamFrameDetections(_message.Message):
-    __slots__ = ("frame_id", "detections")
+    __slots__ = ("frame_id", "detections", "provider", "device")
     FRAME_ID_FIELD_NUMBER: _ClassVar[int]
     DETECTIONS_FIELD_NUMBER: _ClassVar[int]
+    PROVIDER_FIELD_NUMBER: _ClassVar[int]
+    DEVICE_FIELD_NUMBER: _ClassVar[int]
     frame_id: int
     detections: _containers.RepeatedCompositeFieldContainer[SamDetection]
-    def __init__(self, frame_id: _Optional[int] = ..., detections: _Optional[_Iterable[_Union[SamDetection, _Mapping[str, _Any]]]] = ...) -> None: ...
+    provider: str
+    device: str
+    def __init__(self, frame_id: _Optional[int] = ..., detections: _Optional[_Iterable[_Union[SamDetection, _Mapping[str, _Any]]]] = ..., provider: _Optional[str] = ..., device: _Optional[str] = ...) -> None: ...
 
 class StationResponse(_message.Message):
     __slots__ = ("detections",)
@@ -321,3 +377,29 @@ class RegionPoints(_message.Message):
     points: _containers.RepeatedCompositeFieldContainer[Point3]
     final: bool
     def __init__(self, query_id: _Optional[int] = ..., frame_id: _Optional[int] = ..., channel: _Optional[int] = ..., status: _Optional[_Union[RegionStatus, str]] = ..., points: _Optional[_Iterable[_Union[Point3, _Mapping[str, _Any]]]] = ..., final: bool = ...) -> None: ...
+
+class CapabilitiesRequest(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class Capabilities(_message.Message):
+    __slots__ = ("service", "detections", "object_points", "moving_areas", "region_points", "sam_analysis", "provider", "device", "slam")
+    SERVICE_FIELD_NUMBER: _ClassVar[int]
+    DETECTIONS_FIELD_NUMBER: _ClassVar[int]
+    OBJECT_POINTS_FIELD_NUMBER: _ClassVar[int]
+    MOVING_AREAS_FIELD_NUMBER: _ClassVar[int]
+    REGION_POINTS_FIELD_NUMBER: _ClassVar[int]
+    SAM_ANALYSIS_FIELD_NUMBER: _ClassVar[int]
+    PROVIDER_FIELD_NUMBER: _ClassVar[int]
+    DEVICE_FIELD_NUMBER: _ClassVar[int]
+    SLAM_FIELD_NUMBER: _ClassVar[int]
+    service: str
+    detections: bool
+    object_points: bool
+    moving_areas: bool
+    region_points: bool
+    sam_analysis: bool
+    provider: str
+    device: str
+    slam: str
+    def __init__(self, service: _Optional[str] = ..., detections: bool = ..., object_points: bool = ..., moving_areas: bool = ..., region_points: bool = ..., sam_analysis: bool = ..., provider: _Optional[str] = ..., device: _Optional[str] = ..., slam: _Optional[str] = ...) -> None: ...
