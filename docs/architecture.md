@@ -68,16 +68,17 @@ Its output is never fed back as a control signal.
 - Contract: whatever this machine produces must be indistinguishable in
   format from a recorded real session (§5), so base-station code cannot
   tell simulation from flight data.
-- On `main` there is no Gazebo world and no `docs/simulation/`
-  directory. `GpsCheckpoint` in `surmap.types` has no caller here.
-- Open pull requests, not merged:
-  [PR #18](https://github.com/uppin/surmap/pull/18) exports a
-  Gazebo/PX4 SITL capture to a EuRoC session.
-  [PR #48](https://github.com/uppin/surmap/pull/48) (every commit of
-  [PR #39](https://github.com/uppin/surmap/pull/39), plus
-  `docs/segmentation-protocol-guidelines.md`) adds a fictional
-  civilian earthquake-and-flood block and `docs/simulation/px4-sitl.md`.
-  This file does not link to that runbook, because it is not on `main`.
+- **Local / WSL path (chosen):** Gazebo Harmonic + ROS 2 Jazzy + PX4
+  SITL. Operators dump stereo + GPS into a SurMap capture directory;
+  `surmap.simulation` exports a EuRoC-style session the demo and
+  RTAB-Map sidecar already consume. SurMap stays passive — PX4 (or a
+  human) flies; no package publishes flight commands. Runbook:
+  [simulation/px4-sitl.md](simulation/px4-sitl.md). The demo world is a
+  fictional civilian earthquake-and-flood block with scoring ground
+  truth (map ENU and WGS84): [simulation/disaster-world.md](simulation/disaster-world.md).
+- Other simulator options (Isaac Sim, a custom renderer, pure
+  rosbag/session replay) and dedicated Machine 3 hardware remain open
+  if a different path is needed later.
 - Where those PX4 notes say the vehicle is armed, that is PX4's
   motor-enable state. SurMap does not set it.
 
@@ -254,6 +255,14 @@ Multi-drone map merging is a later design problem.
 Produces synthetic `StereoFramePair` + `GpsCheckpoint` + ground-truth
 sessions in exactly the §5 formats, and replays real sessions.
 No other component may have a simulation-only code path.
+
+On the Gazebo/PX4 SITL path, the offline bridge is
+`surmap.simulation` (capture directory → EuRoC `mav0/` + GPS CSV) plus
+operator-side dump tooling under `scripts/ros2/` — not a live ROS 2
+dependency inside SurMap packages. The disaster-block world adds
+scoring ground truth (people and roads, map frame and WGS84) that a
+demo can compare with detections. Loading that file does not command
+the vehicle.
 
 ## 5. Data flow
 
@@ -516,8 +525,9 @@ Revisit only after the passive pipeline works end to end on real footage:
   Baseten `meta-models/muse-spark-open-1026` and are required for a
   live mission (`SURMAP_LIVE_BASETEN=1`).
 - Link drone ↔ base station (Wi-Fi / LTE / other) and its bandwidth.
-- Simulation machine hardware. Software for the local path is on
-  PR #18 and PR #48, not on `main` (§2.3).
+- Simulation machine: Gazebo Harmonic + PX4 SITL is the local/WSL
+  Machine 3 path (§2.3); dedicated hardware and alternate simulators
+  (Isaac Sim, custom renderer, pure replay) still open if needed.
 - GPS receiver model; GPS checkpoint rate and sync procedure.
 - Depth: object-ROI depth is on-board by design (§3.3); whether full-frame
   depth is also computed on the CM5 or only on the base station depends

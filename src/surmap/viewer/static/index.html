@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SurMap viewer</title>
+<style>
+  :root {
+    --bg: #07090d;
+    --panel: #10151c;
+    --line: #28303b;
+    --text: #e8eef5;
+    --muted: #8d99a8;
+    --green: #3ddc97;
+    --yellow: #f0c14a;
+    --blue: #5b92ff;
+    --pink: #ff5c9a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+  header { height: 48px; display: flex; align-items: center; gap: 14px;
+    padding: 0 14px; border-bottom: 1px solid var(--line); flex: none; }
+  .brand { letter-spacing: 0.16em; font-size: 13px; font-weight: 700; }
+  .session { color: var(--muted); font-size: 13px; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .clock { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 13px; color: #d5dde6; }
+  .progress { position: absolute; left: 0; right: 0; top: 48px; height: 2px; background: #1a212b; }
+  .progress > span { display: block; height: 100%; width: 0; background: var(--pink); }
+  #impact { margin: 0; padding: 8px 16px; background: #1a1408; color: #f0d7a2;
+    border-bottom: 1px solid var(--line); font-size: 13px; }
+  #impact[hidden] { display: none; }
+  main { flex: 1; min-height: 0; display: grid; gap: 10px; padding: 12px 10px 10px;
+    grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
+    grid-template-rows: minmax(0, 1fr) 228px; }
+  .pane { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    min-height: 0; position: relative; overflow: hidden; }
+  .camera { grid-column: 1; grid-row: 1; background: #000; }
+  .map { grid-column: 2; grid-row: 1; }
+  .telemetry { grid-column: 1; grid-row: 2; }
+  .landmarks { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; }
+  #camera { width: 100%; height: 100%; object-fit: cover; background: #000; display: block; }
+  .hud { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; color: #fff;
+    border-radius: 999px; padding: 4px 8px; }
+  .badge.survey { background: #0e7c66; }
+  .badge.mapping { background: #1d4e89; }
+  .badge.landmarks { background: #3d4654; }
+  .badge.gps { background: #1e7a3a; }
+  .badge.pose { background: #1d4e89; }
+  .badge.none { background: #7a2e2e; }
+  #map { width: 100%; height: 100%; display: block; }
+  .map-title { position: absolute; top: 10px; left: 12px; font-size: 12px;
+    letter-spacing: 0.12em; font-weight: 700; color: #d5dde6; }
+  .map-controls { position: absolute; top: 8px; right: 10px; display: flex; gap: 6px; }
+  button, input[type="text"] { background: #1a212b; color: var(--text);
+    border: 1px solid #343d4a; border-radius: 8px; font: inherit; font-size: 12px; }
+  button { padding: 4px 10px; cursor: pointer; }
+  button.active { background: #243044; border-color: #4d627c; }
+  .legend { position: absolute; left: 10px; bottom: 10px; background: rgba(8, 10, 14, 0.72);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 11px;
+    color: var(--muted); display: grid; gap: 4px; }
+  .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+  .gradient { height: 8px; width: 88px; border-radius: 4px;
+    background: linear-gradient(90deg, #4730b8, #26bfd6, #40d161, #f2d133, #e63833); }
+  .cut { position: absolute; right: 10px; bottom: 10px; font-size: 11px; color: var(--muted);
+    background: rgba(8, 10, 14, 0.72); border: 1px solid var(--line); border-radius: 8px;
+    padding: 6px 8px; }
+  .cut input { width: 120px; vertical-align: middle; }
+  #telemetry { width: 100%; height: 100%; display: block; }
+  .list { flex: 1; min-height: 0; overflow: auto; padding: 8px 10px 4px; }
+  .list h2 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.12em; color: var(--muted); }
+  .row { display: grid; grid-template-columns: 10px 1fr auto; gap: 8px; align-items: start;
+    padding: 3px 6px; border-radius: 8px; }
+  .row.hit { background: #2a2416; outline: 1px solid #8a6a22; }
+  .row .name { font-size: 13px; font-weight: 650; }
+  .row .meta { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .row .motion { font-size: 10px; letter-spacing: 0.08em; color: #c5d0dc; }
+  .ask { border-top: 1px solid var(--line); padding: 8px; display: grid;
+    grid-template-columns: 1fr auto; gap: 6px; }
+  .ask input { padding: 6px 8px; }
+  #ask-answer { grid-column: 1 / -1; margin: 0; min-height: 16px; font-size: 12px; color: #c5d0dc; }
+  .empty { color: var(--muted); font-size: 12px; padding: 8px; }
+  #labels { position: absolute; inset: 0; pointer-events: none; }
+  #labels span { position: absolute; transform: translate(-50%, -120%); font-size: 11px;
+    background: rgba(8, 10, 14, 0.78); color: white; padding: 2px 6px; border-radius: 4px;
+    white-space: nowrap; }
+  @media (max-width: 980px) {
+    body { overflow: auto; }
+    main { height: auto; grid-template-columns: 1fr; grid-template-rows: 52vh 46vh 180px auto; }
+    .camera, .map, .telemetry, .landmarks { grid-column: 1; grid-row: auto; min-height: 180px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">SURMAP</div>
+  <div class="session" id="session">Connecting…</div>
+  <div class="clock" id="clock">00:00.0</div>
+</header>
+<div class="progress"><span id="progress"></span></div>
+<p id="impact" hidden></p>
+<main>
+  <section class="pane camera">
+    <canvas id="camera" width="640" height="360"></canvas>
+    <div class="hud" id="hud"></div>
+  </section>
+  <section class="pane map">
+    <canvas id="map"></canvas>
+    <div id="labels"></div>
+    <div class="map-title" id="map-title">MAP, CHASE VIEW</div>
+    <div class="map-controls">
+      <button type="button" id="chase" class="active">Chase</button>
+      <button type="button" id="orbit">Orbit</button>
+    </div>
+    <div class="legend">
+      <div><span class="gradient"></span></div>
+      <div>height, low to high</div>
+      <div><span class="swatch" style="background:#ff5c9a"></span>trajectory</div>
+      <div><span class="swatch" style="background:#fff"></span>drone</div>
+      <div><span class="swatch" style="background:#e6393d"></span>person</div>
+      <div><span class="swatch" style="background:#eda02e"></span>vehicle</div>
+      <div><span class="swatch" style="background:#3f7ae0"></span>structure</div>
+    </div>
+    <label class="cut">cut above <b id="cut-label">30</b> m
+      <input id="cut" type="range" min="0" max="40" step="0.5" value="30">
+    </label>
+  </section>
+  <section class="pane telemetry">
+    <canvas id="telemetry"></canvas>
+  </section>
+  <section class="pane landmarks">
+    <div class="list" id="list">
+      <h2>LANDMARKS</h2>
+      <div class="empty">Waiting for the replay…</div>
+    </div>
+    <form class="ask" id="ask">
+      <input id="ask-input" type="text" name="question" placeholder="Ask the map" autocomplete="off">
+      <button type="submit">Ask</button>
+      <p id="ask-answer"></p>
+    </form>
+  </section>
+</main>
+<script>
+const camera = document.getElementById("camera");
+const ctx = camera.getContext("2d");
+const mapCanvas = document.getElementById("map");
+const telemetry = document.getElementById("telemetry");
+const tctx = telemetry.getContext("2d");
+const hudEl = document.getElementById("hud");
+const listEl = document.getElementById("list");
+const labelsEl = document.getElementById("labels");
+const sessionEl = document.getElementById("session");
+const clockEl = document.getElementById("clock");
+const progressEl = document.getElementById("progress");
+const mapTitle = document.getElementById("map-title");
+const cutInput = document.getElementById("cut");
+const cutLabel = document.getElementById("cut-label");
+
+const state = {
+  session: null,
+  tracks: new Map(),
+  points: [],
+  drone: null,
+  prevDrone: null,
+  trajectory: [],
+  placed: new Map(),
+  seriesH: [],
+  seriesP: [],
+  total: 1,
+  index: 0,
+  t0: null,
+  highlight: new Set(),
+  highlightPoints: [],
+  mode: "chase",
+  orbit: { yaw: 0.7, pitch: 0.45, dist: 16 },
+  eye: null,
+};
+window.__shotReady = false;
+window.__ticks = 0;
+
+const gl = mapCanvas.getContext("webgl", { antialias: true, alpha: false });
+let program = null;
+let buffer = null;
+if (gl) {
+  program = gl.createProgram();
+  const vs = compile(gl.VERTEX_SHADER, `
+    attribute vec3 aPos;
+    attribute vec3 aColor;
+    attribute float aSize;
+    uniform mat4 uMvp;
+    uniform float uCut;
+    uniform float uZ0;
+    uniform float uZ1;
+    uniform float uHeightColor;
+    varying vec3 vColor;
+    varying float vDiscard;
+    vec3 ramp(float h) {
+      vec3 c0 = vec3(0.28, 0.16, 0.72);
+      vec3 c1 = vec3(0.12, 0.75, 0.88);
+      vec3 c2 = vec3(0.22, 0.82, 0.38);
+      vec3 c3 = vec3(0.95, 0.84, 0.22);
+      vec3 c4 = vec3(0.90, 0.20, 0.22);
+      if (h < 0.25) return mix(c0, c1, h / 0.25);
+      if (h < 0.50) return mix(c1, c2, (h - 0.25) / 0.25);
+      if (h < 0.75) return mix(c2, c3, (h - 0.50) / 0.25);
+      return mix(c3, c4, (h - 0.75) / 0.25);
+    }
+    void main() {
+      vDiscard = aPos.z > uCut ? 1.0 : 0.0;
+      gl_Position = uMvp * vec4(aPos, 1.0);
+      gl_PointSize = aSize;
+      float h = clamp((aPos.z - uZ0) / max(0.001, uZ1 - uZ0), 0.0, 1.0);
+      vColor = uHeightColor > 0.5 ? ramp(h) : aColor;
+    }`);
+  const fs = compile(gl.FRAGMENT_SHADER, `
+    precision mediump float;
+    varying vec3 vColor;
+    varying float vDiscard;
+    void main() {
+      if (vDiscard > 0.5) discard;
+      gl_FragColor = vec4(vColor, 1.0);
+    }`);
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+  gl.useProgram(program);
+  buffer = gl.createBuffer();
+  gl.enable(gl.DEPTH_TEST);
+}
+
+function compile(type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  return shader;
+}
+
+cutInput.addEventListener("input", () => { cutLabel.textContent = cutInput.value; });
+document.getElementById("chase").onclick = () => setMode("chase");
+document.getElementById("orbit").onclick = () => setMode("orbit");
+mapCanvas.addEventListener("pointerdown", (event) => {
+  if (state.mode !== "orbit") return;
+  mapCanvas.setPointerCapture(event.pointerId);
+  mapCanvas._drag = { x: event.clientX, y: event.clientY };
+});
+mapCanvas.addEventListener("pointermove", (event) => {
+  if (!mapCanvas._drag || state.mode !== "orbit") return;
+  const dx = event.clientX - mapCanvas._drag.x;
+  const dy = event.clientY - mapCanvas._drag.y;
+  mapCanvas._drag = { x: event.clientX, y: event.clientY };
+  state.orbit.yaw += dx * 0.008;
+  state.orbit.pitch = Math.max(0.12, Math.min(1.2, state.orbit.pitch + dy * 0.006));
+});
+mapCanvas.addEventListener("pointerup", () => { mapCanvas._drag = null; });
+mapCanvas.addEventListener("wheel", (event) => {
+  if (state.mode !== "orbit") return;
+  event.preventDefault();
+  state.orbit.dist = Math.max(4, Math.min(80, state.orbit.dist * (event.deltaY > 0 ? 1.08 : 0.92)));
+}, { passive: false });
+
+function setMode(mode) {
+  state.mode = mode;
+  document.getElementById("chase").classList.toggle("active", mode === "chase");
+  document.getElementById("orbit").classList.toggle("active", mode === "orbit");
+  mapTitle.textContent = mode === "chase" ? "MAP, CHASE VIEW" : "MAP, ORBIT VIEW";
+}
+
+fetch("/impact").then(async (response) => {
+  if (!response.ok) return;
+  const impact = await response.json();
+  const node = document.getElementById("impact");
+  const error = impact.mean_position_error_m;
+  const errorText = error == null ? "n/a" : `${Number(error).toFixed(2)} m`;
+  const first = impact.time_to_first_detection_s;
+  const firstText = first == null ? "n/a" : `${Number(first).toFixed(1)} s`;
+  const basis = impact.basis === "fixtures" ? "computed from fixtures" : (impact.basis || "live");
+  node.hidden = false;
+  node.textContent = `Impact (${basis}): ${impact.found} of ${impact.total} survivors, `
+    + `mean position error ${errorText}, time to first detection ${firstText}. `
+    + (impact.ask_answer || "");
+}).catch(() => {});
+
+document.getElementById("ask").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const question = document.getElementById("ask-input").value.trim();
+  if (!question) return;
+  const body = { question };
+  if (state.session && state.session.snapshot_path) body.snapshot_path = state.session.snapshot_path;
+  const response = await fetch("/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  document.getElementById("ask-answer").textContent = data.answer || data.error || "";
+  state.highlight = new Set(data.landmark_ids || []);
+  state.highlightPoints = data.highlight_points || [];
+  renderList();
+});
+
+const source = new EventSource("/stream");
+function resetScene() {
+  state.points = [];
+  state.trajectory = [];
+  state.seriesH = [];
+  state.seriesP = [];
+  state.t0 = null;
+  state.prevDrone = null;
+  state.eye = null;
+  state.placed = new Map();
+}
+source.addEventListener("session", (event) => {
+  const data = JSON.parse(event.data);
+  resetScene();
+  state.session = data;
+  state.tracks = new Map(data.tracks.map((track) => [track.id, track]));
+  sessionEl.textContent = data.title + " · " + data.source;
+  renderList();
+});
+source.addEventListener("reset", () => { resetScene(); });
+source.addEventListener("tick", (event) => {
+  const tick = JSON.parse(event.data);
+  onTick(tick);
+});
+source.onerror = () => {
+  if (!state.session) sessionEl.textContent = "Stream unavailable — is another viewer connected?";
+};
+
+function onTick(tick) {
+  window.__ticks += 1;
+  if (tick.index >= 24) window.__shotReady = true;
+  state.index = tick.index;
+  state.total = Math.max(1, tick.total);
+  if (state.t0 === null) state.t0 = tick.t_ns;
+  const seconds = (tick.t_ns - state.t0) / 1e9;
+  clockEl.textContent = formatClock(seconds) + "  " + (tick.index + 1) + " / " + tick.total;
+  progressEl.style.width = (100 * tick.index / Math.max(1, tick.total - 1)) + "%";
+  drawHud(tick.hud || []);
+  drawCamera(tick);
+  if (state.drone) state.prevDrone = state.drone;
+  state.drone = tick.drone;
+  state.trajectory.push(tick.drone);
+  for (const point of tick.points) state.points.push(point);
+  if (state.points.length > 60000) state.points.splice(0, state.points.length - 60000);
+  state.placed = new Map(tick.placed.map((item) => [item.id, item]));
+  const u = tick.total <= 1 ? 1 : tick.index / (tick.total - 1);
+  state.seriesH.push({ u, v: tick.height_m });
+  state.seriesP.push({ u, v: tick.scene_points });
+  renderList();
+  drawTelemetry();
+}
+
+function formatClock(seconds) {
+  const whole = Math.max(0, seconds);
+  const m = Math.floor(whole / 60);
+  const s = whole - m * 60;
+  return String(m).padStart(2, "0") + ":" + s.toFixed(1).padStart(4, "0");
+}
+
+function drawHud(badges) {
+  hudEl.replaceChildren();
+  for (const text of badges) {
+    const span = document.createElement("span");
+    span.className = "badge " + badgeClass(text);
+    span.textContent = text;
+    hudEl.appendChild(span);
+  }
+}
+function badgeClass(text) {
+  if (text === "SURVEY") return "survey";
+  if (text === "MAPPING") return "mapping";
+  if (text.startsWith("LANDMARKS")) return "landmarks";
+  if (text === "GPS FIX") return "gps";
+  if (text === "POSE") return "pose";
+  return "none";
+}
+
+function drawCamera(tick) {
+  const image = new Image();
+  image.onload = () => {
+    camera.width = tick.width;
+    camera.height = tick.height;
+    ctx.drawImage(image, 0, 0);
+    for (const overlay of tick.overlays) drawOverlay(overlay);
+  };
+  image.src = "data:image/jpeg;base64," + tick.image_b64;
+}
+function motionColor(motion) {
+  if (motion === "static") return "#3ddc97";
+  if (motion === "moving") return "#f0c14a";
+  return "#5b92ff";
+}
+function drawOverlay(overlay) {
+  const color = motionColor(overlay.motion);
+  const [x1, y1, x2, y2] = overlay.xyxy;
+  if (overlay.mask && overlay.mask.length >= 3) {
+    ctx.beginPath();
+    overlay.mask.forEach((point, i) => i ? ctx.lineTo(point[0], point[1]) : ctx.moveTo(point[0], point[1]));
+    ctx.closePath();
+    ctx.fillStyle = hexAlpha(color, 0.22);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  }
+  ctx.save();
+  if (overlay.motion === "moving") ctx.setLineDash([6, 4]);
+  if (overlay.motion === "unknown") ctx.setLineDash([2, 3]);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+  ctx.restore();
+  drawTag(overlay.label, x1, y1);
+}
+function drawTag(text, x, y) {
+  ctx.font = "12px Segoe UI, system-ui, sans-serif";
+  const width = ctx.measureText(text).width + 10;
+  const top = y - 18 < 2 ? y + 4 : y - 18;
+  ctx.fillStyle = "rgba(8,10,14,0.78)";
+  roundRect(x, top, width, 16, 4);
+  ctx.fill();
+  ctx.fillStyle = "#f4f7fb";
+  ctx.fillText(text, x + 5, top + 12);
+}
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function hexAlpha(hex, alpha) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+}
+
+function renderList() {
+  const tracks = state.session ? state.session.tracks : [];
+  listEl.replaceChildren();
+  const title = document.createElement("h2");
+  title.textContent = "LANDMARKS " + tracks.length;
+  listEl.appendChild(title);
+  if (!tracks.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "No semantic map snapshot. Pass --snapshot with a surmap.semantic_map_snapshot.v1 file.";
+    listEl.appendChild(empty);
+    return;
+  }
+  for (const track of tracks) {
+    const row = document.createElement("div");
+    row.className = "row" + (state.highlight.has(track.id) ? " hit" : "");
+    const dot = document.createElement("span");
+    dot.className = "swatch";
+    dot.style.background = classHex(track.label);
+    const main = document.createElement("div");
+    const name = document.createElement("div");
+    name.className = "name";
+    name.textContent = track.label;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = formatGeo(track);
+    main.append(name, meta);
+    if (track.description) {
+      const desc = document.createElement("div");
+      desc.className = "meta";
+      desc.textContent = track.description;
+      main.append(desc);
+    }
+    const motion = document.createElement("div");
+    motion.className = "motion";
+    motion.textContent = track.motion.toUpperCase();
+    row.append(dot, main, motion);
+    listEl.appendChild(row);
+  }
+}
+function formatGeo(track) {
+  if (track.lat === null || track.lon === null) return "no GPS anchor";
+  const alt = track.alt === null ? "" : "  " + track.alt.toFixed(1) + " m";
+  return track.lat.toFixed(5) + ", " + track.lon.toFixed(5) + alt;
+}
+function classHex(label) {
+  const key = label.toLowerCase();
+  if (key.includes("person")) return "#e6393d";
+  if (key.includes("car") || key.includes("vehicle")) return "#eda02e";
+  if (key.includes("debris") || key.includes("rubble")) return "#e07a32";
+  if (key.includes("roof") || key.includes("building")) return "#3f7ae0";
+  return "#3ec7b5";
+}
+function classRgb(label) {
+  const hex = classHex(label);
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => v / 255);
+}
+
+function drawTelemetry() {
+  const rect = telemetry.parentElement.getBoundingClientRect();
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  telemetry.width = Math.max(10, rect.width * dpr);
+  telemetry.height = Math.max(10, rect.height * dpr);
+  const w = telemetry.width, h = telemetry.height;
+  tctx.setTransform(1, 0, 0, 1, 0, 0);
+  tctx.fillStyle = "#0c1016";
+  tctx.fillRect(0, 0, w, h);
+  drawSeries(state.seriesH, "HEIGHT", "#7ee0ff", 8 * dpr, h / 2 - 6 * dpr);
+  drawSeries(state.seriesP, "SCENE POINTS", "#d6e27a", h / 2 + 4 * dpr, h / 2 - 10 * dpr);
+}
+function drawSeries(series, name, color, top, height) {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const left = 54 * dpr, right = 12 * dpr;
+  const width = telemetry.width - left - right;
+  tctx.fillStyle = "#8d99a8";
+  tctx.font = (11 * dpr) + "px Segoe UI, system-ui, sans-serif";
+  tctx.fillText(name, 8 * dpr, top + 12 * dpr);
+  if (!series.length) return;
+  const max = Math.max(0.001, ...series.map((sample) => sample.v));
+  tctx.fillText(max.toFixed(max >= 10 ? 0 : 1), 8 * dpr, top + height - 2);
+  tctx.strokeStyle = color;
+  tctx.lineWidth = 1.6 * dpr;
+  tctx.beginPath();
+  series.forEach((sample, i) => {
+    const x = left + sample.u * width;
+    const y = top + height - (sample.v / max) * (height - 16 * dpr);
+    i ? tctx.lineTo(x, y) : tctx.moveTo(x, y);
+  });
+  tctx.stroke();
+  const cursor = left + (state.total <= 1 ? 1 : state.index / (state.total - 1)) * width;
+  tctx.strokeStyle = "#ffffff";
+  tctx.lineWidth = dpr;
+  tctx.beginPath();
+  tctx.moveTo(cursor, top);
+  tctx.lineTo(cursor, top + height);
+  tctx.stroke();
+}
+
+function resizeMap() {
+  const rect = mapCanvas.parentElement.getBoundingClientRect();
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const width = Math.max(2, Math.floor(rect.width * dpr));
+  const height = Math.max(2, Math.floor(rect.height * dpr));
+  if (mapCanvas.width !== width || mapCanvas.height !== height) {
+    mapCanvas.width = width;
+    mapCanvas.height = height;
+    if (gl) gl.viewport(0, 0, width, height);
+  }
+}
+
+function frame() {
+  resizeMap();
+  drawMap();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+function drawMap() {
+  if (!gl || !program) return;
+  gl.viewport(0, 0, mapCanvas.width, mapCanvas.height);
+  gl.clearColor(0.04, 0.05, 0.07, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  const mvp = viewProjection();
+  const cut = parseFloat(cutInput.value);
+  const z = zRange();
+  gl.useProgram(program);
+  gl.uniformMatrix4fv(gl.getUniformLocation(program, "uMvp"), false, mvp);
+  gl.uniform1f(gl.getUniformLocation(program, "uZ0"), z[0]);
+  gl.uniform1f(gl.getUniformLocation(program, "uZ1"), z[1]);
+  drawGrid(mvp);
+  drawCloud(cut);
+  drawMasks(cut);
+  drawTrails();
+  drawMarkers();
+  drawHighlight();
+  drawLabels(mvp);
+}
+
+function zRange() {
+  let lo = Infinity, hi = -Infinity;
+  for (const point of state.points) { lo = Math.min(lo, point.z); hi = Math.max(hi, point.z); }
+  if (!Number.isFinite(lo)) { lo = 0; hi = 2; }
+  if (hi - lo < 1) { lo -= 0.5; hi += 0.5; }
+  return [lo, hi];
+}
+
+function viewProjection() {
+  const drone = state.drone || { x: 0, y: 0, z: 2 };
+  let eye;
+  if (state.mode === "orbit") {
+    const o = state.orbit;
+    eye = [
+      drone.x + o.dist * Math.cos(o.pitch) * Math.sin(o.yaw),
+      drone.y + o.dist * Math.cos(o.pitch) * Math.cos(o.yaw),
+      drone.z + o.dist * Math.sin(o.pitch),
+    ];
+  } else {
+    const prev = state.prevDrone || drone;
+    let hx = drone.x - prev.x, hy = drone.y - prev.y;
+    if (Math.hypot(hx, hy) < 0.05) { hx = Math.sin(state.orbit.yaw); hy = Math.cos(state.orbit.yaw); }
+    const len = Math.hypot(hx, hy) || 1;
+    hx /= len; hy /= len;
+    eye = [drone.x - hx * 12, drone.y - hy * 12, drone.z + 6.5];
+    if (state.eye) eye = state.eye.map((value, i) => value + (eye[i] - value) * 0.12);
+    state.eye = eye;
+  }
+  const target = [drone.x, drone.y, drone.z + 0.4];
+  const view = lookAt(eye, target, [0, 0, 1]);
+  const aspect = mapCanvas.width / Math.max(1, mapCanvas.height);
+  return mul(perspective(0.9, aspect, 0.15, 400), view);
+}
+
+function drawCloud(cut) {
+  const data = new Float32Array(state.points.length * 7);
+  state.points.forEach((point, i) => {
+    const o = i * 7;
+    data[o] = point.x; data[o + 1] = point.y; data[o + 2] = point.z;
+    data[o + 6] = 2.6;
+  });
+  bindAndDraw(data, gl.POINTS, state.points.length, cut, 1);
+}
+function drawMasks() {
+  const parts = [];
+  const citing = state.highlight.size > 0;
+  for (const track of state.tracks.values()) {
+    const placed = state.placed.get(track.id);
+    if (!placed || !placed.visible || !track.mask_points) continue;
+    const rgb = classRgb(track.label);
+    const dim = citing && !state.highlight.has(track.id) ? 0.35 : 1;
+    for (const point of track.mask_points) {
+      parts.push(point.x, point.y, point.z, rgb[0] * dim, rgb[1] * dim, rgb[2] * dim, citing && state.highlight.has(track.id) ? 8 : 5.5);
+    }
+  }
+  if (!parts.length) return;
+  gl.disable(gl.DEPTH_TEST);
+  bindAndDraw(new Float32Array(parts), gl.POINTS, parts.length / 7, 1e9, 0);
+  gl.enable(gl.DEPTH_TEST);
+}
+function drawTrails() {
+  const parts = [];
+  for (const track of state.tracks.values()) {
+    if (track.motion !== "moving") continue;
+    const placed = state.placed.get(track.id);
+    if (!placed || !placed.visible || placed.trail.length < 2) continue;
+    const rgb = classRgb(track.label);
+    for (let i = 1; i < placed.trail.length; i++) {
+      const a = placed.trail[i - 1], b = placed.trail[i];
+      parts.push(a.x, a.y, a.z, rgb[0], rgb[1], rgb[2], 1, b.x, b.y, b.z, rgb[0], rgb[1], rgb[2], 1);
+    }
+  }
+  for (let i = 1; i < state.trajectory.length; i += 1) {
+    const a = state.trajectory[i - 1], b = state.trajectory[i];
+    parts.push(a.x, a.y, a.z, 1, 0.36, 0.6, 1, b.x, b.y, b.z, 1, 0.36, 0.6, 1);
+  }
+  const drone = state.drone;
+  if (drone) parts.push(drone.x, drone.y, drone.z, 1, 0.55, 0.72, 1, drone.x, drone.y, 0, 1, 0.55, 0.72, 1);
+  if (!parts.length) return;
+  bindAndDraw(new Float32Array(parts), gl.LINES, parts.length / 7, 1e9, 0);
+}
+function drawMarkers() {
+  const parts = [];
+  const citing = state.highlight.size > 0;
+  for (const track of state.tracks.values()) {
+    const placed = state.placed.get(track.id);
+    if (!placed || !placed.visible) continue;
+    const rgb = classRgb(track.label);
+    const dim = citing && !state.highlight.has(track.id) ? 0.4 : 1;
+    const radius = track.label.toLowerCase().includes("car") ? 0.55 : 0.28;
+    const height = track.label.toLowerCase().includes("person") ? 1.7 : 1.1;
+    cylinder(parts, placed.x, placed.y, placed.z, radius, height, rgb.map((v) => v * dim));
+  }
+  if (parts.length) bindAndDraw(new Float32Array(parts), gl.TRIANGLES, parts.length / 7, 1e9, 0);
+  if (state.drone) {
+    const d = state.drone;
+    gl.disable(gl.DEPTH_TEST);
+    bindAndDraw(new Float32Array([d.x, d.y, d.z + 0.4, 1, 1, 1, 16]), gl.POINTS, 1, 1e9, 0);
+    gl.enable(gl.DEPTH_TEST);
+  }
+}
+function cylinder(parts, x, y, z, radius, height, rgb) {
+  const n = 8;
+  const z0 = z - height / 2;
+  for (let i = 0; i < n; i++) {
+    const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
+    const x0 = x + Math.cos(a0) * radius, y0 = y + Math.sin(a0) * radius;
+    const x1 = x + Math.cos(a1) * radius, y1 = y + Math.sin(a1) * radius;
+    tri(parts, x0, y0, z0, x1, y1, z0, x1, y1, z0 + height, rgb);
+    tri(parts, x0, y0, z0, x1, y1, z0 + height, x0, y0, z0 + height, rgb);
+  }
+}
+function tri(parts, ax, ay, az, bx, by, bz, cx, cy, cz, rgb) {
+  parts.push(ax, ay, az, rgb[0], rgb[1], rgb[2], 1, bx, by, bz, rgb[0], rgb[1], rgb[2], 1, cx, cy, cz, rgb[0], rgb[1], rgb[2], 1);
+}
+function drawHighlight() {
+  if (!state.highlightPoints.length) return;
+  const parts = [];
+  for (const point of state.highlightPoints) {
+    parts.push(point.x, point.y, point.z, 1, 0.9, 0.35, 8);
+  }
+  gl.disable(gl.DEPTH_TEST);
+  bindAndDraw(new Float32Array(parts), gl.POINTS, parts.length / 7, 1e9, 0);
+  gl.enable(gl.DEPTH_TEST);
+}
+function drawGrid() {
+  const parts = [];
+  const extent = 18, step = 2;
+  for (let v = -extent; v <= extent; v += step) {
+    parts.push(-extent, v, 0, 0.16, 0.2, 0.26, 1, extent, v, 0, 0.16, 0.2, 0.26, 1);
+    parts.push(v, -extent, 0, 0.16, 0.2, 0.26, 1, v, extent, 0, 0.16, 0.2, 0.26, 1);
+  }
+  bindAndDraw(new Float32Array(parts), gl.LINES, parts.length / 7, 1e9, 0);
+}
+function bindAndDraw(data, mode, count, cut, heightColor) {
+  if (!count) return;
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+  const stride = 28;
+  enable("aPos", 3, stride, 0);
+  enable("aColor", 3, stride, 12);
+  enable("aSize", 1, stride, 24);
+  gl.uniform1f(gl.getUniformLocation(program, "uCut"), cut);
+  gl.uniform1f(gl.getUniformLocation(program, "uHeightColor"), heightColor);
+  gl.drawArrays(mode, 0, count);
+}
+function enable(name, size, stride, offset) {
+  const loc = gl.getAttribLocation(program, name);
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride, offset);
+}
+
+function drawLabels(mvp) {
+  labelsEl.replaceChildren();
+  for (const track of state.tracks.values()) {
+    const placed = state.placed.get(track.id);
+    if (!placed || !placed.visible) continue;
+    const screen = project(mvp, placed.x, placed.y, placed.z + 1.1);
+    if (!screen) continue;
+    const span = document.createElement("span");
+    span.textContent = track.label;
+    span.style.left = screen[0] + "px";
+    span.style.top = screen[1] + "px";
+    if (state.highlight.has(track.id)) span.style.outline = "1px solid #f0c14a";
+    labelsEl.appendChild(span);
+  }
+}
+function project(mvp, x, y, z) {
+  const clip = mulVec(mvp, [x, y, z, 1]);
+  if (clip[3] <= 0.05) return null;
+  const px = (clip[0] / clip[3] * 0.5 + 0.5) * mapCanvas.clientWidth;
+  const py = (1 - (clip[1] / clip[3] * 0.5 + 0.5)) * mapCanvas.clientHeight;
+  if (px < -20 || py < -20 || px > mapCanvas.clientWidth + 20 || py > mapCanvas.clientHeight + 20) return null;
+  return [px, py];
+}
+
+function perspective(fovy, aspect, near, far) {
+  const f = 1 / Math.tan(fovy / 2);
+  const nf = 1 / (near - far);
+  return new Float32Array([
+    f / aspect, 0, 0, 0,
+    0, f, 0, 0,
+    0, 0, (far + near) * nf, -1,
+    0, 0, 2 * far * near * nf, 0,
+  ]);
+}
+function lookAt(eye, target, up) {
+  let zx = eye[0] - target[0], zy = eye[1] - target[1], zz = eye[2] - target[2];
+  let len = Math.hypot(zx, zy, zz) || 1;
+  zx /= len; zy /= len; zz /= len;
+  let xx = up[1] * zz - up[2] * zy;
+  let xy = up[2] * zx - up[0] * zz;
+  let xz = up[0] * zy - up[1] * zx;
+  len = Math.hypot(xx, xy, xz) || 1;
+  xx /= len; xy /= len; xz /= len;
+  const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+  return new Float32Array([
+    xx, yx, zx, 0,
+    xy, yy, zy, 0,
+    xz, yz, zz, 0,
+    -(xx * eye[0] + xy * eye[1] + xz * eye[2]),
+    -(yx * eye[0] + yy * eye[1] + yz * eye[2]),
+    -(zx * eye[0] + zy * eye[1] + zz * eye[2]),
+    1,
+  ]);
+}
+function mul(a, b) {
+  const out = new Float32Array(16);
+  for (let c = 0; c < 4; c++) {
+    for (let r = 0; r < 4; r++) {
+      out[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
+    }
+  }
+  return out;
+}
+function mulVec(m, v) {
+  const out = [0, 0, 0, 0];
+  for (let r = 0; r < 4; r++) {
+    out[r] = m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2] + m[12 + r] * v[3];
+  }
+  return out;
+}
+</script>
+</body>
+</html>

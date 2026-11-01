@@ -1,0 +1,748 @@
+"""Disaster-mission orchestration. No network and no Gazebo.
+
+Live-map tests stand in for ``StreamingRtabmapBackend`` at the opener
+seam. They do not start Docker.
+"""
+
+import io
+import json
+import urllib.request
+from collections.abc import Callable
+from pathlib import Path
+
+import pytest
+from PIL import Image
+
+from surmap.labelling.baseten_muse import ObjectLabel
+from surmap.labelling.meta_muse import MetaMuseLabelClient, MetaMuseSceneClient
+from surmap.mission.demo import (
+    MissionConfigError,
+    build_live_services,
+    detection_crop_jpeg,
+    live_map_backend,
+    live_raw_frame,
+    live_sam_prompt,
+    open_live_map,
+    resolve_live_session,
+    run_live_mission,
+    run_offline_mission,
+)
+from surmap.mission.metrics import load_offline_perception
+from surmap.simulation.calibration import StereoCalibrationSpec
+from surmap.simulation.disaster_world import PersonGroundTruth, load_disaster_ground_truth
+from surmap.slam.base import FrameResult
+from surmap.survey.meta_sam import MetaSamDetector
+from surmap.survey.sam import RawFrame, SamDetection
+from surmap.types import Pose, StereoFramePair, Vec3
+from surmap.viewer.server import make_viewer_server
+
+_CAPTURE = Path(__file__).parent / "fixtures" / "sitl_capture_tiny"
+_MAP_POINT = Vec3(0.0, 0.0, 2.0)
+
+_QUESTION = "Where are the survivors?"
+
+
+def test_offline_mission_projects_fixture_masks_and_scores_them_against_ground_truth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given the disaster ground truth and a fixture perception spec
+    _block_network(monkeypatch)
+    truth = load_disaster_ground_truth()
+    spec = load_offline_perception()
+
+    # When the offline mission runs
+    result = run_offline_mission(tmp_path)
+
+    # Then masks were projected, the snapshot was written, and the score
+    # uses the people array rather than a fixed count
+    assert result.metrics.basis == "fixtures"
+    assert result.metrics.total == len(truth.people)
+    assert result.metrics.found == len(truth.people) - _skipped(truth.people, spec.skip_ids)
+    assert result.metrics.mean_position_error_m == pytest.approx(spec.expected_error_m)
+    assert result.metrics.time_to_first_detection_s == pytest.approx(spec.time_to_first_s)
+    assert result.snapshot_path.is_file()
+    assert result.report_path.is_file()
+    assert (tmp_path / "euroc" / "mav0" / "cam0" / "sensor.yaml").is_file()
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+    assert report["basis"] == "fixtures"
+    assert report["total"] == len(truth.people)
+    assert "fixture" in report["basis_note"].lower()
+
+
+def test_offline_mission_answers_where_are_the_survivors_with_highlighted_points(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given an offline mission whose labels say survivor
+    _block_network(monkeypatch)
+
+    # When a responder asks where the survivors are
+    result = run_offline_mission(tmp_path)
+
+    # Then the answer cites those landmarks and returns their points
+    assert result.ask.question == _QUESTION
+    assert result.ask.landmark_ids
+    assert len(result.ask.landmark_ids) == result.metrics.found
+    assert result.ask.highlight_points
+    assert "secret" not in result.ask.answer
+
+
+def test_offline_mission_ignores_live_flags_and_does_not_open_the_network(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given live flags and a key that must not be logged
+    _block_network(monkeypatch)
+    monkeypatch.setenv("SURMAP_LIVE_META", "1")
+    monkeypatch.setenv("SURMAP_LIVE_BASETEN", "1")
+    monkeypatch.setenv("SURMAP_LIVE_MODAL", "1")
+    monkeypatch.setenv("MODEL_API_KEY", "secret-model-key")
+    monkeypatch.setenv("BASETEN_API_KEY", "secret-baseten-key")
+
+    # When the offline mission runs
+    result = run_offline_mission(tmp_path)
+    text = result.report_path.read_text(encoding="utf-8")
+
+    # Then the report stays on fixtures and the keys are absent
+    assert result.metrics.basis == "fixtures"
+    assert result.map_backend == "fixture-cloud"
+    assert "secret-model-key" not in text
+    assert "secret-baseten-key" not in text
+
+
+def test_live_mode_without_a_capture_asks_for_a_sitl_capture_when_gazebo_is_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given no gz binary
+    monkeypatch.setattr("surmap.mission.demo.gazebo_on_path", lambda: False)
+
+    # When a live session is requested without a capture directory
+    with pytest.raises(MissionConfigError, match="--capture") as raised:
+        resolve_live_session(None)
+
+    # Then the message names a SITL capture directory. That directory is
+    # the dump layout, not an EuRoC tree.
+    message = str(raised.value)
+    assert "capture" in message
+    assert "EuRoC" not in message
+
+
+def test_live_mission_names_a_missing_capture_before_it_asks_for_provider_flags(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given no provider flags and a capture path that is not on disk
+    monkeypatch.delenv("SURMAP_LIVE_META", raising=False)
+    monkeypatch.delenv("SURMAP_LIVE_BASETEN", raising=False)
+    monkeypatch.delenv("SURMAP_LIVE_MODAL", raising=False)
+
+    # When the live mission is asked to run
+    with pytest.raises(MissionConfigError, match="capture not found") as raised:
+        run_live_mission(tmp_path, tmp_path / "missing-capture")
+
+    # Then the missing directory is the error, and no provider is mentioned
+    assert "SURMAP_LIVE" not in str(raised.value)
+
+
+def test_live_mission_names_an_incomplete_capture_before_it_asks_for_provider_flags(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given no provider flags and a capture directory with no calibration file
+    monkeypatch.delenv("SURMAP_LIVE_META", raising=False)
+    monkeypatch.delenv("SURMAP_LIVE_BASETEN", raising=False)
+    monkeypatch.delenv("SURMAP_LIVE_MODAL", raising=False)
+    empty = tmp_path / "empty-capture"
+    empty.mkdir()
+
+    # When the live mission is asked to run
+    with pytest.raises(MissionConfigError, match="calibration.json") as raised:
+        run_live_mission(tmp_path / "out", empty)
+
+    # Then the incomplete capture is the error, and no provider is mentioned
+    assert "SURMAP_LIVE" not in str(raised.value)
+
+
+def test_meta_alone_selects_meta_sam_labels_and_scene_note(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given only the Meta flag and its key
+    monkeypatch.setenv("SURMAP_LIVE_META", "1")
+    monkeypatch.setenv("MODEL_API_KEY", "secret-model-key")
+    monkeypatch.delenv("SURMAP_LIVE_BASETEN", raising=False)
+    monkeypatch.delenv("BASETEN_API_KEY", raising=False)
+    monkeypatch.delenv("SURMAP_LIVE_MODAL", raising=False)
+
+    # When live services are resolved
+    services = build_live_services()
+
+    # Then SAM, labels, and the scene note are all Meta, and Baseten is not required
+    assert services.sam == "meta"
+    assert services.labels == "meta"
+    assert services.scene_note == "meta"
+
+
+def test_baseten_and_modal_remain_fallbacks_when_meta_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given Modal SAM and Baseten labels, and no Meta flag
+    monkeypatch.delenv("SURMAP_LIVE_META", raising=False)
+    monkeypatch.setenv("SURMAP_LIVE_MODAL", "1")
+    monkeypatch.setenv("MODAL_SAM_URL", "https://modal.example/sam")
+    monkeypatch.setenv("SURMAP_LIVE_BASETEN", "1")
+    monkeypatch.setenv("BASETEN_API_KEY", "secret-baseten-key")
+
+    # When live services are resolved
+    services = build_live_services()
+
+    # Then SAM is Modal, labels are Baseten, and the Meta scene note is not selected
+    assert services.sam == "modal"
+    assert services.labels == "baseten"
+    assert services.scene_note == "none"
+
+
+def test_live_sam_prompt_defaults_to_person(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given no prompt override
+    monkeypatch.delenv("SURMAP_SAM_PROMPT", raising=False)
+
+    # Then the live SAM noun is person
+    assert live_sam_prompt() == "person"
+
+    # When the operator sets a noun
+    monkeypatch.setenv("SURMAP_SAM_PROMPT", "roof")
+
+    # Then that noun is the prompt
+    assert live_sam_prompt() == "roof"
+
+
+def test_a_png_capture_frame_is_sent_as_raw_rgb_not_png() -> None:
+    # Given the checked-in capture's left PNG
+    image = (_CAPTURE / "images" / "left_000.png").read_bytes()
+
+    # When it is prepared for SAM
+    frame = live_raw_frame(0, 1, 64, 48, image)
+
+    # Then Meta SAM sees packed RGB, not a png encoding it rejects
+    assert frame.encoding == "raw_rgb"
+    assert frame.encoding != "png"
+    assert len(frame.data) == frame.width * frame.height * 3
+
+
+def test_a_jpeg_capture_frame_is_sent_as_mjpeg() -> None:
+    # Given JPEG bytes
+    buffer = io.BytesIO()
+    Image.new("RGB", (8, 6), (10, 20, 30)).save(buffer, format="JPEG")
+
+    # When it is prepared for SAM
+    frame = live_raw_frame(0, 1, 8, 6, buffer.getvalue())
+
+    # Then the encoding is mjpeg and the bytes are unchanged
+    assert frame.encoding == "mjpeg"
+    assert frame.data == buffer.getvalue()
+
+
+def test_detection_crop_jpeg_is_a_padded_jpeg_of_the_box() -> None:
+    # Given a wide frame and a box in the corner
+    image = Image.new("RGB", (80, 40), (0, 0, 0))
+    image.paste((255, 0, 0), (10, 10, 20, 20))
+    raw = io.BytesIO()
+    image.save(raw, format="PNG")
+
+    # When the box is cropped with the default pad
+    cropped = detection_crop_jpeg(raw.getvalue(), (10.0, 10.0, 20.0, 20.0))
+
+    # Then the labeller receives a JPEG smaller than the full frame
+    assert cropped.startswith(b"\xff\xd8")
+    with Image.open(io.BytesIO(cropped)) as opened:
+        assert opened.size[0] < 80
+        assert opened.size[1] < 40
+
+
+def test_live_services_refuse_a_provider_whose_flag_is_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given no live provider flags
+    monkeypatch.delenv("SURMAP_LIVE_META", raising=False)
+    monkeypatch.delenv("SURMAP_LIVE_BASETEN", raising=False)
+    monkeypatch.delenv("SURMAP_LIVE_MODAL", raising=False)
+
+    # When live services are built
+    from surmap.mission.demo import build_live_services
+
+    with pytest.raises(MissionConfigError, match="SURMAP_LIVE_META"):
+        build_live_services()
+
+
+def test_live_map_backend_names_the_streaming_rtabmap_backend() -> None:
+    # Given PR #38's streaming backend is in this tree
+    backend = live_map_backend()
+
+    # Then live mode names that backend, not the old pending hook
+    assert backend == "live-rtabmap"
+
+
+def test_offline_mission_does_not_open_the_streaming_backend(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a streaming constructor that must not run
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("offline mission opened the streaming backend")
+
+    monkeypatch.setattr("surmap.slam.streaming.StreamingRtabmapBackend", refuse)
+    _block_network(monkeypatch)
+
+    # When the offline mission runs
+    result = run_offline_mission(tmp_path)
+
+    # Then the report stays on the fixture cloud
+    assert result.metrics.basis == "fixtures"
+    assert result.map_backend == "fixture-cloud"
+
+
+def test_open_live_map_builds_the_streaming_backend_from_the_capture_calibration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given the disaster-block stereo calibration and a constructor that records its arguments
+    calibration = StereoCalibrationSpec(
+        calibration_id="gazebo-stereo-v1",
+        width=64,
+        height=48,
+        fx=50.0,
+        fy=50.0,
+        cx=32.0,
+        cy=24.0,
+        baseline_m=0.12,
+    )
+    captured: dict[str, object] = {}
+
+    class RecordingBackend:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr("surmap.slam.streaming.StreamingRtabmapBackend", RecordingBackend)
+
+    # When the live map is opened
+    backend = open_live_map(calibration)
+
+    # Then it is the streaming backend, sized and calibrated from that capture
+    assert isinstance(backend, RecordingBackend)
+    assert captured["width"] == 64
+    assert captured["height"] == 48
+    cam0 = captured["cam0_yaml"]
+    cam1 = captured["cam1_yaml"]
+    assert isinstance(cam0, str)
+    assert isinstance(cam1, str)
+    assert "intrinsics: [50.0, 50.0, 32.0, 24.0]" in cam0
+    assert "intrinsics: [50.0, 50.0, 32.0, 24.0]" in cam1
+    assert captured["max_depth_m"] == 30.0
+    assert captured["min_disparity_px"] == 2.0
+    assert captured["fx"] == 50.0
+    assert captured["baseline_m"] == 0.12
+
+
+def test_open_live_map_lets_the_environment_override_the_depth_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a capture calibration and environment overrides
+    calibration = StereoCalibrationSpec(
+        calibration_id="gazebo-stereo-v1",
+        width=64,
+        height=48,
+        fx=50.0,
+        fy=50.0,
+        cx=32.0,
+        cy=24.0,
+        baseline_m=0.12,
+    )
+    captured: dict[str, object] = {}
+
+    class RecordingBackend:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setenv("SURMAP_MAX_DEPTH_M", "18")
+    monkeypatch.setenv("SURMAP_MIN_DISPARITY_PX", "3")
+    monkeypatch.setattr("surmap.slam.streaming.StreamingRtabmapBackend", RecordingBackend)
+
+    # When the live map is opened without an explicit cap
+    open_live_map(calibration)
+
+    # Then the environment wins over the 30 m / 2 px defaults
+    assert captured["max_depth_m"] == 18.0
+    assert captured["min_disparity_px"] == 3.0
+
+
+def test_an_explicit_depth_cap_wins_over_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given environment values and an explicit cap
+    calibration = StereoCalibrationSpec(
+        calibration_id="gazebo-stereo-v1",
+        width=64,
+        height=48,
+        fx=50.0,
+        fy=50.0,
+        cx=32.0,
+        cy=24.0,
+        baseline_m=0.12,
+    )
+    captured: dict[str, object] = {}
+
+    class RecordingBackend:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setenv("SURMAP_MAX_DEPTH_M", "18")
+    monkeypatch.setenv("SURMAP_MIN_DISPARITY_PX", "3")
+    monkeypatch.setattr("surmap.slam.streaming.StreamingRtabmapBackend", RecordingBackend)
+
+    # When the caller passes its own limits
+    open_live_map(calibration, max_depth_m=22.0, min_disparity_px=4.0)
+
+    # Then the explicit limits are what the sidecar is given
+    assert captured["max_depth_m"] == 22.0
+    assert captured["min_disparity_px"] == 4.0
+
+
+def test_live_mission_forwards_the_depth_cap_to_the_streaming_backend(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a capture and explicit survey limits
+    _allow_live_flags(monkeypatch)
+    _block_network(monkeypatch)
+    seen: dict[str, float] = {}
+
+    def opener(
+        calibration: StereoCalibrationSpec,
+        *,
+        max_depth_m: float,
+        min_disparity_px: float,
+    ) -> _RecordingMap:
+        del calibration
+        seen["max_depth_m"] = max_depth_m
+        seen["min_disparity_px"] = min_disparity_px
+        return _RecordingMap(snapshot=())
+
+    monkeypatch.setattr("surmap.mission.demo.open_live_map", opener)
+    monkeypatch.setattr(MetaMuseSceneClient, "note", _scene_note)
+
+    # When the live mission runs
+    run_live_mission(tmp_path, _CAPTURE, max_depth_m=22.0, min_disparity_px=3.0)
+
+    # Then those limits are the ones handed to the streaming backend
+    assert seen["max_depth_m"] == 22.0
+    assert seen["min_disparity_px"] == 3.0
+
+
+def test_live_meta_mission_calls_meta_sam_meta_labels_and_records_them(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given Meta only, a streaming map, and fakes that record what they were given
+    monkeypatch.setenv("SURMAP_LIVE_META", "1")
+    monkeypatch.setenv("MODEL_API_KEY", "secret-model-key")
+    monkeypatch.delenv("SURMAP_LIVE_BASETEN", raising=False)
+    monkeypatch.delenv("BASETEN_API_KEY", raising=False)
+    monkeypatch.delenv("SURMAP_LIVE_MODAL", raising=False)
+    _block_network(monkeypatch)
+    recording = _RecordingMap(snapshot=(_MAP_POINT,))
+    seen: dict[str, object] = {}
+
+    async def detect(self: MetaSamDetector, frame: RawFrame) -> tuple[SamDetection, ...]:
+        seen["encoding"] = frame.encoding
+        seen["prompt"] = self._prompt
+        return (
+            SamDetection(
+                label="person",
+                score=None,
+                box_xyxy=(0.0, 0.0, 63.0, 47.0),
+                mask_polygon=((0.0, 0.0), (63.0, 0.0), (63.0, 47.0), (0.0, 47.0)),
+            ),
+        )
+
+    def label(self: object, jpeg: bytes, coarse_label: str, xyz: Vec3) -> ObjectLabel:
+        del self, coarse_label
+        seen["jpeg"] = jpeg
+        seen["label_model"] = "muse-spark-1.3"
+        return ObjectLabel(
+            label="survivor",
+            description="a person in the crop",
+            confidence=None,
+            model_id="muse-spark-1.3",
+            raw_text="survivor",
+            map_point=xyz,
+        )
+
+    def note(self: MetaMuseSceneClient, labels: list[str], frame_jpeg: bytes) -> str:
+        del labels, frame_jpeg
+        seen["scene_model"] = self._model
+        return "Scene note from the test double."
+
+    monkeypatch.setattr(
+        "surmap.mission.demo.open_live_map", lambda _calibration, **_kwargs: recording
+    )
+    monkeypatch.setattr(MetaSamDetector, "detect", detect)
+    monkeypatch.setattr("surmap.mission.demo.MetaMuseLabelClient.label", label)
+    monkeypatch.setattr(MetaMuseSceneClient, "note", note)
+
+    # When the live mission runs
+    result = run_live_mission(tmp_path, _CAPTURE)
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+    snapshot = json.loads(result.snapshot_path.read_text(encoding="utf-8"))
+
+    # Then SAM saw raw RGB, labels came from Muse Spark, and the report has no developer notes
+    assert seen["encoding"] == "raw_rgb"
+    assert seen["prompt"] == "person"
+    assert isinstance(seen["jpeg"], bytes)
+    assert seen["jpeg"].startswith(b"\xff\xd8")
+    assert "mapqa" not in report
+    assert "live_rtabmap" not in report
+    assert "No pull request merged" not in result.report_path.read_text(encoding="utf-8")
+    calls = report["meta_calls"]
+    roles = {call["role"] for call in calls}
+    assert roles == {"sam", "label", "scene_note"}
+    sam_calls = [call for call in calls if call["role"] == "sam"]
+    assert sam_calls[0]["model_id"] == "sam-3.1"
+    assert sam_calls[0]["confidences"] == [None]
+    assert sam_calls[0]["elapsed_s"] >= 0
+    label_call = next(call for call in calls if call["role"] == "label")
+    assert label_call["model_id"] == "muse-spark-1.3"
+    scene_call = next(call for call in calls if call["role"] == "scene_note")
+    assert scene_call["model_id"] == "muse-spark-1.3"
+    assert snapshot["landmarks"][0]["model_id"] == "muse-spark-1.3"
+    assert snapshot["meta_calls"][0]["model_id"] == "sam-3.1"
+    assert "secret-model-key" not in result.report_path.read_text(encoding="utf-8")
+
+
+def test_live_mission_projects_the_streaming_snapshot_into_the_map(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a capture and a streaming map whose snapshot is one point in front of the camera
+    _allow_live_flags(monkeypatch)
+    _block_network(monkeypatch)
+    recording = _RecordingMap(snapshot=(_MAP_POINT,))
+    labelled: list[Vec3] = []
+    monkeypatch.setattr(
+        "surmap.mission.demo.open_live_map", lambda _calibration, **_kwargs: recording
+    )
+    monkeypatch.setattr(MetaSamDetector, "detect", _detect_person)
+    monkeypatch.setattr(MetaMuseLabelClient, "label", _remembering_label(labelled))
+    monkeypatch.setattr(MetaMuseSceneClient, "note", _scene_note)
+
+    # When the live mission runs
+    result = run_live_mission(tmp_path, _CAPTURE)
+    text = result.report_path.read_text(encoding="utf-8")
+
+    # Then every capture frame was given to that map, and the claimed point is its snapshot
+    assert [frame.frame_id for frame in recording.frames] == [0, 1]
+    assert recording.closed
+    assert labelled
+    assert labelled[0].x == pytest.approx(_MAP_POINT.x)
+    assert labelled[0].y == pytest.approx(_MAP_POINT.y)
+    assert labelled[0].z == pytest.approx(_MAP_POINT.z)
+    assert result.metrics.basis == "live"
+    assert result.map_backend == "live-rtabmap"
+    assert "pending-pr-38" not in text
+    assert "PR #38 is not merged" not in text
+    assert "secret-model-key" not in text
+    assert "secret-baseten-key" not in text
+
+
+def test_live_mission_says_when_the_streaming_backend_returns_no_points(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a streaming map that finishes with an empty snapshot
+    _allow_live_flags(monkeypatch)
+    _block_network(monkeypatch)
+    recording = _RecordingMap(snapshot=())
+
+    async def refuse_detect(self: object, frame: RawFrame) -> tuple[SamDetection, ...]:
+        del self, frame
+        raise AssertionError("live mission called SAM with no map cloud")
+
+    monkeypatch.setattr(
+        "surmap.mission.demo.open_live_map", lambda _calibration, **_kwargs: recording
+    )
+    monkeypatch.setattr(MetaSamDetector, "detect", refuse_detect)
+    monkeypatch.setattr(MetaMuseSceneClient, "note", _scene_note)
+
+    # When the live mission runs
+    result = run_live_mission(tmp_path, _CAPTURE)
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+
+    # Then the report names the streaming backend and says positions were not estimated
+    assert recording.closed
+    assert result.map_backend == "live-rtabmap"
+    assert result.metrics.basis == "live"
+    assert report["map_backend"] == "live-rtabmap"
+    assert "not estimated" in str(report["basis_note"]).lower()
+    assert "secret-model-key" not in json.dumps(report)
+
+
+def test_a_busy_viewer_port_is_named_without_a_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Given the offline report is ready and the viewer port is already taken
+    import importlib.util
+    import socket
+    from typing import cast
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "mission_demo.py"
+    spec = importlib.util.spec_from_file_location("mission_demo_cli", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    main = cast(Callable[[list[str]], int], module.main)
+    held = socket.socket()
+    held.bind(("127.0.0.1", 0))
+    held.listen(1)
+    port = int(held.getsockname()[1])
+
+    try:
+        # When the demo tries to serve on that port
+        code = main(["--output", str(tmp_path), "--port", str(port)])
+    finally:
+        held.close()
+    captured = capsys.readouterr()
+
+    # Then it exits with a message that names the port and does not dump a traceback
+    assert code == 1
+    assert str(port) in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_viewer_serves_the_impact_report_and_the_survivor_question(tmp_path: Path) -> None:
+    # Given a mission report and its snapshot
+    from surmap.mission.replay import MissionReplay
+
+    result = run_offline_mission(tmp_path)
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+    server = make_viewer_server(
+        lambda: MissionReplay(result.snapshot_path),
+        host="127.0.0.1",
+        port=0,
+        fps=200.0,
+        impact=report,
+    )
+    server.timeout = 0.2
+    thread_started = False
+    import threading
+
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    thread_started = True
+    try:
+        host = str(server.server_address[0])
+        port = int(server.server_address[1])
+        base = f"http://{host}:{port}"
+
+        # When the viewer is asked for the impact and the survivor question
+        with urllib.request.urlopen(f"{base}/impact", timeout=2) as response:
+            impact = json.loads(response.read().decode())
+        body = json.dumps({"question": _QUESTION}).encode()
+        ask_request = urllib.request.Request(
+            f"{base}/ask",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(ask_request, timeout=2) as response:
+            answer = json.loads(response.read().decode())
+        with urllib.request.urlopen(f"{base}/", timeout=2) as response:
+            page = response.read().decode()
+    finally:
+        if thread_started:
+            server.shutdown()
+            server.server_close()
+
+    # Then the page can show the fixture metrics and the answer highlights points
+    assert impact["basis"] == "fixtures"
+    assert impact["total"] == result.metrics.total
+    assert "impact" in page
+    assert answer["landmark_ids"]
+    assert answer["highlight_points"]
+
+
+class _RecordingMap:
+    """Stands in for ``StreamingRtabmapBackend``. Records frames and closes."""
+
+    def __init__(self, snapshot: tuple[Vec3, ...]) -> None:
+        self.frames: list[StereoFramePair] = []
+        self.closed = False
+        self._snapshot = snapshot
+
+    def process_frame(self, frame: StereoFramePair) -> FrameResult:
+        self.frames.append(frame)
+        return FrameResult(frame.frame_id, frame.t_ns, None, ())
+
+    def flush(self) -> list[FrameResult]:
+        pose = Pose(Vec3(0.0, 0.0, 0.0))
+        return [FrameResult(frame.frame_id, frame.t_ns, pose, ()) for frame in self.frames]
+
+    def map_snapshot(self) -> tuple[Vec3, ...]:
+        return self._snapshot
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _allow_live_flags(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SURMAP_LIVE_META", "1")
+    monkeypatch.setenv("SURMAP_LIVE_BASETEN", "1")
+    monkeypatch.delenv("SURMAP_LIVE_MODAL", raising=False)
+    monkeypatch.setenv("MODEL_API_KEY", "secret-model-key")
+    monkeypatch.setenv("BASETEN_API_KEY", "secret-baseten-key")
+
+
+def _person_mask() -> SamDetection:
+    return SamDetection(
+        label="person",
+        score=0.9,
+        box_xyxy=(0.0, 0.0, 63.0, 47.0),
+        mask_polygon=((0.0, 0.0), (63.0, 0.0), (63.0, 47.0), (0.0, 47.0)),
+        track_id=None,
+    )
+
+
+async def _detect_person(self: object, frame: RawFrame) -> tuple[SamDetection, ...]:
+    del self, frame
+    return (_person_mask(),)
+
+
+def _remembering_label(
+    labelled: list[Vec3],
+) -> Callable[[object, bytes, str, Vec3], ObjectLabel]:
+    def label(self: object, jpeg: bytes, coarse_label: str, xyz: Vec3) -> ObjectLabel:
+        del self, jpeg, coarse_label
+        labelled.append(xyz)
+        return ObjectLabel(
+            label="survivor",
+            description="survivor in the disaster block",
+            confidence=None,
+            model_id="test-double",
+            raw_text="survivor",
+            map_point=xyz,
+        )
+
+    return label
+
+
+def _scene_note(self: object, labels: list[str], frame_jpeg: bytes) -> str:
+    del self, labels, frame_jpeg
+    return "Scene note from the test double. Not a provider call."
+
+
+def _block_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("offline mission opened the network")
+
+    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+
+
+def _skipped(people: tuple[PersonGroundTruth, ...], skip_ids: tuple[str, ...]) -> int:
+    ids = {person.id for person in people}
+    return sum(1 for person_id in skip_ids if person_id in ids)

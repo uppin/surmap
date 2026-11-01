@@ -130,6 +130,13 @@ Dataset zips, from `surmap.demo.datasets` (the downloader prints
 | `ntu-viral-sbs-01` | 3,775,725,925 | 3.78 GB |
 
 Nothing is fetched until a scene is picked, or until `--prepare-only`.
+The one-command disaster survey (`scripts/mission_demo.py`) is a
+separate command. It does not use this page. Offline, it writes a
+fixture impact report (`"basis": "fixtures"`) and opens the survey
+viewer on port 8770. `--live` feeds a SITL capture through the same
+`StreamingRtabmapBackend` this demo uses. Runbook:
+[docs/mission-demo.md](docs/mission-demo.md). Gazebo scene:
+[docs/simulation/gazebo-disaster-world.md](docs/simulation/gazebo-disaster-world.md).
 
 The page has a scene picker with every registered scene. A scene not yet
 in the cache is downloaded, verified and converted the first time it is

@@ -1,0 +1,38 @@
+{
+  "frame": {
+    "frame_id": 42,
+    "t_ns": 1000000000,
+    "clock": "cm5_monotonic",
+    "left_ref": "frames/42-left.jpg",
+    "encoding": "mjpeg",
+    "width": 376,
+    "height": 240,
+    "pixel_space": "rectified",
+    "fx": 450.0,
+    "fy": 450.0,
+    "cx": 188.0,
+    "cy": 120.0,
+    "distortion_model": "radial-tangential",
+    "distortion_coefficients": [0.0, 0.0, 0.0, 0.0],
+    "baseline_m": 0.11,
+    "pose": {
+      "position_m": { "x": 1.2, "y": 0.0, "z": 3.4 },
+      "orientation_xyzw": [0.0, 0.0, 0.0, 1.0],
+      "frame": "rtabmap_map"
+    }
+  },
+  "masks": {
+    "frame_id": 42,
+    "t_ns": 1000000000,
+    "masks": [
+      {
+        "encoding": "polygon",
+        "mask_polygon": [[80, 40], [160, 40], [160, 180], [80, 180]],
+        "label": "person",
+        "score": 0.91,
+        "source": "meta-api",
+        "model_id": "sam-3.1"
+      }
+    ]
+  }
+}

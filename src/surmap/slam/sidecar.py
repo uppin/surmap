@@ -43,6 +43,7 @@ from typing import Protocol
 
 from PIL import Image
 
+from surmap.euroc import stationary_imu_csv
 from surmap.slam.base import FrameResult
 from surmap.types import Pose, StereoFramePair, Vec3
 
@@ -124,21 +125,6 @@ def parse_exported_poses(text: str) -> list[tuple[int, Pose]]:
         poses.append((round(t_s * 1_000_000_000), Pose(Vec3(x, y, z), (qx, qy, qz, qw))))
     poses.sort(key=lambda item: item[0])
     return poses
-
-
-def _stationary_imu_csv(frames: list[StereoFramePair]) -> str:
-    """A stationary-IMU CSV covering `frames` (the dataset tool needs one)."""
-    header = "#timestamp [ns],w_RS_S_x,w_RS_S_y,w_RS_S_z,a_RS_S_x,a_RS_S_y,a_RS_S_z"
-    if not frames:
-        return header + "\n"
-    rows = [header]
-    start, end = frames[0].t_ns, frames[-1].t_ns
-    step = 5_000_000  # 200 Hz
-    t_ns = start
-    while t_ns <= end:
-        rows.append(f"{t_ns},0.0,0.0,0.0,9.81,0.0,0.0")
-        t_ns += step
-    return "\n".join(rows) + "\n"
 
 
 class SidecarRtabmapBackend:
@@ -273,7 +259,7 @@ class SidecarRtabmapBackend:
         imu_dir.mkdir(parents=True, exist_ok=True)
         if self._imu_yaml:
             (imu_dir / "sensor.yaml").write_text(self._imu_yaml, encoding="utf-8")
-        imu_csv = self._imu_csv if self._imu_csv else _stationary_imu_csv(self._frames)
+        imu_csv = self._imu_csv if self._imu_csv else stationary_imu_csv(self._frames)
         (imu_dir / "data.csv").write_text(imu_csv, encoding="utf-8")
 
     def _match_frame(self, t_ns: int) -> StereoFramePair | None:
