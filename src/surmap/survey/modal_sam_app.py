@@ -75,7 +75,7 @@ image = (
     )
     # Fail at image build (no GPU) if any sam3 import is still missing.
     .run_commands(
-        "python -c \"import sam3; "
+        'python -c "import sam3; '
         "from sam3.model_builder import build_sam3_image_model, download_ckpt_from_hf; "
         "from sam3.model.sam3_image_processor import Sam3Processor; "
         "print('sam3 imports ok')\""
