@@ -1,0 +1,17 @@
+[Unit]
+Description=SurMap demo page (remote CM5 + Station hosts)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=surmap
+StateDirectory=surmap-demo
+Environment=SURMAP_DEMO_CACHE_DIR=/var/lib/surmap-demo
+WorkingDirectory=@INSTALL_DIR@
+ExecStart=@INSTALL_DIR@/.venv/bin/python scripts/demo.py --host 0.0.0.0 --port @PORT@ @SERVER_ARGS@
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
