@@ -21,7 +21,7 @@ follows SurMap's stack (Python 3.11+, uv, Ruff, mypy strict, pytest).
 | `src/surmap/rpc/testkit/` | `RecordingBrick`, HTTP stub host for tests |
 | `proto/surmap/transport/v1/socket_rpc.proto` | The socket-RPC frame protocol (`surmap.transport.v1`) |
 | `src/surmap/transport/v1/socket_rpc_pb2.py` | Generated bindings (checked in; see below) |
-| `proto/surmap/survey/v1/survey.proto` | The survey streaming contract (`surmap.survey.v1`): CM5 + station BIDI services |
+| `proto/surmap/survey/v1/survey.proto` | The survey streaming contract (`surmap.survey.v1`): CM5 + station BIDI services, including `Cm5SurveyService.StreamRegionPoints` (dense points under a SAM polygon) |
 | `src/surmap/survey/v1/survey_pb2.py` | Generated bindings (checked in; regenerate with `scripts/gen_survey_rpc.py`) |
 
 ## Shape of use

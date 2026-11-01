@@ -39,6 +39,8 @@ from PIL import Image
 
 from surmap.demo.datasets import (
     DATASETS,
+    DISPLAY_HEIGHT,
+    DISPLAY_WIDTH,
     DatasetSpec,
     DemoCalibration,
     PreparedDataset,
@@ -49,19 +51,81 @@ from surmap.demo.datasets import (
     load_calibration,
     scaled_sensor_yaml,
 )
+from surmap.demo.events import DemoEvent as DemoEvent
+from surmap.demo.events import RegionPlacer, SurfaceAssigner, sam_event, surface_layer
+from surmap.demo.history import RunHistoryStore
 from surmap.demo.page import PAGE
+from surmap.demo.sam_prompt import SamPromptPolicy, sam_pane
+from surmap.demo.surface_render import MOVING_ALPHA as MOVING_ALPHA
+from surmap.demo.surface_render import MOVING_COLOUR as MOVING_COLOUR
+from surmap.demo.surface_render import SURFACE_ALPHA as SURFACE_ALPHA
+from surmap.demo.surface_render import SURFACE_COLOURS as SURFACE_COLOURS
+from surmap.demo.surface_render import SurfaceLayer, draw_surfaces
+from surmap.demo.surface_render import surface_tint as surface_tint
 from surmap.detection.detector import CoralDetector, decode_rgb
 from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
 from surmap.detection.source import CoralDetectionSource, DetectionSource
 from surmap.detection.tracker import TrackedDetection
 from surmap.slam.base import FrameResult
+from surmap.slam.regions import RegionPointSource
 from surmap.slam.sidecar import SidecarRtabmapBackend
 from surmap.slam.stream_protocol import Keypoint, MapUpdate, OdomUpdate, Rectification
 from surmap.slam.streaming import MapCloud, StreamingRtabmapBackend, pose_rotation
+from surmap.survey.sam import (
+    CentredBoxVideoSamDetector,
+    RawFrame,
+    VideoSamDetector,
+    VideoSamStreamer,
+)
 from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
 from surmap.types import Pose, StereoFramePair, Vec3
 
 MAX_OVERLAY_POINTS = 600
+
+# Cap on raw cloud points sent to the browser 3D view (and persisted per
+# map snapshot): the full count still travels as `cloud_points`.
+MAX_CLOUD_POINTS = 12000
+
+
+def cloud_points(
+    cloud: MapCloud, max_points: int = MAX_CLOUD_POINTS
+) -> tuple[list[list[float]], list[list[int]]]:
+    """A cloud as JSON-ready (points, colours), stably sampled to the cap.
+
+    The sample must be *dense* (the cap fully used) and *stable* as
+    the cloud grows. Two earlier samplers failed one each: a
+    stride-over-the-list resampled wholesale per update (10–25 %
+    of drawn points survived — flicker), and first-point-per-voxel
+    starved surface clouds (far fewer voxels than the cap — sparse).
+
+    Each point instead gets a rank that depends only on itself:
+    a hash of its centimetre-quantised coordinates. The cap's
+    lowest ranks are drawn. A point's rank never changes as the
+    cloud grows, so growth only displaces the few drawn points a
+    newcomer out-ranks (a few percent per update), while the cap
+    always stays exactly filled.
+    """
+    points, colors = cloud.points, cloud.colors
+    if len(points) > max_points:
+        pick = _stable_pick(points, max_points)
+        points, colors = points[pick], colors[pick]
+    return (
+        [[round(float(v), 3) for v in row] for row in points.tolist()],
+        [[int(v) for v in row] for row in colors.tolist()],
+    )
+
+
+def _stable_pick(points: NDArray[np.float32], max_points: int) -> NDArray[np.int64]:
+    """Indices of the `max_points` lowest coordinate-hash ranks."""
+    quantized = np.rint(points * 100.0).astype(np.int64).view(np.uint64)
+    rank = quantized[:, 0] * np.uint64(0x9E3779B97F4A7C15)
+    rank ^= quantized[:, 1] * np.uint64(0xC2B2AE3D27D4EB4F)
+    rank ^= quantized[:, 2] * np.uint64(0x165667B19E3779F9)
+    rank ^= rank >> np.uint64(29)
+    rank *= np.uint64(0xBF58476D1CE4E5B9)
+    rank ^= rank >> np.uint64(32)
+    lowest = np.argpartition(rank, max_points)[:max_points]
+    return np.sort(lowest.astype(np.int64))
 
 
 @runtime_checkable
@@ -87,13 +151,6 @@ class LiveSlamBackend(Protocol):
     def keyframe_count(self) -> int: ...
     @property
     def rectification(self) -> Rectification | None: ...
-
-
-@dataclass(frozen=True)
-class DemoEvent:
-    kind: str  # "frame" | "status" | "final" | "map" | "detections"
-    data: dict[str, object]
-    jpeg: bytes = b""
 
 
 def project_overlay(
@@ -285,12 +342,105 @@ def render_floor_plan(xz: NDArray[np.float32], grey: NDArray[np.uint8], extent: 
     mean[seen] = total[seen] / count[seen]
     alpha = np.zeros(size * size)
     alpha[seen] = np.clip(255 * np.log1p(count[seen]) / np.log1p(FLOOR_SOLID_POINTS), 0, 255)
-    rgba = np.zeros((size * size, 4), np.uint8)
-    rgba[:, 0] = rgba[:, 1] = rgba[:, 2] = np.round(mean).astype(np.uint8)
-    rgba[:, 3] = np.round(alpha).astype(np.uint8)
+    rgba = np.zeros((size, size, 4), np.uint8)
+    rgba[:, :, 0] = rgba[:, :, 1] = rgba[:, :, 2] = (
+        np.round(mean).astype(np.uint8).reshape(size, size)
+    )
+    rgba[:, :, 3] = np.round(alpha).astype(np.uint8).reshape(size, size)
+    return _png_base64(rgba)
+
+
+def _png_base64(rgba: NDArray[np.uint8]) -> str:
+    """An (H, W, 4) RGBA array as a base64 PNG (the panes' shared encoding)."""
     out = io.BytesIO()
-    Image.fromarray(rgba.reshape(size, size, 4), "RGBA").save(out, format="PNG")
+    Image.fromarray(rgba, "RGBA").save(out, format="PNG")
     return base64.b64encode(out.getvalue()).decode()
+
+
+@dataclass(frozen=True)
+class CloudPose:
+    """The 3D pane's PTZ pose: orbit angles, zoom and ground-plane pan.
+
+    The floor plan is this same pose family fixed at top-down; the
+    cloud view is the one the viewer orbits.
+    """
+
+    azimuth: float = -0.8
+    elevation: float = 0.85
+    zoom: float = 1.0
+    pan_x: float = 0.0
+    pan_z: float = 0.0
+
+
+CLOUD_VIEW_PX = (880, 440)
+
+
+def _project_points(
+    points: NDArray[np.float32],
+    pose: CloudPose,
+    centre: NDArray[np.float64],
+    span: float,
+    size: tuple[int, int],
+) -> tuple[NDArray[np.int64], NDArray[np.int64], NDArray[np.float64], NDArray[np.int64]]:
+    """Map-frame points to (u, v, depth, point indices) under the orbit pose."""
+    width, height = size
+    rel = points.astype(np.float64) - centre
+    x, up, fwd = rel[:, 0], -rel[:, 1], rel[:, 2]
+    ca, sa = math.cos(pose.azimuth), math.sin(pose.azimuth)
+    x, fwd = x * ca - fwd * sa, x * sa + fwd * ca
+    ce, se = math.cos(pose.elevation), math.sin(pose.elevation)
+    up, fwd = up * ce - fwd * se, up * se + fwd * ce
+    distance = span * 1.9 * pose.zoom
+    depth = distance - fwd
+    focal = 1.0 / math.tan(0.35)
+    inside = depth > distance * 0.05
+    indices = np.flatnonzero(inside)
+    u = np.floor(width / 2 + focal * x[inside] / depth[inside] * (height / 2))
+    v = np.floor(height / 2 - focal * up[inside] / depth[inside] * (height / 2))
+    ui, vi = u.astype(np.int64), v.astype(np.int64)
+    on = (ui >= 0) & (ui < width) & (vi >= 0) & (vi < height)
+    return ui[on], vi[on], depth[inside][on], indices[on]
+
+
+def render_cloud_view(
+    points: NDArray[np.float32],
+    colors: NDArray[np.uint8],
+    pose: CloudPose,
+    bounds: tuple[NDArray[np.float32], NDArray[np.float32]],
+    size: tuple[int, int] = CLOUD_VIEW_PX,
+    surfaces: SurfaceLayer = (),
+) -> str:
+    """Every map point rendered server-side from `pose`, as base64 PNG.
+
+    The 3D sibling of `render_floor_plan`: same contract — the whole
+    cloud, no sampling (so nothing flickers between updates), a
+    deterministic function of (cloud, pose). Only the projection
+    differs: an orbit camera instead of top-down. Nearest point wins
+    each pixel. Background matches the old WebGL clear colour.
+    """
+    width, height = size
+    rgba = np.zeros((height, width, 4), np.uint8)
+    rgba[:, :] = (10, 12, 14, 255)
+    if len(points) or surfaces:
+        lo, hi = (np.asarray(bound, dtype=np.float64) for bound in bounds)
+        centre = (lo + hi) / 2.0
+        centre[0] += pose.pan_x
+        centre[2] += pose.pan_z
+        span = max(float(np.max(hi - lo)), 0.5)
+        flat = rgba.reshape(-1, 4)
+        if len(points):
+            ui, vi, depth, indices = _project_points(points, pose, centre, span, size)
+            order = np.argsort(depth)[::-1]  # far first; near overwrites
+            pixels = (vi[order] * width + ui[order]).astype(np.int64)
+            chosen = indices[order]
+            flat[pixels, 0] = colors[chosen, 0]
+            flat[pixels, 1] = colors[chosen, 1]
+            flat[pixels, 2] = colors[chosen, 2]
+            flat[pixels, 3] = 255
+        draw_surfaces(
+            flat, size, surfaces, lambda part: _project_points(part, pose, centre, span, size)[:2]
+        )
+    return _png_base64(rgba)
 
 
 FloorCamera = dict[str, float]
@@ -416,6 +566,148 @@ def _detections_event(frame_id: int, t_ns: int, tracked: tuple[TrackedDetection,
     )
 
 
+class _SamWorker:
+    """Runs the SAM video session off the frame loop, in frame order.
+
+    Continuous (video) mode is stateful, so unlike the Coral worker
+    this one never drops or reorders: every submitted frame is queued
+    FIFO and tracked sequentially, however far behind playback it
+    falls. Results come back in frame order.
+    """
+
+    def __init__(self, source: VideoSamDetector, size: tuple[int, int]) -> None:
+        self._source = source
+        self._size = size
+        self._condition = threading.Condition()
+        self._pending: deque[tuple[int, int, bytes]] = deque()
+        self._busy = False
+        self._closed = False
+        self._results: list[DemoEvent] = []
+        self._error: BaseException | None = None
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def submit(self, frame_id: int, t_ns: int, jpeg: bytes) -> None:
+        with self._condition:
+            self._pending.append((frame_id, t_ns, jpeg))
+            self._condition.notify_all()
+
+    def poll(self) -> list[DemoEvent]:
+        with self._condition:
+            if self._error is not None:
+                raise self._error
+            done, self._results = self._results, []
+            return done
+
+    def drain(self, timeout: float = 120.0) -> list[DemoEvent]:
+        """Wait for every queued frame to be tracked, then return results."""
+        with self._condition:
+            self._condition.wait_for(
+                lambda: (not self._pending and not self._busy) or self._error is not None,
+                timeout=timeout,
+            )
+        return self.poll()
+
+    def close(self) -> None:
+        with self._condition:
+            self._closed = True
+            self._condition.notify_all()
+        self._thread.join(timeout=5)
+
+    def _run(self) -> None:
+        while True:
+            with self._condition:
+                self._condition.wait_for(lambda: bool(self._pending) or self._closed)
+                if self._closed:
+                    return
+                frame_id, t_ns, jpeg = self._pending.popleft()
+                self._busy = True
+            try:
+                width, height = self._size
+                event = sam_event(
+                    frame_id,
+                    t_ns,
+                    self._source.track(RawFrame(frame_id, t_ns, 0, width, height, "mjpeg", jpeg)),
+                )
+            except BaseException as exc:  # surfaced on the playback thread
+                with self._condition:
+                    self._error, self._busy = exc, False
+                    self._condition.notify_all()
+                return
+            with self._condition:
+                self._results.append(event)
+                self._busy = False
+                self._condition.notify_all()
+
+
+class _SamStreamWorker:
+    """Runs a whole-video SAM streamer off the frame loop.
+
+    SAM 3.1's session propagates over the whole video at its own
+    pace; results are queued in frame order and released by the
+    display once their frame has been shown, exactly like the
+    per-frame SAM worker's.
+    """
+
+    def __init__(
+        self,
+        streamer: VideoSamStreamer,
+        frame_paths: list[Path],
+        frame_keys: list[tuple[int, int]],
+        prompt: str | None = None,
+    ) -> None:
+        self._streamer = streamer
+        self._frame_paths = frame_paths
+        self._prompt = prompt
+        self._frame_keys = frame_keys
+        self._condition = threading.Condition()
+        self._results: list[DemoEvent] = []
+        self._done = False
+        self._closed = False
+        self._error: BaseException | None = None
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def poll(self) -> list[DemoEvent]:
+        with self._condition:
+            if self._error is not None:
+                raise self._error
+            done, self._results = self._results, []
+            return done
+
+    def drain(self, timeout: float = 1800.0) -> list[DemoEvent]:
+        """Wait for propagation to finish, then return remaining results."""
+        with self._condition:
+            self._condition.wait_for(lambda: self._done or self._error is not None, timeout)
+        return self.poll()
+
+    def close(self) -> None:
+        # Cooperative cancellation, checked per yielded frame: a
+        # closed worker stops at the next frame instead of running
+        # its whole video on the GPU behind the next viewer's worker
+        # (stacked sessions OOM'd the card and starved the live one).
+        self._closed = True
+        self._thread.join(timeout=5)
+
+    def _run(self) -> None:
+        try:
+            for index, detections in self._streamer.stream(self._frame_paths, self._prompt):
+                if self._closed:
+                    break
+                frame_id, t_ns = self._frame_keys[index]
+                with self._condition:
+                    self._results.append(sam_event(frame_id, t_ns, detections))
+                    self._condition.notify_all()
+        except BaseException as exc:  # surfaced on the playback thread
+            with self._condition:
+                self._error = exc
+                self._condition.notify_all()
+        finally:
+            with self._condition:
+                self._done = True
+                self._condition.notify_all()
+
+
 def _display_jpeg(prepared: PreparedDataset, channel: int, t_ns: int) -> bytes:
     """The half-res JPEG for one frame, generated once and cached."""
     width, height = prepared.spec.display_size
@@ -427,9 +719,20 @@ def _display_jpeg(prepared: PreparedDataset, channel: int, t_ns: int) -> bytes:
     return target.read_bytes()
 
 
+def _display_jpeg_path(prepared: PreparedDataset, channel: int, t_ns: int) -> Path:
+    """The cached display-JPEG file for one frame (generated if needed)."""
+    _display_jpeg(prepared, channel, t_ns)
+    width, height = prepared.spec.display_size
+    return prepared.root / f"display-{width}x{height}" / f"cam{channel}" / f"{t_ns}.jpg"
+
+
 # A live frame waits at most this long for its odometry before it is
 # shown without keypoints (its pair may have been dropped).
 HOLD_MAX_S = 2.0
+
+# Recent frame JPEGs kept so a SAM result can carry its own frame's
+# image to the separate SAM pane, whenever it lands.
+SAM_FRAME_CACHE = 256
 
 
 @dataclass
@@ -448,6 +751,8 @@ class _Display:
     With live SLAM a frame waits for its own odometry, so its keypoints
     are the ones RTAB-Map tracked on that very image; detections are
     released only once their frame has been shown, never ahead of it.
+    SAM results are on their own cadence (a separate pane): they are
+    released as soon as they arrive, each with its frame's JPEG.
     """
 
     def __init__(
@@ -456,13 +761,21 @@ class _Display:
         backend: LiveSlamBackend | None,
         calibration: DemoCalibration,
         stops: DepthStops,
+        size: tuple[int, int] = (DISPLAY_WIDTH, DISPLAY_HEIGHT),
     ) -> None:
         self._total = total
+        # Regions are placed only by a backend that can answer them.
+        self._regions: RegionPlacer | None = (
+            RegionPlacer(backend, size) if isinstance(backend, RegionPointSource) else None
+        )
+        self.surfaces = SurfaceAssigner()  # the run's surfaces, assigned from regions
         self._stops = stops
         self._backend = backend
         self._calibration = calibration
         self._frames: deque[_HeldFrame] = deque()
         self._detections: list[DemoEvent] = []
+        self._sam: list[DemoEvent] = []
+        self._jpegs: dict[int, bytes] = {}
         self._shown = 0
 
     def add_frame(self, frame: _HeldFrame) -> None:
@@ -470,6 +783,9 @@ class _Display:
 
     def add_detections(self, events: list[DemoEvent]) -> None:
         self._detections.extend(events)
+
+    def add_sam(self, events: list[DemoEvent]) -> None:
+        self._sam.extend(events)
 
     def release(self, *, final: bool = False) -> Iterator[DemoEvent]:
         while self._frames:
@@ -480,6 +796,9 @@ class _Display:
             overlay, camera = shown
             self._frames.popleft()
             self._shown = head.frame_id
+            self._jpegs[head.frame_id] = head.jpeg
+            while len(self._jpegs) > SAM_FRAME_CACHE:
+                self._jpegs.pop(next(iter(self._jpegs)))
             yield DemoEvent(
                 "frame",
                 {
@@ -493,6 +812,16 @@ class _Display:
                 },
                 jpeg=head.jpeg,
             )
+            yield from self._ready(final=False)
+            if not final:
+                # One frame per release: a backlog that built up while
+                # SAM (or odometry) was slow drains at the caller's
+                # playback pace instead of flashing past in a burst.
+                break
+        yield from self._ready(final=final)
+
+    def _ready(self, *, final: bool) -> Iterator[DemoEvent]:
+        """Detections for shown frames; SAM results as they arrive."""
         ready = [
             event
             for event in self._detections
@@ -500,6 +829,18 @@ class _Display:
         ]
         self._detections = [event for event in self._detections if event not in ready]
         yield from ready
+        sam_ready = [
+            event for event in self._sam if final or int(str(event.data["frame_id"])) in self._jpegs
+        ]
+        self._sam = [event for event in self._sam if event not in sam_ready]
+        for event in sam_ready:
+            frame_id = int(str(event.data["frame_id"]))
+            yield DemoEvent("sam", event.data, jpeg=self._jpegs.get(frame_id, b""))
+            if self._regions is not None:
+                region = self._regions.region_event(event)
+                yield region
+                if (surface := self.surfaces.surface_event(region)) is not None:
+                    yield surface
 
     def _overlay_for(
         self, frame: _HeldFrame, final: bool
@@ -534,6 +875,10 @@ class PlaybackControls:
         self._playing = threading.Event()
         self._playing.set()
         self._cancelled = threading.Event()
+        self._cloud_pose = CloudPose()
+        self._surfaces_visible = True
+        self._cloud_version = 0
+        self._cloud_lock = threading.Lock()
 
     @property
     def paused(self) -> bool:
@@ -556,6 +901,72 @@ class PlaybackControls:
     def wait_while_paused(self, timeout: float) -> None:
         self._playing.wait(timeout)
 
+    @property
+    def cloud_version(self) -> int:
+        return self._cloud_version
+
+    def cloud_pose(self) -> CloudPose:
+        with self._cloud_lock:
+            return self._cloud_pose
+
+    def _set_cloud_pose(self, pose: CloudPose) -> CloudPose:
+        with self._cloud_lock:
+            self._cloud_pose = pose
+            self._cloud_version += 1
+            return pose
+
+    def cloud_orbit(self, d_azimuth: float, d_elevation: float) -> CloudPose:
+        pose = self.cloud_pose()
+        return self._set_cloud_pose(
+            CloudPose(
+                azimuth=pose.azimuth + d_azimuth,
+                elevation=max(-1.5, min(1.5, pose.elevation + d_elevation)),
+                zoom=pose.zoom,
+                pan_x=pose.pan_x,
+                pan_z=pose.pan_z,
+            )
+        )
+
+    def cloud_zoom(self, factor: float) -> CloudPose:
+        pose = self.cloud_pose()
+        return self._set_cloud_pose(
+            CloudPose(
+                azimuth=pose.azimuth,
+                elevation=pose.elevation,
+                zoom=max(0.2, min(20.0, pose.zoom * factor)),
+                pan_x=pose.pan_x,
+                pan_z=pose.pan_z,
+            )
+        )
+
+    def cloud_pan(self, dx: float, dz: float) -> CloudPose:
+        pose = self.cloud_pose()
+        return self._set_cloud_pose(
+            CloudPose(
+                azimuth=pose.azimuth,
+                elevation=pose.elevation,
+                zoom=pose.zoom,
+                pan_x=pose.pan_x + dx,
+                pan_z=pose.pan_z + dz,
+            )
+        )
+
+    def cloud_reset(self) -> CloudPose:
+        return self._set_cloud_pose(CloudPose())
+
+    @property
+    def surfaces_visible(self) -> bool:
+        return self._surfaces_visible
+
+    def set_surfaces_visible(self, visible: bool | None) -> None:
+        """Show, hide (or, with None, toggle) the surface layer; re-renders the cloud."""
+        with self._cloud_lock:
+            self._surfaces_visible = (not self._surfaces_visible) if visible is None else visible
+            self._cloud_version += 1
+
+    def shown_surfaces(self, layer: SurfaceLayer) -> SurfaceLayer:
+        return layer if self._surfaces_visible else ()
+
 
 class DemoPlayer:
     """Plays one prepared dataset as demo events (see module docs)."""
@@ -570,12 +981,18 @@ class DemoPlayer:
         with_rtabmap: bool = True,
         stereo: StereoReconstructor | None = None,
         detection_source: DetectionSource | None = None,
+        sam_source: VideoSamDetector | None = None,
+        sam_detector: VideoSamDetector | None = None,
+        sam_streamer: VideoSamStreamer | None = None,
+        sam_prompt: str | None = None,
         rtabmap_mode: str = "live",
         backend_factory: Callable[[], SidecarRtabmapBackend | LiveSlamBackend] | None = None,
         controls: PlaybackControls | None = None,
     ) -> None:
         self._controls = controls if controls is not None else PlaybackControls()
         self._extent: FloorExtent | None = None
+        self._cloud_bounds: tuple[NDArray[np.float32], NDArray[np.float32]] | None = None
+        self._cloud_version = (-1, -1)  # (viewer pose / layers, surfaces) last drawn
         fps = prepared.spec.fps if fps is None else fps
         if fps <= 0:
             raise ValueError("fps must be positive")
@@ -589,6 +1006,13 @@ class DemoPlayer:
         self._with_rtabmap = with_rtabmap
         self._stereo = stereo if stereo is not None else StereoReconstructor()
         self._detection_source = detection_source
+        if sam_source is not None and sam_detector is not None:
+            raise ValueError("pass only one of sam_source and sam_detector")
+        self._sam_source = sam_source if sam_source is not None else sam_detector
+        if self._sam_source is not None and sam_streamer is not None:
+            raise ValueError("pass only one of sam_source and sam_streamer")
+        self._sam_streamer = sam_streamer
+        self._sam_prompt = sam_prompt
         if rtabmap_mode not in ("live", "batch"):
             raise ValueError("rtabmap_mode must be 'live' or 'batch'")
         if with_rtabmap and rtabmap_mode == "batch" and not prepared.has_imu:
@@ -615,13 +1039,40 @@ class DemoPlayer:
             "trajectory_xy": trajectory_xz,
         }
 
-    def _map_event(self, backend: LiveSlamBackend, frame_id: int) -> DemoEvent:
+    def _map_event(
+        self, backend: LiveSlamBackend, frame_id: int, surfaces: SurfaceLayer
+    ) -> DemoEvent:
         cloud = backend.map_cloud()
+        points, colors = cloud_points(cloud)
         trajectory = backend.trajectory()
+        if len(cloud.points):
+            lo = cloud.points.min(axis=0)
+            hi = cloud.points.max(axis=0)
+            self._cloud_bounds = (
+                (lo, hi)
+                if self._cloud_bounds is None
+                else (
+                    np.minimum(self._cloud_bounds[0], lo),
+                    np.maximum(self._cloud_bounds[1], hi),
+                )
+            )
+        bounds = self._cloud_bounds or (
+            np.zeros(3, dtype=np.float32),
+            np.ones(3, dtype=np.float32),
+        )
         return DemoEvent(
             "map",
             {
                 "frame_id": frame_id,
+                "points": points,
+                "point_colors": colors,
+                "cloud_png": render_cloud_view(
+                    cloud.points,
+                    cloud.colors,
+                    self._controls.cloud_pose(),
+                    bounds,
+                    surfaces=self._controls.shown_surfaces(surfaces),
+                ),
                 **self._floor_plan(
                     cloud.points[:, [0, 2]], cloud.colors[:, 0], _floor_plane_trajectory(trajectory)
                 ),
@@ -676,8 +1127,23 @@ class DemoPlayer:
             if self._detection_source is not None
             else None
         )
+        sam_worker = _SamWorker(self._sam_source, self._size) if self._sam_source else None
+        if self._sam_source is not None:
+            self._sam_source.reset(self._sam_prompt)  # a new playback is a new video
+        stream_worker = (
+            _SamStreamWorker(
+                self._sam_streamer,
+                [_display_jpeg_path(prepared, 0, t_ns) for t_ns in timestamps],
+                [(index + 1, t_ns) for index, t_ns in enumerate(timestamps)],
+                self._sam_prompt,
+            )
+            if self._sam_streamer is not None
+            else None
+        )
         live = backend if isinstance(backend, LiveSlamBackend) else None
-        display = _Display(len(timestamps), live, calibration, prepared.spec.depth_stops_m)
+        display = _Display(
+            len(timestamps), live, calibration, prepared.spec.depth_stops_m, self._size
+        )
         last_map_emit = 0.0
         try:
             for index, t_ns in enumerate(timestamps):
@@ -695,6 +1161,8 @@ class DemoPlayer:
                 right_jpeg = _display_jpeg(prepared, 1, t_ns)
                 if worker is not None:
                     worker.submit(index + 1, t_ns, left_jpeg)
+                if sam_worker is not None:
+                    sam_worker.submit(index + 1, t_ns, left_jpeg)
                 if backend is not None:
                     backend.process_frame(
                         StereoFramePair(
@@ -720,14 +1188,20 @@ class DemoPlayer:
                 display.add_frame(held)
                 if worker is not None:
                     display.add_detections(worker.poll())
+                if sam_worker is not None:
+                    display.add_sam(sam_worker.poll())
+                if stream_worker is not None:
+                    display.add_sam(stream_worker.poll())
                 if isinstance(backend, LiveSlamBackend):
                     backend.poll_updates()
                 yield from display.release()
                 if isinstance(backend, LiveSlamBackend):
                     now = time.monotonic()
-                    if now - last_map_emit >= 0.33:
+                    version = (self._controls.cloud_version, display.surfaces.version)
+                    if now - last_map_emit >= 0.33 or version != self._cloud_version:
                         last_map_emit = now
-                        yield self._map_event(backend, index + 1)
+                        self._cloud_version = version
+                        yield self._map_event(backend, index + 1, display.surfaces.layer())
                 # Server-side pacing: one frame interval per frame,
                 # however long processing took — never a catch-up burst.
                 remaining = 1.0 / self._fps - (time.monotonic() - frame_started)
@@ -735,6 +1209,10 @@ class DemoPlayer:
                     time.sleep(remaining)
             if worker is not None:
                 display.add_detections(worker.drain())
+            if sam_worker is not None:
+                display.add_sam(sam_worker.drain())
+            if stream_worker is not None:
+                display.add_sam(stream_worker.drain())
             yield from display.release()
             if backend is not None:
                 yield DemoEvent(
@@ -761,8 +1239,29 @@ class DemoPlayer:
                         )
                         for pose in trajectory
                     )
+                cloud_png = ""
                 if isinstance(backend, LiveSlamBackend):
                     live_cloud = backend.map_cloud()
+                    final_points, final_colors = cloud_points(live_cloud)
+                    final_count = len(live_cloud.points)
+                    if len(live_cloud.points):
+                        lo = live_cloud.points.min(axis=0)
+                        hi = live_cloud.points.max(axis=0)
+                        bounds = (
+                            (lo, hi)
+                            if self._cloud_bounds is None
+                            else (
+                                np.minimum(self._cloud_bounds[0], lo),
+                                np.maximum(self._cloud_bounds[1], hi),
+                            )
+                        )
+                        cloud_png = render_cloud_view(
+                            live_cloud.points,
+                            live_cloud.colors,
+                            self._controls.cloud_pose(),
+                            bounds,
+                            surfaces=self._controls.shown_surfaces(display.surfaces.layer()),
+                        )
                     plan = self._floor_plan(
                         live_cloud.points[:, [0, 2]],
                         live_cloud.colors[:, 0],
@@ -771,6 +1270,14 @@ class DemoPlayer:
                 else:
                     # The batch sidecar's map is z-up (EuRoC base frame).
                     xy = np.array([(p.x, p.y) for p in cloud], np.float32).reshape(-1, 2)
+                    final_points = [[round(p.x, 3), round(p.y, 3), round(p.z, 3)] for p in cloud]
+                    if len(final_points) > MAX_CLOUD_POINTS:
+                        step = len(final_points) / MAX_CLOUD_POINTS
+                        final_points = [
+                            final_points[int(i * step)] for i in range(MAX_CLOUD_POINTS)
+                        ]
+                    final_colors = [[160, 160, 160]] * len(final_points)
+                    final_count = len(cloud)
                     plan = self._floor_plan(
                         xy,
                         np.full(len(xy), 160, np.uint8),
@@ -781,7 +1288,10 @@ class DemoPlayer:
                     {
                         "poses": len(trajectory),
                         "travelled_m": round(travelled, 3),
-                        "cloud_points": len(cloud),
+                        "cloud_points": final_count,
+                        "points": final_points,
+                        "point_colors": final_colors,
+                        "cloud_png": cloud_png,
                         **plan,
                     },
                 )
@@ -789,6 +1299,14 @@ class DemoPlayer:
         finally:
             if worker is not None:
                 worker.close()
+            if sam_worker is not None:
+                sam_worker.close()
+            if stream_worker is not None:
+                stream_worker.close()
+            # The streamer itself outlives one playback (its owner is
+            # the server); only this playback's worker thread stops.
+            if self._sam_source is not None:
+                self._sam_source.close()
             if backend is not None:
                 backend.close()
 
@@ -813,11 +1331,14 @@ class _DemoHttpServer(ThreadingHTTPServer):
     cache_dir: Path
     fetch: Callable[[str, Path], None] | None
     player_options: dict[str, object]
+    sam_enabled: bool
+    sam_prompts: SamPromptPolicy
     stream_lock: threading.Lock
     state_lock: threading.Lock
     prepared: dict[str, PreparedDataset]
     preparations: dict[str, _Preparation]
     current: PlaybackControls | None
+    history_store: RunHistoryStore
 
     def prepared_scene(self, dataset_id: str) -> PreparedDataset | None:
         with self.state_lock:
@@ -828,6 +1349,12 @@ class _DemoHttpServer(ThreadingHTTPServer):
                 with self.state_lock:
                     self.prepared[dataset_id] = found
         return found
+
+    def sam_prompt(self, dataset_id: str, requested: str | None = None) -> str | None:
+        """The concept SAM looks for on this run, or None without SAM."""
+        if not self.sam_enabled:
+            return None
+        return self.sam_prompts.resolve(requested, self.catalog[dataset_id].sam_prompt)
 
     def scene_listing(self) -> dict[str, object]:
         scenes = []
@@ -934,18 +1461,66 @@ def make_demo_server(
     coral_model_dir: Path | None = None,
     coral_model: str = DEFAULT_PROFILE,
     rtabmap_mode: str = "live",
+    sam_model: Path | str | None = None,
+    sam_device: str | None = None,
+    sam_label: str | None = None,
+    sam_source: VideoSamDetector | None = None,
+    sam_detector: VideoSamDetector | None = None,
+    sam_streamer: VideoSamStreamer | None = None,
+    sam_fake: bool = False,
+    history_db: Path | None = None,
+    history_store: RunHistoryStore | None = None,
+    backend_factory: Callable[[], SidecarRtabmapBackend | LiveSlamBackend] | None = None,
 ) -> ThreadingHTTPServer:
     """The demo HTTP server (not yet serving); caller serves/closes it.
 
     Every `catalog` scene (default: the registry) is offered; one not yet
     in `cache_dir` is prepared there the first time it is picked.
     `prepared`, when given, is served as the default scene.
+    `sam_label`, when given, replaces every scene's default SAM prompt.
     """
     specs = list(catalog) if catalog is not None else list(DATASETS.values())
     if prepared is not None and prepared.spec.dataset_id not in {s.dataset_id for s in specs}:
         specs.insert(0, prepared.spec)
     if not specs:
         raise ValueError("the demo needs at least one scene")
+    if sam_source is not None and sam_detector is not None:
+        raise ValueError("pass only one of sam_source and sam_detector")
+    video_sam = sam_source if sam_source is not None else sam_detector
+    if video_sam is not None and sam_streamer is not None:
+        raise ValueError("pass only one of sam_source and sam_streamer")
+    video_streamer = sam_streamer
+    fixed_prompt: str | None = None
+    if sam_fake:
+        if video_sam is not None or video_streamer is not None or sam_device is not None:
+            raise ValueError("sam_fake replaces SAM: pass no other SAM source or device")
+        video_sam = CentredBoxVideoSamDetector(sam_label or "object")
+    if video_sam is None and video_streamer is None and sam_device is not None:
+        # Built eagerly so a missing model or GPU provider fails by
+        # name at startup, not mid-stream. An `.onnx` model runs the
+        # ONNX per-frame adapter; anything else (an HF id such as the
+        # default facebook/sam3.1, a local .pt or its directory) runs
+        # the real SAM 3.1 whole-video streamer on that device.
+        from surmap.survey.sam3_torch import DEFAULT_SAM31_MODEL
+
+        model_spec = str(sam_model) if sam_model is not None else DEFAULT_SAM31_MODEL
+        if model_spec.endswith(".onnx"):
+            from surmap.survey.sam3 import sam3_video_detector
+
+            # The export's concept was fixed when it was exported.
+            fixed_prompt = sam_label or "object"
+            video_sam = sam3_video_detector(Path(model_spec), device=sam_device, label=fixed_prompt)
+        else:
+            from surmap.survey.sam3_torch import sam31_video_streamer
+
+            video_streamer = sam31_video_streamer(
+                model_spec, device=sam_device, prompt=sam_label or "object"
+            )
+    elif video_sam is None and video_streamer is None and sam_model is not None:
+        raise ValueError(
+            "a SAM model without a device does nothing: pass sam_device "
+            "(the launcher's --sam-device, e.g. cuda:0) alongside sam_model"
+        )
     options: dict[str, object] = {
         "fps": fps,
         "max_frames": max_frames,
@@ -955,6 +1530,8 @@ def make_demo_server(
         "detection_source": (
             coral_detection_source(coral_model_dir, coral_model) if coral_model_dir else None
         ),
+        "sam_source": video_sam,
+        "sam_streamer": video_streamer,
     }
     server = _DemoHttpServer((host, port), _DemoHandler)
     server.catalog = {spec.dataset_id: spec for spec in specs}
@@ -966,8 +1543,15 @@ def make_demo_server(
     server.cache_dir = cache_dir or (
         prepared.root.parent if prepared is not None else default_cache_dir()
     )
+    if backend_factory is not None:
+        options["backend_factory"] = backend_factory
     server.fetch = fetch
+    server.history_store = history_store or RunHistoryStore(
+        history_db or (server.cache_dir / "demo-history.db")
+    )
     server.player_options = options
+    server.sam_enabled = video_sam is not None or video_streamer is not None
+    server.sam_prompts = SamPromptPolicy(override=sam_label, fixed=fixed_prompt)
     server.stream_lock = threading.Lock()
     server.state_lock = threading.Lock()
     server.prepared = {prepared.spec.dataset_id: prepared} if prepared is not None else {}
@@ -1006,21 +1590,73 @@ class _DemoHandler(BaseHTTPRequestHandler):
         if url.path == "/datasets":
             self._send_json(200, self.server.scene_listing())
             return
+        if url.path == "/runs":
+            self._send_json(200, {"runs": self.server.history_store.list_runs()})
+            return
+        if url.path.startswith("/runs/"):
+            parts = [part for part in url.path.split("/") if part]
+            store = self.server.history_store
+            if len(parts) == 2:
+                run = store.get_run(parts[1])
+                if run is None:
+                    self._send(404, "text/plain", b"unknown run")
+                else:
+                    self._send_json(200, {**run, "timeline": store.timeline(parts[1])})
+                return
+            if len(parts) == 3 and parts[2] == "snapshot":
+                try:
+                    seq = int(query.get("seq", ["0"])[0])
+                except ValueError:
+                    seq = -1
+                snapshot = store.snapshot_at(parts[1], seq) if seq >= 0 else None
+                if snapshot is None:
+                    self._send(404, "text/plain", b"unknown moment")
+                else:
+                    cloud = snapshot.get("cloud")
+                    if isinstance(cloud, dict) and isinstance(cloud.get("points"), list):
+                        snap_points = np.array(cloud["points"], dtype=np.float32).reshape(-1, 3)
+                        snap_colors = np.array(cloud.get("colors") or [], dtype=np.uint8)
+                        if len(snap_points) and len(snap_colors) == len(snap_points):
+                            live = self.server.current or PlaybackControls()
+                            layer = surface_layer(snapshot.get("surfaces"))
+                            cloud["cloud_png"] = render_cloud_view(
+                                snap_points,
+                                snap_colors.reshape(-1, 3),
+                                live.cloud_pose(),
+                                (snap_points.min(axis=0), snap_points.max(axis=0)),
+                                surfaces=live.shown_surfaces(layer),
+                            )
+                    self._send_json(200, snapshot)
+                return
+            self._send(404, "text/plain", b"not found")
+            return
         if url.path in ("/", "/stream"):
             dataset_id = self._scene(query)
             if dataset_id is None:
                 self._send(404, "text/plain", b"unknown scene")
             elif url.path == "/":
                 spec = self.server.catalog[dataset_id]
+                tuning = _page_tuning(spec)
                 page = PAGE.format(
                     title=html.escape(spec.title),
                     description=html.escape(spec.description),
                     dataset_id=dataset_id,
-                    **_page_tuning(spec),
+                    sam_legend=(
+                        " SAM (video) masks run in the separate pane below, at SAM's own rate."
+                        if self.server.sam_enabled
+                        else ""
+                    ),
+                    sam_pane=sam_pane(
+                        dataset_id,
+                        self.server.sam_prompt(dataset_id, query.get("prompt", [None])[0]),
+                        fixed=self.server.sam_prompts.fixed is not None,
+                        size=spec.display_size,
+                    ),
+                    **tuning,
                 )
                 self._send(200, "text/html; charset=utf-8", page.encode())
             else:
-                self._stream(dataset_id)
+                self._stream(dataset_id, query.get("prompt", [None])[0])
             return
         self._send(404, "text/plain", b"not found")
 
@@ -1036,21 +1672,57 @@ class _DemoHandler(BaseHTTPRequestHandler):
         if url.path == "/control":
             length = int(self.headers.get("Content-Length") or 0)
             try:
-                action = json.loads(self.rfile.read(length) or b"{}").get("action")
+                body = json.loads(self.rfile.read(length) or b"{}")
+                action = body.get("action")
             except (ValueError, AttributeError):
-                action = None
+                body, action = {}, None
             controls = self.server.current
-            if action not in ("pause", "resume"):
-                self._send(400, "text/plain", b"action must be pause or resume")
+            cloud_actions = (
+                "cloud_orbit",
+                "cloud_zoom",
+                "cloud_pan",
+                "cloud_reset",
+                "cloud_surfaces",
+            )
+            if action not in ("pause", "resume", *cloud_actions):
+                self._send(400, "text/plain", b"action must be pause, resume or a cloud_* action")
             elif controls is None:
                 self._send(409, "text/plain", b"nothing is playing")
-            else:
+            elif action in ("pause", "resume"):
                 controls.pause() if action == "pause" else controls.resume()
                 self._send_json(200, {"state": "paused" if controls.paused else "playing"})
+            else:
+                if action == "cloud_orbit":
+                    pose = controls.cloud_orbit(
+                        float(body.get("d_azimuth") or 0.0), float(body.get("d_elevation") or 0.0)
+                    )
+                elif action == "cloud_zoom":
+                    pose = controls.cloud_zoom(float(body.get("factor") or 1.0))
+                elif action == "cloud_pan":
+                    pose = controls.cloud_pan(
+                        float(body.get("dx") or 0.0), float(body.get("dz") or 0.0)
+                    )
+                elif action == "cloud_surfaces":
+                    visible = body.get("visible")
+                    controls.set_surfaces_visible(visible if isinstance(visible, bool) else None)
+                    pose = controls.cloud_pose()
+                else:
+                    pose = controls.cloud_reset()
+                self._send_json(
+                    200,
+                    {
+                        "azimuth": pose.azimuth,
+                        "elevation": pose.elevation,
+                        "zoom": pose.zoom,
+                        "pan_x": pose.pan_x,
+                        "pan_z": pose.pan_z,
+                        "surfaces_visible": controls.surfaces_visible,
+                    },
+                )
             return
         self._send(404, "text/plain", b"not found")
 
-    def _stream(self, dataset_id: str) -> None:
+    def _stream(self, dataset_id: str, requested_prompt: str | None) -> None:
         prepared = self.server.prepared_scene(dataset_id)
         if prepared is None:
             self._send(409, "text/plain", b"scene not downloaded yet; POST /prepare first")
@@ -1067,28 +1739,98 @@ class _DemoHandler(BaseHTTPRequestHandler):
         controls = PlaybackControls()
         with self.server.state_lock:
             self.server.current = controls
+        store = self.server.history_store
+        sam_prompt = self.server.sam_prompt(dataset_id, requested_prompt)
+        title = prepared.spec.title + (f" · SAM: {sam_prompt}" if sam_prompt else "")
+        run_id = store.create_run(dataset_id, title)
+        completed = False
+        last_frame_id = 0
+        last_map: dict[str, object] = {}
         try:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            player = DemoPlayer(prepared, controls=controls, **self.server.player_options)  # type: ignore[arg-type]
+            run_chunk = (
+                f"event: run\ndata: {json.dumps({'run_id': run_id, 'dataset_id': dataset_id})}\n\n"
+            ).encode()
+            self.wfile.write(run_chunk)
+            self.wfile.flush()
+            player = DemoPlayer(
+                prepared,
+                controls=controls,
+                sam_prompt=sam_prompt,
+                **self.server.player_options,  # type: ignore[arg-type]
+            )
             for event in player.events():
                 payload = dict(event.data)
-                if event.kind == "frame":
+                if event.kind in ("frame", "sam") and event.jpeg:
                     payload["image_b64"] = base64.b64encode(event.jpeg).decode()
+                if event.kind == "frame" and event.jpeg:
+                    last_frame_id = int(str(event.data["frame_id"]))
+                    overlay_raw = event.data["detections"]
+                    camera_raw = event.data.get("camera")
+                    store.record_frame(
+                        run_id,
+                        index=int(str(event.data["index"])),
+                        frame_id=last_frame_id,
+                        t_ns=int(str(event.data["t_ns"])),
+                        jpeg=event.jpeg,
+                        overlay=overlay_raw if isinstance(overlay_raw, list) else [],
+                        camera=camera_raw if isinstance(camera_raw, dict) else None,
+                    )
+                elif event.kind == "map":
+                    last_frame_id = int(str(event.data["frame_id"]))
+                    last_map = dict(event.data)
+                    _record_map(store, run_id, event.data, last_frame_id)
+                elif event.kind == "surface":
+                    store.record_surface_event(run_id, event.data)
+                elif event.kind == "detections":
+                    objects_raw = event.data["objects"]
+                    store.record_detections(
+                        run_id,
+                        frame_id=int(str(event.data["frame_id"])),
+                        t_ns=int(str(event.data["t_ns"])),
+                        objects=objects_raw if isinstance(objects_raw, list) else [],
+                    )
+                elif event.kind == "final":
+                    # The final cloud keeps the last map's keyframe/odom stats.
+                    _record_map(store, run_id, {**last_map, **event.data}, last_frame_id)
+                    completed = True
                 chunk = f"event: {event.kind}\ndata: {json.dumps(payload)}\n\n".encode()
                 self.wfile.write(chunk)
                 self.wfile.flush()
+            completed = True
         except (BrokenPipeError, ConnectionResetError):
             pass  # viewer went away; the player's finally tears down
         finally:
+            store.finish_run(run_id, "completed" if completed else "interrupted")
             with self.server.state_lock:
                 if self.server.current is controls:
                     self.server.current = None
             self.server.stream_lock.release()
 
 
+def _record_map(
+    store: RunHistoryStore, run_id: str, data: dict[str, object], frame_id: int
+) -> None:
+    points = data.get("points")
+    colors = data.get("point_colors")
+    trajectory = data.get("trajectory_xy")
+    extent = data.get("extent")
+    store.record_map(
+        run_id,
+        frame_id=frame_id,
+        points=points if isinstance(points, list) else [],
+        colors=colors if isinstance(colors, list) else [],
+        trajectory_xy=trajectory if isinstance(trajectory, list) else [],
+        extent=extent if isinstance(extent, list) else [],
+        cloud_points=int(str(data.get("cloud_points", 0))),
+        keyframes=int(str(data.get("keyframes", 0))),
+        odom_state=str(data.get("odom_state", "")),
+    )
+
+
 def page_title(prepared: PreparedDataset) -> str:
-    """The demo page's heading for `prepared` (used by the launcher log)."""
-    return f"SurMap demo — {prepared.spec.title}"
+    """The test console page's heading for `prepared` (used by the launcher log)."""
+    return f"SurMap Test Console — {prepared.spec.title}"

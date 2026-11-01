@@ -1,4 +1,5 @@
 .venv/
+.env
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -21,3 +22,5 @@ tmp/meta-sam-last-response.json
 
 # Local output of scripts/mission_demo.py
 mission-demo-out/
+.worktrees
+

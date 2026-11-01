@@ -709,7 +709,11 @@ def _append_track(
 
 def _ask(snapshot_path: Path) -> MissionAsk:
     snapshot = read_snapshot(snapshot_path)
-    answer = answer_map_question(_QUESTION, snapshot, snapshot_path=str(snapshot_path))
+    # The mission's own answer stays on the label match: it opens no socket
+    # and adds no unrecorded Meta call to the report's ledger.
+    answer = answer_map_question(
+        _QUESTION, snapshot, snapshot_path=str(snapshot_path), allow_live=False
+    )
     return MissionAsk(
         _QUESTION,
         answer.answer,

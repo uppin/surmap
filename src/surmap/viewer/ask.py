@@ -65,13 +65,15 @@ def answer_map_question(
     snapshot: SemanticMapSnapshot,
     *,
     snapshot_path: str | None = None,
+    allow_live: bool = True,
 ) -> AskAnswer:
     """Answer one map question.
 
     Live Muse Spark Q&A is `surmap.mapqa.answer` when that package
-    imports and `SURMAP_LIVE_META=1`. Any other case uses the label match.
+    imports, `SURMAP_LIVE_META=1`, and `allow_live` is true. Any other
+    case uses the label match.
     """
-    if os.environ.get(_LIVE_META, "").strip() == "1":
+    if allow_live and os.environ.get(_LIVE_META, "").strip() == "1":
         delegated = _delegate_mapqa(question, snapshot_path)
         if delegated is not None:
             return delegated

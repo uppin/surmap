@@ -255,6 +255,7 @@ def test_a_new_viewer_takes_the_stream_over(tmp_path: Path) -> None:
     with a_demo_server(catalog, tmp_path / "cache", fps=1.0) as base:
         first: queue.Queue[str] = queue.Queue()
         threading.Thread(target=stream_kinds, args=(f"{base}/stream", first), daemon=True).start()
+        assert first.get(timeout=10) == "run"  # the persisted run is announced first
         assert first.get(timeout=10) == "frame"
 
         # When a second viewer opens the stream
@@ -262,6 +263,7 @@ def test_a_new_viewer_takes_the_stream_over(tmp_path: Path) -> None:
         threading.Thread(target=stream_kinds, args=(f"{base}/stream", second), daemon=True).start()
 
         # Then the second gets frames and the first stream ends
+        assert second.get(timeout=10) == "run"
         assert second.get(timeout=10) == "frame"
         assert first.get(timeout=10) == "end"
 
@@ -275,6 +277,7 @@ def test_control_pauses_and_resumes_the_running_stream(tmp_path: Path) -> None:
         assert post_json(f"{base}/control", {"action": "pause"})[0] == 409
         events: queue.Queue[str] = queue.Queue()
         threading.Thread(target=stream_kinds, args=(f"{base}/stream", events), daemon=True).start()
+        assert events.get(timeout=10) == "run"  # the persisted run is announced first
         assert events.get(timeout=10) == "frame"
 
         # When it is paused, then resumed

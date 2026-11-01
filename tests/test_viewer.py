@@ -315,7 +315,8 @@ def test_ask_cites_matching_labels_and_their_mask_cloud() -> None:
 def test_live_meta_without_mapqa_stays_on_the_local_match(monkeypatch: pytest.MonkeyPatch) -> None:
     # Given the live flag and no surmap.mapqa package
     monkeypatch.setenv("SURMAP_LIVE_META", "1")
-    monkeypatch.delitem(sys.modules, "surmap.mapqa", raising=False)
+    # (main ships surmap.mapqa, so hide it: a None entry makes the import fail)
+    monkeypatch.setitem(sys.modules, "surmap.mapqa", None)
 
     answer = answer_map_question("car", read_snapshot(FIXTURE))
 

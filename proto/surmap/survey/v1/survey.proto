@@ -239,6 +239,45 @@ message StationResponse {
   SamFrameDetections detections = 1;
 }
 
+// How a region query was answered.
+enum RegionStatus {
+  REGION_STATUS_UNSPECIFIED = 0;
+  REGION_STATUS_OK = 1;
+  // The frame is not (or no longer) in the CM5's frame ring.
+  REGION_STATUS_FRAME_EXPIRED = 2;
+  // Tracking was lost on that frame, so it has no pose.
+  REGION_STATUS_NO_POSE = 3;
+  // Channel not 0/1, fewer than 3 vertices, or a zero image size.
+  REGION_STATUS_INVALID_QUERY = 4;
+}
+
+// A region of interest on one channel of one frame, e.g. a SAM mask.
+message RegionQuery {
+  // Assigned by the requester; every response for it repeats it.
+  int64 query_id = 1;
+  // The frame_id the frame was sent with on StreamSurvey.
+  int64 frame_id = 2;
+  // 0 (left) or 1 (right): the image the polygon was drawn on.
+  int32 channel = 3;
+  // Size of that image, in pixels: the polygon's coordinate space.
+  uint32 width = 4;
+  uint32 height = 5;
+  repeated Point2 polygon = 6;
+}
+
+// Dense stereo points inside one queried region, from that frame only.
+// Large regions arrive in several messages; the last has final set.
+message RegionPoints {
+  int64 query_id = 1;
+  int64 frame_id = 2;
+  int32 channel = 3;
+  RegionStatus status = 4;
+  // Map frame; never accumulated across frames or queries.
+  repeated Point3 points = 5;
+  // True on the last message for this query_id.
+  bool final = 6;
+}
+
 // On-board (CM5): frames and calibration in, designated points and
 // requested video channels out.
 service Cm5SurveyService {
@@ -253,6 +292,12 @@ service Cm5SurveyService {
   // own, slower cadence and may lag the other streams; every message
   // joins to its frame by frame_id. Same input shape as StreamSurvey.
   rpc StreamMovingAreas(stream Cm5Request) returns (stream MovingAreasResponse);
+  // Dense 3D points under a region of interest (a SAM mask): each
+  // query names a frame sent on StreamSurvey, the channel the polygon
+  // was drawn on, and the polygon; each answer comes from that one
+  // frame's stereo pair, in the map frame. Frames stay queryable for
+  // a bounded time; an older one is answered FRAME_EXPIRED.
+  rpc StreamRegionPoints(stream RegionQuery) returns (stream RegionPoints);
 }
 
 // Base station: the same frames in, SAM detections out.

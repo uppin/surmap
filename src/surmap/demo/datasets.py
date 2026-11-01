@@ -114,6 +114,8 @@ class DatasetSpec:
     depth_stops_m: tuple[float, float, float] = (1.0, 3.0, 6.0)
     max_map_depth_m: float = 6.0
     credit: str = ""
+    # The concept SAM looks for unless the page or launcher names another.
+    sam_prompt: str = "object"
 
 
 # The registry. The EuRoC zip is byte-identical between the official
@@ -132,6 +134,7 @@ DATASETS: dict[str, DatasetSpec] = {
             "https://robotics.ethz.ch/~asl-datasets/ijrr_euroc_mav_dataset/"
             "vicon_room/vicon_room_1/V1_01_easy/V1_01_easy.zip"
         ),
+        sam_prompt="box",
     ),
     # KITTI raw, fetched from KITTI's own host and converted locally; never
     # re-hosted (CC BY-NC-SA 3.0, academic use — credited on the page).
@@ -161,6 +164,7 @@ DATASETS: dict[str, DatasetSpec] = {
             "KITTI raw data, Geiger, Lenz, Stiller and Urtasun (KIT and Toyota Technological "
             "Institute), CC BY-NC-SA 3.0, for academic use — cvlibs.net/datasets/kitti"
         ),
+        sam_prompt="car",
     ),
     # NTU VIRAL, a UAV flight over a campus plaza: the ROS 1 bag is read
     # once into the EuRoC layout. The zip has no calibration; it is the
@@ -264,6 +268,7 @@ DATASETS: dict[str, DatasetSpec] = {
             "NTU VIRAL dataset, Nguyen, Yuan, Cao, Yang, Nguyen and Xie (NTU Singapore), "
             "CC BY-NC-SA 4.0, for non-commercial use — ntu-aris.github.io/ntu_viral_dataset"
         ),
+        sam_prompt="person",
     ),
 }
 

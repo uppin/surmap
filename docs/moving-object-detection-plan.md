@@ -1,6 +1,8 @@
 # Moving-object detection — development plan
 
-Status: planning (on PR #17, with the design). This plan turns
+Status: PR #17 merged on 2026-10-27. This file is the plan as written.
+Later nodes were not re-checked one by one for this note. The code
+under `src/surmap/moving/` is what landed. This plan turns
 [moving-object-detection-design.md](moving-object-detection-design.md)
 into a stack of implementable PRs. The design doc is the PRD for
 every feature node below — no node writes a second PRD; each
@@ -13,8 +15,8 @@ at n2's wrap (n1's wrap carries the design only).
 ## Stack shape
 
 - **Stack slug:** `moving-objects` · 6 nodes · trunk `main`.
-- **n1 is PR #17 itself** — the design + this plan, already open
-  on branch `docs/moving-object-design`. It is the stack's
+- **n1 is PR #17 itself** — the design + this plan, merged
+  2026-10-27 from branch `docs/moving-object-design`. It is the stack's
   bottom node, not a precondition outside the stack: n2 is
   based on its branch, and when #17 merges, GitHub restacks n2
   onto `main`.
@@ -83,7 +85,7 @@ Owned surface:
   range, frame_id, t_ns) as the stage-1 output / stage-2 input
   port. No differencing logic here.
 - `src/surmap/moving/snippets.py` — snippet registry (traffic,
-  fire, swarm, KITTI stereo), oracle loaders/converters
+  fire, many small fast movers (`scene` value `swarm`), KITTI stereo), oracle loaders/converters
   (VisDrone MOT, Purdue `refined_gt`, mask→polygon, KITTI
   labels), and the EuRoC-layout staging converter for KITTI
   (calib `P2/P3` → `sensor.yaml`).
@@ -168,7 +170,7 @@ n3 green**; that sequencing is the wave-2 placement).
 Red tests first: verdict-transition tests including the
 decelerating-car no-flap case; LK identity/re-seed tests;
 single-filter lag test; snippet acceptance — fire (zero
-graduations, deciding statistic recorded), swarm (area cap,
+graduations, deciding statistic recorded), many small fast movers (`scene` `swarm`: area cap,
 envelope misses counted), traffic (graduated | annotated,
 identity-correct | graduated).
 

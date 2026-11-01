@@ -26,8 +26,10 @@ from surmap.demo.datasets import (
     scaled_sensor_yaml,
 )
 from surmap.demo.server import (
+    DemoEvent,
     DemoPlayer,
     FloorExtent,
+    cloud_points,
     depth_colour,
     make_demo_server,
     project_overlay,
@@ -269,7 +271,7 @@ def test_demo_server_serves_page_health_and_stream_then_closes(tmp_path: Path) -
         with urllib.request.urlopen(f"http://{host}:{port}/health", timeout=5) as response:
             assert json.loads(response.read()) == {"status": "ok"}
         with urllib.request.urlopen(f"http://{host}:{port}/", timeout=5) as response:
-            assert b"SurMap demo" in response.read()
+            assert b"SurMap Test Console" in response.read()
         with urllib.request.urlopen(f"http://{host}:{port}/stream", timeout=10) as response:
             body = response.read().decode()
         assert body.count("event: frame") == 2
@@ -511,3 +513,227 @@ def test_without_rtabmap_frames_carry_no_camera(tmp_path: Path) -> None:
 
     # Then there is no camera pose to show
     assert frame.data["camera"] is None
+
+
+def test_sam_video_events_arrive_for_each_frame_in_order(tmp_path: Path) -> None:
+    # Given a SAM video source that segments every frame of the stream
+    from surmap.survey.sam import InMemoryVideoSamDetector, SamDetection
+
+    sam = InMemoryVideoSamDetector(
+        (SamDetection("car", 0.9, (1.0, 2.0, 30.0, 40.0), ((1.0, 2.0), (30.0, 40.0))),)
+    )
+    player = DemoPlayer(_prepared_tiny(tmp_path), fps=1000.0, with_rtabmap=False, sam_source=sam)
+
+    # When playback runs to the end
+    events = list(player.events())
+
+    # Then each frame has its own SAM event, in frame order, after the
+    # first frame (SAM runs off the frame loop, like the Coral stream)
+    kinds = [event.kind for event in events]
+    assert kinds.count("frame") == 2 and kinds.count("sam") == 2
+    assert kinds.index("sam") > kinds.index("frame")
+    sam_events = [event for event in events if event.kind == "sam"]
+    assert [event.data["frame_id"] for event in sam_events] == [1, 2]
+    objects = sam_events[0].data["objects"]
+    assert isinstance(objects, list)
+    assert objects[0]["label"] == "car"
+    assert objects[0]["track_id"] == 1
+    assert objects[0]["mask_polygon"] == [[1.0, 2.0], [30.0, 40.0]]
+    assert [frame.frame_id for frame in sam.frames] == [1, 2]
+
+
+def test_the_page_shows_sam_masks_when_sam_is_enabled(tmp_path: Path) -> None:
+    # Given a demo server with a SAM video source
+    from surmap.survey.sam import InMemoryVideoSamDetector, SamDetection
+
+    sam = InMemoryVideoSamDetector(
+        (SamDetection("car", 0.9, (1.0, 2.0, 30.0, 40.0), ((1.0, 2.0), (30.0, 40.0))),)
+    )
+    server = make_demo_server(
+        _prepared_tiny(tmp_path), host="127.0.0.1", port=0, with_rtabmap=False, sam_source=sam
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = str(server.server_address[0]), int(server.server_address[1])
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/", timeout=5) as response:
+            page = response.read().decode()
+        with urllib.request.urlopen(f"http://{host}:{port}/stream", timeout=10) as response:
+            body = response.read().decode()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    # Then the page has a separate SAM pane and the stream sends
+    # SAM results per frame, each with its frame image
+    assert "addEventListener('sam'" in page
+    assert "SAM (video)" in page
+    assert 'id="sam-view"' in page
+    assert body.count("event: sam") == 2
+    assert '"track_id": 1' in body
+
+
+def test_sam_streamer_events_arrive_for_each_frame_in_order(tmp_path: Path) -> None:
+    # Given a whole-video SAM streamer (SAM 3.1's native session mode)
+    from surmap.survey.sam import InMemoryVideoSamStreamer, SamDetection
+
+    streamer = InMemoryVideoSamStreamer(
+        (SamDetection("car", 0.9, (1.0, 2.0, 30.0, 40.0), ((1.0, 2.0), (30.0, 40.0))),)
+    )
+    player = DemoPlayer(
+        _prepared_tiny(tmp_path), fps=1000.0, with_rtabmap=False, sam_streamer=streamer
+    )
+
+    # When playback runs to the end
+    events = list(player.events())
+
+    # Then each played frame has its own SAM event, in frame order
+    sam_events = [event for event in events if event.kind == "sam"]
+    assert [event.data["frame_id"] for event in sam_events] == [1, 2]
+    assert len(streamer.videos) == 1 and len(streamer.videos[0]) == 2
+
+
+def test_frames_play_at_their_own_rate_without_waiting_for_sam(tmp_path: Path) -> None:
+    # Given a SAM streamer that holds its results until released
+    # (SAM propagates much slower than playback, on its own pane)
+    from collections.abc import Iterator, Sequence
+
+    from surmap.survey.sam import SamDetection
+
+    class BlockingStreamer:
+        def __init__(self) -> None:
+            self.release = threading.Event()
+
+        def stream(
+            self, frame_paths: Sequence[Path], prompt: str | None = None
+        ) -> Iterator[tuple[int, tuple[SamDetection, ...]]]:
+            assert self.release.wait(timeout=15), "streamer was never released"
+            for index in range(len(frame_paths)):
+                yield index, (SamDetection("car", 0.9, (1.0, 2.0, 30.0, 40.0), ((1.0, 2.0),)),)
+
+        def close(self) -> None:
+            pass
+
+    streamer = BlockingStreamer()
+    player = DemoPlayer(
+        _prepared_tiny(tmp_path), fps=1000.0, with_rtabmap=False, sam_streamer=streamer
+    )
+
+    # When playback runs, the main frames are shown without waiting for SAM
+    events: list[DemoEvent] = []
+    collector = threading.Thread(target=lambda: events.extend(player.events()), daemon=True)
+    collector.start()
+    collector.join(timeout=2.0)
+    assert [event.kind for event in events] == ["frame", "frame"]
+
+    # And once SAM delivers, its events arrive on their own cadence,
+    # each carrying the frame image for the separate SAM pane
+    streamer.release.set()
+    collector.join(timeout=15)
+    sam_events = [event for event in events if event.kind == "sam"]
+    assert [event.data["frame_id"] for event in sam_events] == [1, 2]
+    assert all(event.jpeg for event in sam_events)
+
+
+def test_the_demo_cli_names_the_sam_gpu_device_argument() -> None:
+    # Given / When the launcher is asked for its help
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "scripts/demo.py", "--help"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    # Then the optional SAM device argument is listed, defaulting to
+    # the real SAM 3.1 checkpoint, with --sam-model as an override
+    assert result.returncode == 0
+    assert "--sam-device" in result.stdout
+    assert "--sam-model" in result.stdout
+    assert "facebook/sam3.1" in result.stdout
+
+    # And a model without a device is a clear command-line error, not a silent no-op
+    missing = subprocess.run(
+        [sys.executable, "scripts/demo.py", "--sam-model", "facebook/sam3.1"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert missing.returncode == 2
+    assert "--sam-device" in missing.stderr
+
+
+def test_the_cloud_view_is_the_floor_plan_renderer_from_a_ptz_pose() -> None:
+    # Given a coloured surface cloud
+    from surmap.demo.server import CloudPose, render_cloud_view
+
+    rng = np.random.default_rng(3)
+    points = rng.uniform(-5.0, 5.0, size=(2_000, 3)).astype(np.float32)
+    colors = rng.integers(0, 255, size=(2_000, 3), dtype=np.uint8)
+    bounds = (points.min(axis=0), points.max(axis=0))
+
+    # When the same cloud is rendered from the same pose twice, and
+    # once from a different azimuth
+    first = render_cloud_view(points, colors, CloudPose(), bounds)
+    again = render_cloud_view(points, colors, CloudPose(), bounds)
+    turned = render_cloud_view(points, colors, CloudPose(azimuth=1.2), bounds)
+
+    # Then rendering is deterministic (no sampling churn), the pose
+    # changes the picture, and points actually land in it
+    assert first == again
+    assert turned != first
+    import base64
+    import io
+
+    from PIL import Image
+
+    image = Image.open(io.BytesIO(base64.b64decode(first)))
+    assert image.size == (880, 440)
+    pixels = np.array(image.convert("RGB")).reshape(-1, 3)
+    assert int(np.count_nonzero(np.any(pixels != (10, 12, 14), axis=1))) > 500
+
+
+def test_map_events_carry_the_server_rendered_cloud_view(tmp_path: Path) -> None:
+    # Given a live backend with a coloured cloud
+    fake = FakeLiveBackend(odometry={1: _odom_with(), 2: _odom_with()})
+    player = DemoPlayer(_prepared_tiny(tmp_path), fps=1000.0, backend_factory=lambda: fake)
+
+    # When playback runs
+    map_event = next(event for event in player.events() if event.kind == "map")
+
+    # Then the map event carries the cloud rendered server-side from
+    # the shared PTZ pose, like the floor plan image it also carries
+    assert isinstance(map_event.data["cloud_png"], str)
+    assert len(str(map_event.data["cloud_png"])) > 100
+
+
+def test_the_sampled_cloud_is_dense_and_stable_as_the_map_grows() -> None:
+    # Given a map cloud well above the draw cap, on surfaces (as
+    # RTAB-Map clouds lie on walls/floors, not through volumes)
+    rng = np.random.default_rng(7)
+
+    def surface(count: int) -> NDArray[np.float32]:
+        directions = rng.normal(size=(count, 3))
+        directions /= np.linalg.norm(directions, axis=1, keepdims=True)
+        return (directions * 8.0).astype(np.float32)
+
+    base = surface(30_000)
+    colors = np.full((30_000, 3), 128, dtype=np.uint8)
+    grown = np.concatenate([base, surface(1_000)])
+    grown_colors = np.full((31_000, 3), 128, dtype=np.uint8)
+
+    # When the cloud is sampled, then sampled again after it grows
+    first, _ = cloud_points(MapCloud(base, colors), max_points=1_000)
+    second, _ = cloud_points(MapCloud(grown, grown_colors), max_points=1_000)
+
+    # Then the cap is fully used in both samples (dense, not voxel-
+    # starved), and at least 90% of the drawn points survive the
+    # growth: the 3D pixels must not jump between map updates
+    assert len(first) == len(second) == 1_000
+    kept = {tuple(point) for point in first} & {tuple(point) for point in second}
+    assert len(kept) >= 900

@@ -13,9 +13,10 @@ import struct
 from dataclasses import dataclass
 from typing import TypeAlias
 
+from surmap.slam.regions import RegionQuery, RegionResult, RegionStatus
 from surmap.types import Pose, Vec3
 
-PROTOCOL_VERSION = 3
+PROTOCOL_VERSION = 4
 
 # Colour given to a keyframe point the sidecar sent without one.
 NEUTRAL_GREY = (160, 160, 160)
@@ -90,7 +91,7 @@ class ErrorUpdate:
 
 
 MapUpdate: TypeAlias = OdomUpdate | KeyframeUpdate | GraphUpdate
-ServerMessage: TypeAlias = Ready | MapUpdate | ErrorUpdate
+ServerMessage: TypeAlias = Ready | MapUpdate | ErrorUpdate | RegionResult
 
 
 def _frame(obj: dict[str, object], payload: bytes = b"") -> bytes:
@@ -105,6 +106,7 @@ def encode_hello(
     height: int,
     params: dict[str, str],
     max_depth_m: float = 30.0,
+    region_buffer_s: float = 10.0,
     min_disparity_px: float = 2.0,
 ) -> bytes:
     return _frame(
@@ -118,6 +120,8 @@ def encode_hello(
             "params": params,
             # Keyframe points beyond this depth are too noisy to map.
             "max_depth_m": max_depth_m,
+            # Frames stay queryable for regions this long (by t_ns).
+            "region_buffer_s": region_buffer_s,
             # Points with a smaller disparity are dropped as well.
             "min_disparity_px": min_disparity_px,
         }
@@ -144,6 +148,21 @@ def encode_pair(
             "encoding": encoding,
         },
         payload,
+    )
+
+
+def encode_region(query: RegionQuery) -> bytes:
+    """A region request: header only, answered by one `region` line."""
+    return _frame(
+        {
+            "type": "region",
+            "query_id": query.query_id,
+            "frame_id": query.frame_id,
+            "channel": query.channel,
+            "width": query.width,
+            "height": query.height,
+            "polygon": [[x, y] for x, y in query.polygon],
+        }
     )
 
 
@@ -248,6 +267,22 @@ def decode_server_line(line: str | bytes) -> ServerMessage:
             ms=float(ms_raw),
             keypoints=_keypoints(obj.get("keypoints", [])),
             map_pose=None if obj.get("map_pose") is None else _pose(obj["map_pose"]),
+        )
+    if kind == "region":
+        status_raw = _req(obj, "status")
+        try:
+            status = RegionStatus(status_raw)
+        except ValueError as exc:
+            raise ProtocolError(f"unknown region status {status_raw!r}") from exc
+        points_raw = _req(obj, "points")
+        if not isinstance(points_raw, list):
+            raise ProtocolError("points must be a list")
+        return RegionResult(
+            query_id=_int(obj, "query_id"),
+            frame_id=_int(obj, "frame_id"),
+            channel=_int(obj, "channel"),
+            status=status,
+            points=tuple(Vec3(*_numbers(entry, 3, "region point")) for entry in points_raw),
         )
     if kind == "keyframe":
         points_raw = _req(obj, "points_local")
