@@ -18,14 +18,25 @@ def test_both_survey_services_are_bidirectional_streams() -> None:
     for name in ("surmap.survey.v1.Cm5SurveyService", "surmap.survey.v1.StationSamService"):
         service = pool.FindServiceByName(name)
         for method in service.methods:
-            assert method.client_streaming
-            assert method.server_streaming
+            if method.name == "GetCapabilities":
+                # The one unary call: what this server was built with
+                assert not method.client_streaming
+                assert not method.server_streaming
+            else:
+                assert method.client_streaming
+                assert method.server_streaming
     cm5 = pool.FindServiceByName("surmap.survey.v1.Cm5SurveyService")
-    assert [method.name for method in cm5.methods] == [
-        "StreamSurvey",
+    assert sorted(method.name for method in cm5.methods) == [
+        "GetCapabilities",
         "StreamDetections",
         "StreamMovingAreas",
         "StreamRegionPoints",
+        "StreamSurvey",
+    ]
+    station = pool.FindServiceByName("surmap.survey.v1.StationSamService")
+    assert sorted(method.name for method in station.methods) == [
+        "GetCapabilities",
+        "StreamAnalysis",
     ]
 
 

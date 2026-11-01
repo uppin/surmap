@@ -122,6 +122,9 @@ class AnalysisGate:
 class InMemorySamDetector:
     """`SamDetector` adapter for tests and simulation: configured output."""
 
+    provider = "InMemorySamDetector"
+    device = "cpu"
+
     def __init__(self, detections: tuple[SamDetection, ...] = ()) -> None:
         self._detections = detections
         self.frames: list[RawFrame] = []

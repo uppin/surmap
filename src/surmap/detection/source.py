@@ -58,6 +58,15 @@ class CoralDetectionSource:
         """The detector's model artifact name (profile twin in use)."""
         return self._detector.model_id
 
+    @property
+    def provider(self) -> str:
+        return "Coral"
+
+    @property
+    def device(self) -> str:
+        """Where inference runs: the Edge TPU for `_edgetpu` artifacts."""
+        return "edgetpu" if "_edgetpu" in self._detector.model_id else "cpu"
+
     def detect_tracked(self, frame_id: int, rgb: NDArray[np.uint8]) -> tuple[TrackedDetection, ...]:
         with self._lock:
             detections = self._detector.detect(rgb, frame_id)
@@ -71,7 +80,7 @@ class CoralObjectPointSource:
         self,
         source: DetectionSource,
         stereo: StereoSource,
-        rig: StereoRig,
+        rig: StereoRig | None = None,
         *,
         min_points: int = 3,
     ) -> None:
@@ -80,8 +89,14 @@ class CoralObjectPointSource:
         self._rig = rig
         self._min_points = min_points
 
-    def points_for_pair(self, pair: StereoFramePair, pose: Pose | None) -> tuple[ObjectPoints, ...]:
-        if pose is None or not pair.left_data or not pair.right_data:
+    def points_for_pair(
+        self, pair: StereoFramePair, pose: Pose | None, rig: StereoRig | None = None
+    ) -> tuple[ObjectPoints, ...]:
+        # The rig usually arrives with the pair: the CM5 process learns
+        # it from each survey stream's config, not at startup. A rig
+        # fixed at construction remains as the fallback.
+        rig = rig if rig is not None else self._rig
+        if pose is None or rig is None or not pair.left_data or not pair.right_data:
             return ()
         try:
             # Dimensions are taken from the decoded image itself.
@@ -89,14 +104,13 @@ class CoralObjectPointSource:
             camera_points = self._stereo.reconstruct(
                 FrameImage(rgb.shape[1], rgb.shape[0], "mjpeg", pair.left_data),
                 FrameImage(rgb.shape[1], rgb.shape[0], "mjpeg", pair.right_data),
-                self._rig,
+                rig,
             )
         except ValueError:
             return ()
         tracked = self._source.detect_tracked(pair.frame_id, rgb)
         if not tracked or not camera_points:
             return ()
-        rig = self._rig
         projected: list[tuple[float, float, Vec3]] = []
         for point in camera_points:
             if point.z <= 0.05:

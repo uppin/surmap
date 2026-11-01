@@ -131,6 +131,74 @@ def test_process_frame_never_blocks_when_process_stalled() -> None:
         backend.close()
 
 
+def test_native_backend_launches_the_binary_directly_without_docker(tmp_path: Path) -> None:
+    # Given a natively built surmap-rtabmap-stream binary (CM5: no Docker)
+    binary = tmp_path / "surmap-rtabmap-stream"
+    binary.write_bytes(b"fake")
+    binary.chmod(0o755)
+    holder: list[FakeProcess] = []
+
+    def factory(argv: list[str]) -> FakeProcess:
+        proc = FakeProcess(argv)
+        holder.append(proc)
+        return proc
+
+    # When the streaming backend is built for native launch
+    backend = StreamingRtabmapBackend(
+        cam0_yaml=CAM_YAML,
+        cam1_yaml=CAM_YAML,
+        process_factory=factory,
+        native_binary=binary,
+    )
+    try:
+        # Then the child is the binary itself — no docker, no container
+        assert holder[0].argv[0] == str(binary)
+        assert "docker" not in holder[0].argv
+        assert backend.live_containers == ()
+    finally:
+        backend.close()
+    assert holder[0].terminated
+
+
+def test_native_backend_never_computes_the_docker_image_tag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given a native binary, and an image-tag computation that would
+    # fail (an installed package cannot resolve the repo's deploy dir)
+    binary = tmp_path / "surmap-rtabmap-stream"
+    binary.write_bytes(b"fake")
+    binary.chmod(0o755)
+
+    def no_tag() -> str:
+        raise AssertionError("native launch must not compute a Docker image tag")
+
+    monkeypatch.setattr("surmap.slam.streaming.stream_image_tag", no_tag)
+
+    # When the backend is built for native launch
+    backend = StreamingRtabmapBackend(
+        cam0_yaml=CAM_YAML,
+        cam1_yaml=CAM_YAML,
+        process_factory=lambda argv: FakeProcess(argv),
+        native_binary=binary,
+    )
+
+    # Then it starts without ever touching the Docker image path
+    backend.close()
+
+
+def test_native_backend_names_the_build_step_when_the_binary_is_missing(tmp_path: Path) -> None:
+    # Given a native binary path that was never built
+    # When the streaming backend is built for native launch
+    # Then it fails by name, with the build step that produces the binary
+    with pytest.raises(SidecarError, match="build_rtabmap_native"):
+        StreamingRtabmapBackend(
+            cam0_yaml=CAM_YAML,
+            cam1_yaml=CAM_YAML,
+            process_factory=lambda argv: FakeProcess(argv),
+            native_binary=tmp_path / "surmap-rtabmap-stream",
+        )
+
+
 def test_poll_updates_ordering_and_snapshot_replaces_after_graph() -> None:
     holder: list[FakeProcess] = []
     backend = _backend(holder)

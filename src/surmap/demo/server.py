@@ -23,6 +23,7 @@ import io
 import itertools
 import json
 import math
+import queue
 import threading
 import time
 from collections import deque
@@ -54,7 +55,9 @@ from surmap.demo.datasets import (
 from surmap.demo.events import DemoEvent as DemoEvent
 from surmap.demo.events import RegionPlacer, SurfaceAssigner, sam_event, surface_layer
 from surmap.demo.history import RunHistoryStore
-from surmap.demo.page import PAGE
+from surmap.demo.page import CM5_ASIDE, PAGE, RTAB_STAT
+from surmap.demo.remote import RemoteCm5Backend, RemoteDetectionSource, RemoteSamDetector
+from surmap.demo.remote import fetch_capabilities as _fetch_capabilities
 from surmap.demo.sam_prompt import SamPromptPolicy, sam_pane
 from surmap.demo.surface_render import MOVING_ALPHA as MOVING_ALPHA
 from surmap.demo.surface_render import MOVING_COLOUR as MOVING_COLOUR
@@ -868,6 +871,28 @@ class _Display:
         return ([], None) if given_up else None
 
 
+class _RateMeter:
+    """Sliding-window rate of a cumulative counter, per second.
+
+    Fed (time, counter) samples — here RTAB-Map's newest odometry
+    frame — it reports how fast the counter advanced over the last
+    window, decaying to zero when the counter stalls.
+    """
+
+    def __init__(self, window_s: float = 10.0) -> None:
+        self._window_s = window_s
+        self._samples: deque[tuple[float, int]] = deque()
+
+    def sample(self, now: float, count: int) -> float:
+        self._samples.append((now, count))
+        cutoff = now - self._window_s
+        while len(self._samples) >= 2 and self._samples[1][0] <= cutoff:
+            self._samples.popleft()
+        first_at, first_count = self._samples[0]
+        span = now - first_at
+        return (count - first_count) / span if span > 0.25 else 0.0
+
+
 class PlaybackControls:
     """Pause, resume or cancel one player from another thread."""
 
@@ -988,11 +1013,14 @@ class DemoPlayer:
         rtabmap_mode: str = "live",
         backend_factory: Callable[[], SidecarRtabmapBackend | LiveSlamBackend] | None = None,
         controls: PlaybackControls | None = None,
+        cm5_host: str | None = None,
     ) -> None:
+        self._cm5_host = cm5_host
         self._controls = controls if controls is not None else PlaybackControls()
         self._extent: FloorExtent | None = None
         self._cloud_bounds: tuple[NDArray[np.float32], NDArray[np.float32]] | None = None
         self._cloud_version = (-1, -1)  # (viewer pose / layers, surfaces) last drawn
+        self._rtab_rate = _RateMeter()
         fps = prepared.spec.fps if fps is None else fps
         if fps <= 0:
             raise ValueError("fps must be positive")
@@ -1078,6 +1106,9 @@ class DemoPlayer:
                 ),
                 "cloud_points": len(cloud.points),
                 "keyframes": backend.keyframe_count,
+                "rtab_fps": round(
+                    self._rtab_rate.sample(time.monotonic(), backend.last_odom_frame), 1
+                ),
                 "odom_state": backend.odom_state,
                 "lag_frames": max(0, frame_id - backend.last_odom_frame),
                 "dropped_frames": backend.dropped_frames,
@@ -1091,6 +1122,15 @@ class DemoPlayer:
     def _backend(self) -> SidecarRtabmapBackend | LiveSlamBackend:
         if self._backend_factory is not None:
             return self._backend_factory()
+        if self._cm5_host is not None:
+            options = stream_backend_options(self._prepared)
+            return RemoteCm5Backend(
+                self._cm5_host,
+                self._calibration,
+                self._size,
+                cam_yamls=(options.cam0_yaml, options.cam1_yaml),
+                max_depth_m=options.max_depth_m,
+            )
         prepared = self._prepared
         options = stream_backend_options(prepared)
         if self._rtabmap_mode == "live":
@@ -1331,14 +1371,46 @@ class _DemoHttpServer(ThreadingHTTPServer):
     cache_dir: Path
     fetch: Callable[[str, Path], None] | None
     player_options: dict[str, object]
+    cm5_enabled: bool
+    station_execution: str
     sam_enabled: bool
     sam_prompts: SamPromptPolicy
-    stream_lock: threading.Lock
+    run_lock: threading.Lock
     state_lock: threading.Lock
     prepared: dict[str, PreparedDataset]
     preparations: dict[str, _Preparation]
     current: PlaybackControls | None
+    run_engine: _RunEngine | None
     history_store: RunHistoryStore
+
+    def start_run(self, prepared: PreparedDataset, sam_prompt: str | None) -> _RunEngine | None:
+        """Start a fresh server-side run, taking over from the current one.
+
+        The previous run (if any) is cancelled and its subscribers
+        ended; None when it does not stop in time.
+        """
+        with self.run_lock:
+            with self.state_lock:
+                previous = self.run_engine
+            if previous is not None and not previous.done.is_set():
+                previous.stop()
+                if not previous.join(TAKEOVER_TIMEOUT_S):
+                    return None
+            engine = _RunEngine(self, prepared, sam_prompt)
+            engine.start()
+            with self.state_lock:
+                self.run_engine = engine
+                if not engine.done.is_set():
+                    self.current = engine.controls
+            if engine.done.is_set():
+                # It finished before it could be registered; its own
+                # cleanup already ran, so unregister it again.
+                with self.state_lock:
+                    if self.run_engine is engine:
+                        self.run_engine = None
+                    if self.current is engine.controls:
+                        self.current = None
+            return engine
 
     def prepared_scene(self, dataset_id: str) -> PreparedDataset | None:
         with self.state_lock:
@@ -1471,6 +1543,8 @@ def make_demo_server(
     history_db: Path | None = None,
     history_store: RunHistoryStore | None = None,
     backend_factory: Callable[[], SidecarRtabmapBackend | LiveSlamBackend] | None = None,
+    cm5_host: str | None = None,
+    station_host: str | None = None,
 ) -> ThreadingHTTPServer:
     """The demo HTTP server (not yet serving); caller serves/closes it.
 
@@ -1521,11 +1595,21 @@ def make_demo_server(
             "a SAM model without a device does nothing: pass sam_device "
             "(the launcher's --sam-device, e.g. cuda:0) alongside sam_model"
         )
+    if cm5_host is not None and coral_model_dir is not None:
+        raise ValueError("cm5_host replaces local Coral: pass no coral model dir")
+    if station_host is not None and (
+        video_sam is not None or video_streamer is not None or sam_device is not None
+    ):
+        raise ValueError("station_host replaces local SAM: pass no other SAM source or device")
+    cm5_caps = _fetch_capabilities(cm5_host, "Cm5SurveyService") if cm5_host else None
+    station_caps = _fetch_capabilities(station_host, "StationSamService") if station_host else None
+    if station_host is not None and station_caps is not None and station_caps.sam_analysis:
+        video_sam = RemoteSamDetector(station_host)
     options: dict[str, object] = {
         "fps": fps,
         "max_frames": max_frames,
         "start_index": start_index,
-        "with_rtabmap": with_rtabmap,
+        "with_rtabmap": with_rtabmap and (cm5_host is None or cm5_caps is not None),
         "rtabmap_mode": rtabmap_mode,
         "detection_source": (
             coral_detection_source(coral_model_dir, coral_model) if coral_model_dir else None
@@ -1533,6 +1617,10 @@ def make_demo_server(
         "sam_source": video_sam,
         "sam_streamer": video_streamer,
     }
+    if cm5_host is not None:
+        options["cm5_host"] = cm5_host
+        if cm5_caps is not None and cm5_caps.detections:
+            options["detection_source"] = RemoteDetectionSource(cm5_host)
     server = _DemoHttpServer((host, port), _DemoHandler)
     server.catalog = {spec.dataset_id: spec for spec in specs}
     server.default_dataset = default_dataset or (
@@ -1550,14 +1638,181 @@ def make_demo_server(
         history_db or (server.cache_dir / "demo-history.db")
     )
     server.player_options = options
+    server.cm5_enabled = cm5_host is None or cm5_caps is not None
+    station_execution = ""
+    if station_caps is not None and station_caps.sam_analysis:
+        device = station_caps.device
+        kind = (
+            "GPU"
+            if device.lower().startswith("cuda") or "cuda" in station_caps.provider.lower()
+            else "CPU"
+        )
+        detail = f"{station_caps.provider} · {device}" if device else station_caps.provider
+        station_execution = f"{kind} · {detail}" if detail else kind
+    server.station_execution = station_execution
     server.sam_enabled = video_sam is not None or video_streamer is not None
     server.sam_prompts = SamPromptPolicy(override=sam_label, fixed=fixed_prompt)
-    server.stream_lock = threading.Lock()
+    server.run_lock = threading.Lock()
     server.state_lock = threading.Lock()
     server.prepared = {prepared.spec.dataset_id: prepared} if prepared is not None else {}
     server.preparations = {}
     server.current = None
+    server.run_engine = None
     return server
+
+
+class _RunEngine:
+    """One scene's server-side playback.
+
+    The player runs in this engine's own thread: it exchanges frames
+    with the CM5/Station servers and records the run's history there,
+    never inside a browser's request. Browsers subscribe to the
+    events it publishes and only render them; publishing drops
+    intermediates for a subscriber that falls behind, so a slow or
+    vanished client cannot slow the server-side exchange.
+    """
+
+    def __init__(
+        self, server: _DemoHttpServer, prepared: PreparedDataset, sam_prompt: str | None
+    ) -> None:
+        self._server = server
+        self._prepared = prepared
+        self.dataset_id = prepared.spec.dataset_id
+        self.sam_prompt = sam_prompt
+        self.controls = PlaybackControls()
+        self.run_id = ""
+        self.done = threading.Event()
+        self._lock = threading.Lock()
+        self._subscribers: set[queue.Queue[DemoEvent | None]] = set()
+        self._latest: dict[str, DemoEvent] = {}
+        self._thread = threading.Thread(target=self._play, daemon=True)
+
+    def start(self) -> None:
+        store = self._server.history_store
+        title = self._prepared.spec.title + (
+            f" · SAM: {self.sam_prompt}" if self.sam_prompt else ""
+        )
+        self.run_id = store.create_run(self.dataset_id, title)
+        self._latest["run"] = DemoEvent(
+            "run", {"run_id": self.run_id, "dataset_id": self.dataset_id}
+        )
+        self._thread.start()
+
+    def subscribe(self) -> queue.Queue[DemoEvent | None]:
+        """A new renderer's queue, preloaded with the current state."""
+        subscriber: queue.Queue[DemoEvent | None] = queue.Queue(maxsize=512)
+        with self._lock:
+            self._subscribers.add(subscriber)
+            for kind in ("run", "status", "frame", "map", "sam", "final"):
+                if kind in self._latest:
+                    subscriber.put_nowait(self._latest[kind])
+            if self.done.is_set():
+                subscriber.put_nowait(None)
+        return subscriber
+
+    def unsubscribe(self, subscriber: queue.Queue[DemoEvent | None]) -> None:
+        with self._lock:
+            self._subscribers.discard(subscriber)
+
+    def stop(self) -> None:
+        """Takeover: cancel playback and end every subscription."""
+        self.controls.cancel()
+        self._finish_subscribers()
+
+    def join(self, timeout: float) -> bool:
+        if self._thread.ident is None:
+            return True  # created but never started: nothing to stop
+        self._thread.join(timeout)
+        return not self._thread.is_alive()
+
+    @staticmethod
+    def _offer(subscriber: queue.Queue[DemoEvent | None], event: DemoEvent | None) -> None:
+        try:
+            subscriber.put_nowait(event)
+            return
+        except queue.Full:
+            pass
+        try:
+            subscriber.get_nowait()  # drop the stalest rendered state
+        except queue.Empty:
+            pass
+        try:
+            subscriber.put_nowait(event)
+        except queue.Full:
+            pass
+
+    def _publish(self, event: DemoEvent) -> None:
+        with self._lock:
+            if event.kind != "run":
+                self._latest[event.kind] = event
+            for subscriber in self._subscribers:
+                self._offer(subscriber, event)
+
+    def _finish_subscribers(self) -> None:
+        with self._lock:
+            subscribers = list(self._subscribers)
+            self._subscribers.clear()
+        for subscriber in subscribers:
+            self._offer(subscriber, None)
+
+    def _play(self) -> None:
+        server = self._server
+        store = server.history_store
+        completed = False
+        last_frame_id = 0
+        last_map: dict[str, object] = {}
+        try:
+            player = DemoPlayer(
+                self._prepared,
+                controls=self.controls,
+                sam_prompt=self.sam_prompt,
+                **server.player_options,  # type: ignore[arg-type]
+            )
+            for event in player.events():
+                if event.kind == "frame" and event.jpeg:
+                    last_frame_id = int(str(event.data["frame_id"]))
+                    overlay_raw = event.data["detections"]
+                    camera_raw = event.data.get("camera")
+                    store.record_frame(
+                        self.run_id,
+                        index=int(str(event.data["index"])),
+                        frame_id=last_frame_id,
+                        t_ns=int(str(event.data["t_ns"])),
+                        jpeg=event.jpeg,
+                        overlay=overlay_raw if isinstance(overlay_raw, list) else [],
+                        camera=camera_raw if isinstance(camera_raw, dict) else None,
+                    )
+                elif event.kind == "map":
+                    last_frame_id = int(str(event.data["frame_id"]))
+                    last_map = dict(event.data)
+                    _record_map(store, self.run_id, event.data, last_frame_id)
+                elif event.kind == "surface":
+                    store.record_surface_event(self.run_id, event.data)
+                elif event.kind == "detections":
+                    objects_raw = event.data["objects"]
+                    store.record_detections(
+                        self.run_id,
+                        frame_id=int(str(event.data["frame_id"])),
+                        t_ns=int(str(event.data["t_ns"])),
+                        objects=objects_raw if isinstance(objects_raw, list) else [],
+                    )
+                elif event.kind == "final":
+                    # The final cloud keeps the last map's keyframe/odom stats.
+                    _record_map(store, self.run_id, {**last_map, **event.data}, last_frame_id)
+                    completed = True
+                self._publish(event)
+            completed = True
+        except Exception:
+            completed = False
+        finally:
+            store.finish_run(self.run_id, "completed" if completed else "interrupted")
+            self.done.set()
+            self._finish_subscribers()
+            with server.state_lock:
+                if server.run_engine is self:
+                    server.run_engine = None
+                if server.current is self.controls:
+                    server.current = None
 
 
 class _DemoHandler(BaseHTTPRequestHandler):
@@ -1646,11 +1901,14 @@ class _DemoHandler(BaseHTTPRequestHandler):
                         if self.server.sam_enabled
                         else ""
                     ),
+                    cm5_aside=CM5_ASIDE if self.server.cm5_enabled else "",
+                    rtab_stat=RTAB_STAT if self.server.cm5_enabled else "",
                     sam_pane=sam_pane(
                         dataset_id,
                         self.server.sam_prompt(dataset_id, query.get("prompt", [None])[0]),
                         fixed=self.server.sam_prompts.fixed is not None,
                         size=spec.display_size,
+                        execution=self.server.station_execution,
                     ),
                     **tuning,
                 )
@@ -1727,88 +1985,36 @@ class _DemoHandler(BaseHTTPRequestHandler):
         if prepared is None:
             self._send(409, "text/plain", b"scene not downloaded yet; POST /prepare first")
             return
-        # The newest viewer takes over: stop the running player (its
-        # finally tears the sidecar down), then wait for the lock.
-        with self.server.state_lock:
-            previous = self.server.current
-        if previous is not None:
-            previous.cancel()
-        if not self.server.stream_lock.acquire(timeout=TAKEOVER_TIMEOUT_S):
+        # The run lives server-side (see _RunEngine); this connection
+        # only renders what it publishes. The newest viewer takes the
+        # run over: the previous engine is cancelled and its
+        # subscribers ended.
+        engine = self.server.start_run(
+            prepared, self.server.sam_prompt(dataset_id, requested_prompt)
+        )
+        if engine is None:
             self._send(409, "text/plain", b"the running demo stream did not stop")
             return
-        controls = PlaybackControls()
-        with self.server.state_lock:
-            self.server.current = controls
-        store = self.server.history_store
-        sam_prompt = self.server.sam_prompt(dataset_id, requested_prompt)
-        title = prepared.spec.title + (f" · SAM: {sam_prompt}" if sam_prompt else "")
-        run_id = store.create_run(dataset_id, title)
-        completed = False
-        last_frame_id = 0
-        last_map: dict[str, object] = {}
+        subscriber = engine.subscribe()
         try:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            run_chunk = (
-                f"event: run\ndata: {json.dumps({'run_id': run_id, 'dataset_id': dataset_id})}\n\n"
-            ).encode()
-            self.wfile.write(run_chunk)
-            self.wfile.flush()
-            player = DemoPlayer(
-                prepared,
-                controls=controls,
-                sam_prompt=sam_prompt,
-                **self.server.player_options,  # type: ignore[arg-type]
-            )
-            for event in player.events():
+            while True:
+                event = subscriber.get()
+                if event is None:
+                    break
                 payload = dict(event.data)
                 if event.kind in ("frame", "sam") and event.jpeg:
                     payload["image_b64"] = base64.b64encode(event.jpeg).decode()
-                if event.kind == "frame" and event.jpeg:
-                    last_frame_id = int(str(event.data["frame_id"]))
-                    overlay_raw = event.data["detections"]
-                    camera_raw = event.data.get("camera")
-                    store.record_frame(
-                        run_id,
-                        index=int(str(event.data["index"])),
-                        frame_id=last_frame_id,
-                        t_ns=int(str(event.data["t_ns"])),
-                        jpeg=event.jpeg,
-                        overlay=overlay_raw if isinstance(overlay_raw, list) else [],
-                        camera=camera_raw if isinstance(camera_raw, dict) else None,
-                    )
-                elif event.kind == "map":
-                    last_frame_id = int(str(event.data["frame_id"]))
-                    last_map = dict(event.data)
-                    _record_map(store, run_id, event.data, last_frame_id)
-                elif event.kind == "surface":
-                    store.record_surface_event(run_id, event.data)
-                elif event.kind == "detections":
-                    objects_raw = event.data["objects"]
-                    store.record_detections(
-                        run_id,
-                        frame_id=int(str(event.data["frame_id"])),
-                        t_ns=int(str(event.data["t_ns"])),
-                        objects=objects_raw if isinstance(objects_raw, list) else [],
-                    )
-                elif event.kind == "final":
-                    # The final cloud keeps the last map's keyframe/odom stats.
-                    _record_map(store, run_id, {**last_map, **event.data}, last_frame_id)
-                    completed = True
                 chunk = f"event: {event.kind}\ndata: {json.dumps(payload)}\n\n".encode()
                 self.wfile.write(chunk)
                 self.wfile.flush()
-            completed = True
         except (BrokenPipeError, ConnectionResetError):
-            pass  # viewer went away; the player's finally tears down
+            pass  # viewer went away; the run carries on server-side
         finally:
-            store.finish_run(run_id, "completed" if completed else "interrupted")
-            with self.server.state_lock:
-                if self.server.current is controls:
-                    self.server.current = None
-            self.server.stream_lock.release()
+            engine.unsubscribe(subscriber)
 
 
 def _record_map(

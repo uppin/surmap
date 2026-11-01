@@ -206,3 +206,28 @@ def test_the_cm5_live_mode_starts_the_streaming_sidecar_at_the_frame_size(
     assert (hello["width"], hello["height"]) == (376, 240)
     assert "resolution: [376, 240]" in str(hello["cam0_yaml"])
     assert isinstance(backend, RegionPointSource)
+
+
+def test_the_cm5_live_mode_can_launch_the_sidecar_natively_without_docker(
+    tmp_path: Path,
+) -> None:
+    # Given a EuRoC-layout calibration dir and a native stream binary
+    for camera in ("cam0", "cam1"):
+        (tmp_path / "mav0" / camera).mkdir(parents=True)
+        (tmp_path / "mav0" / camera / "sensor.yaml").write_text(CAM0_YAML, encoding="utf-8")
+    binary = tmp_path / "surmap-rtabmap-stream"
+    binary.write_bytes(b"fake")
+    binary.chmod(0o755)
+    started: list[FakeProcess] = []
+
+    def factory(argv: list[str]) -> FakeProcess:
+        started.append(FakeProcess(argv))
+        return started[-1]
+
+    # When the CM5's live backend is built for native launch
+    backend = streaming_backend(tmp_path, (376, 240), process_factory=factory, native_binary=binary)
+    backend.close()
+
+    # Then the child process is the binary itself, with no Docker
+    assert started[0].argv[0] == str(binary)
+    assert "docker" not in started[0].argv

@@ -78,6 +78,9 @@ async def test_station_segments_each_frame_through_the_real_runtime() -> None:
     responses = [survey_pb2.StationResponse.FromString(p) for p in payloads]
     frames = [r.detections for r in responses]
     assert [f.frame_id for f in frames] == [1, 2, 3, 4, 5, 6]
+    # Every response names the execution that produced it: this run is
+    # the fake model on the CPU provider
+    assert {(f.provider, f.device) for f in frames} == {("CPUExecutionProvider", "cpu")}
     x_mins = []
     for frame in frames:
         (detection,) = frame.detections
