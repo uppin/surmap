@@ -122,6 +122,21 @@ def main(argv: list[str] | None = None) -> int:
         "region's dense 3D points show on the 3D pane without a GPU",
     )
     parser.add_argument(
+        "--cm5-host",
+        default=None,
+        metavar="HOST:PORT",
+        help="remote CM5 survey server (e.g. 10.88.77.14:8080): RTAB-Map "
+        "and Coral detections come from it instead of running locally; "
+        "panes for features it does not report stay hidden",
+    )
+    parser.add_argument(
+        "--station-host",
+        default=None,
+        metavar="HOST:PORT",
+        help="remote station SAM server (e.g. 127.0.0.1:8081): SAM "
+        "detections come from it instead of running locally",
+    )
+    parser.add_argument(
         "--history-db",
         type=Path,
         default=None,
@@ -158,6 +173,12 @@ def main(argv: list[str] | None = None) -> int:
     coral_dir = args.coral_model_dir
     if coral_dir is None and os.environ.get("SURMAP_CORAL_MODEL_DIR"):
         coral_dir = Path(os.environ["SURMAP_CORAL_MODEL_DIR"])
+    if args.cm5_host is not None and coral_dir is not None:
+        parser.error("--cm5-host replaces local Coral: drop --coral-model-dir")
+    if args.station_host is not None and (
+        args.sam_device is not None or args.sam_model is not None or args.sam_fake
+    ):
+        parser.error("--station-host replaces local SAM: drop --sam-device/--sam-model/--sam-fake")
     # Nothing is downloaded here: a scene is fetched into the cache the
     # first time it is picked on the page (with progress shown there).
     server = make_demo_server(
@@ -177,6 +198,8 @@ def main(argv: list[str] | None = None) -> int:
         sam_label=args.sam_label,
         sam_fake=args.sam_fake,
         history_db=args.history_db,
+        cm5_host=args.cm5_host,
+        station_host=args.station_host,
     )
     host, port = server.server_address[:2]
     if args.sam_fake:

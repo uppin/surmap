@@ -30,11 +30,23 @@ class SamPromptPolicy:
         return asked or self.override or scene_default
 
 
-def sam_pane(dataset_id: str, prompt: str | None, *, fixed: bool, size: tuple[int, int]) -> str:
+def sam_pane(
+    dataset_id: str,
+    prompt: str | None,
+    *,
+    fixed: bool,
+    size: tuple[int, int],
+    execution: str = "",
+) -> str:
     """The SAM pane: the prompt form (read-only when fixed) and its view."""
     if prompt is None:
         return ""
     width, height = size
+    status = (
+        f"SAM ({execution}): waiting for the first result…"
+        if execution
+        else "SAM: waiting for the first result…"
+    )
     editable = (
         'readonly title="fixed by the ONNX export">'
         if fixed
@@ -48,6 +60,5 @@ def sam_pane(dataset_id: str, prompt: str | None, *, fixed: bool, size: tuple[in
         f'<input id="sam-prompt" name="prompt" maxlength="{MAX_SAM_PROMPT_CHARS}" '
         f'value="{html.escape(prompt)}" {editable}</form>'
         f'<canvas id="sam-view" width="{width}" height="{height}"></canvas>'
-        '<p class="legend" id="sam-status">SAM: waiting for '
-        "the first result…</p></div>"
+        f'<p class="legend" id="sam-status">{html.escape(status)}</p></div>'
     )
