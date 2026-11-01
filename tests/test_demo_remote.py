@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from surmap.demo.datasets import DATASETS, PreparedDataset, load_calibration
+from surmap.demo.datasets import DATASETS, DemoCalibration, PreparedDataset, load_calibration
 from surmap.demo.remote import (
     RemoteCm5Backend,
     RemoteDetectionSource,
@@ -151,6 +151,15 @@ async def test_the_remote_sam_detector_tracks_the_stations_detections() -> None:
             source.close()
 
 
+def _calibration() -> DemoCalibration:
+    """A EuRoC-like calibration at display size, without the fixture.
+
+    The stub-server tests only need plausible numbers on the wire;
+    the real fixture under tests/fixtures is not in git.
+    """
+    return DemoCalibration(229.33, 228.65, 183.61, 124.19, 0.11007, 376, 240)
+
+
 async def test_the_remote_backend_receives_odometry_and_live_points_before_flush() -> None:
     from surmap.slam.base import FrameResult
     from surmap.slam.stream_protocol import KeyframeUpdate, Keypoint, OdomUpdate, Rectification
@@ -198,9 +207,7 @@ async def test_the_remote_backend_receives_odometry_and_live_points_before_flush
         def close(self) -> None:
             pass
 
-    calibration = load_calibration(PreparedDataset(DATASETS["euroc-v1-01-easy"], EUROC, ())).scaled(
-        376, 240
-    )
+    calibration = _calibration()
     async with running_server(build_description(slam=StubSlam(), use_stereo=False)) as address:
         backend = RemoteCm5Backend(address, calibration, (376, 240))
         try:
@@ -284,9 +291,7 @@ async def test_each_survey_stream_gets_its_own_slam_built_from_the_stream_config
         built.append(slam)
         return slam
 
-    calibration = load_calibration(PreparedDataset(DATASETS["euroc-v1-01-easy"], EUROC, ())).scaled(
-        376, 240
-    )
+    calibration = _calibration()
     async with running_server(build_description(slam_factory=factory, use_stereo=False)) as address:  # type: ignore[arg-type]
 
         async def play_one() -> list[tuple[float, ...]]:
@@ -324,9 +329,7 @@ async def test_a_shared_slam_never_leaks_its_previous_map_or_odometry_into_a_str
 
     # Given one shared SLAM backend that already holds a previous
     # run's map point and odometry for frame 1 (under another t_ns)
-    calibration = load_calibration(PreparedDataset(DATASETS["euroc-v1-01-easy"], EUROC, ())).scaled(
-        376, 240
-    )
+    calibration = _calibration()
     async with running_server(
         build_description(slam=_stub_slam(9.0, odom_t_ns=999, pre_mapped=True), use_stereo=False)  # type: ignore[arg-type]
     ) as address:
@@ -379,9 +382,7 @@ async def test_a_keyframe_emits_at_most_the_stored_point_cap_placed_by_its_pose(
         def close(self) -> None:
             pass
 
-    calibration = load_calibration(PreparedDataset(DATASETS["euroc-v1-01-easy"], EUROC, ())).scaled(
-        376, 240
-    )
+    calibration = _calibration()
     async with running_server(
         build_description(slam=BigKeyframeSlam(), use_stereo=False)
     ) as address:
