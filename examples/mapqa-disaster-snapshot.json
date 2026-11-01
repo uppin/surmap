@@ -1,0 +1,130 @@
+{
+  "schema": "surmap.semantic_map_snapshot.v1",
+  "origin": {
+    "t_ns": 1000000000,
+    "lat": 37.0,
+    "lon": -122.0,
+    "alt": 12.0,
+    "accuracy_m": 3.0
+  },
+  "landmarks": [
+    {
+      "id": "1",
+      "xyz": {
+        "x": 18,
+        "y": 24,
+        "z": 0
+      },
+      "lat": 37.000215594682,
+      "lon": -121.99979753465823,
+      "alt": 12.0,
+      "label": "collapsed building",
+      "description": "Three-storey civilian apartment block. The south wall has fallen into the courtyard.",
+      "model_id": "surmap.demo",
+      "motion": "static",
+      "t_ns": 1100000000,
+      "anchor_t_ns": 1000000000,
+      "offset_ns": 100000000,
+      "observations": [
+        {
+          "t_ns": 1100000000,
+          "xyz": {
+            "x": 18,
+            "y": 24,
+            "z": 0
+          }
+        }
+      ],
+      "mask_points": null
+    },
+    {
+      "id": "2",
+      "xyz": {
+        "x": -8,
+        "y": 6,
+        "z": 0
+      },
+      "lat": 37.0000538986705,
+      "lon": -122.00008998459634,
+      "alt": 12.0,
+      "label": "blocked road",
+      "description": "Rubble across the access street. Ambulances cannot pass.",
+      "model_id": "surmap.demo",
+      "motion": "static",
+      "t_ns": 1200000000,
+      "anchor_t_ns": 1000000000,
+      "offset_ns": 200000000,
+      "observations": [
+        {
+          "t_ns": 1200000000,
+          "xyz": {
+            "x": -8,
+            "y": 6,
+            "z": 0
+          }
+        }
+      ],
+      "mask_points": null
+    },
+    {
+      "id": "4",
+      "xyz": {
+        "x": 30,
+        "y": -4,
+        "z": 0
+      },
+      "lat": 36.999964067553,
+      "lon": -121.9996625577637,
+      "alt": 12.0,
+      "label": "vehicle",
+      "description": "White civilian van stopped at the curb, clear of the rubble.",
+      "model_id": "surmap.demo",
+      "motion": "static",
+      "t_ns": 1150000000,
+      "anchor_t_ns": 1000000000,
+      "offset_ns": 150000000,
+      "observations": [
+        {
+          "t_ns": 1150000000,
+          "xyz": {
+            "x": 30,
+            "y": -4,
+            "z": 0
+          }
+        }
+      ],
+      "mask_points": null
+    }
+  ],
+  "dynamic": [
+    {
+      "id": "3",
+      "xyz": {
+        "x": 18.4,
+        "y": 24.2,
+        "z": 9.5
+      },
+      "lat": 37.000217391304346,
+      "lon": -121.99979303542841,
+      "alt": 21.5,
+      "label": "person",
+      "description": "A person is on the remaining roof section of the collapsed apartment block and is waving.",
+      "model_id": "surmap.demo",
+      "motion": "moving",
+      "t_ns": 1300000000,
+      "anchor_t_ns": 1000000000,
+      "offset_ns": 300000000,
+      "observations": [
+        {
+          "t_ns": 1300000000,
+          "xyz": {
+            "x": 18.4,
+            "y": 24.2,
+            "z": 9.5
+          }
+        }
+      ],
+      "mask_points": null
+    }
+  ]
+}

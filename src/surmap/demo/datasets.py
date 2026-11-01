@@ -114,6 +114,8 @@ class DatasetSpec:
     depth_stops_m: tuple[float, float, float] = (1.0, 3.0, 6.0)
     max_map_depth_m: float = 6.0
     credit: str = ""
+    # The concept SAM looks for unless the page or launcher names another.
+    sam_prompt: str = "object"
 
 
 # The registry. The EuRoC zip is byte-identical between the official
@@ -132,6 +134,7 @@ DATASETS: dict[str, DatasetSpec] = {
             "https://robotics.ethz.ch/~asl-datasets/ijrr_euroc_mav_dataset/"
             "vicon_room/vicon_room_1/V1_01_easy/V1_01_easy.zip"
         ),
+        sam_prompt="box",
     ),
     # KITTI raw, fetched from KITTI's own host and converted locally; never
     # re-hosted (CC BY-NC-SA 3.0, academic use — credited on the page).
@@ -161,6 +164,7 @@ DATASETS: dict[str, DatasetSpec] = {
             "KITTI raw data, Geiger, Lenz, Stiller and Urtasun (KIT and Toyota Technological "
             "Institute), CC BY-NC-SA 3.0, for academic use — cvlibs.net/datasets/kitti"
         ),
+        sam_prompt="car",
     ),
     # NTU VIRAL, a UAV flight over a campus plaza: the ROS 1 bag is read
     # once into the EuRoC layout. The zip has no calibration; it is the
@@ -264,6 +268,7 @@ DATASETS: dict[str, DatasetSpec] = {
             "NTU VIRAL dataset, Nguyen, Yuan, Cao, Yang, Nguyen and Xie (NTU Singapore), "
             "CC BY-NC-SA 4.0, for non-commercial use — ntu-aris.github.io/ntu_viral_dataset"
         ),
+        sam_prompt="person",
     ),
 }
 
@@ -639,14 +644,32 @@ def _fetch_verified(
     report(PrepareProgress("verifying", 1, 1))
 
 
+def _write_text_atomically(path: Path, text: str) -> None:
+    """Replace `path` with `text`. Readers see the old file or the whole new one."""
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(text, encoding="utf-8")
+    temporary.replace(path)
+
+
 def cached_dataset(spec: DatasetSpec, cache_dir: Path) -> PreparedDataset | None:
     """`spec` as already prepared in the cache, or None; never downloads."""
     root = cache_dir / spec.dataset_id
     manifest_path = root / "manifest.json"
     if not manifest_path.is_file():
         return None
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    timestamps = tuple(int(value) for value in manifest["frame_timestamps_ns"])
+    try:
+        loaded: object = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(loaded, dict):
+            return None
+        manifest = cast(dict[str, object], loaded)
+        raw_timestamps = manifest["frame_timestamps_ns"]
+        if not isinstance(raw_timestamps, list):
+            return None
+        timestamps = tuple(int(value) for value in raw_timestamps)
+    except (OSError, json.JSONDecodeError, UnicodeError, KeyError, TypeError, ValueError):
+        # A prepare writes the manifest by rename. A reader that still
+        # sees an empty or partial file treats the scene as not ready.
+        return None
     return PreparedDataset(spec, root, timestamps) if timestamps else None
 
 
@@ -714,7 +737,7 @@ def ensure_dataset(
         "frame_count": len(timestamps),
         "frame_timestamps_ns": list(timestamps),
     }
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    _write_text_atomically(manifest_path, json.dumps(manifest, indent=2) + "\n")
     log(f"dataset {spec.dataset_id}: ready ({len(timestamps)} pairs)")
     report(PrepareProgress("ready", 1, 1))
     return PreparedDataset(spec, root, timestamps)

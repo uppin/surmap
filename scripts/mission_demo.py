@@ -7,13 +7,19 @@ not launch Gazebo and it does not call Meta, Baseten, or Modal.
     uv run python scripts/mission_demo.py
     uv run python scripts/mission_demo.py --no-viewer
 
-Live calls the services whose flags are already set
-(``SURMAP_LIVE_META``, ``SURMAP_LIVE_BASETEN``, ``SURMAP_LIVE_MODAL``)
-and reads keys only inside those clients. ``--sam-route modal`` keeps
-SAM on Modal while Meta still writes the scene note. Pass a capture
-directory. This process does not arm PX4.
+Live with ``SURMAP_LIVE_META=1`` and ``MODEL_API_KEY`` calls Meta SAM
+3.1, Muse Spark labels, and the Muse Spark scene note. Baseten and
+Modal are optional fallbacks when that Meta flag is unset
+(``SURMAP_LIVE_BASETEN``, ``SURMAP_LIVE_MODAL``). Keys are read only
+inside those clients. ``--sam-route modal`` (with ``SURMAP_LIVE_MODAL=1``)
+moves only SAM to Modal; Meta SAM stays the default. Pass a capture
+directory. This process does not enable PX4 motors.
 
+    export SURMAP_LIVE_META=1
+    export MODEL_API_KEY='your-key'
     uv run python scripts/mission_demo.py --live --capture ~/sitl-runs/disaster-01
+    uv run python scripts/mission_demo.py --live --capture ~/sitl-runs/disaster-01 \\
+        --max-depth-m 30 --min-disparity-px 2
 
 The viewer listens on http://127.0.0.1:8770/ . See docs/mission-demo.md.
 """
@@ -43,14 +49,26 @@ def main(argv: list[str] | None = None) -> int:
         "--sam-route",
         choices=("meta", "modal"),
         default=None,
-        help="SAM adapter. Default: modal when SURMAP_LIVE_MODAL=1, otherwise meta. "
-        "The scene note stays on Meta.",
+        help="pin the SAM adapter. Default: Meta when SURMAP_LIVE_META=1, "
+        "otherwise Modal. Labels and the scene note do not follow it.",
     )
     parser.add_argument("--output", type=Path, default=Path("mission-demo-out"))
     parser.add_argument("--report", type=Path, default=None, help="copy of the impact JSON")
     parser.add_argument("--no-viewer", action="store_true")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8770)
+    parser.add_argument(
+        "--max-depth-m",
+        type=float,
+        default=None,
+        help="sidecar depth cap in metres (default 30, or $SURMAP_MAX_DEPTH_M)",
+    )
+    parser.add_argument(
+        "--min-disparity-px",
+        type=float,
+        default=None,
+        help="drop points below this disparity (default 2, or $SURMAP_MIN_DISPARITY_PX)",
+    )
     args = parser.parse_args(argv)
     if args.live and args.offline:
         print("Pass only one of --live and --offline.", file=sys.stderr)
@@ -63,7 +81,13 @@ def main(argv: list[str] | None = None) -> int:
 
                 resolve_live_session(None)
                 return 2
-            result = run_live_mission(args.output, capture, sam_route=args.sam_route)
+            result = run_live_mission(
+                args.output,
+                capture,
+                max_depth_m=args.max_depth_m,
+                min_disparity_px=args.min_disparity_px,
+                sam_route=args.sam_route,
+            )
         else:
             result = run_offline_mission(args.output)
     except MissionConfigError as exc:
@@ -106,13 +130,21 @@ def _number(value: object, unit: str) -> str:
 def _serve(snapshot_path: Path, report_path: Path, host: str, port: int) -> int:
     report = json.loads(report_path.read_text(encoding="utf-8"))
     impact = report if isinstance(report, dict) else None
-    server = make_viewer_server(
+    try:
+        server = make_viewer_server(
         lambda: MissionReplay(snapshot_path),
         host=host,
         port=port,
         fps=1.0,
         impact=impact,
     )
+    except OSError as exc:
+        print(
+            f"Viewer cannot listen on {host}:{port} ({exc}). "
+            "Stop the other viewer or pass --port.",
+            file=sys.stderr,
+        )
+        return 1
     bound_host, bound_port = server.server_address[:2]
     shown = "127.0.0.1" if bound_host in ("0.0.0.0", "") else bound_host
     print(f"Viewer: http://{shown}:{bound_port}/  (Ctrl+C to stop)")

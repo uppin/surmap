@@ -328,11 +328,19 @@ def _observation(raw: dict[object, object], line_no: int) -> RouteObservation:
         score = mask.get("score")
         if not isinstance(label, str):
             raise ValueError(f"{where} mask {index} label must be text")
-        if isinstance(score, bool) or not isinstance(score, int | float):
-            raise ValueError(f"{where} mask {index} score must be a number")
+        if score is not None and (isinstance(score, bool) or not isinstance(score, int | float)):
+            raise ValueError(f"{where} mask {index} score must be a number or null")
         track = mask.get("track_id")
         track_id = track if isinstance(track, int) and not isinstance(track, bool) else None
-        detections.append(SamDetection(label, float(score), box, polygon, track_id))
+        detections.append(
+            SamDetection(
+                label,
+                None if score is None else float(score),
+                box,
+                polygon,
+                track_id,
+            )
+        )
         mask_id = mask.get("mask_id")
         mask_ids.append(
             mask_id if isinstance(mask_id, str) and mask_id else f"{body.get('frame_id')}-{index}"

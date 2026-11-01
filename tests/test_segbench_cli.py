@@ -19,6 +19,7 @@ from surmap.segbench.routes import (
     RouteObservation,
     UsageCapture,
     meta_route,
+    read_detections_jsonl,
     write_detections_jsonl,
 )
 from surmap.survey.sam import RawFrame, SamDetection
@@ -263,6 +264,31 @@ def test_meta_route_refuses_before_the_detector_when_the_flag_is_unset(
 
     # Then the detector was not called
     assert seen == []
+
+
+def test_a_meta_detection_without_a_score_survives_the_jsonl_round_trip(tmp_path: Path) -> None:
+    # Given a recorded observation whose SAM mask has no confidence, as hosted Meta SAM may return
+    base = _observation()
+    observation = RouteObservation(
+        frame_id=base.frame_id,
+        t_ns=base.t_ns,
+        source="meta",
+        model_id="sam-3.1",
+        latency_s=base.latency_s,
+        input_tokens=base.input_tokens,
+        output_tokens=base.output_tokens,
+        gpu_seconds=base.gpu_seconds,
+        detections=(SamDetection("person", None, (0.0, 0.0, 8.0, 8.0), _POLYGON, None),),
+        mask_ids=base.mask_ids,
+    )
+    path = tmp_path / "detections.jsonl"
+
+    # When it is written and read back
+    write_detections_jsonl(path, (observation,))
+    (read,) = read_detections_jsonl(path)
+
+    # Then the missing score stays missing instead of being refused
+    assert read.detections[0].score is None
 
 
 def _write_bench(bench: Path) -> Path:

@@ -1,6 +1,8 @@
 // surmap-rtabmap-stream: live stereo -> RTAB-Map over stdin/stdout.
 // Protocol: 4-byte LE length + JSON header (+ length-prefixed payloads
 // for pairs) in; JSON lines out. Stereo only: no IMU, no wheel odom.
+// Region requests (v4) are answered from a time-bounded ring of the
+// rectified pairs: dense SGBM depth under a polygon, in the map frame.
 #include <rtabmap/core/Odometry.h>
 #include <rtabmap/core/OdometryInfo.h>
 #include <rtabmap/core/Rtabmap.h>
@@ -19,6 +21,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <deque>
 #include <iostream>
 #include <map>
 #include <string>
@@ -151,6 +154,144 @@ std::string poseJson(const rtabmap::Transform& t) {
   return buf;
 }
 
+// The [[x,y],...] array after "polygon", flattened to x0,y0,x1,y1,...
+std::vector<double> jsonPolygon(const std::string& json) {
+  std::vector<double> values;
+  size_t pos = json.find("\"polygon\"");
+  if (pos == std::string::npos) return values;
+  size_t open = json.find('[', pos);
+  if (open == std::string::npos) return values;
+  int depth = 0;
+  size_t close = open;
+  for (; close < json.size(); ++close) {
+    if (json[close] == '[') ++depth;
+    else if (json[close] == ']' && --depth == 0) break;
+  }
+  const char* p = json.c_str() + open;
+  const char* end = json.c_str() + close;
+  while (p < end) {
+    char* next = nullptr;
+    double v = std::strtod(p, &next);
+    if (next == p) { ++p; } else { values.push_back(v); p = next; }
+  }
+  return values;
+}
+
+// One recent frame, kept so a region on it can still be answered.
+struct RingFrame {
+  long frameId;
+  long tNs;
+  cv::Mat left, right;          // rectified, 8-bit grey
+  rtabmap::Transform odomPose;  // null when tracking was lost
+};
+
+// Per-channel rectification: raw pixels -> rectified pixels, and back-projection.
+struct RegionRig {
+  cv::Mat K[2], D[2], R[2], P[2];
+  double baseline;
+  cv::Size size;
+  float maxDepth;
+};
+
+std::string regionLine(long queryId, long frameId, int channel, const char* status,
+                       const std::vector<cv::Point3f>& points) {
+  std::string line;
+  line.reserve(96 + points.size() * 30);
+  char buf[160];
+  std::snprintf(buf, sizeof(buf),
+                "{\"type\":\"region\",\"query_id\":%ld,\"frame_id\":%ld,\"channel\":%d,"
+                "\"status\":\"%s\",\"points\":[",
+                queryId, frameId, channel, status);
+  line += buf;
+  for (size_t i = 0; i < points.size(); ++i) {
+    std::snprintf(buf, sizeof(buf), "%s[%.4f,%.4f,%.4f]", i ? "," : "", points[i].x, points[i].y,
+                  points[i].z);
+    line += buf;
+  }
+  line += "]}";
+  return line;
+}
+
+// Every point dense stereo recovers inside the polygon, on that frame only.
+std::string answerRegion(const std::string& header, const std::deque<RingFrame>& ring,
+                         const RegionRig& rig, const rtabmap::Rtabmap& slam) {
+  long queryId = jsonLong(header, "query_id", 0);
+  long frameId = jsonLong(header, "frame_id", 0);
+  int channel = (int)jsonLong(header, "channel", -1);
+  long width = jsonLong(header, "width", 0);
+  long height = jsonLong(header, "height", 0);
+  std::vector<double> flat = jsonPolygon(header);
+  std::vector<cv::Point3f> none;
+  if ((channel != 0 && channel != 1) || flat.size() < 6 || flat.size() % 2 || width <= 0 ||
+      height <= 0)
+    return regionLine(queryId, frameId, channel, "invalid", none);
+  const RingFrame* frame = nullptr;
+  for (const auto& f : ring)
+    if (f.frameId == frameId) frame = &f;
+  if (frame == nullptr) return regionLine(queryId, frameId, channel, "expired", none);
+  if (frame->odomPose.isNull()) return regionLine(queryId, frameId, channel, "no_pose", none);
+
+  // Polygon: the requester's image pixels -> raw pixels at the configured
+  // size -> rectified pixels of the requested channel.
+  double sx = (double)rig.size.width / width, sy = (double)rig.size.height / height;
+  std::vector<cv::Point2f> raw, rect;
+  for (size_t i = 0; i + 1 < flat.size(); i += 2)
+    raw.emplace_back((float)(flat[i] * sx), (float)(flat[i + 1] * sy));
+  cv::undistortPoints(raw, rect, rig.K[channel], rig.D[channel], rig.R[channel], rig.P[channel]);
+  std::vector<cv::Point> outline;
+  for (const auto& q : rect) outline.emplace_back((int)std::lround(q.x), (int)std::lround(q.y));
+  cv::Mat mask = cv::Mat::zeros(rig.size, CV_8UC1);
+  cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{outline}, cv::Scalar(255));
+  cv::Rect box = cv::boundingRect(outline) & cv::Rect(0, 0, rig.size.width, rig.size.height);
+  if (box.area() == 0) return regionLine(queryId, frameId, channel, "ok", none);
+
+  // SGBM over the polygon's rows only (full width: the disparity search
+  // needs it), with the requested channel as the reference image. The
+  // right channel is matched in mirrored images, where it plays "left".
+  const int block = 5;
+  int numDisparities = std::max(64, ((rig.size.width / 5) + 15) / 16 * 16);
+  int y0 = std::max(0, box.y - block), y1 = std::min(rig.size.height, box.y + box.height + block);
+  cv::Rect band(0, y0, rig.size.width, y1 - y0);
+  cv::Mat ref = channel == 0 ? frame->left(band) : frame->right(band);
+  cv::Mat other = channel == 0 ? frame->right(band) : frame->left(band);
+  if (channel == 1) {
+    // Into new buffers: `ref`/`other` are views of the ring's images.
+    cv::Mat mirroredRef, mirroredOther;
+    cv::flip(ref, mirroredRef, 1);
+    cv::flip(other, mirroredOther, 1);
+    ref = mirroredRef;
+    other = mirroredOther;
+  }
+  auto sgbm = cv::StereoSGBM::create(0, numDisparities, block, 8 * block * block,
+                                     32 * block * block, 1, 31, 10, 100, 2,
+                                     cv::StereoSGBM::MODE_SGBM);
+  cv::Mat disparity;
+  sgbm->compute(ref, other, disparity);  // CV_16S, x16
+  if (channel == 1) cv::flip(disparity, disparity, 1);
+
+  const cv::Mat& P = rig.P[channel];
+  double fx = P.at<double>(0, 0), fy = P.at<double>(1, 1);
+  double cx = P.at<double>(0, 2), cy = P.at<double>(1, 2);
+  // The right rectified camera sits +baseline along x of the left one,
+  // whose frame is the odometry pose's camera frame.
+  float offsetX = channel == 1 ? (float)rig.baseline : 0.f;
+  rtabmap::Transform toMap = slam.getMapCorrection() * frame->odomPose;
+  std::vector<cv::Point3f> points;
+  for (int v = box.y; v < box.y + box.height; ++v) {
+    const unsigned char* inside = mask.ptr<unsigned char>(v);
+    const short* disp = disparity.ptr<short>(v - y0);
+    for (int u = box.x; u < box.x + box.width; ++u) {
+      if (!inside[u] || disp[u] <= 0) continue;
+      float d = disp[u] / 16.f;
+      float z = (float)(fx * rig.baseline / d);
+      if (z <= 0.f || z > rig.maxDepth) continue;
+      cv::Point3f inCamera((float)((u - cx) * z / fx) + offsetX, (float)((v - cy) * z / fy), z);
+      points.push_back(rtabmap::util3d::transformPoint(inCamera, toMap));
+    }
+  }
+  return regionLine(queryId, frameId, channel, "ok", points);
+}
+
 void emitGraph(const rtabmap::Rtabmap& slam, bool final) {
   const std::map<int, rtabmap::Transform>& poses = slam.getLocalOptimizedPoses();
   std::cout << "{\"type\":\"graph\",\"poses\":[";
@@ -184,10 +325,13 @@ int main(int argc, char** argv) {
     }
     int width = (int)jsonLong(header, "width", 376);
     int height = (int)jsonLong(header, "height", 240);
-    // Keyframe points beyond this come from 1-2 px disparities: too noisy
-    // to map (6 m suits EuRoC at 376 px; a street with a wide baseline
-    // maps further).
-    float maxDepth = (float)jsonDouble(header, "max_depth_m", 6.0);
+    // Keyframe points beyond this come from tiny disparities: too noisy
+    // to map. 30 m is the street-survey cap; EuRoC callers send 6.
+    // min_disparity_px drops the noisy tail inside that cap (2 px).
+    float maxDepth = (float)jsonDouble(header, "max_depth_m", 30.0);
+    float minDisparity = (float)jsonDouble(header, "min_disparity_px", 2.0);
+    // Frames stay queryable for regions this long, by their t_ns.
+    long regionBufferNs = (long)(jsonDouble(header, "region_buffer_s", 10.0) * 1e9);
     CamCalib left = parseCam(cam0Yaml, width, height);
     CamCalib right = parseCam(cam1Yaml, width, height);
 
@@ -208,6 +352,9 @@ int main(int argc, char** argv) {
     double baseline = std::abs(P2.at<double>(0, 3) / P2.at<double>(0, 0));
     rtabmap::StereoCameraModel stereoModel("surmap", fx, fy, cx, cy, baseline,
                                            rtabmap::Transform::getIdentity(), size);
+    RegionRig regionRig{{left.K, right.K}, {left.D, right.D}, {R1, R2}, {P1, P2},
+                        baseline,          size,             maxDepth};
+    std::deque<RingFrame> ring;
 
     rtabmap::Odometry* odom = rtabmap::Odometry::create(params);
     rtabmap::Rtabmap slam;
@@ -215,7 +362,7 @@ int main(int argc, char** argv) {
     // The left camera's rectification lets the host map rectified
     // keypoints back onto the raw image it displays.
     auto dist = [&](int i) { return i < left.D.cols ? left.D.at<double>(0, i) : 0.0; };
-    std::cout << "{\"type\":\"ready\",\"version\":3,\"rectification\":{\"rotation\":[";
+    std::cout << "{\"type\":\"ready\",\"version\":4,\"rectification\":{\"rotation\":[";
     for (int i = 0; i < 9; ++i) std::cout << (i ? "," : "") << R1.at<double>(i / 3, i % 3);
     std::cout << "],\"rectified\":[" << fx << "," << fy << "," << cx << "," << cy
               << "],\"raw\":[" << left.K.at<double>(0, 0) << "," << left.K.at<double>(1, 1) << ","
@@ -229,6 +376,12 @@ int main(int argc, char** argv) {
     while (true) {
       std::string pairHeader;
       if (!readFramed(pairHeader)) break;  // EOF: finalize below
+      std::string kind;
+      jsonString(pairHeader, "type", kind);
+      if (kind == "region") {
+        std::cout << answerRegion(pairHeader, ring, regionRig, slam) << std::endl;
+        continue;
+      }
       long frameId = jsonLong(pairHeader, "frame_id", 0);
       long tNs = jsonLong(pairHeader, "t_ns", 0);
       std::string encoding;
@@ -255,6 +408,8 @@ int main(int argc, char** argv) {
       rtabmap::OdometryInfo info;
       rtabmap::Transform odomPose = odom->process(data, &info);
       bool lost = odomPose.isNull();
+      ring.push_back(RingFrame{frameId, tNs, leftRect, rightRect, odomPose});
+      while (!ring.empty() && tNs - ring.front().tNs > regionBufferNs) ring.pop_front();
       // Feed SLAM only when tracking; a null pose must never be guessed.
       bool added = false;
       if (!lost) added = slam.process(data, odomPose);
@@ -307,6 +462,7 @@ int main(int argc, char** argv) {
                                        (int)std::floor(p.y / 0.05f),
                                        (int)std::floor(p.z / 0.05f));
             if (p.z <= 0.f || p.z > maxDepth) continue;
+            if (minDisparity > 0.f && (float)(fx * baseline) / p.z < minDisparity) continue;
             if (!seen.emplace(key, true).second) continue;
             int u = (int)std::lround(fx * p.x / p.z + cx);
             int v = (int)std::lround(fy * p.y / p.z + cy);

@@ -35,6 +35,9 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol
 from urllib.parse import urlsplit, urlunsplit
 
+from surmap.labelling.baseten_muse import ObjectLabel
+from surmap.types import Vec3
+
 HOSTED_MUSE_SPARK_MODEL = "muse-spark-1.3"
 META_MODEL_API_BASE_URL = "https://api.meta.ai/v1"
 DEFAULT_REASONING_EFFORT = "high"
@@ -144,6 +147,10 @@ class MetaMuseSceneClient:
             transport if transport is not None else UrllibMetaMuseTransport(timeout_s=timeout_s)
         )
 
+    @property
+    def model(self) -> str:
+        return self._model
+
     def note(self, labels: Sequence[str], frame_jpeg: bytes) -> str:
         """Describe the mapped area. ``labels`` are on-board detector names."""
         prompt = _prompt(labels)
@@ -181,6 +188,87 @@ class MetaMuseSceneClient:
         if not stripped:
             raise MetaMuseSceneError("MODEL_API_KEY is not set")
         return stripped
+
+
+class MetaMuseLabelClient:
+    """One noun phrase per crop, from hosted Muse Spark on the Meta Model API.
+
+    Same Responses endpoint and bearer key as ``MetaMuseSceneClient``.
+    The map point is not sent. Tests pass a transport and do not open a socket.
+    """
+
+    def __init__(
+        self,
+        *,
+        transport: MetaMuseTransport | None = None,
+        api_key: str | None = None,
+        model: str | None = None,
+        base_url: str = META_MODEL_API_BASE_URL,
+        timeout_s: float = 60.0,
+        before_call: BeforeCall | None = None,
+        on_usage: OnUsage | None = None,
+    ) -> None:
+        self._model = _resolve_model(model)
+        self._url = _responses_url(base_url)
+        self._api_key = api_key
+        self._before_call = before_call
+        self._on_usage = on_usage
+        self._transport = (
+            transport if transport is not None else UrllibMetaMuseTransport(timeout_s=timeout_s)
+        )
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    def label(self, jpeg: bytes, coarse_label: str, xyz: Vec3) -> ObjectLabel:
+        """Label one JPEG crop. ``xyz`` is attached after the reply."""
+        if not jpeg.startswith(b"\xff\xd8"):
+            raise MetaMuseSceneError("label crop must be a JPEG")
+        encoded = base64.b64encode(jpeg).decode("ascii")
+        body = _request_body(
+            model=self._model,
+            prompt=_label_prompt(coarse_label),
+            image_url=f"data:image/jpeg;base64,{encoded}",
+            reasoning_effort=DEFAULT_REASONING_EFFORT,
+            max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
+        )
+        headers = {
+            "Authorization": f"Bearer {self._bearer_key()}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        if self._before_call is not None:
+            self._before_call("meta")
+        payload = self._transport.post_json(self._url, headers, body)
+        _notify_usage(payload, self._model, self._on_usage)
+        text = _scene_note_text(payload)
+        phrase = text.splitlines()[0].strip()
+        return ObjectLabel(
+            label=phrase[:80],
+            description=text,
+            confidence=None,
+            model_id=self._model,
+            raw_text=text,
+            map_point=xyz,
+        )
+
+    def _bearer_key(self) -> str:
+        key = self._api_key if self._api_key is not None else os.environ.get("MODEL_API_KEY", "")
+        stripped = key.strip()
+        if not stripped:
+            raise MetaMuseSceneError("MODEL_API_KEY is not set")
+        return stripped
+
+
+def _label_prompt(coarse_label: str) -> str:
+    hint = " ".join(coarse_label.split()) or "object"
+    return (
+        "You label one photo crop for a civilian disaster-response map. "
+        f"The segmenter noun was {hint}. Reply with one short noun phrase "
+        "for what is visible, such as debris, vehicle, roof, or person. "
+        "Do not give flight advice."
+    )
 
 
 def _resolve_model(explicit: str | None) -> str:

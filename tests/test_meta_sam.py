@@ -216,7 +216,7 @@ async def test_two_wire_records_become_two_detections() -> None:
     assert [item.score for item in detections] == [0.75, 0.4]
 
 
-async def test_a_record_without_confidence_scores_one() -> None:
+async def test_a_record_without_confidence_keeps_the_detection_and_records_no_score() -> None:
     # Given a box and mask that omit the c field
     transport = RecordingTransport(a_response(UNSCORED_LINE))
     detector = MetaSamDetector(api_key=FIXTURE_KEY, prompt="roof", transport=transport)
@@ -224,8 +224,8 @@ async def test_a_record_without_confidence_scores_one() -> None:
     # When the frame is segmented
     (detection,) = await detector.detect(a_jpeg_frame())
 
-    # Then the detection is kept and its score is 1
-    assert detection.score == 1.0
+    # Then the detection is kept and the missing confidence stays missing
+    assert detection.score is None
     assert detection.track_id == 3
     assert len(detection.mask_polygon) >= 4
 

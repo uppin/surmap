@@ -62,16 +62,19 @@ executed on the machine that added the world: that VM has no `gz` binary.
 QGroundControl plan. SurMap does not upload it.
 
 The stereo cameras look forward, along the body +X axis (see the stereo
-model). At 12 m above home the ground enters the lower edge of the
-frame about 20 m ahead, and the tallest building is 8 m, so the
-lawnmower clears the roofs. Cruise speed is 4 m/s. Yaw is left unset
-so PX4 faces the next waypoint and the cameras look along the leg.
+model). At 5 m above home the ground enters the lower edge of the
+frame about 8 m ahead, and that near edge is about 13 m wide. Lanes are
+8 m apart so those strips overlap by about 5 m. Solid roof slabs top
+out at 3.4 m, so 5 m clears them by about 1.6 m. The 8 m columns are
+smoke beside the lanes, not roofs on the flight path. Cruise speed is
+4 m/s. Yaw is left unset so PX4 faces the next waypoint and the cameras
+look along the leg.
 
 | Item | Value |
 |---|---|
-| Altitude | 12 m above home |
+| Altitude | 5 m above home |
 | Speed | 4 m/s |
-| Lanes (east, m) | −24, −12, 0, 12, 24 |
+| Lanes (east, m) | −24, −16, −8, 0, 8, 16, 24 |
 | Each lane (north, m) | 18 → 100, alternating direction |
 | Ends with | return to launch |
 

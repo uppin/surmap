@@ -311,23 +311,21 @@ uv run python scripts/seg_bench.py label \
 this tree writes a scene note, not a per-landmark label, so
 `--provider meta` refuses.
 
-The mission command can keep SAM on Modal while Meta writes the scene
-note. The default SAM route is Modal when `SURMAP_LIVE_MODAL=1`, and
-Meta otherwise. `--sam-route meta` or `--sam-route modal` overrides it.
-The live SAM prompt defaults to `person` (`SURMAP_SAM_PROMPT` overrides
-it). Muse is given a JPEG crop of the detection box plus 16 px, not
-the whole frame.
+The mission command can keep SAM on Modal while Meta labels and writes
+the scene note. The default SAM route stays Meta (hosted `sam-3.1`)
+whenever `SURMAP_LIVE_META=1`; Modal is used only when the Meta flag is
+unset or when `--sam-route modal` is passed with `SURMAP_LIVE_MODAL=1`.
+`--sam-route meta` pins Meta explicitly. The live SAM prompt defaults
+to `person` (`SURMAP_SAM_PROMPT` overrides it). Muse is given a JPEG
+crop of the detection box plus 16 px, not the whole frame.
 
 ```bash
 export SURMAP_LIVE_META=1
 export SURMAP_LIVE_MODAL=1
-export SURMAP_LIVE_BASETEN=1
 export MODEL_API_KEY='paste-key-here'
-export BASETEN_API_KEY='paste-key-here'
 export MODAL_SAM_URL='https://your-modal-endpoint'
 export SURMAP_BUDGET_META_CALLS=5
 export SURMAP_BUDGET_MODAL_CALLS=40
-export SURMAP_BUDGET_BASETEN_CALLS=30
 
 uv run python scripts/mission_demo.py --live \
   --sam-route modal \

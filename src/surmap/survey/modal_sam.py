@@ -181,6 +181,13 @@ def parse_detections(raw: bytes) -> tuple[tuple[SamDetection, ...], float]:
     return tuple(found), elapsed
 
 
+class _ModalRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Modal web endpoints answer long calls with repeated 303s; follow them."""
+
+    max_repeats = 20
+    max_redirections = 30
+
+
 def post_json(url: str, body: bytes, *, timeout_s: float) -> bytes:
     """POST JSON with the stdlib client. No Modal SDK."""
     request = urllib.request.Request(
@@ -189,8 +196,9 @@ def post_json(url: str, body: bytes, *, timeout_s: float) -> bytes:
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
+    opener = urllib.request.build_opener(_ModalRedirectHandler())
     try:
-        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+        with opener.open(request, timeout=timeout_s) as response:
             return cast(bytes, response.read())
     except urllib.error.HTTPError as exc:
         raise Sam3Unavailable(f"Modal SAM endpoint returned HTTP {exc.code}") from exc
@@ -306,11 +314,17 @@ def run_modal_sam_check(
     for detection in detections:
         x0, y0, x1, y1 = detection.box_xyxy
         print(
-            f"  {detection.label} score={detection.score:.3f} "
+            f"  {detection.label} score={_score_text(detection.score)} "
             f"box=({x0:.1f},{y0:.1f},{x1:.1f},{y1:.1f}) "
             f"polygon_points={len(detection.mask_polygon)}"
         )
     return detections
+
+
+def _score_text(score: float | None) -> str:
+    if score is None:
+        return "none"
+    return f"{score:.3f}"
 
 
 def _media_type(image: bytes) -> str:

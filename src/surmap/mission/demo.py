@@ -14,8 +14,9 @@ import json
 import math
 import os
 import shutil
-from collections.abc import Callable
-from dataclasses import dataclass
+import time
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
@@ -23,8 +24,8 @@ from PIL import Image
 
 from surmap.geometry import centroid, to_camera_frame
 from surmap.labelling.baseten_muse import BasetenMuseLabelClient, ObjectLabel
-from surmap.labelling.meta_muse import MetaMuseSceneClient
-from surmap.map.snapshot import build_snapshot, write_snapshot
+from surmap.labelling.meta_muse import MetaMuseLabelClient, MetaMuseSceneClient
+from surmap.map.snapshot import MetaCallRecord, build_snapshot, write_snapshot
 from surmap.mission.metrics import (
     ImpactMetrics,
     OfflinePerception,
@@ -37,6 +38,7 @@ from surmap.simulation.disaster_world import DisasterGroundTruth, load_disaster_
 from surmap.simulation.euroc_export import export_euroc_session
 from surmap.simulation.sitl_capture import load_sitl_capture
 from surmap.slam.base import FrameResult
+from surmap.slam.streaming import DEFAULT_MAX_DEPTH_M, DEFAULT_MIN_DISPARITY_PX
 from surmap.survey.mask_cloud import points_in_mask
 from surmap.survey.meta_sam import MetaSamDetector
 from surmap.survey.modal_sam import ModalSamDetector
@@ -61,8 +63,15 @@ _RIG = StereoRig(fx=100.0, fy=100.0, cx=50.0, cy=40.0, baseline_m=0.12)
 _POLYGON = ((20.0, 10.0), (80.0, 10.0), (80.0, 70.0), (20.0, 70.0))
 _FRAME_WIDTH = 120
 _FRAME_HEIGHT = 80
-_LABEL_CROP_PADDING_PX = 16
 _Segmenter = Callable[[RawFrame], tuple[SamDetection, ...]]
+
+
+@dataclass(frozen=True)
+class _LiveSegmenter:
+    model_id: str
+    detect: _Segmenter
+
+
 _MAP_BACKEND_FIXTURE = "fixture-cloud"
 _MAP_BACKEND_LIVE = "live-rtabmap"
 _BASIS_NOTE = (
@@ -134,16 +143,64 @@ def live_map_backend() -> str:
     return _MAP_BACKEND_LIVE
 
 
-def open_live_map(calibration: StereoCalibrationSpec) -> LiveMap:
+def open_live_map(
+    calibration: StereoCalibrationSpec,
+    *,
+    max_depth_m: float | None = None,
+    min_disparity_px: float | None = None,
+) -> LiveMap:
     """Open the streaming backend calibrated from a capture. This starts the sidecar."""
     from surmap.slam.streaming import StreamingRtabmapBackend
 
+    depth_m = _resolved_limit(
+        max_depth_m,
+        "SURMAP_MAX_DEPTH_M",
+        DEFAULT_MAX_DEPTH_M,
+        minimum=0.0,
+        exclusive=True,
+    )
+    disparity_px = _resolved_limit(
+        min_disparity_px,
+        "SURMAP_MIN_DISPARITY_PX",
+        DEFAULT_MIN_DISPARITY_PX,
+        minimum=0.0,
+        exclusive=False,
+    )
     return StreamingRtabmapBackend(
         cam0_yaml=render_cam_sensor_yaml(calibration, 0),
         cam1_yaml=render_cam_sensor_yaml(calibration, 1),
         width=calibration.width,
         height=calibration.height,
+        max_depth_m=depth_m,
+        min_disparity_px=disparity_px,
+        fx=calibration.fx,
+        baseline_m=calibration.baseline_m,
     )
+
+
+def _resolved_limit(
+    explicit: float | None,
+    env_name: str,
+    default: float,
+    *,
+    minimum: float,
+    exclusive: bool,
+) -> float:
+    """Explicit argument, otherwise the environment, otherwise `default`."""
+    if explicit is None:
+        raw = os.environ.get(env_name, "").strip()
+        if not raw:
+            return default
+        try:
+            explicit = float(raw)
+        except ValueError as exc:
+            raise MissionConfigError(f"{env_name} must be a number") from exc
+    if exclusive:
+        if explicit <= minimum:
+            raise MissionConfigError(f"{env_name} must be greater than {minimum}")
+    elif explicit < minimum:
+        raise MissionConfigError(f"{env_name} must be at least {minimum}")
+    return explicit
 
 
 def resolve_live_session(capture: Path | None) -> Path:
@@ -160,45 +217,97 @@ def resolve_live_session(capture: Path | None) -> Path:
         )
     raise MissionConfigError(
         "Gazebo is not on PATH and no --capture was given. "
-        "Use a recorded EuRoC session from a SITL dump: --live --capture <dir>."
+        "Record a SITL capture and re-run with --live --capture <dir>."
     )
+
+
+def live_sam_prompt() -> str:
+    """Noun sent to SAM. ``SURMAP_SAM_PROMPT`` overrides the default ``person``."""
+    chosen = os.environ.get("SURMAP_SAM_PROMPT", "").strip()
+    return chosen or "person"
+
+
+def live_raw_frame(frame_id: int, t_ns: int, width: int, height: int, image: bytes) -> RawFrame:
+    """A capture image as ``mjpeg`` or ``raw_rgb``. Never the encoding ``png``."""
+    if image.startswith(b"\xff\xd8"):
+        return RawFrame(frame_id, t_ns, 0, width, height, "mjpeg", image)
+    if len(image) == width * height * 3:
+        return RawFrame(frame_id, t_ns, 0, width, height, "raw_rgb", image)
+    with Image.open(io.BytesIO(image)) as opened:
+        rgb = opened.convert("RGB").resize((width, height))
+    return RawFrame(frame_id, t_ns, 0, width, height, "raw_rgb", rgb.tobytes())
+
+
+def detection_crop_jpeg(
+    image: bytes,
+    box: tuple[float, float, float, float],
+    *,
+    pad: int = 16,
+) -> bytes:
+    """JPEG of ``box`` expanded by ``pad`` pixels. Undecodable bytes come back unchanged."""
+    try:
+        with Image.open(io.BytesIO(image)) as opened:
+            rgb = opened.convert("RGB")
+    except (OSError, ValueError):
+        return image
+    width, height = rgb.size
+    x0, y0, x1, y1 = box
+    left = max(0, math.floor(min(x0, x1)) - pad)
+    top = max(0, math.floor(min(y0, y1)) - pad)
+    right = min(width, math.ceil(max(x0, x1)) + pad)
+    bottom = min(height, math.ceil(max(y0, y1)) + pad)
+    crop = rgb if right <= left or bottom <= top else rgb.crop((left, top, right, bottom))
+    out = io.BytesIO()
+    crop.save(out, format="JPEG", quality=85)
+    return out.getvalue()
 
 
 def build_live_services(*, sam_route: str | None = None) -> LiveServices:
     """Check the live flags and keys. Does not send a request or log a key.
 
-    SAM and the scene note are separate. The scene note stays on Meta.
-    SAM uses Modal when ``SURMAP_LIVE_MODAL=1``, otherwise Meta.
-    ``sam_route`` (``meta`` or ``modal``) overrides that choice.
+    ``SURMAP_LIVE_META=1`` selects Meta SAM, Muse Spark labels, and the
+    Muse Spark scene note. Baseten labels and Modal SAM are used only
+    when that Meta flag is unset and their own flags are set. The Meta
+    scene note is then ``none``.
+
+    ``sam_route`` (``meta`` or ``modal``) pins only the SAM adapter, for
+    example to benchmark Modal SAM while Meta still labels and writes
+    the scene note. ``None`` keeps the default above: Meta SAM whenever
+    ``SURMAP_LIVE_META=1``.
     """
     meta = os.environ.get("SURMAP_LIVE_META") == "1"
     baseten = os.environ.get("SURMAP_LIVE_BASETEN") == "1"
     modal = os.environ.get("SURMAP_LIVE_MODAL") == "1"
-    problems: list[str] = []
-    chosen = ""
-    try:
-        chosen = resolve_sam_route(sam_route, meta=meta, modal=modal)
-    except MissionConfigError as exc:
-        problems.append(str(exc))
-    if not baseten:
-        problems.append("set SURMAP_LIVE_BASETEN=1 for Muse Spark labels")
-    if not meta:
-        problems.append("set SURMAP_LIVE_META=1 for the Meta scene note")
-    if problems:
-        raise MissionConfigError("; ".join(problems))
-    if not os.environ.get("MODEL_API_KEY", "").strip():
+    if meta:
+        sam, labels, scene = "meta", "meta", "meta"
+    else:
+        sam = "modal" if modal else ""
+        labels = "baseten" if baseten else ""
+        scene = "none"
+        problems: list[str] = []
+        if not sam and sam_route is None:
+            problems.append("set SURMAP_LIVE_META=1 or SURMAP_LIVE_MODAL=1 for SAM 3.1")
+        if not labels:
+            problems.append("set SURMAP_LIVE_META=1 or SURMAP_LIVE_BASETEN=1 for labels")
+        if problems:
+            raise MissionConfigError("; ".join(problems))
+    sam = resolve_sam_route(sam_route, default=sam, meta=meta, modal=modal)
+    if (meta or sam == "meta") and not os.environ.get("MODEL_API_KEY", "").strip():
         raise MissionConfigError("MODEL_API_KEY is not set")
-    if not os.environ.get("BASETEN_API_KEY", "").strip():
+    if labels == "baseten" and not os.environ.get("BASETEN_API_KEY", "").strip():
         raise MissionConfigError("BASETEN_API_KEY is not set")
-    if chosen == "modal" and not os.environ.get("MODAL_SAM_URL", "").strip():
+    if sam == "modal" and not os.environ.get("MODAL_SAM_URL", "").strip():
         raise MissionConfigError("MODAL_SAM_URL is not set")
-    return LiveServices(sam=chosen, labels="baseten", scene_note="meta")
+    return LiveServices(sam=sam, labels=labels, scene_note=scene)
 
 
-def resolve_sam_route(explicit: str | None, *, meta: bool, modal: bool) -> str:
-    """Pick the SAM adapter. The scene-note provider does not follow this."""
-    if explicit not in (None, "meta", "modal"):
-        raise MissionConfigError("--sam-route must be meta or modal")
+def resolve_sam_route(explicit: str | None, *, default: str, meta: bool, modal: bool) -> str:
+    """The SAM adapter: ``default`` unless an explicit route is given.
+
+    Labels and the scene note do not follow this choice.
+    """
+    if explicit is None:
+        return default
     if explicit == "meta":
         if not meta:
             raise MissionConfigError("set SURMAP_LIVE_META=1 for --sam-route meta")
@@ -207,11 +316,7 @@ def resolve_sam_route(explicit: str | None, *, meta: bool, modal: bool) -> str:
         if not modal:
             raise MissionConfigError("set SURMAP_LIVE_MODAL=1 for --sam-route modal")
         return "modal"
-    if modal:
-        return "modal"
-    if meta:
-        return "meta"
-    raise MissionConfigError("set SURMAP_LIVE_META=1 or SURMAP_LIVE_MODAL=1 for SAM 3.1")
+    raise MissionConfigError("--sam-route must be meta or modal")
 
 
 def run_offline_mission(output_dir: Path) -> MissionResult:
@@ -259,6 +364,7 @@ def run_offline_mission(output_dir: Path) -> MissionResult:
         basis_note=_BASIS_NOTE,
         euroc_path=euroc_path,
         gazebo="not-used",
+        meta_calls=(),
     )
     return MissionResult(
         metrics=metrics,
@@ -275,20 +381,34 @@ def run_live_mission(
     output_dir: Path,
     capture: Path,
     *,
+    max_depth_m: float | None = None,
+    min_disparity_px: float | None = None,
     sam_route: str | None = None,
 ) -> MissionResult:
     """Real SAM, labels, and scene note. The cloud is the streaming RTAB-Map map."""
-    services = build_live_services(sam_route=sam_route)
     capture_dir = resolve_live_session(capture)
+    try:
+        frames, calibration, gps = load_sitl_capture(capture_dir)
+    except (OSError, ValueError) as exc:
+        raise MissionConfigError(str(exc)) from exc
+    services = build_live_services(sam_route=sam_route)
     output_dir.mkdir(parents=True, exist_ok=True)
-    frames, calibration, gps = load_sitl_capture(capture_dir)
     euroc_path = export_euroc_session(output_dir / "euroc", frames, calibration, gps).root
     truth = load_disaster_ground_truth()
     backend = live_map_backend()
-    map_cloud, poses = _stream_capture(frames, calibration)
+    map_cloud, poses = _stream_capture(
+        frames,
+        calibration,
+        max_depth_m=max_depth_m,
+        min_disparity_px=min_disparity_px,
+    )
     segmenter = _live_segmenter(services.sam)
-    labeller = BasetenMuseLabelClient()
-    note_client = MetaMuseSceneClient()
+    labeller: _FixtureLabeller | BasetenMuseLabelClient | MetaMuseLabelClient
+    if services.labels == "baseten":
+        labeller = BasetenMuseLabelClient()
+    else:
+        labeller = MetaMuseLabelClient()
+    note_client = MetaMuseSceneClient() if services.scene_note == "meta" else None
     rig = StereoRig(
         calibration.fx,
         calibration.fy,
@@ -302,24 +422,36 @@ def run_live_mission(
     descriptions: dict[int, str] = {}
     model_ids: dict[int, str] = {}
     labels: list[str] = []
+    meta_calls: list[MetaCallRecord] = []
     first_jpeg = _FIXTURE_JPEG
     for frame in frames:
         image = Path(frame.left_ref).read_bytes()
-        if image.startswith(b"\xff\xd8"):
-            first_jpeg = image
+        if first_jpeg == _FIXTURE_JPEG:
+            first_jpeg = _as_jpeg(image)
         pose = poses.get(frame.frame_id)
         if pose is None or not map_cloud:
             continue
-        raw = sam_frame(
+        raw = live_raw_frame(
+            frame.frame_id,
+            frame.t_ns,
+            calibration.width,
+            calibration.height,
             image,
-            frame_id=frame.frame_id,
-            t_ns=frame.t_ns,
-            width=calibration.width,
-            height=calibration.height,
-            route=services.sam,
         )
         camera_cloud = tuple(to_camera_frame(point, pose) for point in map_cloud)
-        for detection in segmenter(raw):
+        started = time.perf_counter()
+        found = segmenter.detect(raw)
+        elapsed = time.perf_counter() - started
+        if services.sam == "meta":
+            meta_calls.append(
+                MetaCallRecord(
+                    "sam",
+                    segmenter.model_id,
+                    elapsed,
+                    tuple(detection.score for detection in found),
+                )
+            )
+        for detection in found:
             claimed = points_in_mask(
                 camera_cloud,
                 rig,
@@ -342,8 +474,20 @@ def run_live_mission(
                 claimed,
                 detection.label,
                 detection.box_xyxy,
+                meta_calls if services.labels == "meta" else None,
             )
-    scene_note = note_client.note(labels or ["none"], _as_jpeg(first_jpeg))
+    if note_client is None:
+        scene_note = "Scene note was not requested."
+    else:
+        started = time.perf_counter()
+        scene_note = note_client.note(labels or ["none"], _as_jpeg(first_jpeg))
+        meta_calls.append(
+            MetaCallRecord(
+                "scene_note",
+                note_client.model,
+                time.perf_counter() - started,
+            )
+        )
     origin_gps = gps or (
         GpsCheckpoint(
             frames[0].t_ns,
@@ -355,12 +499,15 @@ def run_live_mission(
     )
     snapshot_path = output_dir / "semantic_map_snapshot.json"
     write_snapshot(
-        build_snapshot(
-            tracks,
-            origin_gps,
-            descriptions=descriptions,
-            model_ids=model_ids,
-            mask_points=clouds,
+        replace(
+            build_snapshot(
+                tracks,
+                origin_gps,
+                descriptions=descriptions,
+                model_ids=model_ids,
+                mask_points=clouds,
+            ),
+            meta_calls=tuple(meta_calls),
         ),
         snapshot_path,
     )
@@ -389,6 +536,7 @@ def run_live_mission(
         basis_note=note,
         euroc_path=euroc_path,
         gazebo="capture",
+        meta_calls=tuple(meta_calls),
     )
     return MissionResult(
         metrics,
@@ -404,9 +552,16 @@ def run_live_mission(
 def _stream_capture(
     frames: list[StereoFramePair],
     calibration: StereoCalibrationSpec,
+    *,
+    max_depth_m: float | None = None,
+    min_disparity_px: float | None = None,
 ) -> tuple[tuple[Vec3, ...], dict[int, Pose]]:
     """Feed the capture to the streaming backend and read its final map."""
-    slam = open_live_map(calibration)
+    slam = open_live_map(
+        calibration,
+        max_depth_m=max_depth_m,
+        min_disparity_px=min_disparity_px,
+    )
     try:
         for frame in frames:
             slam.process_frame(frame)
@@ -418,13 +573,7 @@ def _stream_capture(
     return cloud, poses
 
 
-def live_sam_prompt() -> str:
-    """Noun phrase sent to SAM. ``SURMAP_SAM_PROMPT`` overrides ``person``."""
-    raw = os.environ.get("SURMAP_SAM_PROMPT", "person").strip()
-    return raw or "person"
-
-
-def _live_segmenter(kind: str) -> _Segmenter:
+def _live_segmenter(kind: str) -> _LiveSegmenter:
     prompt = live_sam_prompt()
     if kind == "meta":
         detector = MetaSamDetector(prompt=prompt)
@@ -432,13 +581,13 @@ def _live_segmenter(kind: str) -> _Segmenter:
         def segment_meta(frame: RawFrame) -> tuple[SamDetection, ...]:
             return asyncio.run(detector.detect(frame))
 
-        return segment_meta
+        return _LiveSegmenter(detector.model, segment_meta)
     detector_modal = ModalSamDetector(prompt=prompt)
 
     def segment_modal(frame: RawFrame) -> tuple[SamDetection, ...]:
         return asyncio.run(detector_modal.detect(frame))
 
-    return segment_modal
+    return _LiveSegmenter(detector_modal._model, segment_modal)
 
 
 def _export_recorded_session(destination: Path) -> Path:
@@ -502,7 +651,6 @@ def _perceive_fixture(
             raw,
             claimed,
             detection.label,
-            detection.box_xyxy,
         )
     scene_note = _FixtureSceneNote().note(labels, _FIXTURE_JPEG)
     return tracks, detections, clouds, descriptions, model_ids, scene_note
@@ -540,86 +688,6 @@ class _FixtureSceneNote:
         return "Fixture scene note for a civilian search-and-rescue map. Not a live model call."
 
 
-def sam_frame(
-    image: bytes,
-    *,
-    frame_id: int,
-    t_ns: int,
-    width: int,
-    height: int,
-    route: str,
-) -> RawFrame:
-    """Frame bytes for one SAM route.
-
-    Meta SAM accepts only ``mjpeg`` and ``raw_rgb``. Scoring uses
-    ``raw_rgb`` so the pixels stay the ones the mask is drawn on.
-    """
-    if route == "meta":
-        return RawFrame(
-            frame_id,
-            t_ns,
-            0,
-            width,
-            height,
-            "raw_rgb",
-            _image_to_raw_rgb(image, width, height),
-        )
-    return RawFrame(frame_id, t_ns, 0, width, height, "png", image)
-
-
-def _image_to_raw_rgb(image: bytes, width: int, height: int) -> bytes:
-    with Image.open(io.BytesIO(image)) as opened:
-        rgb = opened.convert("RGB")
-    if rgb.size != (width, height):
-        raise MissionConfigError(
-            f"frame is {rgb.size[0]}x{rgb.size[1]}, calibration is {width}x{height}"
-        )
-    return rgb.tobytes()
-
-
-def detection_crop_jpeg(
-    image: bytes,
-    box_xyxy: tuple[float, float, float, float],
-    *,
-    padding_px: int = _LABEL_CROP_PADDING_PX,
-    width: int | None = None,
-    height: int | None = None,
-) -> bytes:
-    """JPEG of the detection box plus padding, clamped to the frame.
-
-    ``raw_rgb`` bytes are accepted when ``width`` and ``height`` are set.
-    Bytes Pillow cannot decode, and that are not that raw buffer, are
-    returned unchanged so a recorded fixture still reaches the fixture labeller.
-    """
-    if padding_px < 0:
-        raise ValueError("padding_px must be non-negative")
-    rgb = _open_rgb(image, width, height)
-    if rgb is None:
-        return image
-    frame_width, frame_height = rgb.size
-    x0, y0, x1, y1 = box_xyxy
-    left = max(0, math.floor(x0) - padding_px)
-    top = max(0, math.floor(y0) - padding_px)
-    right = min(frame_width, math.ceil(x1) + padding_px)
-    bottom = min(frame_height, math.ceil(y1) + padding_px)
-    if right <= left or bottom <= top:
-        return image
-    crop = rgb.crop((left, top, right, bottom))
-    buffer = io.BytesIO()
-    crop.save(buffer, format="JPEG", quality=90)
-    return buffer.getvalue()
-
-
-def _open_rgb(image: bytes, width: int | None, height: int | None) -> Image.Image | None:
-    try:
-        with Image.open(io.BytesIO(image)) as opened:
-            return opened.convert("RGB")
-    except Exception:
-        if width is None or height is None or len(image) != width * height * 3:
-            return None
-        return Image.frombytes("RGB", (width, height), image)
-
-
 def _append_track(
     tracks: list[ObjectTrack3D],
     detections: list[SurvivorDetection],
@@ -627,18 +695,19 @@ def _append_track(
     descriptions: dict[int, str],
     model_ids: dict[int, str],
     labels: list[str],
-    labeller: _FixtureLabeller | BasetenMuseLabelClient,
+    labeller: _FixtureLabeller | BasetenMuseLabelClient | MetaMuseLabelClient,
     raw: RawFrame,
     claimed: tuple[Vec3, ...],
     coarse_label: str,
-    box_xyxy: tuple[float, float, float, float],
+    box: tuple[float, float, float, float] | None = None,
+    meta_calls: list[MetaCallRecord] | None = None,
 ) -> None:
     centre = centroid(claimed)
-    labelled = labeller.label(
-        detection_crop_jpeg(raw.data, box_xyxy, width=raw.width, height=raw.height),
-        coarse_label,
-        centre,
-    )
+    jpeg = raw.data if box is None else detection_crop_jpeg(_crop_source(raw), box)
+    started = time.perf_counter()
+    labelled = labeller.label(jpeg, coarse_label, centre)
+    if meta_calls is not None:
+        meta_calls.append(MetaCallRecord("label", labelled.model_id, time.perf_counter() - started))
     track_id = len(tracks) + 1
     tracks.append(
         ObjectTrack3D(
@@ -665,13 +734,35 @@ def _append_track(
 
 def _ask(snapshot_path: Path) -> MissionAsk:
     snapshot = read_snapshot(snapshot_path)
-    answer = answer_map_question(_QUESTION, snapshot, snapshot_path=str(snapshot_path))
+    # The mission's own answer stays on the label match: it opens no socket
+    # and adds no unrecorded Meta call to the report's ledger.
+    answer = answer_map_question(
+        _QUESTION, snapshot, snapshot_path=str(snapshot_path), allow_live=False
+    )
     return MissionAsk(
         _QUESTION,
         answer.answer,
         answer.landmark_ids,
         answer.highlight_points,
     )
+
+
+def _crop_source(frame: RawFrame) -> bytes:
+    if frame.encoding != "raw_rgb":
+        return frame.data
+    image = Image.frombytes("RGB", (frame.width, frame.height), frame.data)
+    out = io.BytesIO()
+    image.save(out, format="PNG")
+    return out.getvalue()
+
+
+def _meta_call_json(call: MetaCallRecord) -> dict[str, object]:
+    return {
+        "role": call.role,
+        "model_id": call.model_id,
+        "elapsed_s": call.elapsed_s,
+        "confidences": list(call.confidences),
+    }
 
 
 def _write_report(
@@ -684,6 +775,7 @@ def _write_report(
     basis_note: str,
     euroc_path: Path,
     gazebo: str,
+    meta_calls: Sequence[MetaCallRecord],
 ) -> None:
     body = {
         "schema": "surmap.mission_impact.v1",
@@ -705,16 +797,7 @@ def _write_report(
         ],
         "scene_note": scene_note,
         "map_backend": map_backend,
-        "mapqa": (
-            "No pull request merged surmap.mapqa. POST /ask calls "
-            "surmap.mapqa.answer when SURMAP_LIVE_META=1 and that package "
-            "imports. Otherwise it uses the local label match."
-        ),
-        "live_rtabmap": (
-            "PR #38 is integrated. Live mode feeds the capture through "
-            "StreamingRtabmapBackend and reads map_snapshot() as the cloud. "
-            f"This run's map_backend is {map_backend}."
-        ),
+        "meta_calls": [_meta_call_json(call) for call in meta_calls],
         "gazebo": gazebo,
         "euroc_session": str(euroc_path),
     }

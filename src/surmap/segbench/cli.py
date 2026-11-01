@@ -221,10 +221,11 @@ def fuse_dataset(
                     MaskEvidence(
                         mask_id=mask_id,
                         polygon=detection.mask_polygon,
-                        score=detection.score,
+                        score=0.0 if detection.score is None else detection.score,
                         label=detection.label,
                         box_xyxy=detection.box_xyxy,
                         track_id=detection.track_id,
+                        score_missing=detection.score is None,
                     )
                 )
         rig = StereoRig(

@@ -29,6 +29,14 @@ class IdentitySource(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     IDENTITY_SOURCE_DETECTOR: _ClassVar[IdentitySource]
     IDENTITY_SOURCE_AREA_ALLOCATED: _ClassVar[IdentitySource]
+
+class RegionStatus(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    REGION_STATUS_UNSPECIFIED: _ClassVar[RegionStatus]
+    REGION_STATUS_OK: _ClassVar[RegionStatus]
+    REGION_STATUS_FRAME_EXPIRED: _ClassVar[RegionStatus]
+    REGION_STATUS_NO_POSE: _ClassVar[RegionStatus]
+    REGION_STATUS_INVALID_QUERY: _ClassVar[RegionStatus]
 FRAME_ENCODING_UNSPECIFIED: FrameEncoding
 FRAME_ENCODING_MJPEG: FrameEncoding
 FRAME_ENCODING_RAW_RGB: FrameEncoding
@@ -40,6 +48,11 @@ MOVING_VERDICT_RIGID_MOVER: MovingVerdict
 MOVING_VERDICT_OSCILLATING: MovingVerdict
 IDENTITY_SOURCE_DETECTOR: IdentitySource
 IDENTITY_SOURCE_AREA_ALLOCATED: IdentitySource
+REGION_STATUS_UNSPECIFIED: RegionStatus
+REGION_STATUS_OK: RegionStatus
+REGION_STATUS_FRAME_EXPIRED: RegionStatus
+REGION_STATUS_NO_POSE: RegionStatus
+REGION_STATUS_INVALID_QUERY: RegionStatus
 
 class Point3(_message.Message):
     __slots__ = ("x", "y", "z")
@@ -276,3 +289,35 @@ class StationResponse(_message.Message):
     DETECTIONS_FIELD_NUMBER: _ClassVar[int]
     detections: SamFrameDetections
     def __init__(self, detections: _Optional[_Union[SamFrameDetections, _Mapping[str, _Any]]] = ...) -> None: ...
+
+class RegionQuery(_message.Message):
+    __slots__ = ("query_id", "frame_id", "channel", "width", "height", "polygon")
+    QUERY_ID_FIELD_NUMBER: _ClassVar[int]
+    FRAME_ID_FIELD_NUMBER: _ClassVar[int]
+    CHANNEL_FIELD_NUMBER: _ClassVar[int]
+    WIDTH_FIELD_NUMBER: _ClassVar[int]
+    HEIGHT_FIELD_NUMBER: _ClassVar[int]
+    POLYGON_FIELD_NUMBER: _ClassVar[int]
+    query_id: int
+    frame_id: int
+    channel: int
+    width: int
+    height: int
+    polygon: _containers.RepeatedCompositeFieldContainer[Point2]
+    def __init__(self, query_id: _Optional[int] = ..., frame_id: _Optional[int] = ..., channel: _Optional[int] = ..., width: _Optional[int] = ..., height: _Optional[int] = ..., polygon: _Optional[_Iterable[_Union[Point2, _Mapping[str, _Any]]]] = ...) -> None: ...
+
+class RegionPoints(_message.Message):
+    __slots__ = ("query_id", "frame_id", "channel", "status", "points", "final")
+    QUERY_ID_FIELD_NUMBER: _ClassVar[int]
+    FRAME_ID_FIELD_NUMBER: _ClassVar[int]
+    CHANNEL_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    POINTS_FIELD_NUMBER: _ClassVar[int]
+    FINAL_FIELD_NUMBER: _ClassVar[int]
+    query_id: int
+    frame_id: int
+    channel: int
+    status: RegionStatus
+    points: _containers.RepeatedCompositeFieldContainer[Point3]
+    final: bool
+    def __init__(self, query_id: _Optional[int] = ..., frame_id: _Optional[int] = ..., channel: _Optional[int] = ..., status: _Optional[_Union[RegionStatus, str]] = ..., points: _Optional[_Iterable[_Union[Point3, _Mapping[str, _Any]]]] = ..., final: bool = ...) -> None: ...

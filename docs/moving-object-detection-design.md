@@ -88,7 +88,7 @@ Three properties make this hard on our hardware specifically:
   on-board keypoints have short-horizon LK identity, not semantic
   re-identifiability; §4 step 4 is precise about this), lifted
   into the map frame once poses exist, under the object's existing
-  wire designation (`100 + track_id`).
+  wire designation (a map-layer id: `100 + track_id`).
 - Keep this feature's own outputs pristine and the static
   pipeline untouched: moving-area evidence is produced
   *alongside* RTAB-Map, never fed back into its internal map
@@ -110,7 +110,7 @@ Three properties make this hard on our hardware specifically:
 
 ## 2. Constraints and resource budget
 
-Target device: Raspberry Pi CM5, quad Cortex-A76 @ 2.4 GHz, Coral
+Machine this feature budgets for: Raspberry Pi CM5, quad Cortex-A76 @ 2.4 GHz, Coral
 Edge TPU (M.2), RTAB-Map sidecar container running concurrently.
 Working resolutions and rates are the demo-proven ones: frames at
 376×240 for analysis (native 752×480 retained in recordings),
@@ -441,7 +441,7 @@ optimized poses exist):
    wire contract: recomputation may only *confirm* a published
    terminal verdict, never retract it).
 3. Emit one snapshot per observation — sparse keypoints, existing
-   designation (`100 + track_id` from step 4.1 when a detector
+   designation, a map-layer id (`100 + track_id` from step 4.1 when a detector
    identity was adopted; otherwise a track ID allocated in the
    same space). **Designation allocation is disjoint by
    construction:** detector track IDs come from the detector's
@@ -466,7 +466,7 @@ areas — `MovingObjectSnapshot`, not a second serving of
 `MovingArea` for the same `frame_id` with "keypoints present" as
 an implicit phase flag. One snapshot per buffered observation,
 carrying that observation's original `frame_id`, its verdict,
-and its map-frame keypoints under the object's designation
+and its map-frame keypoints under the object's designation (map-layer id)
 (`100 + track_id`). They arrive later than the live area messages
 for the same frames — that lag is inherent to batch poses and is
 why the stream is separate and frame-ID-keyed rather than merged
@@ -502,7 +502,7 @@ message MovingObjectSnapshot {
   int64 frame_id = 1;        // the buffered observation's frame
   int64 t_ns = 2;
   int64 area_track_id = 3;
-  int64 object_track_id = 4;         // designation 100 + object_track_id
+  int64 object_track_id = 4;         // map-layer id: designation 100 + object_track_id
   IdentitySource identity_source = 5; // DETECTOR | AREA_ALLOCATED
   MovingVerdict verdict = 6;          // final, confirmed at flush
   repeated Point3 keypoints = 7;      // map frame
@@ -673,8 +673,8 @@ the Commons clips, extracted frames inspected):
 | Forest fire | Boreal Forest Fire (Pesonen et al., *Sci. Data* 2025) | CC BY 4.0 | unverified — Fairdata DOI `10.23729/fd-72c6cf74-b8eb-3687-860dbf93a1ab94c9`; spike must confirm an unauthenticated fetch before adoption | monocular UAV over real prescribed boreal burns, 292 clips, human boxes + SAM smoke masks | **primary if fetch verifies** — only candidate that is actually an overhead forest fire with masks |
 | Forest fire | "Aerial video of Wennington wildfire, 2022" (Commons) | CC BY 3.0 | excellent — direct Commons file; original is 139 s / 418 MB, so the fetch pins a transcoded derivative, not the original | monocular drone aerial; frames at 12 s / 40 s inspected: active smoke/fire edge, burned ground, drifting plume, moving camera | **verified fallback** — hand-annotated smoke/fire polygons; grass/village fire, not forest canopy |
 | Forest fire | FLAME 2 (IEEE Dataport) / Hürtgenwald clip (Commons) | Dataport login / CC BY-SA 4.0 | poor / excellent | pile burns, not a big forest fire / distant smoke from ground level (frame inspected) | rejected on fit |
-| Drone swarm | Purdue UAV_Dataset (Li et al.) | BSD 3-Clause (stated on dataset page) | excellent — direct `engineering.purdue.edu` zips, unchanged since 2017 (`Videos.zip` 2.04 GB, annotations 0.95 MB; both HEAD-checked) | monocular GoPro on a *moving* UAV, up to 8 target UAVs against sky/ground, VATIC track annotations (v2) | **primary** — annotation ranking run for this plan: `Clip_50` (1,521 frames, 11 IDs, ≤5 simultaneous) and `Clip_28` (1,685 frames, 14 IDs, ≤5 simultaneous) are the densest; spike picks the 10 s window with most simultaneous targets |
-| Drone swarm | UAVSwarm (Wang et al. 2022) | paper-stated public | unverified — no stable direct link found from the paper | 72 sequences, 3–23 UAVs, annotated | backup if Purdue sky backgrounds prove too easy |
+| Many small fast movers | Purdue UAV_Dataset (Li et al.) | BSD 3-Clause (stated on dataset page) | excellent — direct `engineering.purdue.edu` zips, unchanged since 2017 (`Videos.zip` 2.04 GB, annotations 0.95 MB; both HEAD-checked) | monocular GoPro on a moving aircraft, up to 8 other small aircraft against sky or ground, VATIC track annotations (v2). Code id `purdue-uav-swarm` | **primary** — annotation ranking run for this plan: `Clip_50` (1,521 frames, 11 IDs, ≤5 simultaneous) and `Clip_28` (1,685 frames, 14 IDs, ≤5 simultaneous) are the densest; spike picks the 10 s window with the most simultaneous movers |
+| Many small fast movers | UAVSwarm (Wang et al. 2022) | paper-stated public | unverified — no stable direct link found from the paper | 72 sequences, 3–23 small aircraft, annotated | backup if Purdue sky backgrounds prove too easy |
 
 Per-snippet oracle and expected outcome (asserted on the
 `StreamMovingAreas` messages, not on pixels):
@@ -700,12 +700,14 @@ Per-snippet oracle and expected outcome (asserted on the
   and the tuning record must say so. The fire polygon also
   stress-tests the ≤64-vertex Douglas–Peucker cap and the area
   caps in §5.
-- **Drone swarm (many, tiny, fast).** Oracle: Purdue `refined_gt`
-  tracks converted to boxes. Expected: simultaneous area tracks
-  never exceed the §2 area cap; targets meeting the detection
-  envelope graduate `RIGID_MOVER` with LK-held keypoints; the
-  many sub-envelope targets (a UAV at 100 m is a few pixels) are
-  *expected* misses — the assertion is that they produce no
+- **Many small fast movers.** Oracle: Purdue `refined_gt`
+  tracks converted to boxes. The snippet id in code is
+  `purdue-uav-swarm` (`scene` value `swarm`). Expected: simultaneous
+  area tracks never exceed the §2 area cap; movers that meet the
+  detection envelope graduate `RIGID_MOVER` with LK-held keypoints;
+  the many sub-envelope objects (one of these aircraft at 100 m is
+  a few pixels) are *expected* misses — the assertion is that they
+  produce no
   phantom areas, no verdict flapping, and no static-layer
   candidates, and the miss count is reported against the
   envelope so the envelope claim stays honest.
@@ -828,7 +830,7 @@ snippet against its shipped calib, so the fallback is validated
 before it is ever needed; (2) **baseline scale**: COLMAP is
 up-to-scale and cannot observe the stereo baseline in metres,
 so scale must be fixed from a known reference (rig
-specification, a measured target in view, or a calibrated
+specification, a measured object of known size in view, or a calibrated
 sibling sequence). A snippet with no scale reference is
 calibration-rejected — it is never run at a guessed baseline,
 because every depth, τ(Z), and extent assertion downstream
@@ -918,10 +920,10 @@ verification rung):
 | Node | Delivers | Kind | Verification |
 |---|---|---|---|
 | n1 | **This design + development plan** — PR #17 itself (`docs/moving-object-design`), the stack's bottom node; reviewed and merged first, successors restack onto `main` | docs, behaviour-preserving | review + CI on #17 |
-| n2 | **Snippet fixtures + harness skeleton**: fetch script (pinned URL/size/SHA-256 per snippet), oracle converters (VisDrone MOT, Purdue `refined_gt`, mask→polygon), the stage-2-seam test adapter, snippet manifests for traffic / fire / swarm per §6.1, **plus the KITTI stereo snippet per §6.2** (range-extraction fetch, calib→`sensor.yaml` converter, EuRoC-layout staging) and the **COLMAP calibration cross-check** on KITTI (host RTX/COLMAP, §6.2 gates); spike outcomes recorded (Boreal fetch verified or fallback adopted; VisDrone sequence and Purdue clip window chosen by annotation density; Byrne camera motion checked; KITTI sequence/window chosen by verified world motion) | infra, behaviour-preserving | V3 — fetch + conversion commands with recorded before/after output; harness runs on a synthetic cluster and asserts the seam type; COLMAP-vs-KITTI calibration comparison recorded |
+| n2 | **Snippet fixtures + harness skeleton**: fetch script (pinned URL/size/SHA-256 per snippet), oracle converters (VisDrone MOT, Purdue `refined_gt`, mask→polygon), the stage-2-seam test adapter, snippet manifests for traffic / fire / many-small-movers (`scene` value `swarm`) per §6.1, **plus the KITTI stereo snippet per §6.2** (range-extraction fetch, calib→`sensor.yaml` converter, EuRoC-layout staging) and the **COLMAP calibration cross-check** on KITTI (host RTX/COLMAP, §6.2 gates); spike outcomes recorded (Boreal fetch verified or fallback adopted; VisDrone sequence and Purdue clip window chosen by annotation density; Byrne camera motion checked; KITTI sequence/window chosen by verified world motion) | infra, behaviour-preserving | V3 — fetch + conversion commands with recorded before/after output; harness runs on a synthetic cluster and asserts the seam type; COLMAP-vs-KITTI calibration comparison recorded |
 | n3 | **Differencing + areas (steps 1–2)** + `StreamMovingAreas` proto and handler from the start — the stream is the only publication surface this feature has | feature | V1 — synthetic-cloud unit tests, EuRoC negative-control E2E, traffic-snippet stage-2 assertions |
-| n4 | **Classification + keypoints + buffering (steps 3–5)**: verdict lifecycle, LK keypoints, one ego-compensated filter | feature | V1 — tracker-statistic unit tests; fire snippet (zero graduations), swarm snippet (caps, envelope misses), traffic snippet (graduation + identity rates) |
-| n5 | **Retrospective placement + publication (steps 6–7)** wired into the sidecar flush and the moving-areas stream | feature | V1 — the §6.2 KITTI stereo snippet run through the real `SidecarRtabmapBackend`: flush returns real poses/cloud, annotated movers graduate, snapshots land within annotated extent under existing designations (the only full-chain proof; §6.1 monocular snippets cannot provide it) |
+| n4 | **Classification + keypoints + buffering (steps 3–5)**: verdict lifecycle, LK keypoints, one ego-compensated filter | feature | V1 — tracker-statistic unit tests; fire snippet (zero graduations), many-small-movers snippet (`scene` `swarm`: caps, envelope misses), traffic snippet (graduation + identity rates) |
+| n5 | **Retrospective placement + publication (steps 6–7)** wired into the sidecar flush and the moving-areas stream | feature | V1 — the §6.2 KITTI stereo snippet run through the real `SidecarRtabmapBackend`: flush returns real poses/cloud, annotated movers graduate, snapshots land within annotated extent under existing designations, which are map-layer ids (the only full-chain proof; §6.1 monocular snippets cannot provide it) |
 | n6 | **Resource governance (§5)** counters, caps, CM5-profile resource gate, before this is enabled by default on-board | infra | V3 — CM5-profile replay with recorded budget counters |
 
 Green waves: wave 1 = n1 (#17), n2 — n3's stage 1 needs only

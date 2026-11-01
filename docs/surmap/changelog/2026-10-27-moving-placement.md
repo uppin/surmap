@@ -8,7 +8,7 @@ Implemented design steps 6–7 of the moving-object pipeline:
 retrospective placement (`surmap.moving.placement` —
 VO-increment correction distribution between bracketing
 keyframe poses, snapshot construction, the disjoint
-detector/area-allocated designation space) and the assembled
+detector/area-allocated designation space; a designation is a map-layer id) and the assembled
 `StreamMovingAreas` handler (in `surmap.survey.moving_stream`,
 split out of `cm5_server` at wrap: 526 → 296 lines, verified
 behaviour-preserving by line-set fidelity diff), which runs
