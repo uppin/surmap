@@ -12,6 +12,7 @@ from surmap.labelling.baseten_muse import (
     ObjectLabel,
 )
 from surmap.labelling.meta_muse import (
+    MetaMuseConceptClient,
     MetaMuseLabelClient,
     MetaMuseSceneClient,
     MetaMuseSceneError,
@@ -28,6 +29,7 @@ __all__ = [
     "BasetenRequestError",
     "EmptyLabelError",
     "LabelClient",
+    "MetaMuseConceptClient",
     "MetaMuseLabelClient",
     "MetaMuseSceneClient",
     "MetaMuseSceneError",

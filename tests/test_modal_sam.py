@@ -410,3 +410,46 @@ def test_a_local_cpu_model_still_resolves() -> None:
     # Then the provider is ONNX Runtime's CPU execution provider
     assert detector is not None
     assert detector.provider == "CPUExecutionProvider"
+
+
+def test_the_cache_fingerprint_changes_only_when_files_are_written(tmp_path: Path) -> None:
+    from surmap.survey.modal_sam import cache_fingerprint
+
+    # Given no cache yet
+    cache = tmp_path / "hf"
+    assert cache_fingerprint(cache) == frozenset()
+
+    # When a checkpoint is written, the fingerprint changes; reading it again does not
+    (cache / "hub" / "models--facebook--sam3.1").mkdir(parents=True)
+    (cache / "hub" / "models--facebook--sam3.1" / "sam3.1_multiplex.pt").write_bytes(b"x" * 8)
+    first = cache_fingerprint(cache)
+    assert first == frozenset({("hub/models--facebook--sam3.1/sam3.1_multiplex.pt", 8)})
+    assert cache_fingerprint(cache) == first
+
+
+def test_the_app_commits_the_volume_only_after_a_fresh_download() -> None:
+    # Given the Modal app source, which CI does not import
+    load = _module_function("_load_sam")
+    source = ast.get_source_segment(_APP_SOURCE.read_text(encoding="utf-8"), load) or ""
+
+    # Then every volume.commit() sits under a fingerprint comparison
+    commits = [
+        node
+        for node in ast.walk(load)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "commit"
+    ]
+    assert commits
+    guarded = [
+        node
+        for node in ast.walk(load)
+        if isinstance(node, ast.If)
+        and ("cache_fingerprint" in ast.unparse(node.test) or "before" in ast.unparse(node.test))
+        and any(child in commits for child in ast.walk(node))
+    ]
+    assert sum(1 for node in guarded for child in ast.walk(node) if child in commits) == len(
+        commits
+    )
+    assert 'download_ckpt_from_hf(version="sam3.1")' in source
+    assert source.count("cache_fingerprint(") >= 3

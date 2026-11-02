@@ -15,7 +15,11 @@ import pytest
 from PIL import Image
 
 from surmap.labelling.baseten_muse import ObjectLabel
-from surmap.labelling.meta_muse import MetaMuseLabelClient, MetaMuseSceneClient
+from surmap.labelling.meta_muse import (
+    MetaMuseConceptClient,
+    MetaMuseLabelClient,
+    MetaMuseSceneClient,
+)
 from surmap.mission.demo import (
     MissionConfigError,
     _live_segmenter,
@@ -42,6 +46,17 @@ _CAPTURE = Path(__file__).parent / "fixtures" / "sitl_capture_tiny"
 _MAP_POINT = Vec3(0.0, 0.0, 2.0)
 
 _QUESTION = "Where are the survivors?"
+
+
+@pytest.fixture(autouse=True)
+def _no_live_concepts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Muse Spark concept proposals answer ``person`` without a socket."""
+
+    def propose(self: MetaMuseConceptClient, frame_jpeg: bytes) -> tuple[str, ...]:
+        del self, frame_jpeg
+        return ("person",)
+
+    monkeypatch.setattr(MetaMuseConceptClient, "propose", propose)
 
 
 def test_offline_mission_projects_fixture_masks_and_scores_them_against_ground_truth(
@@ -183,6 +198,78 @@ def test_meta_alone_selects_meta_sam_labels_and_scene_note(
     assert services.sam == "meta"
     assert services.labels == "meta"
     assert services.scene_note == "meta"
+
+
+def test_the_baseten_flag_moves_labels_to_muse_spark_open_even_with_meta_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given the Meta and Baseten flags and both keys
+    monkeypatch.setenv("SURMAP_LIVE_META", "1")
+    monkeypatch.setenv("MODEL_API_KEY", "secret-model-key")
+    monkeypatch.setenv("SURMAP_LIVE_BASETEN", "1")
+    monkeypatch.setenv("BASETEN_API_KEY", "secret-baseten-key")
+    monkeypatch.delenv("SURMAP_LIVE_MODAL", raising=False)
+
+    # When live services are resolved
+    services = build_live_services()
+
+    # Then labels are Baseten while SAM and the scene note stay on Meta
+    assert services.sam == "meta"
+    assert services.labels == "baseten"
+    assert services.scene_note == "meta"
+
+
+def test_baseten_labels_with_meta_on_still_need_the_baseten_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SURMAP_LIVE_META", "1")
+    monkeypatch.setenv("MODEL_API_KEY", "secret-model-key")
+    monkeypatch.setenv("SURMAP_LIVE_BASETEN", "1")
+    monkeypatch.delenv("BASETEN_API_KEY", raising=False)
+    with pytest.raises(MissionConfigError, match="BASETEN_API_KEY"):
+        build_live_services()
+
+
+def test_a_live_mission_with_both_flags_labels_with_baseten(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given both flags and a Baseten labeller double
+    _allow_live_flags(monkeypatch)
+    monkeypatch.setenv("SURMAP_LIVE_BASETEN", "1")
+    monkeypatch.setenv("BASETEN_API_KEY", "secret-baseten-key")
+    _block_network(monkeypatch)
+    seen: list[str] = []
+
+    def baseten_label(self: object, jpeg: bytes, coarse_label: str, xyz: Vec3) -> ObjectLabel:
+        del self, jpeg, coarse_label
+        seen.append("baseten")
+        return ObjectLabel(
+            label="survivor",
+            description="person in the crop",
+            confidence=0.7,
+            model_id="meta-models/muse-spark-open-1026",
+            raw_text="{}",
+            map_point=xyz,
+        )
+
+    monkeypatch.setattr(
+        "surmap.mission.demo.open_live_map",
+        lambda _calibration, **_kwargs: _RecordingMap(snapshot=(_MAP_POINT,)),
+    )
+    monkeypatch.setattr(MetaSamDetector, "detect", _detect_person)
+    monkeypatch.setattr("surmap.mission.demo.BasetenMuseLabelClient.label", baseten_label)
+    monkeypatch.setattr(MetaMuseSceneClient, "note", _scene_note)
+
+    # When the live mission runs
+    result = run_live_mission(tmp_path, _CAPTURE)
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+
+    # Then Baseten labelled the objects and the report names the open-weight model
+    assert seen
+    label_calls = [call for call in report["meta_calls"] if call["role"] == "label"]
+    assert label_calls[0]["model_id"] == "meta-models/muse-spark-open-1026"
+    assert "secret-baseten-key" not in result.report_path.read_text(encoding="utf-8")
 
 
 def test_baseten_and_modal_remain_fallbacks_when_meta_is_off(
@@ -366,7 +453,7 @@ def test_meta_stays_the_default_sam_route_when_modal_is_also_flagged(
 def test_an_explicit_modal_sam_route_keeps_labels_and_the_scene_note_on_meta(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Given both live flags, so Meta is available for the scene note
+    # Given the Meta flag, so Meta is available for the scene note
     _allow_live_flags(monkeypatch)
     monkeypatch.setenv("SURMAP_LIVE_MODAL", "1")
     monkeypatch.setenv("MODAL_SAM_URL", "http://modal.test/sam")
@@ -588,7 +675,12 @@ def test_live_mission_forwards_the_depth_cap_to_the_streaming_backend(
         seen["min_disparity_px"] = min_disparity_px
         return _RecordingMap(snapshot=())
 
+    async def detect_nothing(self: object, frame: RawFrame) -> tuple[SamDetection, ...]:
+        del self, frame
+        return ()
+
     monkeypatch.setattr("surmap.mission.demo.open_live_map", opener)
+    monkeypatch.setattr(MetaSamDetector, "detect", detect_nothing)
     monkeypatch.setattr(MetaMuseSceneClient, "note", _scene_note)
 
     # When the live mission runs
@@ -638,8 +730,10 @@ def test_live_meta_mission_calls_meta_sam_meta_labels_and_records_them(
             map_point=xyz,
         )
 
-    def note(self: MetaMuseSceneClient, labels: list[str], frame_jpeg: bytes) -> str:
-        del labels, frame_jpeg
+    def note(
+        self: MetaMuseSceneClient, labels: list[str], frame_jpeg: bytes, **kwargs: object
+    ) -> str:
+        del labels, frame_jpeg, kwargs
         seen["scene_model"] = self._model
         return "Scene note from the test double."
 
@@ -665,7 +759,7 @@ def test_live_meta_mission_calls_meta_sam_meta_labels_and_records_them(
     assert "No pull request merged" not in result.report_path.read_text(encoding="utf-8")
     calls = report["meta_calls"]
     roles = {call["role"] for call in calls}
-    assert roles == {"sam", "label", "scene_note"}
+    assert roles == {"concepts", "sam", "label", "scene_note"}
     sam_calls = [call for call in calls if call["role"] == "sam"]
     assert sam_calls[0]["model_id"] == "sam-3.1"
     assert sam_calls[0]["confidences"] == [None]
@@ -675,7 +769,8 @@ def test_live_meta_mission_calls_meta_sam_meta_labels_and_records_them(
     scene_call = next(call for call in calls if call["role"] == "scene_note")
     assert scene_call["model_id"] == "muse-spark-1.3"
     assert snapshot["landmarks"][0]["model_id"] == "muse-spark-1.3"
-    assert snapshot["meta_calls"][0]["model_id"] == "sam-3.1"
+    snapshot_sam = [call for call in snapshot["meta_calls"] if call["role"] == "sam"]
+    assert snapshot_sam[0]["model_id"] == "sam-3.1"
     assert "secret-model-key" not in result.report_path.read_text(encoding="utf-8")
 
 
@@ -718,19 +813,19 @@ def test_live_mission_says_when_the_streaming_backend_returns_no_points(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Given a streaming map that finishes with an empty snapshot
+    # Given an empty streaming map and the tiny capture, whose frames are flat grey
     _allow_live_flags(monkeypatch)
     _block_network(monkeypatch)
     recording = _RecordingMap(snapshot=())
 
-    async def refuse_detect(self: object, frame: RawFrame) -> tuple[SamDetection, ...]:
-        del self, frame
-        raise AssertionError("live mission called SAM with no map cloud")
+    def refuse_label(self: object, jpeg: bytes, coarse_label: str, xyz: Vec3) -> ObjectLabel:
+        raise AssertionError("an object with no 3D points must not be labelled")
 
     monkeypatch.setattr(
         "surmap.mission.demo.open_live_map", lambda _calibration, **_kwargs: recording
     )
-    monkeypatch.setattr(MetaSamDetector, "detect", refuse_detect)
+    monkeypatch.setattr(MetaSamDetector, "detect", _detect_person)
+    monkeypatch.setattr(MetaMuseLabelClient, "label", refuse_label)
     monkeypatch.setattr(MetaMuseSceneClient, "note", _scene_note)
 
     # When the live mission runs
@@ -743,6 +838,12 @@ def test_live_mission_says_when_the_streaming_backend_returns_no_points(
     assert result.metrics.basis == "live"
     assert report["map_backend"] == "live-rtabmap"
     assert "not estimated" in str(report["basis_note"]).lower()
+    assert report["mask_point_sources"]["observations"] == {
+        "sparse-rtabmap": 0,
+        "stereo-fallback": 0,
+    }
+    # And the dense fallback ran once per frame with a mask, not once per mask
+    assert report["mask_point_sources"]["stereo_reconstructions"] == 2
     assert "secret-model-key" not in json.dumps(report)
 
 
@@ -854,7 +955,7 @@ class _RecordingMap:
 
 def _allow_live_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SURMAP_LIVE_META", "1")
-    monkeypatch.setenv("SURMAP_LIVE_BASETEN", "1")
+    monkeypatch.delenv("SURMAP_LIVE_BASETEN", raising=False)
     monkeypatch.delenv("SURMAP_LIVE_MODAL", raising=False)
     monkeypatch.setenv("MODEL_API_KEY", "secret-model-key")
     monkeypatch.setenv("BASETEN_API_KEY", "secret-baseten-key")
@@ -893,8 +994,8 @@ def _remembering_label(
     return label
 
 
-def _scene_note(self: object, labels: list[str], frame_jpeg: bytes) -> str:
-    del self, labels, frame_jpeg
+def _scene_note(self: object, labels: list[str], frame_jpeg: bytes, **kwargs: object) -> str:
+    del self, labels, frame_jpeg, kwargs
     return "Scene note from the test double. Not a provider call."
 
 
@@ -956,3 +1057,45 @@ def _remembering_jpeg(
         )
 
     return label
+
+
+def test_the_same_object_in_two_frames_is_one_track_and_one_label_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given Meta only and a person mask on the same map point in both capture frames
+    _allow_live_flags(monkeypatch)
+    _block_network(monkeypatch)
+    labelled: list[Vec3] = []
+    summaries: list[tuple[list[str], object]] = []
+
+    def note(self: object, labels: list[str], frame_jpeg: bytes, **kwargs: object) -> str:
+        del self, frame_jpeg
+        summaries.append((labels, kwargs.get("object_summary")))
+        return "Survivor locations\nOne person."
+
+    monkeypatch.setattr(
+        "surmap.mission.demo.open_live_map",
+        lambda _calibration, **_kwargs: _RecordingMap(snapshot=(_MAP_POINT,)),
+    )
+    monkeypatch.setattr(MetaSamDetector, "detect", _detect_person)
+    monkeypatch.setattr(MetaMuseLabelClient, "label", _remembering_label(labelled))
+    monkeypatch.setattr(MetaMuseSceneClient, "note", note)
+
+    # When the live mission runs
+    result = run_live_mission(tmp_path, _CAPTURE)
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+    snapshot = json.loads(result.snapshot_path.read_text(encoding="utf-8"))
+
+    # Then SAM ran on both frames, but the object was labelled once and mapped once
+    roles = [call["role"] for call in report["meta_calls"]]
+    assert roles.count("sam") == 2
+    assert roles.count("label") == 1
+    assert len(labelled) == 1
+    tracks = snapshot["landmarks"] + snapshot["dynamic"]
+    assert len(tracks) == 1
+    # And the scene note got the object once, with both sightings
+    labels, summary = summaries[0]
+    assert labels == ["survivor"]
+    assert isinstance(summary, tuple) and len(summary) == 1
+    assert "seen in 2 frame(s)" in summary[0]

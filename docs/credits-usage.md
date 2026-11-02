@@ -8,17 +8,16 @@ turn a live call on, and how spend is recorded.
 
 ## Credits
 
-| Source | Job | Id | Status |
+| Source | Job | Id | Client |
 |---|---|---|---|
-| [Meta Model API](https://dev.meta.ai/docs/models) | Scene note over the mapped area. SAM 3.1 boxes and masks | Hosted Muse Spark `muse-spark-1.3`. SAM `sam-3.1` | Planned |
-| [Baseten Model APIs](https://docs.baseten.co/inference/model-apis/overview) | Per-object semantic labels from a JPEG crop | `meta-models/muse-spark-open-1026` at `https://inference.baseten.co/v1` | client in tree; live call gated |
-| Modal | GPU for station-side SAM 3.1 behind the in-tree ONNX adapter | No Modal app in this repo | Planned |
+| [Meta Model API](https://dev.meta.ai/docs/models) | Scene note, per-object labels, SAM 3.1 masks, Ask the map, voice | `muse-spark-1.3`, `sam-3.1`, `muse-wonder-1.0`, `muse-voice-transcribe-1.0` | `surmap.labelling.meta_muse`, `surmap.survey.meta_sam`, `surmap.mapqa` |
+| [Baseten Model APIs](https://docs.baseten.co/inference/model-apis/overview) | Open-weight per-object labels from a JPEG crop | `meta-models/muse-spark-open-1026` at `https://inference.baseten.co/v1` | `surmap.labelling.baseten_muse` |
+| Modal | GPU for SAM 3.1 (app `surmap-sam`); a Muse Spark Open check endpoint | `facebook/sam3.1`; `meta-models/Muse-Spark-Open-816B-A42B` | `surmap.survey.modal_sam`, `surmap.labelling.modal_muse` |
 
-Muse Spark Open is not on Meta Model API. Baseten hosts it here.
-Hosted Muse Spark (`muse-spark-1.3`) is still the planned model for a
-scene note and is not called from this tree. Modal is not called.
-The geometric pipeline (stereo, Coral detection, RTAB-Map, the demo)
-does not use these credits.
+Every live call is gated by its `SURMAP_LIVE_*` flag. Muse Spark Open
+is not on the Meta Model API; Baseten hosts it. The geometric pipeline
+(stereo, Coral detection, RTAB-Map, the dev console) does not use
+these credits.
 
 ## Baseten Muse Spark Open labels
 
@@ -31,9 +30,10 @@ does not use these credits.
 | Model | `meta-models/muse-spark-open-1026` |
 | Key | `BASETEN_API_KEY`, sent only as `Authorization: Bearer`. A missing or blank key raises `BasetenApiKeyMissing` before any socket |
 | Input | JPEG crop as an `image_url` data URL, plus the detector's coarse label. The map-frame point is not sent; it is attached to `ObjectLabel.map_point` after the reply |
+| Tool | `record_label(label, description, confidence)` is offered with `tool_choice` `auto`. A valid tool call is the label; otherwise the text lines below are parsed. `SURMAP_BASETEN_TOOL_LABELS=0` turns the tool off |
 | Output | `ObjectLabel`: `label`, `description`, `confidence` (`None` when the assistant text has no number), `model_id`, `raw_text` |
 | Prompt | Humanitarian search-and-rescue inventory for emergency responders after a natural disaster. Asks only for a short object label, one description sentence, and a confidence |
-| Reasoning | `reasoning_effort` defaults to `low` because labels are per object and frequent. Allowed values are `low`, `medium`, and `high`. The client does not send a flag that claims reasoning is off, and it does not use JSON mode. `choices[0].message.reasoning_content` is kept on `reasoning_text` and is not copied into `raw_text` or used as the label |
+| Reasoning | `reasoning_effort` is always sent, `low` by default (Baseten's default for Muse Spark Open is `xhigh`), because labels are per object and frequent. Allowed values are `low`, `medium`, and `high`. The client does not send a flag that claims reasoning is off, and it does not use JSON mode. `choices[0].message.reasoning_content` is kept on `reasoning_text` and is not copied into `raw_text` or used as the label |
 | Cap | `max_tokens` defaults to `4096`. A value below `2048` is rejected: a trivial prompt can spend about 2200 reasoning tokens before any label text. If `finish_reason` is `length` and the answer text is empty, the client retries once at double the cap, then raises `EmptyLabelError` with `finish_reason` and token counts. An empty label is never returned |
 
 A constructor argument wins. When the argument is omitted, the client
@@ -70,8 +70,8 @@ one, or a usage log copied from a machine that has one.
 
 ## Credit usage and limits
 
-Shared ledger for every hosted call. Other agents pass an instance and
-use it as a callback; the method names below are the interface.
+Shared ledger for every hosted call. Clients take an instance and use
+it as a callback; the names below are the interface.
 
 ```python
 @dataclass(frozen=True)

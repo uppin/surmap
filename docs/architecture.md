@@ -1,11 +1,11 @@
 # SurMap architecture — passive survey
 
-Status: design in this document, plus the Python on `main` under
-`src/surmap/` (survey servers, stereo, Coral detection, RTAB-Map
-sidecar and streaming demo, moving objects, a SAM 3.1 ONNX adapter
-tested with a fake model, and the Muse Spark scene-note client in
-§3.2). GPS-tied map export, mask projection, and the Gazebo world
-are not on `main`. They are on open pull requests named in
+Status: design in this document, implemented under `src/surmap/`
+(survey servers, stereo, Coral detection, RTAB-Map sidecar and
+streaming backend, moving objects, SAM 3.1 adapters, mask projection,
+the GPS-anchored semantic-map snapshot, the Muse clients in §3.2, and
+the Gazebo / PX4 SITL disaster world). GPS on the survey wire is not
+built yet; the snapshot takes GPS from the capture. Provenance:
 [HACKATHON.md](../HACKATHON.md). Stack: Python (uv-managed). Three
 machines, defined in §2.
 
@@ -54,10 +54,11 @@ Its output is never fed back as a control signal.
 
 - A workstation with an NVIDIA RTX 5060 Ti. ROS 2 node names in §4.2
   are design intent. No ROS 2 package is in this repository.
-- On `main` the station process can serve `StationSamService`. The
-  ONNX SAM adapter is opt-in and is tested with a fake model. The
-  scene-note client is §3.2. Fusion, the semantic map builder, and
-  mask projection are not on `main`.
+- The station process serves `StationSamService` with SAM 3.1
+  (`--detector sam31-torch`, `sam3` ONNX, or `sam3-modal`). Mask
+  projection (`surmap.survey.mask_cloud`), persistent surfaces, and the
+  semantic-map snapshot (`surmap.map.snapshot`) run here; the Muse
+  clients are §3.2.
 - Consumes survey data only; issues no commands to the drone.
 
 ### 2.3 Machine 3 — simulation
@@ -101,7 +102,7 @@ use it. A non-Meta choice must name the gap it fills, here.
 | Job | Model | Meta? | Notes |
 |---|---|---|---|
 | Segmentation + video tracking (base) | SAM 3.1 | Yes | §3.1 |
-| Scene note (API) | Muse Spark `muse-spark-1.3` on the Meta Model API | Yes | §3.2. Per-object labels on PR #48/#39 use Baseten Muse Spark Open |
+| Scene note (API) | Muse Spark `muse-spark-1.3` on the Meta Model API | Yes | §3.2. Per-object labels: Muse Spark on the Meta API, or Muse Spark Open on Baseten |
 | Object detection (Edge TPU) | SSD MobileNet V2 or EfficientDet-Lite, Edge TPU-compiled `.tflite` | No | Meta publishes no Edge TPU detector; Coral requires Edge TPU-compiled TFLite. Final choice by CM5 benchmark |
 | Object tracking (on-board) | Lightweight box tracker (Kalman / IoU association) over detector output | No | Classical algorithm, not a learned model. SAM 3.1 also tracks, but on the base station, after the fact / downstream |
 | Pose and mapping | RTAB-Map | No | SLAM system, not a learned model; no Meta equivalent |
@@ -140,7 +141,7 @@ use it. A non-Meta choice must name the gap it fills, here.
 The labeller the code calls is Muse Spark. There is no Llama client
 in this repository.
 
-**Scene note, on `main`.** `MetaMuseSceneClient`
+**Scene note.** `MetaMuseSceneClient`
 (`src/surmap/labelling/meta_muse.py`) posts one JPEG and the on-board
 label strings to `POST https://api.meta.ai/v1/responses`. The default
 model id is `muse-spark-1.3`. Auth is `Authorization: Bearer` from
@@ -148,28 +149,26 @@ model id is `muse-spark-1.3`. Auth is `Authorization: Bearer` from
 another covered id. The client refuses Muse Wonder Full and the
 Baseten slug `meta-models/muse-spark-open-1026`. The prompt asks for
 a civilian search-and-rescue description and for no flight advice.
-No demo on `main` calls this client. `SURMAP_LIVE_META=1` gates the
-opt-in test only; the client does not read that variable.
+The live mission (`scripts/mission_demo.py --live` with
+`SURMAP_LIVE_META=1`) writes one note per run.
 
-**Per-object labels, not on `main`.** PR #48 (and #39) add
-`BasetenMuseLabelClient` (`src/surmap/labelling/baseten_muse.py`).
-It posts one JPEG crop to Baseten as
-`meta-models/muse-spark-open-1026`. The map point is an argument and
-is not sent. A live `scripts/mission_demo.py --live` start calls
-`build_live_services`, which raises unless `SURMAP_LIVE_BASETEN=1`
-and `BASETEN_API_KEY` is non-blank, and unless `SURMAP_LIVE_META=1`
-and `MODEL_API_KEY` is non-blank. That is the current gate. The
-offline mission uses a fixture label and a fixture scene note and
-does not construct these clients.
+**Per-object labels.** `MetaMuseLabelClient` (same module) labels one
+JPEG crop with `muse-spark-1.3` at `reasoning.effort` `low`. The live
+mission calls it once per merged object (`surmap.mission.objects`), not
+once per frame. `BasetenMuseLabelClient`
+(`src/surmap/labelling/baseten_muse.py`) labels it with open-weight
+Muse Spark Open, `meta-models/muse-spark-open-1026`, on Baseten. The
+map point is attached after the reply and is not sent.
+`build_live_services` in `src/surmap/mission/demo.py` picks the
+provider: Baseten whenever `SURMAP_LIVE_BASETEN=1`, otherwise Meta
+under `SURMAP_LIVE_META=1`. The Baseten request sends
+`reasoning_effort` `low` and offers a `record_label` tool for the
+structured fields, because Baseten has no JSON mode for this model. The offline mission uses a
+fixture label and does not construct these clients.
 
-**Ask the map, not on `main`.** PR #41 calls `muse-wonder-1.0` for
-questions over a snapshot. That is not the scene-note model and not
-the Baseten labeller.
-
-An earlier draft of this section named the newest Meta Llama model
-and a per-landmark loop that re-prompts SAM. No code does that. The
-clients above do not return a confidence field, and they do not emit
-concept phrases for SAM.
+**Ask the map.** `surmap.mapqa` calls `muse-wonder-1.0` for questions
+and a situation report over a snapshot, and
+`muse-voice-transcribe-1.0` for spoken questions ([mapqa.md](mapqa.md)).
 
 ### 3.3 On-board detection and tracking (CM5 + Coral Edge TPU)
 
@@ -530,10 +529,8 @@ Revisit only after the passive pipeline works end to end on real footage:
 - SAM 3.1 on the RTX 5060 Ti: installed VRAM variant (8 vs 16 GB),
   measured throughput/VRAM, input resolution, keyframe rate,
   video-mode vs per-image mode.
-- Scene-note model id is `muse-spark-1.3` (§3.2). Still open: labelling
-  cost and latency per session. Per-object labels, on PR #48/#39, are
-  Baseten `meta-models/muse-spark-open-1026` and are required for a
-  live mission (`SURMAP_LIVE_BASETEN=1`).
+- Labelling cost and latency per session (§3.2;
+  `scripts/usage_report.py` totals logged usage).
 - Link drone ↔ base station (Wi-Fi / LTE / other) and its bandwidth.
 - Simulation machine: Gazebo Harmonic + PX4 SITL is the local/WSL
   Machine 3 path (§2.3); dedicated hardware and alternate simulators

@@ -151,9 +151,9 @@ Produces `…/mav0/{cam0,cam1,imu0,gps0}/` in the shape the demo and
 uv run python scripts/demo.py   # registry datasets; or use your export offline
 ```
 
-## Deferred (later PRs)
+## Backlog
 
-Tracked under `src/surmap/docs/todo/`:
+Recorded under `src/surmap/docs/todo/`:
 
 - Live ROS2 → ConnectRPC `RawVideoFrame` bridge
 - GPS on the survey wire proto
