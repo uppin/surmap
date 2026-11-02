@@ -236,6 +236,30 @@ def test_world_sdf_is_harmonic_and_uses_the_px4_anchor() -> None:
     assert float(_child_text(spherical, "heading_deg")) == pytest.approx(0.0)
 
 
+def test_world_declares_the_systems_px4_waits_for() -> None:
+    # Given the disaster-block world file PX4 launches
+    root = ET.fromstring(disaster_world_sdf().read_text(encoding="utf-8"))
+    world = root.find("world")
+    assert world is not None
+
+    # When the world-level system plugins are listed
+    systems = {plugin.get("name") for plugin in world.findall("plugin")}
+
+    # Then the scene broadcaster PX4 polls, the sensor system the stereo
+    # cameras need, and physics are declared in the world itself, because
+    # a server-config plugin list is not applied by every Gazebo build
+    assert "gz::sim::systems::SceneBroadcaster" in systems
+    assert "gz::sim::systems::Sensors" in systems
+    assert "gz::sim::systems::Physics" in systems
+    assert "gz::sim::systems::UserCommands" in systems
+    # And the vehicle sensor systems PX4's bridge subscribes to, which
+    # otherwise only exist in PX4's server config
+    assert "gz::sim::systems::Imu" in systems
+    assert "gz::sim::systems::NavSat" in systems
+    assert "gz::sim::systems::AirPressure" in systems
+    assert "gz::sim::systems::Magnetometer" in systems
+
+
 def test_a_standing_survivor_is_about_one_point_seven_five_metres_tall() -> None:
     # Given the street-level standing figure
     root = ET.fromstring(disaster_world_sdf().read_text(encoding="utf-8"))

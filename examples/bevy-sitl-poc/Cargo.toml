@@ -1,0 +1,27 @@
+[package]
+name = "bevy-sitl-poc"
+version = "0.1.0"
+edition = "2021"
+description = "Browser-only Bevy disaster-flight simulation PoC (WASM). Frames stay in the page; nothing is sent to a backend."
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# webgpu: Feronia LOD inserts VisibilityRange on debris, whose PBR
+# pipeline needs storage buffers the WebGL2 fallback cannot provide
+# (wgpu validation panic on visibility_ranges, group 0 binding 14).
+bevy = { version = "0.18", features = ["webgpu"] }
+bevy_rapier3d = "0.33"
+bevy_feronia = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = "0.2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+opt-level = 3
+lto = "thin"

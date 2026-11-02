@@ -129,6 +129,26 @@ the street in the lower part of a forward frame at 5 m. An explicit
 flag wins over the environment variable. `0` for the disparity floor
 turns that filter off and leaves the depth cap in charge.
 
+## Fully local live (Ollama)
+
+No hosted call at all: a vision model served by a local Ollama
+(`ollama serve`, `ollama list`) does the person boxes, the per-object
+labels, and the scene note. The model is your choice — any vision
+model in `ollama list` — named by `--ollama-model` or
+`SURMAP_OLLAMA_MODEL`. There is no built-in model name; without one
+the run fails and names the option. Boxes stand in for SAM masks as
+rectangle polygons, so claimed points are coarser than a SAM run.
+
+```bash
+ollama serve   # if not already running
+SURMAP_LIVE_OLLAMA=1 \
+  uv run python scripts/mission_demo.py --live \
+  --capture ~/sitl-runs/disaster-mac --ollama-model gemma4:e4b-mlx
+```
+
+The report then carries `ollama:<model>` in its model ids and an
+empty `meta_calls` list.
+
 ## Tests
 
 ```bash

@@ -155,10 +155,7 @@ def main(argv: list[str] | None = None) -> int:
 
         def _on_gps(self, msg: NavSatFix) -> None:
             t_ns = int(msg.header.stamp.sec) * 1_000_000_000 + int(msg.header.stamp.nanosec)
-            if msg.position_covariance:
-                acc = sitl_dump.navsat_accuracy_m(float(msg.position_covariance[0]))
-            else:
-                acc = 1.0
+            acc = sitl_dump.accuracy_from_covariance(msg.position_covariance)
             gps_rows.append(
                 [t_ns, float(msg.latitude), float(msg.longitude), float(msg.altitude), acc]
             )

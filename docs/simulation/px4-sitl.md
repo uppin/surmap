@@ -15,6 +15,25 @@ The demo scene is a fictional earthquake-and-flood block. One command
 starts this same stereo airframe in that world, and the scoring JSON
 and WSLg steps are in [disaster-world.md](disaster-world.md).
 
+## On an Apple Silicon Mac: Docker SITL
+
+ROS 2 Jazzy has no supported macOS build, so the same stack runs in a
+Docker container (arm64-native under Rancher Desktop or Docker
+Desktop; `deploy/mac-sitl/`). One command builds and starts it:
+
+```bash
+./scripts/launch_mac_sitl.sh
+```
+
+The container runs Gazebo Harmonic with the `disaster_block` world
+and PX4's `x500_surmap_stereo` airframe. The Gazebo GUI is served over
+VNC at `vnc://127.0.0.1:5901` (password `surmap-vnc`); PX4 waits at
+its `pxh>` console in tmux inside the container, where the operator
+takes off and lands — SurMap stays passive and publishes nothing.
+`deploy/mac-sitl/capture.sh` dumps the same capture directory layout
+as the WSL path (`~/sitl-runs/disaster-mac/`), ready for EuRoC export
+and `mission_demo.py --live`.
+
 ## Preflight (verified on this WSL host)
 
 | Piece | Status |

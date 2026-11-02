@@ -40,6 +40,17 @@ def navsat_accuracy_m(variance_m2: float) -> float:
     return math.sqrt(variance_m2)
 
 
+def accuracy_from_covariance(covariance: Sequence[float]) -> float:
+    """Accuracy in metres from a NavSatFix `position_covariance` sequence.
+
+    Jazzy delivers the covariance as an array whose truth value is
+    ambiguous, so emptiness is a length check, never a boolean test.
+    """
+    if len(covariance) == 0:
+        return 1.0
+    return navsat_accuracy_m(float(covariance[0]))
+
+
 def take_stereo_pair(
     left: dict[int, _T],
     right: dict[int, _T],

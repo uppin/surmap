@@ -8,7 +8,12 @@ from types import SimpleNamespace
 
 from PIL import Image
 
-from surmap.simulation.sitl_dump import image_msg_to_png, navsat_accuracy_m, take_stereo_pair
+from surmap.simulation.sitl_dump import (
+    accuracy_from_covariance,
+    image_msg_to_png,
+    navsat_accuracy_m,
+    take_stereo_pair,
+)
 
 
 def test_navsat_accuracy_is_the_square_root_of_the_reported_variance() -> None:
@@ -29,6 +34,15 @@ def test_a_non_positive_navsat_variance_falls_back_to_one_metre() -> None:
     assert navsat_accuracy_m(0.0) == 1.0
     assert navsat_accuracy_m(-4.0) == 1.0
     assert navsat_accuracy_m(math.nan) == 1.0
+
+
+def test_accuracy_from_a_covariance_sequence_never_tests_its_truth_value() -> None:
+    # Given a Jazzy NavSatFix covariance, which arrives as an array whose
+    # truth value is ambiguous, plus the no-covariance case
+    # When accuracy is derived for the capture row
+    # Then the east variance drives the value, and empty falls back to 1 m
+    assert accuracy_from_covariance([0.25, 0.0, 0.0]) == 0.5
+    assert accuracy_from_covariance([]) == 1.0
 
 
 def test_unpaired_frames_older_than_twice_the_slop_are_dropped() -> None:

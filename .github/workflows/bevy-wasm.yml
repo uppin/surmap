@@ -1,0 +1,68 @@
+name: Bevy WASM PoC
+
+# Compiles examples/bevy-sitl-poc to WASM and runs its native tests.
+# Kept separate from ci.yml (Python gates) and path-filtered so it
+# only runs when the PoC changes. The exact commands below are the
+# ones the PoC README documents for local runs.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "examples/bevy-sitl-poc/**"
+      - ".github/workflows/bevy-wasm.yml"
+  pull_request:
+    paths:
+      - "examples/bevy-sitl-poc/**"
+      - ".github/workflows/bevy-wasm.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bevy-wasm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bevy-wasm:
+    name: bevy-wasm (cargo test + trunk build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/bevy-sitl-poc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable + wasm32 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: examples/bevy-sitl-poc
+
+      - name: Install trunk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: trunk
+
+      # Bevy's native build (winit/wgpu/audio) links system libraries
+      # that ubuntu-latest does not ship; the wasm32 build needs none.
+      - name: Install Bevy native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+      - name: Test (native, calibration)
+        run: cargo test --locked
+
+      - name: Build WASM bundle
+        run: trunk build index.html --release
+
+      - name: Check bundle was produced
+        run: |
+          ls -lh dist/
+          test -n "$(find dist -name '*_bg.wasm' -size +1M -print -quit)"

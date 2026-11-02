@@ -1,0 +1,4 @@
+# getrandom (via rand, pulled in by Bevy/Feronia) needs the JS backend
+# explicitly selected on wasm32-unknown-unknown.
+[target.wasm32-unknown-unknown]
+rustflags = ["--cfg", 'getrandom_backend="wasm_js"']
