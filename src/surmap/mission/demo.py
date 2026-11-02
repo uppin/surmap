@@ -35,6 +35,7 @@ from surmap.labelling.meta_muse import (
     MetaMuseSceneError,
     UrllibMetaMuseTransport,
 )
+from surmap.labelling.ollama import OllamaLabelClient, OllamaSceneClient
 from surmap.map.snapshot import MetaCallRecord, build_snapshot, write_snapshot
 from surmap.mission.dense import SPARSE_RTABMAP, STEREO_FALLBACK, DenseStereoFallback
 from surmap.mission.metrics import (
@@ -73,6 +74,7 @@ from surmap.slam.streaming import DEFAULT_MAX_DEPTH_M, DEFAULT_MIN_DISPARITY_PX
 from surmap.survey.mask_cloud import points_in_mask
 from surmap.survey.meta_sam import MetaSamDetector, UrllibMetaTransport
 from surmap.survey.modal_sam import ModalSamDetector, post_json
+from surmap.survey.ollama_box import OllamaBoxDetector
 from surmap.survey.sam import RawFrame, SamDetection
 from surmap.survey.stereo import StereoRig
 from surmap.types import (
@@ -356,6 +358,9 @@ def build_live_services(*, sam_route: str | None = None) -> LiveServices:
     the scene note. ``None`` keeps the default above: Meta SAM whenever
     ``SURMAP_LIVE_META=1``.
     """
+    if os.environ.get("SURMAP_LIVE_OLLAMA") == "1":
+        # Fully local: Ollama-served model does boxes, labels, scene note.
+        return LiveServices(sam="ollama", labels="ollama", scene_note="ollama")
     meta = os.environ.get("SURMAP_LIVE_META") == "1"
     baseten = os.environ.get("SURMAP_LIVE_BASETEN") == "1"
     modal = os.environ.get("SURMAP_LIVE_MODAL") == "1"
@@ -467,6 +472,7 @@ def run_live_mission(
     min_disparity_px: float | None = None,
     sam_route: str | None = None,
     record_dir: Path | None = None,
+    ollama_model: str | None = None,
 ) -> MissionResult:
     """Real SAM, labels, and scene note. The cloud is the streaming RTAB-Map map.
 
@@ -491,13 +497,17 @@ def run_live_mission(
         min_disparity_px=min_disparity_px,
     )
     recorder = CallRecorder() if record_dir is not None else None
-    segmenter = _live_segmenter(services.sam, recorder=recorder)
-    labeller = _live_labeller(services.labels, recorder)
-    note_client = (
-        MetaMuseSceneClient(transport=_meta_muse_transport(recorder, "scene_note"))
-        if services.scene_note == "meta"
-        else None
-    )
+    segmenter = _live_segmenter(services.sam, recorder=recorder, model=ollama_model)
+    labeller = _live_labeller(services.labels, recorder, model=ollama_model)
+    note_client: MetaMuseSceneClient | OllamaSceneClient | None
+    if services.scene_note == "meta":
+        note_client = MetaMuseSceneClient(
+            transport=_meta_muse_transport(recorder, "scene_note")
+        )
+    elif services.scene_note == "ollama":
+        note_client = OllamaSceneClient(model=ollama_model)
+    else:
+        note_client = None
     pinned = pinned_sam_prompt()
     concept_client = (
         MetaMuseConceptClient(
@@ -630,18 +640,21 @@ def run_live_mission(
         scene_note = "Scene note was not requested."
     else:
         started = time.perf_counter()
-        scene_note = note_client.note(
-            labels or ["none"],
-            _as_jpeg(first_jpeg),
-            object_summary=object_summary(tracks),
-        )
-        meta_calls.append(
-            MetaCallRecord(
-                "scene_note",
-                note_client.model,
-                time.perf_counter() - started,
+        if isinstance(note_client, OllamaSceneClient):
+            scene_note = note_client.note(labels or ["none"], _as_jpeg(first_jpeg))
+        else:
+            scene_note = note_client.note(
+                labels or ["none"],
+                _as_jpeg(first_jpeg),
+                object_summary=object_summary(tracks),
             )
-        )
+            meta_calls.append(
+                MetaCallRecord(
+                    "scene_note",
+                    note_client.model,
+                    time.perf_counter() - started,
+                )
+            )
     origin_gps = gps or (
         GpsCheckpoint(
             frames[0].t_ns,
@@ -763,8 +776,10 @@ def _meta_muse_transport(
 
 
 def _live_labeller(
-    kind: str, recorder: CallRecorder | None
-) -> BasetenMuseLabelClient | MetaMuseLabelClient:
+    kind: str, recorder: CallRecorder | None, *, model: str | None = None
+) -> BasetenMuseLabelClient | MetaMuseLabelClient | OllamaLabelClient:
+    if kind == "ollama":
+        return OllamaLabelClient(model=model)
     if kind == "baseten":
         if recorder is None:
             return BasetenMuseLabelClient()
@@ -790,7 +805,16 @@ def _propose_concepts(
     return chosen
 
 
-def _live_segmenter(kind: str, *, recorder: CallRecorder | None = None) -> _LiveSegmenter:
+def _live_segmenter(
+    kind: str, *, recorder: CallRecorder | None = None, model: str | None = None
+) -> _LiveSegmenter:
+    if kind == "ollama":
+        detector_ollama = OllamaBoxDetector(prompt=live_sam_prompt(), model=model)
+
+        def segment_ollama(frame: RawFrame, concept: str) -> tuple[SamDetection, ...]:
+            return detector_ollama.detect(frame)
+
+        return _LiveSegmenter(detector_ollama.model_id, segment_ollama)
     if kind == "meta":
         transport = (
             None
@@ -932,7 +956,7 @@ def _append_track(
     descriptions: dict[int, str],
     model_ids: dict[int, str],
     labels: list[str],
-    labeller: _FixtureLabeller | BasetenMuseLabelClient | MetaMuseLabelClient,
+    labeller: _FixtureLabeller | BasetenMuseLabelClient | MetaMuseLabelClient | OllamaLabelClient,
     raw: RawFrame,
     claimed: tuple[Vec3, ...],
     coarse_label: str,

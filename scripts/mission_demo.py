@@ -97,6 +97,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="drop points below this disparity (default 2, or $SURMAP_MIN_DISPARITY_PX)",
     )
+    parser.add_argument(
+        "--ollama-model",
+        default=None,
+        help="Ollama vision model for the fully local live path "
+        "(with SURMAP_LIVE_OLLAMA=1; or $SURMAP_OLLAMA_MODEL; see `ollama list`)",
+    )
     args = parser.parse_args(argv)
     if args.live and (args.offline or args.fixtures):
         print("Pass only one of --live and --offline/--fixtures.", file=sys.stderr)
@@ -119,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
                 min_disparity_px=args.min_disparity_px,
                 sam_route=args.sam_route,
                 record_dir=args.record,
+                ollama_model=args.ollama_model,
             )
         else:
             recording = None if args.fixtures else (args.recording or default_recording_dir())
@@ -176,16 +183,15 @@ def _serve(snapshot_path: Path, report_path: Path, host: str, port: int) -> int:
     impact = report if isinstance(report, dict) else None
     try:
         server = make_viewer_server(
-        lambda: MissionReplay(snapshot_path),
-        host=host,
-        port=port,
-        fps=1.0,
-        impact=impact,
-    )
+            lambda: MissionReplay(snapshot_path),
+            host=host,
+            port=port,
+            fps=1.0,
+            impact=impact,
+        )
     except OSError as exc:
         print(
-            f"Viewer cannot listen on {host}:{port} ({exc}). "
-            "Stop the other viewer or pass --port.",
+            f"Viewer cannot listen on {host}:{port} ({exc}). Stop the other viewer or pass --port.",
             file=sys.stderr,
         )
         return 1
