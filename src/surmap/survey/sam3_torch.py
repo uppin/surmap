@@ -20,22 +20,130 @@ dicts stay inside this adapter; the domain sees only `SamDetection`.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import os
 import shutil
 import tempfile
+import threading
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import Any, Protocol
 
 import numpy as np
+from numpy.typing import NDArray
 
-from surmap.survey.sam import SamDetection
+from surmap.detection.detector import decode_rgb
+from surmap.survey.sam import RawFrame, SamDetection
 from surmap.survey.sam3 import Sam3Unavailable, _mask_outline, parse_sam_device
+from surmap.survey.stereo import FrameImage
 
 DEFAULT_SAM31_MODEL = "facebook/sam3.1"
 _SAM31_CHECKPOINT = "sam3.1_multiplex.pt"
+
+
+class Sam31ImageProcessor(Protocol):
+    """The vendor image processor's surface (faked in tests)."""
+
+    def set_image(self, image: Any, state: Any = None) -> Any: ...
+    def set_text_prompt(self, prompt: str, state: Any) -> Any: ...
+
+
+def _as_numpy(value: Any) -> NDArray[Any]:
+    """A vendor tensor or array as a NumPy array, without importing torch."""
+    detach = getattr(value, "detach", None)
+    if callable(detach):
+        tensor = detach().cpu()
+        if "bfloat" in str(getattr(tensor, "dtype", "")):
+            tensor = tensor.float()
+        return np.asarray(tensor.numpy())
+    return np.asarray(value)
+
+
+class Sam31TorchDetector:
+    """`SamDetector` over Meta's SAM 3.1 image model (PyTorch, GPU).
+
+    One frame in, that frame's detections out: the image processor is
+    prompted with the configured concept for every frame. The vendor
+    processor and its tensors stay inside this adapter.
+    """
+
+    def __init__(
+        self,
+        processor: Sam31ImageProcessor,
+        *,
+        prompt: str = "object",
+        device: str = "cuda:0",
+        score_threshold: float = 0.5,
+        autocast: Callable[[], AbstractContextManager[Any]] | None = None,
+    ) -> None:
+        self._processor = processor
+        self._prompt = prompt
+        self._device = device
+        self._score_threshold = score_threshold
+        self._autocast = autocast
+        self._prompt_lock = threading.Lock()
+
+    def set_prompt(self, prompt: str) -> None:
+        """Reset the concept for the next stream (see StreamAnalysis)."""
+        with self._prompt_lock:
+            self._prompt = prompt
+
+    @property
+    def provider(self) -> str:
+        return "SAM 3.1 (PyTorch)"
+
+    @property
+    def device(self) -> str:
+        return self._device
+
+    def _segment(self, frame: RawFrame) -> tuple[SamDetection, ...]:
+        from PIL import Image
+
+        rgb = decode_rgb(FrameImage(frame.width, frame.height, frame.encoding, frame.data))
+        with self._prompt_lock:
+            prompt = self._prompt
+        # The checkpoint's weights are bf16: inference must run under
+        # the same autocast the vendor predictor enters, or matmuls
+        # fail with a BFloat16/Float dtype mismatch.
+        context = self._autocast() if self._autocast is not None else nullcontext()
+        with context:
+            state = self._processor.set_image(Image.fromarray(rgb))
+            state = self._processor.set_text_prompt(prompt, state)
+        masks = _as_numpy(state["masks"])
+        boxes = _as_numpy(state["boxes"])
+        scores = _as_numpy(state["scores"])
+        detections: list[SamDetection] = []
+        for index in range(len(scores)):
+            score = float(scores[index])
+            if score < self._score_threshold:
+                continue
+            mask = np.asarray(masks[index], dtype=bool)
+            if mask.ndim == 3 and mask.shape[0] == 1:
+                mask = mask[0]  # the vendor's leading channel dim
+            x_min, y_min, x_max, y_max = (float(value) for value in boxes[index])
+            # Boxes arrive in frame pixels; mask outlines are on the
+            # model's mask grid and must be scaled onto the frame.
+            scale_x = frame.width / mask.shape[1] if mask.shape[1] else 1.0
+            scale_y = frame.height / mask.shape[0] if mask.shape[0] else 1.0
+            detections.append(
+                SamDetection(
+                    label=prompt,
+                    score=score,
+                    box_xyxy=(x_min, y_min, x_max, y_max),
+                    mask_polygon=_mask_outline(mask, scale_x, scale_y),
+                )
+            )
+        return tuple(detections)
+
+    def segment(self, frame: RawFrame) -> tuple[SamDetection, ...]:
+        """Segment one frame, synchronously."""
+        return self._segment(frame)
+
+    async def detect(self, frame: RawFrame) -> tuple[SamDetection, ...]:
+        """Segment one frame (inference runs off the event loop)."""
+        return await asyncio.to_thread(self._segment, frame)
 
 
 class Sam31Model(Protocol):
@@ -271,3 +379,52 @@ def sam31_video_streamer(
         on_chunk_end=_release,
         on_close=_close,
     )
+
+
+def sam31_torch_detector(
+    model: str = DEFAULT_SAM31_MODEL,
+    *,
+    device: str = "cuda:0",
+    prompt: str = "object",
+    _importer: Callable[[str], Any] = importlib.import_module,
+) -> Sam31TorchDetector:
+    """A real SAM 3.1 `SamDetector` (PyTorch image model) for the station.
+
+    Builds Meta's image model on the named GPU device and prompts it
+    with `prompt` per frame; the checkpoint resolves exactly as the
+    video streamer's (HF id, local `.pt`, or local directory).
+    """
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    try:
+        torch = _importer("torch")
+        model_builder = _importer("sam3.model_builder")
+        processor_module = _importer("sam3.model.sam3_image_processor")
+    except ImportError as exc:
+        raise Sam3Unavailable(
+            "the real SAM 3.1 runtime is not installed: install torch, "
+            "torchvision and Meta's sam3 package "
+            '(uv pip install torch torchvision "setuptools<81" '
+            "git+https://github.com/facebookresearch/sam3.git), accept the "
+            "facebook/sam3.1 licence, and put HF_TOKEN in the project .env"
+        ) from exc
+    kind, device_id = parse_sam_device(device)
+    if kind == "cuda" and not bool(torch.cuda.is_available()):
+        raise Sam3Unavailable(
+            f"torch reports no CUDA device for {device}; check the NVIDIA "
+            "driver and that the installed torch build is a CUDA build"
+        )
+    if kind == "cuda":
+        torch.cuda.set_device(device_id or 0)
+    checkpoint = _resolve_checkpoint(model, _importer)
+    torch_device = f"cuda:{device_id or 0}" if kind == "cuda" else "cpu"
+    # The builder moves the weights only for the exact "cuda" string;
+    # the index is already selected via torch.cuda.set_device above.
+    builder_device = "cuda" if kind == "cuda" else "cpu"
+    image_model = model_builder.build_sam3_image_model(
+        checkpoint_path=str(checkpoint), device=builder_device, load_from_HF=False
+    )
+    processor = processor_module.Sam3Processor(image_model, device=builder_device)
+    autocast: Callable[[], AbstractContextManager[Any]] | None = None
+    if kind == "cuda":
+        autocast = lambda: torch.autocast(device_type="cuda", dtype=torch.bfloat16)  # noqa: E731
+    return Sam31TorchDetector(processor, prompt=prompt, device=torch_device, autocast=autocast)

@@ -192,6 +192,10 @@ class Sam3Detector:
     def provider(self) -> str:
         return self._session.provider
 
+    @property
+    def device(self) -> str:
+        return self._session.device
+
     def _segment(self, frame: RawFrame) -> tuple[SamDetection, ...]:
         rgb = decode_rgb(FrameImage(frame.width, frame.height, frame.encoding, frame.data))
         frame_h, frame_w = rgb.shape[:2]

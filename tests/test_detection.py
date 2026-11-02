@@ -209,3 +209,22 @@ def test_object_point_source_lifts_box_points_to_the_map_frame() -> None:
     assert len(observation.points) == 3  # the (5,5,1) point projects outside the box
     assert all(point.x >= 10.0 for point in observation.points)
     assert source.points_for_pair(pair, None) == ()
+
+
+def test_object_point_source_uses_the_rig_supplied_for_the_pair() -> None:
+    from surmap.survey.stereo import StereoRig
+
+    # Given an object source built without a rig — the CM5 process
+    # learns the rig from each survey stream's config, not at startup
+    source = CoralObjectPointSource(_StubSource(), _StubStereo())
+    pair = StereoFramePair(3, 300, "l", "r", "cal", _jpeg_bytes(), _jpeg_bytes())
+
+    # When the pair arrives with the stream's rig
+    (observation,) = source.points_for_pair(
+        pair, Pose(Vec3(10.0, 0.0, 0.0)), StereoRig(100.0, 100.0, 50.0, 50.0, 0.1)
+    )
+
+    # Then the tracked object's points are lifted to the map frame
+    assert observation.track_id == 5
+    assert len(observation.points) == 3
+    assert all(point.x >= 10.0 for point in observation.points)

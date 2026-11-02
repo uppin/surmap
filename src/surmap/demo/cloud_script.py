@@ -21,7 +21,7 @@ from __future__ import annotations
 
 CLOUD_SCRIPT = """// --- 3D point cloud: server-rendered image, PTZ pose on the server ---
 const cloudCanvas = $('cloud');
-const cloudCtx = cloudCanvas.getContext('2d');
+const cloudCtx = cloudCanvas ? cloudCanvas.getContext('2d') : null;
 let cloudImage = null;
 async function postCloud(body) {{
   try {{
@@ -54,12 +54,14 @@ function setCloud(cloudPng) {{
   image.src = 'data:image/png;base64,' + cloudPng;
 }}
 function drawCloud() {{
+  if (!cloudCtx || !cloudCanvas) return;
   const w = cloudCanvas.width, h = cloudCanvas.height;
   cloudCtx.fillStyle = '#0a0c0e';
   cloudCtx.fillRect(0, 0, w, h);
   if (cloudImage) cloudCtx.drawImage(cloudImage, 0, 0, w, h);
 }}
 function resizeCloud() {{
+  if (!cloudCanvas) return;
   const wrap = $('cloud-wrap');
   const dpr = window.devicePixelRatio || 1;
   cloudCanvas.width = Math.max(2, Math.round(wrap.clientWidth * dpr));
@@ -80,6 +82,7 @@ function ptzAction(action) {{
 document.querySelectorAll('[data-ptz]').forEach((button) => {{
   button.addEventListener('click', () => ptzAction(button.dataset.ptz));
 }});
+if (cloudCanvas) {{
 $('cloud-reset').addEventListener('click', () => postCloud({{action: 'cloud_reset'}}));
 $('cloud-fullscreen').addEventListener('click', () => {{
   const pane = $('cloud-pane');
@@ -117,4 +120,5 @@ surfacesButton.type = 'button';
 surfacesButton.textContent = 'Hide surfaces';
 $('cloud-reset').before(surfacesButton);
 surfacesButton.addEventListener('click', () => postCloud({{action: 'cloud_surfaces'}}));
+}}
 """

@@ -25,13 +25,49 @@ class SlowDetector:
         return (a_detection(),)
 
 
-def a_config(mode: survey_pb2.AnalysisMode) -> survey_pb2.StationRequest:
+def a_config(
+    mode: survey_pb2.AnalysisMode, prompts: list[str] | None = None
+) -> survey_pb2.StationRequest:
     return survey_pb2.StationRequest(
         config=survey_pb2.StationStreamConfig(
             calibration=survey_pb2.StereoCalibration(calibration_id="cal-1", baseline_m=0.12),
+            concept_prompts=prompts or [],
             analysis_mode=mode,
         )
     )
+
+
+class PromptedDetector:
+    """SAM double whose concept the stream config sets, like SAM 3.1's."""
+
+    def __init__(self) -> None:
+        self.prompt = "object"
+
+    def set_prompt(self, prompt: str) -> None:
+        self.prompt = prompt
+
+    async def detect(self, frame: RawFrame) -> tuple[SamDetection, ...]:
+        return (SamDetection(self.prompt, 0.9, (0.0, 0.0, 10.0, 10.0), ((1.0, 1.0),)),)
+
+
+async def test_the_stream_config_prompt_reaches_the_detector() -> None:
+    # Given a station whose detector was built with a default concept
+    detector = PromptedDetector()
+
+    # When a stream asks for another concept in its config
+    responses = [
+        response
+        async for response in stream_analysis(
+            as_stream([a_config(survey_pb2.ANALYSIS_MODE_EVERY_FRAME, ["car"]), a_frame(1)]),
+            detector,
+        )
+    ]
+
+    # Then the detector is prompted with the stream's concept, not
+    # its build-time default, and answers under it
+    assert detector.prompt == "car"
+    (detection,) = responses[0].detections.detections
+    assert detection.label == "car"
 
 
 def a_frame(frame_id: int) -> survey_pb2.StationRequest:

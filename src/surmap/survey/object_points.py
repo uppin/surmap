@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+from surmap.survey.stereo import StereoRig
 from surmap.types import ObjectPoints, Pose, StereoFramePair
 
 
@@ -20,7 +21,7 @@ class ObjectPointSource(Protocol):
     """Per completed stereo pair: each tracked object's map-frame points."""
 
     def points_for_pair(
-        self, pair: StereoFramePair, pose: Pose | None
+        self, pair: StereoFramePair, pose: Pose | None, rig: StereoRig | None = None
     ) -> tuple[ObjectPoints, ...]: ...
 
 
@@ -31,6 +32,8 @@ class InMemoryObjectPointSource:
         self._observations = observations
         self.pairs: list[StereoFramePair] = []
 
-    def points_for_pair(self, pair: StereoFramePair, pose: Pose | None) -> tuple[ObjectPoints, ...]:
+    def points_for_pair(
+        self, pair: StereoFramePair, pose: Pose | None, rig: StereoRig | None = None
+    ) -> tuple[ObjectPoints, ...]:
         self.pairs.append(pair)
         return self._observations

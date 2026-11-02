@@ -2,6 +2,8 @@
 
 import json
 import queue
+import socket
+import struct
 import threading
 import time
 import urllib.error
@@ -266,6 +268,46 @@ def test_a_new_viewer_takes_the_stream_over(tmp_path: Path) -> None:
         assert second.get(timeout=10) == "run"
         assert second.get(timeout=10) == "frame"
         assert first.get(timeout=10) == "end"
+
+
+def test_the_run_keeps_playing_server_side_after_the_viewer_leaves(tmp_path: Path) -> None:
+    # Given a prepared scene served by the demo
+    catalog = [a_local_scene(tmp_path, "street")]
+    ensure_dataset(catalog[0], tmp_path / "cache", log=lambda _: None)
+    with a_demo_server(catalog, tmp_path / "cache", fps=1.0) as base:
+        # When a viewer opens the stream, sees it start, and leaves
+        # abruptly (RST, as a closed browser tab does)
+        host, port = base.removeprefix("http://").split(":")
+        viewer = socket.create_connection((host, int(port)), timeout=10)
+        viewer.sendall(f"GET /stream HTTP/1.1\r\nHost: {host}\r\n\r\n".encode())
+        received = b""
+        while b"event: frame" not in received:
+            received += viewer.recv(65536)
+        viewer.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        viewer.close()
+
+        # Then the run still completes on the server (its exchange
+        # never belonged to the viewer's connection) and is listed
+        def run_completed() -> bool:
+            with urllib.request.urlopen(f"{base}/runs", timeout=5) as response:
+                runs = json.loads(response.read())["runs"]
+            return bool(runs) and runs[0]["status"] == "completed"
+
+        eventually(run_completed)
+
+
+def test_an_unstarted_run_engine_joins_cleanly(tmp_path: Path) -> None:
+    from surmap.demo.server import _RunEngine
+
+    # Given a run engine that was created but never started (a
+    # takeover can land in exactly that window)
+    prepared = _prepared_tiny(tmp_path)
+    server = make_demo_server(prepared, host="127.0.0.1", port=0, with_rtabmap=False)
+    engine = _RunEngine(server, prepared, None)  # type: ignore[arg-type]
+
+    # When a takeover joins it
+    # Then it reports stopped instead of raising
+    assert engine.join(0.1)
 
 
 def test_control_pauses_and_resumes_the_running_stream(tmp_path: Path) -> None:

@@ -95,6 +95,15 @@ message Cm5StreamConfig {
   StereoCalibration calibration = 1;
   // Channels (0 and/or 1) whose frames the requester also wants streamed.
   repeated int32 video_channels = 2;
+  // The stream's own camera definitions (EuRoC sensor.yaml text), so
+  // the server can build a SLAM backend calibrated for this stream's
+  // dataset instead of reusing one built for another. Empty when the
+  // requester has none: the server's configured backend is used.
+  string cam0_yaml = 3;
+  string cam1_yaml = 4;
+  // Deepest keyframe points (m) the stream's SLAM backend keeps, so
+  // outdoor streams are not cut to an indoor depth. 0 = server default.
+  double max_depth_m = 5;
 }
 
 // One client message on the CM5 stream: config first, then frames.
@@ -121,11 +130,43 @@ message VideoFrameOut {
   RawVideoFrame frame = 2;
 }
 
+// One feature RTAB-Map tracked on a frame: rectified pixel + depth (m).
+message TrackedKeypoint {
+  int32 word_id = 1;
+  float u = 2;
+  float v = 3;
+  float depth = 4;
+}
+
+// The left camera's stereo rectification (OpenCV R1 + intrinsics).
+message RectificationOut {
+  repeated double rotation = 1 [packed = true];
+  repeated double rectified = 2 [packed = true];
+  repeated double raw = 3 [packed = true];
+  repeated double distortion = 4 [packed = true];
+}
+
+// One frame's odometry from the SLAM backend: its pose (and the
+// map-corrected pose after loop closures), the keypoints tracked on
+// it, and — on the first odometry a backend sends — its stereo
+// rectification, so a client can put the keypoints on the raw image.
+message OdomUpdateOut {
+  int64 frame_id = 1;
+  int64 t_ns = 2;
+  optional Point3 position = 3;
+  repeated double orientation_xyzw = 4 [packed = true];
+  optional Point3 map_position = 5;
+  repeated double map_orientation_xyzw = 6 [packed = true];
+  repeated TrackedKeypoint keypoints = 7;
+  optional RectificationOut rectification = 8;
+}
+
 // One server message on the CM5 stream.
 message Cm5Response {
   oneof kind {
     PointBatch points = 1;
     VideoFrameOut video = 2;
+    OdomUpdateOut odom = 3;
   }
 }
 
@@ -232,6 +273,13 @@ message SamFrameDetections {
   // The frame_id the requester assigned to the analyzed frame.
   int64 frame_id = 1;
   repeated SamDetection detections = 2;
+  // The execution provider that produced these detections, e.g.
+  // "CUDAExecutionProvider", "SAM 3.1 (PyTorch)", "InMemorySamDetector".
+  string provider = 3;
+  // The device that provider ran on: "cuda:<index>" for GPU execution,
+  // "cpu" otherwise. Together with `provider`, this says whether SAM
+  // ran on the GPU or the CPU for this frame.
+  string device = 4;
 }
 
 // One server message on the station stream.
@@ -278,9 +326,39 @@ message RegionPoints {
   bool final = 6;
 }
 
+// What a server was built with, asked before any stream is opened.
+// Each service fills the fields that describe it and leaves the rest
+// at their defaults; clients (the demo page) render only the features
+// a host reports.
+message CapabilitiesRequest {}
+
+message Capabilities {
+  // "cm5" or "station".
+  string service = 1;
+  // CM5: an object detector serves StreamDetections.
+  bool detections = 2;
+  // CM5: tracked objects' points join the survey output (designation >= 100).
+  bool object_points = 3;
+  // CM5: StreamMovingAreas is enabled.
+  bool moving_areas = 4;
+  // CM5: StreamRegionPoints has a region source.
+  bool region_points = 5;
+  // Station: a real SAM detector serves StreamAnalysis (not in-memory).
+  bool sam_analysis = 6;
+  // The detector's execution provider, e.g. "Coral",
+  // "CUDAExecutionProvider", "SAM 3.1 (PyTorch)".
+  string provider = 7;
+  // The device that provider runs on: "cuda:<index>", "edgetpu", "cpu".
+  string device = 8;
+  // CM5 SLAM backend kind: "streaming", "sidecar", or "inmemory".
+  string slam = 9;
+}
+
 // On-board (CM5): frames and calibration in, designated points and
 // requested video channels out.
 service Cm5SurveyService {
+  // What this CM5 was built with (detector, object points, SLAM kind).
+  rpc GetCapabilities(CapabilitiesRequest) returns (Capabilities);
   rpc StreamSurvey(stream Cm5Request) returns (stream Cm5Response);
   // Detections on their own stream, deliberately not attached to
   // survey output frames: the detector runs on its own cadence (it
@@ -302,5 +380,7 @@ service Cm5SurveyService {
 
 // Base station: the same frames in, SAM detections out.
 service StationSamService {
+  // What this station was built with (SAM detector, provider, device).
+  rpc GetCapabilities(CapabilitiesRequest) returns (Capabilities);
   rpc StreamAnalysis(stream StationRequest) returns (stream StationResponse);
 }

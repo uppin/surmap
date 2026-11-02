@@ -122,45 +122,15 @@ PAGE = """<!DOCTYPE html>
     </div>
     <h2>Playback</h2>
     <div class="stat" id="playback">Connecting…</div>
-    <h2>RTAB-Map</h2>
-    <div class="stat" id="rtab">Waiting for playback…</div>
+    {rtab_stat}
   </div>
-  <aside>
-    <div class="cloud-pane" id="cloud-pane">
-      <div class="cloud-head">
-        <h2>Point cloud (3D)</h2>
-        <button class="btn" id="cloud-reset" type="button">Reset view</button>
-        <button class="btn" id="cloud-fullscreen" type="button">Fullscreen</button>
-      </div>
-      <div class="cloud-wrap" id="cloud-wrap">
-        <canvas id="cloud" width="640" height="340"></canvas>
-      </div>
-      <div class="ptz" id="ptz">
-        <span>Pan</span>
-        <button class="btn" type="button" data-ptz="pan-left" title="Pan left">◀</button>
-        <button class="btn" type="button" data-ptz="pan-right" title="Pan right">▶</button>
-        <span>Tilt</span>
-        <button class="btn" type="button" data-ptz="tilt-up" title="Tilt up">▲</button>
-        <button class="btn" type="button" data-ptz="tilt-down" title="Tilt down">▼</button>
-        <span>Zoom</span>
-        <button class="btn" type="button" data-ptz="zoom-in" title="Zoom in">+</button>
-        <button class="btn" type="button" data-ptz="zoom-out" title="Zoom out">−</button>
-        <span id="ptz-readout">drag to orbit · Shift+drag to pan · wheel to zoom</span>
-      </div>
-      <p class="resize-hint">Drag the pane's bottom-right corner to resize
-        it, or use Fullscreen.</p>
-    </div>
-    <h2>Floor plan</h2>
-    <canvas id="map" width="340" height="340"></canvas>
-    <p class="legend">Top-down floor plan: every map point in its camera intensity,
-    amber = camera trajectory, yellow wedge = the camera at the shown moment.</p>
-  </aside>
+  {cm5_aside}
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
 const view = $('view').getContext('2d');
 const playback = $('playback');
-const rtab = $('rtab');
+const rtab = $('rtab') || document.createElement('div');
 const slider = $('history-slider');
 const historyLabel = $('history-label');
 const liveButton = $('history-live');
@@ -263,7 +233,9 @@ function showMap(data) {{
   image.src = 'data:image/png;base64,' + data.floor_png;
 }}
 function drawMap(map, camera) {{
-  const ctx = $('map').getContext('2d');
+  const mapCanvas = $('map');
+  if (!mapCanvas) return;
+  const ctx = mapCanvas.getContext('2d');
   const [minX, maxX, minZ, maxZ] = map.extent;
   const scale = (FLOOR_PX - 2 * FLOOR_PAD) / Math.max(maxX - minX, maxZ - minZ, 0.01);
   const px = (p) => [
@@ -409,6 +381,7 @@ function attachListeners() {{
     if (mode === 'live') {{
       rtab.innerHTML = `Keyframes <b>${{data.keyframes}}</b> · cloud `
         + `<b>${{data.cloud_points}}</b> pts<br>Odometry <b>${{data.odom_state}}</b> `
+        + `· RTAB-Map <b>${{data.rtab_fps ?? 0}}</b> fps `
         + `· lag <b>${{data.lag_frames}}</b> · dropped <b>${{data.dropped_frames}}</b>`;
       setCloud(data.cloud_png);
       showMap(data);
@@ -522,3 +495,37 @@ updateHistoryLabel();
 
 # Spliced in before the server formats PAGE, so its braces stay doubled.
 PAGE = PAGE.replace("__CLOUD_SCRIPT__", CLOUD_SCRIPT)
+
+RTAB_STAT = """    <h2>RTAB-Map</h2>
+    <div class="stat" id="rtab">Waiting for playback…</div>"""
+
+CM5_ASIDE = """  <aside>
+    <div class="cloud-pane" id="cloud-pane">
+      <div class="cloud-head">
+        <h2>Point cloud (3D)</h2>
+        <button class="btn" id="cloud-reset" type="button">Reset view</button>
+        <button class="btn" id="cloud-fullscreen" type="button">Fullscreen</button>
+      </div>
+      <div class="cloud-wrap" id="cloud-wrap">
+        <canvas id="cloud" width="640" height="340"></canvas>
+      </div>
+      <div class="ptz" id="ptz">
+        <span>Pan</span>
+        <button class="btn" type="button" data-ptz="pan-left" title="Pan left">◀</button>
+        <button class="btn" type="button" data-ptz="pan-right" title="Pan right">▶</button>
+        <span>Tilt</span>
+        <button class="btn" type="button" data-ptz="tilt-up" title="Tilt up">▲</button>
+        <button class="btn" type="button" data-ptz="tilt-down" title="Tilt down">▼</button>
+        <span>Zoom</span>
+        <button class="btn" type="button" data-ptz="zoom-in" title="Zoom in">+</button>
+        <button class="btn" type="button" data-ptz="zoom-out" title="Zoom out">−</button>
+        <span id="ptz-readout">drag to orbit · Shift+drag to pan · wheel to zoom</span>
+      </div>
+      <p class="resize-hint">Drag the pane's bottom-right corner to resize
+        it, or use Fullscreen.</p>
+    </div>
+    <h2>Floor plan</h2>
+    <canvas id="map" width="340" height="340"></canvas>
+    <p class="legend">Top-down floor plan: every map point in its camera intensity,
+    amber = camera trajectory, yellow wedge = the camera at the shown moment.</p>
+  </aside>"""

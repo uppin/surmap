@@ -68,6 +68,18 @@ def _to_proto_detection(detection: SamDetection) -> survey_pb2.SamDetection:
     return proto
 
 
+def _execution(detector: SamDetector) -> tuple[str, str]:
+    """The (provider, device) a detector reports for its execution.
+
+    Real adapters name their provider (`CUDAExecutionProvider`,
+    `SAM 3.1 (PyTorch)`) and device (`cuda:<index>` / `cpu`); a
+    detector that says neither is named by type and counted as CPU.
+    """
+    provider = str(getattr(detector, "provider", "") or type(detector).__name__)
+    device = str(getattr(detector, "device", "") or "cpu")
+    return provider, device
+
+
 async def _analyze(
     frame: survey_pb2.RawVideoFrame,
     gate: AnalysisGate,
@@ -77,10 +89,13 @@ async def _analyze(
         if not admitted:
             return None
         detections = await detector.detect(_to_raw_frame(frame))
+        provider, device = _execution(detector)
         return survey_pb2.StationResponse(
             detections=survey_pb2.SamFrameDetections(
                 frame_id=frame.frame_id,
                 detections=[_to_proto_detection(d) for d in detections],
+                provider=provider,
+                device=device,
             )
         )
 
@@ -97,6 +112,14 @@ async def stream_analysis(
             if request.WhichOneof("kind") != "config":
                 raise ValueError("first request must be config")
             gate = AnalysisGate(_map_mode(request.config.analysis_mode))
+            # The stream's concept leads: a detector that can be
+            # re-prompted (SAM 3.1) is reset to it, so the page's
+            # prompt — not the server's build-time default — is what
+            # gets segmented for.
+            prompts = request.config.concept_prompts
+            set_prompt = getattr(detector, "set_prompt", None)
+            if prompts and callable(set_prompt):
+                set_prompt(prompts[0])
             continue
         if request.WhichOneof("kind") != "frame":
             continue
@@ -121,7 +144,20 @@ def station_service_module(
         async for response in stream_analysis(requests, default_detector):
             yield response
 
+    async def capabilities_handler(
+        _request: survey_pb2.CapabilitiesRequest, _ctx: Any
+    ) -> survey_pb2.Capabilities:
+        provider, device = _execution(default_detector)
+        return survey_pb2.Capabilities(
+            service="station",
+            sam_analysis=not isinstance(default_detector, InMemorySamDetector),
+            provider=provider,
+            device=device,
+        )
+
     return ServiceModule(
         descriptor=survey_pb2.DESCRIPTOR.services_by_name["StationSamService"],
-        bricks=lambda ctx: (Brick(methods={"StreamAnalysis": handler}),),
+        bricks=lambda ctx: (
+            Brick(methods={"GetCapabilities": capabilities_handler, "StreamAnalysis": handler}),
+        ),
     )

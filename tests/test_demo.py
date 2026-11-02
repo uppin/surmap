@@ -293,6 +293,44 @@ def test_player_paces_frames_and_closes_its_backend(tmp_path: Path) -> None:
         DemoPlayer(prepared, fps=0, with_rtabmap=False)
 
 
+def test_the_rate_meter_reports_a_cumulative_counter_per_second() -> None:
+    from surmap.demo.server import _RateMeter
+
+    # Given a meter watching RTAB-Map's odometry counter
+    meter = _RateMeter(window_s=10.0)
+
+    # When the counter advances 100 frames over 4 seconds
+    assert meter.sample(0.0, 0) == 0.0
+    rate = meter.sample(4.0, 100)
+
+    # Then the rate is the advance per second, and a stalled counter
+    # (no new odometry inside the window) decays back to zero
+    assert rate == 25.0
+    assert meter.sample(20.0, 100) == 0.0
+
+
+def test_live_map_events_carry_the_rtab_frame_rate(tmp_path: Path) -> None:
+    # Given a live backend whose odometry lands for every frame
+    odometry = {
+        frame_id: OdomUpdate(frame_id, frame_id * 10, Pose(Vec3(0.0, 0.0, 0.0)), False, 1.0)
+        for frame_id in range(1, 65)
+    }
+    player = DemoPlayer(
+        _prepared_tiny(tmp_path),
+        fps=1000.0,
+        backend_factory=lambda: FakeLiveBackend(odometry=odometry),
+    )
+
+    # When the player runs
+    events = list(player.events())
+
+    # Then every map event names the RTAB-Map processing rate
+    map_events = [event for event in events if event.kind == "map"]
+    assert map_events
+    assert all(isinstance(event.data["rtab_fps"], float) for event in map_events)
+    assert all(float(str(event.data["rtab_fps"])) >= 0.0 for event in map_events)
+
+
 def test_player_emits_live_map_events_before_final_and_closes_backend(tmp_path: Path) -> None:
     # Given a live backend
     fake = FakeLiveBackend()
