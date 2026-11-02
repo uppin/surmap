@@ -193,7 +193,8 @@ def a_tail_behind(patch: NDArray[np.float32], metres: float, count: int) -> NDAr
     camera = np.array([CAMERA.x, CAMERA.y, CAMERA.z], np.float64)
     rays = patch[:count].astype(np.float64) - camera
     beyond = rays * (1.0 + metres / np.linalg.norm(rays, axis=1, keepdims=True))
-    return (camera + beyond).astype(np.float32)
+    tail: NDArray[np.float32] = (camera + beyond).astype(np.float32)
+    return tail
 
 
 def test_points_far_behind_the_object_along_the_view_ray_are_cut_away() -> None:
