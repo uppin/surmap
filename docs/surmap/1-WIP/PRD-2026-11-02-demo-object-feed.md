@@ -56,6 +56,11 @@ plays.
 7. **The SAM view in the same selection.** Hovering a SAM mask selects its object's points
    in 3D, and clicking it opens its feed card. Hovering an object in 3D (or its card)
    outlines its masks in the SAM view.
+8. **Follow the camera, like a navigation app.** A "Follow" checkbox, checked by default.
+   While it is on, the 3D pane looks the way the camera looks, from behind and above it,
+   with the camera low in the view and some of the scene behind it. A marker shows the
+   camera. Tilt and zoom adjust the follow view; orbiting or panning takes over and
+   unchecks Follow.
 
 ### What's Staying the Same
 
@@ -92,7 +97,8 @@ See the changeset [2026-11-02-demo-object-feed.md](./2026-11-02-demo-object-feed
 7. A `region` event carries, per region, the banded points' display pixels and range, sampled to at most 1500.
 9. Hovering a surface in the 3D pane shows `label #id` and highlights all its points; clicking it brings its feed card into view.
 10. Hovering a SAM mask lights up its surface in 3D, and clicking it brings its feed card into view. Hovering a surface in 3D outlines its SAM masks.
-11. On KITTI 0009 in a browser: car-sized surfaces, a feed card per surface whose preview
+11. With Follow on, the 3D pane re-centres on the camera at every map update, facing its heading, with the camera at 3/4 of the view's height.
+12. On KITTI 0009 in a browser: car-sized surfaces, a feed card per surface whose preview
    orbits, depth-coloured dense points on each SAM mask, and a 3D pane that follows drags after the run ends.
 
 ## References

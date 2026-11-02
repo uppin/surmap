@@ -18,7 +18,7 @@
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ✅ 2026-11-02 `/green` Green — implement until every red test passes · 1224 passed / 28 skipped; ruff, format, mypy strict green
+- [wf 3] ⏳ `/green` Green — implement until every red test passes · milestones 1–8 @ `c797933`; milestone 9 added
   - [x] Milestone 1: `SurfaceMap` depth band and minimum points
   - [x] Milestone 2: the camera pose reaches `SurfaceMap` (`RegionResult.camera`, `region` event `viewpoint`, live backend from the dense line)
   - [x] Milestone 3: session-level `CloudViewer`; every `cloud_*` action works without a run and answers with `cloud_png`
@@ -29,6 +29,8 @@
   - [x] Acceptance: `tests/test_demo_cloud_pick.py` passes
   - [x] Milestone 8: SAM pane in the same selection — hovering a mask selects its surface (3D points light up), clicking it opens the feed card; hovering a surface in 3D (or its card) outlines its masks on the SAM frame shown
   - [x] Acceptance: `tests/test_demo_sam_pick.py` passes
+  - [ ] Milestone 9: Follow (checked by default) — a chase view behind and above the camera along its heading, the camera at 3/4 image height with a camera marker; the un-mirrored projection
+  - [ ] Acceptance: `tests/test_demo_cloud_follow.py` passes
   - [x] Acceptance: `tests/test_survey_surfaces.py`, `tests/test_demo_object_feed.py`, `tests/test_demo_cloud_ptz.py` pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
@@ -162,6 +164,23 @@ sidecar's SGBM settings.
     yellow.
   - **Limit.** A scrubbed moment has no surface events, so its masks don't link.
 
+- **Follow (milestone 9):**
+  - **Session state.** `CloudViewer.follow` is on by default.
+  - **The camera in the scene.** A rendered scene carries the camera it was drawn for:
+    the shown frame's floor camera (`x, z, dx, dz`). It comes from the live player, the
+    replay's frame events or the snapshot's `camera`.
+  - **Following.** The view looks along the camera's heading from behind it, at the
+    pane's tilt. The orbit target sits ahead of the camera, so the camera lands at 3/4
+    of the image height at any tilt and zoom. The view spans 24 m at zoom 1.
+  - **Marker.** A yellow arrow marks the camera.
+  - **PTZ while following.** Tilt and zoom keep following. Orbit and pan leave Follow,
+    starting from the exact follow view.
+  - **Toggle.** `/control` `cloud_follow` sets it, and every answer says `follow`.
+  - **Page.** A "Follow" checkbox in the 3D pane's header, checked by default, synced
+    from each answer.
+  - **Mirror fix.** The projection was mirrored (`(x, −y, z)` is left-handed). Image u
+    is now negated, so the camera's right is drawn on the right.
+
 ### Delta (What's Changing)
 
 #### surmap
@@ -267,6 +286,7 @@ V4, in the in-app browser on KITTI 0009 (cached rerun of `38b8dc54`, then a Repl
 - `tests/test_slam_streaming_dense.py`: a live region answer carries the pose of the dense line before it.
 - `tests/test_demo_object_feed.py` (regions): a `region` event carries `viewpoint` and banded `pixels` with ranges, capped at 1500.
 - `tests/test_demo_object_feed.py`: the region event carries the viewpoint and the surface is banded; the page carries the feed and feeds it from surface events and snapshots.
+- `tests/test_demo_cloud_follow.py`: probe surfaces at, ahead of and right of the camera land where a chase view puts them (two headings); tilt and zoom keep the camera at 3/4 height; the marker; follow by default and off on orbit and pan without a jump; `cloud_follow` and `follow` in answers; players and snapshots draw for their camera; the page's checkbox.
 - `tests/test_demo_sam_pick.py`: `polygonContains` and `maskAt` in node; the SAM script maps a hovered mask to its frame's surface, outlines the selected surface's masks, and is wired to hover, click and the shared selection.
 - `tests/test_demo_cloud_pick.py`: the id image holds each surface's id on its pixels, nothing on map-only pixels or hidden surfaces, the moving surface on shared pixels; map events, replays, `/control` answers and snapshots carry it; `surfaceIdNear` and `selectionMask` in node; the page wires hover to the tooltip and the selection, and a click (`isClick`) to `focusFeedItem`.
 - `tests/test_demo_cloud_ptz.py`: `cloud_orbit` after the run answers 200 with a re-rendered `cloud_png`; the pose carries into the next run; the drag handler accumulates deltas.
