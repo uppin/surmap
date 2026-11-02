@@ -16,9 +16,10 @@ trunk serve index.html --port 8772
 
 `trunk build index.html` produces `dist/` for static hosting.
 
-CI: `.github/workflows/bevy-wasm.yml` runs `cargo test --locked`
-and `trunk build index.html --release` on every change to this
-directory.
+CI: `.github/workflows/bevy-wasm-test.yml` runs `cargo test
+--locked` and `.github/workflows/bevy-wasm-build.yml` runs
+`trunk build index.html --release`, concurrently, on every change
+to this directory.
 
 Requires a WebGPU-capable browser (Chrome/Edge on desktop). The
 `webgpu` Bevy feature is load-bearing: Feronia's LOD puts a

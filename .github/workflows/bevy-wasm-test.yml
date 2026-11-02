@@ -1,0 +1,58 @@
+name: Bevy WASM PoC tests
+
+# Runs the PoC's native tests (src/calibration.rs) concurrently with
+# the bundle build — same triggers, separate workflow. Both use the
+# same rust-cache shared-key, so whichever runs second (or any later
+# run) restores pre-built dependency binaries instead of recompiling
+# them from scratch. The command is the one the PoC README documents
+# for local runs.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "examples/bevy-sitl-poc/**"
+      - ".github/workflows/bevy-wasm-test.yml"
+  pull_request:
+    paths:
+      - "examples/bevy-sitl-poc/**"
+      - ".github/workflows/bevy-wasm-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bevy-wasm-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-test:
+    name: cargo test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/bevy-sitl-poc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      # shared-key with the build workflow: restores the registry and
+      # target/ cache a previous run saved (pre-built dependencies).
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: examples/bevy-sitl-poc
+          shared-key: bevy-sitl-poc
+
+      # Bevy's native build (winit/wgpu/audio) links system libraries
+      # that ubuntu-latest does not ship.
+      - name: Install Bevy native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+      - name: Test (native, calibration)
+        run: cargo test --locked
