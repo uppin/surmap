@@ -207,7 +207,15 @@ drifted 40 cm or more from where it was first seen is a moving object's
 smear, drawn red and more opaque. The Hide/Show surfaces button toggles
 the layer. Surfaces are persisted with the run (`surface_points` in
 `demo-history.db`), so scrubbing and re-opened runs show them as they
-were at each frame. `--sam-fake` does the same without a GPU or model —
+were at each frame. Every run also keeps a *journal*: its events in
+order, and RTAB-Map's dense buffer (the disparity the sidecar computed
+for each SAM frame, with the pose it used). **Replay run** (speed 1×,
+4× or max; `GET /stream?replay=<run_id>&speed=N`) plays a persisted run
+back from that journal without starting RTAB-Map or SAM. Frames, map
+and SAM masks come from the journal, while regions and surfaces are
+recomputed by the current code (`surmap.demo.replay.JournalPlayer`
+takes the `SurfaceMap` under tuning). Each replay is saved as a new
+run naming its source, for comparison. `--sam-fake` does the same without a GPU or model —
 a stand-in SAM outlines the centre of every frame. The live panel shows keyframe
 count, cloud size, odometry state, SLAM lag in frames and dropped
 frames. Add a dataset by adding one registry entry.

@@ -6,6 +6,9 @@ each mask's dense map-frame points from that one frame, and a `surface`
 event follows that: the station's assignment of those points to
 persistent object surfaces (`surmap.survey.surfaces`), which the 3D pane
 draws as its surface layer.
+
+`rig` and `dense` events carry RTAB-Map's dense buffer into the run's
+journal (`RunHistoryStore`) and never reach a viewer.
 """
 
 from __future__ import annotations
@@ -16,10 +19,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 from surmap.demo.surface_render import SurfaceLayer
+from surmap.slam.dense import DenseFrame, RegionRig
 from surmap.slam.regions import RegionPointSource, RegionQuery
 from surmap.slam.sidecar import SidecarError
 from surmap.survey.sam import SamDetection
 from surmap.survey.surfaces import SurfaceMap
+from surmap.types import Pose, Vec3
 
 # Cap on one region event's points for the browser (evenly sampled).
 MAX_REGION_POINTS = 50_000
@@ -30,7 +35,9 @@ REGION_TIMEOUT_S = 2.0
 
 @dataclass(frozen=True)
 class DemoEvent:
-    kind: str  # frame | status | final | map | detections | sam | region | surface
+    # frame | status | final | map | detections | sam | region | surface,
+    # and the journal-only rig | dense
+    kind: str
     data: dict[str, object]
     jpeg: bytes = b""
 
@@ -54,6 +61,43 @@ def sam_event(frame_id: int, t_ns: int, detections: tuple[SamDetection, ...]) ->
                 for detection in detections
             ],
         },
+    )
+
+
+# Event kinds recorded into the journal but never published to viewers.
+JOURNAL_ONLY = ("rig", "dense")
+
+
+def rig_event(rig: RegionRig, size: tuple[int, int]) -> DemoEvent:
+    """The rig regions are answered with, and the display size they are asked at."""
+    return DemoEvent("rig", {"rig": rig.as_message(), "display_size": list(size)})
+
+
+def dense_event(frame: DenseFrame) -> DemoEvent:
+    """One journalled dense frame; the disparity PNG rides as the event's bytes."""
+    position = frame.to_map.position
+    return DemoEvent(
+        "dense",
+        {
+            "frame_id": frame.frame_id,
+            "t_ns": frame.t_ns,
+            "channel": frame.channel,
+            "to_map": [position.x, position.y, position.z, *frame.to_map.orientation_xyzw],
+        },
+        jpeg=frame.disparity_png,
+    )
+
+
+def dense_frame_of(event: DemoEvent) -> DenseFrame:
+    to_map = event.data["to_map"]
+    assert isinstance(to_map, list) and len(to_map) == 7
+    x, y, z, qx, qy, qz, qw = (float(value) for value in to_map)
+    return DenseFrame(
+        int(str(event.data["frame_id"])),
+        int(str(event.data["t_ns"])),
+        int(str(event.data["channel"])),
+        Pose(Vec3(x, y, z), (qx, qy, qz, qw)),
+        event.jpeg,
     )
 
 
@@ -88,12 +132,13 @@ class RegionPlacer:
             if len(points) > MAX_REGION_POINTS:
                 step = len(points) / MAX_REGION_POINTS
                 points = tuple(points[int(i * step)] for i in range(MAX_REGION_POINTS))
+            xyz = np.array([(p.x, p.y, p.z) for p in points], np.float64).reshape(-1, 3)
             regions.append(
                 {
                     "track_id": obj["track_id"],
                     "label": obj["label"],
                     "status": result.status.value,
-                    "points": [[round(p.x, 3), round(p.y, 3), round(p.z, 3)] for p in points],
+                    "points": np.round(xyz, 3).tolist(),
                 }
             )
         return DemoEvent("region", {"frame_id": frame_id, "regions": regions})

@@ -3,6 +3,10 @@
 // for pairs) in; JSON lines out. Stereo only: no IMU, no wheel odom.
 // Region requests (v4) are answered from a time-bounded ring of the
 // rectified pairs: dense SGBM depth under a polygon, in the map frame.
+// Each ring frame's full-frame disparity is computed once per channel,
+// on its first region query, and reused by later ones. With the dense
+// journal on (v5), that disparity is emitted once as a `dense` line, so
+// a replay answers regions from it without RTAB-Map.
 #include <rtabmap/core/Odometry.h>
 #include <rtabmap/core/OdometryInfo.h>
 #include <rtabmap/core/Rtabmap.h>
@@ -81,6 +85,41 @@ long jsonLong(const std::string& json, const std::string& key, long fallback) {
   pos = json.find(':', pos + pat.size());
   if (pos == std::string::npos) return fallback;
   return std::strtol(json.c_str() + pos + 1, nullptr, 10);
+}
+
+bool jsonBool(const std::string& json, const std::string& key, bool fallback) {
+  std::string pat = "\"" + key + "\"";
+  size_t pos = json.find(pat);
+  if (pos == std::string::npos) return fallback;
+  pos = json.find(':', pos + pat.size());
+  if (pos == std::string::npos) return fallback;
+  pos = json.find_first_not_of(" \t", pos + 1);
+  if (pos == std::string::npos) return fallback;
+  return json.compare(pos, 4, "true") == 0;
+}
+
+std::string base64(const std::vector<unsigned char>& bytes) {
+  static const char* alphabet =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  out.reserve((bytes.size() + 2) / 3 * 4);
+  size_t i = 0;
+  for (; i + 2 < bytes.size(); i += 3) {
+    unsigned v = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+    out += alphabet[(v >> 18) & 63];
+    out += alphabet[(v >> 12) & 63];
+    out += alphabet[(v >> 6) & 63];
+    out += alphabet[v & 63];
+  }
+  if (i < bytes.size()) {
+    unsigned v = bytes[i] << 16;
+    if (i + 1 < bytes.size()) v |= bytes[i + 1] << 8;
+    out += alphabet[(v >> 18) & 63];
+    out += alphabet[(v >> 12) & 63];
+    out += i + 1 < bytes.size() ? alphabet[(v >> 6) & 63] : '=';
+    out += '=';
+  }
+  return out;
 }
 
 double jsonDouble(const std::string& json, const std::string& key, double fallback) {
@@ -183,6 +222,11 @@ struct RingFrame {
   long tNs;
   cv::Mat left, right;          // rectified, 8-bit grey
   rtabmap::Transform odomPose;  // null when tracking was lost
+  // Per channel, filled on the first region query: the full-frame SGBM
+  // disparity (CV_16S, x16) and the camera -> map transform its points
+  // are placed with from then on.
+  cv::Mat disparity[2];
+  rtabmap::Transform toMap[2];
 };
 
 // Per-channel rectification: raw pixels -> rectified pixels, and back-projection.
@@ -212,9 +256,78 @@ std::string regionLine(long queryId, long frameId, int channel, const char* stat
   return line;
 }
 
+std::string matJson(const cv::Mat& m) {
+  std::string out = "[";
+  char buf[40];
+  for (int r = 0; r < m.rows; ++r)
+    for (int c = 0; c < m.cols; ++c) {
+      std::snprintf(buf, sizeof(buf), "%s%.10g", (r || c) ? "," : "", m.at<double>(r, c));
+      out += buf;
+    }
+  return out + "]";
+}
+
+// The rig regions are answered with, for a replay to answer them too.
+std::string regionRigJson(const RegionRig& rig) {
+  std::string out = "{\"size\":[" + std::to_string(rig.size.width) + "," +
+                    std::to_string(rig.size.height) + "]";
+  char buf[64];
+  std::snprintf(buf, sizeof(buf), ",\"baseline\":%.10g,\"max_depth_m\":%.10g", rig.baseline,
+                (double)rig.maxDepth);
+  out += buf;
+  out += ",\"channels\":[";
+  for (int c = 0; c < 2; ++c) {
+    out += c ? ",{" : "{";
+    out += "\"K\":" + matJson(rig.K[c]) + ",\"D\":" + matJson(rig.D[c]) +
+           ",\"R\":" + matJson(rig.R[c]) + ",\"P\":" + matJson(rig.P[c]) + "}";
+  }
+  return out + "]}";
+}
+
+// The channel's full-frame disparity, with the requested channel as the
+// reference image. The right channel is matched in mirrored images,
+// where it plays "left".
+cv::Mat fullFrameDisparity(const RingFrame& frame, int channel, const RegionRig& rig) {
+  const int block = 5;
+  int numDisparities = std::max(64, ((rig.size.width / 5) + 15) / 16 * 16);
+  cv::Mat ref = channel == 0 ? frame.left : frame.right;
+  cv::Mat other = channel == 0 ? frame.right : frame.left;
+  if (channel == 1) {
+    // Into new buffers: `ref`/`other` share the ring's images.
+    cv::Mat mirroredRef, mirroredOther;
+    cv::flip(ref, mirroredRef, 1);
+    cv::flip(other, mirroredOther, 1);
+    ref = mirroredRef;
+    other = mirroredOther;
+  }
+  auto sgbm = cv::StereoSGBM::create(0, numDisparities, block, 8 * block * block,
+                                     32 * block * block, 1, 31, 10, 100, 2,
+                                     cv::StereoSGBM::MODE_SGBM);
+  cv::Mat disparity;
+  sgbm->compute(ref, other, disparity);  // CV_16S, x16
+  if (channel == 1) cv::flip(disparity, disparity, 1);
+  return disparity;
+}
+
+// The journal line for a frame's newly computed disparity: 16-bit PNG,
+// unmatched (negative) disparities as 0.
+std::string denseLine(const RingFrame& frame, int channel) {
+  cv::Mat clamped, unsignedDisparity;
+  cv::max(frame.disparity[channel], 0, clamped);
+  clamped.convertTo(unsignedDisparity, CV_16U);
+  std::vector<unsigned char> png;
+  cv::imencode(".png", unsignedDisparity, png);
+  return "{\"type\":\"dense\",\"frame_id\":" + std::to_string(frame.frameId) +
+         ",\"t_ns\":" + std::to_string(frame.tNs) + ",\"channel\":" + std::to_string(channel) +
+         ",\"to_map\":" + poseJson(frame.toMap[channel]) + ",\"disparity_png\":\"" +
+         base64(png) + "\"}";
+}
+
 // Every point dense stereo recovers inside the polygon, on that frame only.
-std::string answerRegion(const std::string& header, const std::deque<RingFrame>& ring,
-                         const RegionRig& rig, const rtabmap::Rtabmap& slam) {
+// `journal` receives the frame's dense line when this query computed it.
+std::string answerRegion(const std::string& header, std::deque<RingFrame>& ring,
+                         const RegionRig& rig, const rtabmap::Rtabmap& slam, bool denseJournal,
+                         std::string& journal) {
   long queryId = jsonLong(header, "query_id", 0);
   long frameId = jsonLong(header, "frame_id", 0);
   int channel = (int)jsonLong(header, "channel", -1);
@@ -225,8 +338,8 @@ std::string answerRegion(const std::string& header, const std::deque<RingFrame>&
   if ((channel != 0 && channel != 1) || flat.size() < 6 || flat.size() % 2 || width <= 0 ||
       height <= 0)
     return regionLine(queryId, frameId, channel, "invalid", none);
-  const RingFrame* frame = nullptr;
-  for (const auto& f : ring)
+  RingFrame* frame = nullptr;
+  for (auto& f : ring)
     if (f.frameId == frameId) frame = &f;
   if (frame == nullptr) return regionLine(queryId, frameId, channel, "expired", none);
   if (frame->odomPose.isNull()) return regionLine(queryId, frameId, channel, "no_pose", none);
@@ -245,29 +358,12 @@ std::string answerRegion(const std::string& header, const std::deque<RingFrame>&
   cv::Rect box = cv::boundingRect(outline) & cv::Rect(0, 0, rig.size.width, rig.size.height);
   if (box.area() == 0) return regionLine(queryId, frameId, channel, "ok", none);
 
-  // SGBM over the polygon's rows only (full width: the disparity search
-  // needs it), with the requested channel as the reference image. The
-  // right channel is matched in mirrored images, where it plays "left".
-  const int block = 5;
-  int numDisparities = std::max(64, ((rig.size.width / 5) + 15) / 16 * 16);
-  int y0 = std::max(0, box.y - block), y1 = std::min(rig.size.height, box.y + box.height + block);
-  cv::Rect band(0, y0, rig.size.width, y1 - y0);
-  cv::Mat ref = channel == 0 ? frame->left(band) : frame->right(band);
-  cv::Mat other = channel == 0 ? frame->right(band) : frame->left(band);
-  if (channel == 1) {
-    // Into new buffers: `ref`/`other` are views of the ring's images.
-    cv::Mat mirroredRef, mirroredOther;
-    cv::flip(ref, mirroredRef, 1);
-    cv::flip(other, mirroredOther, 1);
-    ref = mirroredRef;
-    other = mirroredOther;
+  if (frame->disparity[channel].empty()) {
+    frame->disparity[channel] = fullFrameDisparity(*frame, channel, rig);
+    frame->toMap[channel] = slam.getMapCorrection() * frame->odomPose;
+    if (denseJournal) journal = denseLine(*frame, channel);
   }
-  auto sgbm = cv::StereoSGBM::create(0, numDisparities, block, 8 * block * block,
-                                     32 * block * block, 1, 31, 10, 100, 2,
-                                     cv::StereoSGBM::MODE_SGBM);
-  cv::Mat disparity;
-  sgbm->compute(ref, other, disparity);  // CV_16S, x16
-  if (channel == 1) cv::flip(disparity, disparity, 1);
+  const cv::Mat& disparity = frame->disparity[channel];
 
   const cv::Mat& P = rig.P[channel];
   double fx = P.at<double>(0, 0), fy = P.at<double>(1, 1);
@@ -275,11 +371,11 @@ std::string answerRegion(const std::string& header, const std::deque<RingFrame>&
   // The right rectified camera sits +baseline along x of the left one,
   // whose frame is the odometry pose's camera frame.
   float offsetX = channel == 1 ? (float)rig.baseline : 0.f;
-  rtabmap::Transform toMap = slam.getMapCorrection() * frame->odomPose;
+  const rtabmap::Transform& toMap = frame->toMap[channel];
   std::vector<cv::Point3f> points;
   for (int v = box.y; v < box.y + box.height; ++v) {
     const unsigned char* inside = mask.ptr<unsigned char>(v);
-    const short* disp = disparity.ptr<short>(v - y0);
+    const short* disp = disparity.ptr<short>(v);
     for (int u = box.x; u < box.x + box.width; ++u) {
       if (!inside[u] || disp[u] <= 0) continue;
       float d = disp[u] / 16.f;
@@ -332,6 +428,8 @@ int main(int argc, char** argv) {
     float minDisparity = (float)jsonDouble(header, "min_disparity_px", 2.0);
     // Frames stay queryable for regions this long, by their t_ns.
     long regionBufferNs = (long)(jsonDouble(header, "region_buffer_s", 10.0) * 1e9);
+    // Emit each region frame's disparity once, for replays (v5).
+    bool denseJournal = jsonBool(header, "dense_journal", false);
     CamCalib left = parseCam(cam0Yaml, width, height);
     CamCalib right = parseCam(cam1Yaml, width, height);
 
@@ -362,13 +460,14 @@ int main(int argc, char** argv) {
     // The left camera's rectification lets the host map rectified
     // keypoints back onto the raw image it displays.
     auto dist = [&](int i) { return i < left.D.cols ? left.D.at<double>(0, i) : 0.0; };
-    std::cout << "{\"type\":\"ready\",\"version\":4,\"rectification\":{\"rotation\":[";
+    std::cout << "{\"type\":\"ready\",\"version\":5,\"rectification\":{\"rotation\":[";
     for (int i = 0; i < 9; ++i) std::cout << (i ? "," : "") << R1.at<double>(i / 3, i % 3);
     std::cout << "],\"rectified\":[" << fx << "," << fy << "," << cx << "," << cy
               << "],\"raw\":[" << left.K.at<double>(0, 0) << "," << left.K.at<double>(1, 1) << ","
               << left.K.at<double>(0, 2) << "," << left.K.at<double>(1, 2)
               << "],\"distortion\":[" << dist(0) << "," << dist(1) << "," << dist(2) << ","
-              << dist(3) << "]}}" << std::endl;
+              << dist(3) << "]},\"region_rig\":" << regionRigJson(regionRig) << "}"
+              << std::endl;
 
     int lastNodeId = 0;
     size_t lastGraphSize = 0;
@@ -379,7 +478,12 @@ int main(int argc, char** argv) {
       std::string kind;
       jsonString(pairHeader, "type", kind);
       if (kind == "region") {
-        std::cout << answerRegion(pairHeader, ring, regionRig, slam) << std::endl;
+        std::string journal;
+        std::string answer = answerRegion(pairHeader, ring, regionRig, slam, denseJournal, journal);
+        // The dense line goes first: a replay finds it journalled by the
+        // time the host sees the answer.
+        if (!journal.empty()) std::cout << journal << std::endl;
+        std::cout << answer << std::endl;
         continue;
       }
       long frameId = jsonLong(pairHeader, "frame_id", 0);
@@ -408,7 +512,7 @@ int main(int argc, char** argv) {
       rtabmap::OdometryInfo info;
       rtabmap::Transform odomPose = odom->process(data, &info);
       bool lost = odomPose.isNull();
-      ring.push_back(RingFrame{frameId, tNs, leftRect, rightRect, odomPose});
+      ring.push_back(RingFrame{frameId, tNs, leftRect, rightRect, odomPose, {}, {}});
       while (!ring.empty() && tNs - ring.front().tNs > regionBufferNs) ring.pop_front();
       // Feed SLAM only when tracking; a null pose must never be guessed.
       bool added = false;

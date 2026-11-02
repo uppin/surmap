@@ -86,6 +86,13 @@ PAGE = """<!DOCTYPE html>
     <label for="run-select">Persisted run</label>
     <select id="run-select"><option value="">Current / latest run</option></select>
     <button class="btn" id="run-load" type="button">Load run</button>
+    <button class="btn" id="run-replay" type="button"
+      title="Play the run again from its journal: no RTAB-Map, no SAM; regions and
+      surfaces are recomputed by the current code">Replay run</button>
+    <select id="replay-speed" title="Replay speed">
+      <option value="1">1×</option><option value="4">4×</option>
+      <option value="0">max</option>
+    </select>
     <span class="stat" id="run-info">Run: not started · persisted frames: 0</span>
   </div>
   <div class="progress" id="progress" hidden>
@@ -330,7 +337,9 @@ async function refreshRuns(keep) {{
       const option = document.createElement('option');
       option.value = run.run_id;
       option.textContent = `${{run.dataset_id}} · ${{run.frame_count}} frames · `
-        + `${{run.status}} · ${{run.run_id.slice(0, 8)}}`;
+        + `${{run.status}} · ${{run.run_id.slice(0, 8)}}`
+        + (run.replay_of ? ` · replay of ${{run.replay_of.slice(0, 8)}}` : '')
+        + (run.replayable ? '' : ' · no journal');
       option.selected = run.run_id === chosen;
       runSelect.appendChild(option);
     }}
@@ -347,6 +356,17 @@ $('run-load').addEventListener('click', async () => {{
     + `persisted frames: <b>${{detail.frame_count}}</b>`;
   showSnapshot(0);
   updateHistoryLabel('loaded persisted run');
+}});
+$('run-replay').addEventListener('click', () => {{
+  const runId = runSelect.value || currentRunId;
+  if (!runId) return;
+  if (source) {{ source.close(); source = null; }}
+  setMode('live');
+  playback.textContent = 'Replaying from the journal…';
+  source = new EventSource('/stream?replay=' + encodeURIComponent(runId)
+    + '&speed=' + encodeURIComponent($('replay-speed').value));
+  attachListeners();
+  pauseButton.disabled = false;
 }});
 // --- Live stream (SSE) ---
 function attachListeners() {{

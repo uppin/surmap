@@ -14,9 +14,9 @@ from surmap.types import Vec3
 from tests.test_slam_stream_protocol import _header
 
 
-def test_the_protocol_is_version_four_for_region_requests() -> None:
-    # Given / When / Then region requests are a v4 addition
-    assert PROTOCOL_VERSION == 4
+def test_region_requests_are_part_of_the_protocol_since_version_four() -> None:
+    # Given / When / Then region requests are a v4 addition (v5 adds the dense journal)
+    assert PROTOCOL_VERSION >= 4
 
 
 def test_hello_carries_how_long_frames_stay_queryable() -> None:

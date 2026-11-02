@@ -7,16 +7,19 @@ Pure functions; no `Any` leaves this module.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import math
 import struct
 from dataclasses import dataclass
 from typing import TypeAlias
 
+from surmap.slam.dense import DenseFrame, RegionRig, region_rig_from_message
 from surmap.slam.regions import RegionQuery, RegionResult, RegionStatus
 from surmap.types import Pose, Vec3
 
-PROTOCOL_VERSION = 4
+PROTOCOL_VERSION = 5
 
 # Colour given to a keyframe point the sidecar sent without one.
 NEUTRAL_GREY = (160, 160, 160)
@@ -45,6 +48,8 @@ class Rectification:
 class Ready:
     version: int
     rectification: Rectification | None = None
+    # How the sidecar answers regions (v5), journalled for replays.
+    region_rig: RegionRig | None = None
 
 
 @dataclass(frozen=True)
@@ -91,7 +96,7 @@ class ErrorUpdate:
 
 
 MapUpdate: TypeAlias = OdomUpdate | KeyframeUpdate | GraphUpdate
-ServerMessage: TypeAlias = Ready | MapUpdate | ErrorUpdate | RegionResult
+ServerMessage: TypeAlias = Ready | MapUpdate | ErrorUpdate | RegionResult | DenseFrame
 
 
 def _frame(obj: dict[str, object], payload: bytes = b"") -> bytes:
@@ -108,6 +113,7 @@ def encode_hello(
     max_depth_m: float = 30.0,
     region_buffer_s: float = 10.0,
     min_disparity_px: float = 2.0,
+    dense_journal: bool = False,
 ) -> bytes:
     return _frame(
         {
@@ -124,6 +130,8 @@ def encode_hello(
             "region_buffer_s": region_buffer_s,
             # Points with a smaller disparity are dropped as well.
             "min_disparity_px": min_disparity_px,
+            # Emit each region frame's dense disparity once (`dense` lines).
+            "dense_journal": dense_journal,
         }
     )
 
@@ -250,7 +258,16 @@ def decode_server_line(line: str | bytes) -> ServerMessage:
                 f"protocol version mismatch: server {version}, client {PROTOCOL_VERSION}"
             )
         rectification = obj.get("rectification")
-        return Ready(version, None if rectification is None else _rectification(rectification))
+        region_rig = obj.get("region_rig")
+        try:
+            rig = None if region_rig is None else region_rig_from_message(region_rig)
+        except ValueError as exc:
+            raise ProtocolError(str(exc)) from exc
+        return Ready(
+            version,
+            None if rectification is None else _rectification(rectification),
+            rig,
+        )
     if kind == "error":
         message = _req(obj, "message")
         return ErrorUpdate(str(message))
@@ -283,6 +300,19 @@ def decode_server_line(line: str | bytes) -> ServerMessage:
             channel=_int(obj, "channel"),
             status=status,
             points=tuple(Vec3(*_numbers(entry, 3, "region point")) for entry in points_raw),
+        )
+    if kind == "dense":
+        png_raw = _req(obj, "disparity_png")
+        try:
+            png = base64.b64decode(str(png_raw), validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ProtocolError(f"disparity_png is not base64: {exc}") from exc
+        return DenseFrame(
+            frame_id=_int(obj, "frame_id"),
+            t_ns=_int(obj, "t_ns"),
+            channel=_int(obj, "channel"),
+            to_map=_pose(_req(obj, "to_map")),
+            disparity_png=png,
         )
     if kind == "keyframe":
         points_raw = _req(obj, "points_local")
