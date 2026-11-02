@@ -18,6 +18,11 @@ No DOM here, so the functions run in node on their own
 - `isClick(down, up)` tells a click (released within 4 px) from a drag.
 - `polygonContains(polygon, x, y)` is the even-odd test on a SAM mask outline;
   `maskAt(objects, x, y)` is the track of the smallest mask under (x, y), or 0.
+- `layoutCards(items, width, height)` places one card per object in rows from
+  the top of the image: each as close above its object as it fits, never
+  overlapping another and never off the image, with a leader from the
+  card's bottom edge (`from`) to the object (`to`). `cardAt(cards, x, y)` is
+  the key of the card under (x, y), or 0.
 
 Spliced into the page before the server formats it, so its braces stay
 doubled for str.format.
@@ -90,6 +95,43 @@ function maskAt(objects, x, y) {{
     if (area < bestArea) {{ best = object.track_id; bestArea = area; }}
   }}
   return best;
+}}
+const CARD_MARGIN_PX = 4, CARD_GAP_PX = 4;
+function layoutCards(items, width, height) {{
+  const rowHeight = Math.max(0, ...items.map((item) => item.height)) + CARD_GAP_PX;
+  const rows = [];  // per row: the [x, x + width] spans already taken
+  const placed = new Map();
+  const order = items.map((item, i) => i).sort((a, b) => items[a].anchor[0] - items[b].anchor[0]);
+  for (const i of order) {{
+    const item = items[i];
+    const lo = CARD_MARGIN_PX, hi = Math.max(lo, width - CARD_MARGIN_PX - item.width);
+    const preferred = Math.min(hi, Math.max(lo, item.anchor[0] - item.width / 2));
+    const free = (spans, x) => spans.every(([a, b]) => x + item.width + CARD_GAP_PX <= a
+      || x >= b + CARD_GAP_PX);
+    let choice = null;
+    for (let row = 0; choice === null; row++) {{
+      const y = CARD_MARGIN_PX + row * rowHeight;
+      const last = y + item.height > height - CARD_MARGIN_PX;
+      if (row === rows.length) rows.push([]);
+      const spans = rows[row];
+      const candidates = [preferred, ...spans.flatMap(([a, b]) =>
+        [b + CARD_GAP_PX, a - CARD_GAP_PX - item.width])]
+        .filter((x) => x >= lo && x <= hi && free(spans, x))
+        .sort((a, b) => Math.abs(a - preferred) - Math.abs(b - preferred));
+      if (candidates.length) choice = {{x: candidates[0], y, row}};
+      else if (last) choice = {{x: preferred, y: Math.max(CARD_MARGIN_PX, y - rowHeight), row}};
+    }}
+    rows[choice.row].push([choice.x, choice.x + item.width]);
+    const fromX = Math.min(choice.x + item.width - 4, Math.max(choice.x + 4, item.anchor[0]));
+    placed.set(i, {{key: item.key, x: choice.x, y: choice.y, width: item.width,
+      height: item.height, from: [fromX, choice.y + item.height], to: item.anchor}});
+  }}
+  return items.map((_, i) => placed.get(i));
+}}
+function cardAt(cards, x, y) {{
+  const card = (cards || []).find((c) => x >= c.x && x <= c.x + c.width
+    && y >= c.y && y <= c.y + c.height);
+  return card ? card.key : 0;
 }}
 const CLICK_SLOP_PX = 4;
 function isClick(down, up) {{

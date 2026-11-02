@@ -5,8 +5,14 @@ surface layer's depth band) as `[u, v, range_m]` on the SAM image
 (`pixels`, `surmap.demo.events.RegionPlacer`). The SAM pane keeps the
 last frames' regions and draws them over the masks of the frame it
 shows: each point coloured near → far over that object's own range
-(`depthColour` in `view_math.py`), with the range under the mask's
-label. A region that arrives after its frame's image was drawn redraws
+(`depthColour` in `view_math.py`).
+
+Each object's id sits on a card (`samCardsFor`, laid out by `layoutCards`):
+`label #surface` once its object is a surface (else `label · SAM track`),
+and its depth range. Cards never overlap and stay on the image; a leader
+with a filled circle at each end joins a card to its object. The selected
+object's card is yellow, and hovering a card selects its object, like
+hovering its mask. A region that arrives after its frame's image was drawn redraws
 the pane. A scrubbed moment carries no region pixels, so it shows masks
 only.
 
@@ -28,6 +34,7 @@ const samRegions = new Map();
 const samSurfaces = new Map();  // frame id -> (SAM track id -> surface id)
 const SAM_REGION_FRAMES = 32;
 let samLast = null;
+let samCardRects = [];  // the cards last drawn, for hovering
 function remember(frames, frameId, value) {{
   frames.set(frameId, value);
   while (frames.size > SAM_REGION_FRAMES) frames.delete(frames.keys().next().value);
@@ -47,12 +54,65 @@ function redrawSam() {{
   drawSamObjects(samView, samLast.data.objects);
   drawSamDepth(samView, samLast.data);
   drawSamSelection(samView, samLast.data);
+  drawSamCards(samView, samLast.data);
 }}
 function samSurfaceAt(x, y) {{
   if (!samLast) return 0;
-  const track = maskAt(samLast.data.objects, x, y);
+  // A card first (it lies over the image), else the mask under the cursor.
+  const track = cardAt(samCardRects, x, y) || maskAt(samLast.data.objects, x, y);
   const tracks = samSurfaces.get(samLast.data.frame_id);
   return (track && tracks && tracks.get(track)) || 0;
+}}
+function samCardsFor(data, measure) {{
+  const tracks = samSurfaces.get(data.frame_id);
+  const regions = new Map((samRegions.get(data.frame_id) || []).map((r) => [r.track_id, r]));
+  const items = [], details = new Map();
+  for (const object of data.objects || []) {{
+    const surface = (tracks && tracks.get(object.track_id)) || 0;
+    const lines = [surface ? `${{object.label}} #${{surface}}`
+      : `${{object.label}} · SAM ${{object.track_id}}`];
+    const pixels = (regions.get(object.track_id) || {{}}).pixels || [];
+    if (pixels.length) {{
+      const ranges = pixels.map(([, , range]) => range);
+      lines.push(`${{Math.min(...ranges).toFixed(1)}}–${{Math.max(...ranges).toFixed(1)}} m`);
+    }}
+    const polygon = object.mask_polygon || [];
+    const [x1, y1, x2, y2] = object.box || [0, 0, 0, 0];
+    const anchor = polygon.length >= 3
+      ? [polygon.reduce((s, p) => s + p[0], 0) / polygon.length,
+        polygon.reduce((s, p) => s + p[1], 0) / polygon.length]
+      : [(x1 + x2) / 2, (y1 + y2) / 2];
+    items.push({{key: object.track_id, anchor,
+      width: Math.ceil(Math.max(...lines.map(measure))) + 12, height: 6 + 13 * lines.length}});
+    details.set(object.track_id, {{lines, surface}});
+  }}
+  const width = samCanvas ? samCanvas.width : 620, height = samCanvas ? samCanvas.height : 188;
+  return layoutCards(items, width, height).map((card) => ({{...card, ...details.get(card.key)}}));
+}}
+function drawSamCards(ctx, data) {{
+  ctx.font = '11px system-ui';
+  samCardRects = samCardsFor(data, (text) => ctx.measureText(text).width);
+  // Leaders under the cards, a filled circle at each end.
+  ctx.lineWidth = 1.5;
+  for (const card of samCardRects) {{
+    const selected = card.surface && card.surface === cloudSelected;
+    ctx.strokeStyle = ctx.fillStyle = selected ? '#ffd23c' : '#22d3ee';
+    ctx.beginPath(); ctx.moveTo(...card.from); ctx.lineTo(...card.to); ctx.stroke();
+    for (const [x, y] of [card.from, card.to]) {{
+      ctx.beginPath(); ctx.arc(x, y, 3, 0, 2 * Math.PI); ctx.fill();
+    }}
+  }}
+  for (const card of samCardRects) {{
+    const selected = card.surface && card.surface === cloudSelected;
+    ctx.fillStyle = 'rgba(12, 14, 17, 0.9)';
+    ctx.fillRect(card.x, card.y, card.width, card.height);
+    ctx.strokeStyle = selected ? '#ffd23c' : '#22d3ee'; ctx.lineWidth = selected ? 2 : 1;
+    ctx.strokeRect(card.x + 0.5, card.y + 0.5, card.width - 1, card.height - 1);
+    card.lines.forEach((line, i) => {{
+      ctx.fillStyle = i ? '#9fdcea' : '#e8f8ff';
+      ctx.fillText(line, card.x + 6, card.y + 14 + 13 * i);
+    }});
+  }}
 }}
 function samSelectedTracks() {{
   const tracks = samLast && samSurfaces.get(samLast.data.frame_id);
@@ -101,8 +161,6 @@ samCanvas.addEventListener('pointerleave', () => setCloudSelection(0, null));
 function drawSamDepth(ctx, data) {{
   const regions = samRegions.get(data.frame_id);
   if (!ctx || !regions) return;
-  const objects = new Map((data.objects || []).map((object) => [object.track_id, object]));
-  ctx.font = '11px system-ui';
   for (const region of regions) {{
     const pixels = region.pixels || [];
     if (!pixels.length) continue;
@@ -116,12 +174,6 @@ function drawSamDepth(ctx, data) {{
       ctx.fillStyle = `rgb(${{r}}, ${{g}}, ${{b}})`;
       ctx.fillRect(u - 1, v - 1, 2, 2);
     }}
-    const object = objects.get(region.track_id);
-    const polygon = (object && object.mask_polygon) || [];
-    const anchor = object ? object.box : [pixels[0][0], pixels[0][1]];
-    const [lx, ly] = polygon.length ? polygon[0] : anchor;
-    ctx.fillStyle = '#e8f8ff';
-    ctx.fillText(`${{near.toFixed(1)}}–${{far.toFixed(1)}} m`, lx + 2, Math.max(22, ly + 10));
   }}
 }}
 """

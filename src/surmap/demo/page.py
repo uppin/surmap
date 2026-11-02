@@ -181,7 +181,7 @@ function drawSamObjects(ctx, objects) {{
   if (!ctx || !objects) return;
   ctx.strokeStyle = '#22d3ee'; ctx.lineWidth = 1.6;
   ctx.fillStyle = 'rgba(34, 211, 238, 0.16)';
-  ctx.font = '11px system-ui';
+  // Ids are on cards with leaders (drawSamCards, sam_depth.py), not loose labels.
   for (const object of objects) {{
     const polygon = object.mask_polygon || [];
     if (polygon.length > 1) {{
@@ -192,10 +192,6 @@ function drawSamObjects(ctx, objects) {{
       const [x1, y1, x2, y2] = object.box;
       ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
     }}
-    const [lx, ly] = polygon.length ? polygon[0] : object.box;
-    ctx.fillStyle = '#22d3ee';
-    ctx.fillText(`SAM ${{object.label}} #${{object.track_id}}`, lx + 2, Math.max(10, ly - 3));
-    ctx.fillStyle = 'rgba(34, 211, 238, 0.16)';
   }}
 }}
 function drawSamPane(data) {{

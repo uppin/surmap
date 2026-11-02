@@ -111,7 +111,9 @@ def test_the_card_under_the_cursor_is_found() -> None:
 
 
 # The stub SAM page from test_demo_sam_pick: frame 13 shows car track 8 (surface 27)
-# and track 5 (no surface yet). Text is measured as 6 px a character.
+# and track 5 (no surface yet), both labelled "car" as SAM labels its objects.
+# Text is measured as 6 px a character.
+CAR_PAGE = SAM_PAGE + "\nsamLast.data.objects.forEach((object) => { object.label = 'car'; });"
 CARDS = "samCardsFor(samLast.data, (text) => text.length * 6)"
 
 
@@ -119,7 +121,7 @@ CARDS = "samCardsFor(samLast.data, (text) => text.length * 6)"
 def test_a_linked_objects_card_names_its_surface_and_depth_range() -> None:
     # Given track 8's dense points span 6.1 to 7.3 m
     prelude = (
-        SAM_PAGE
+        CAR_PAGE
         + "\nnoteRegions({frame_id: 13,"
         + " regions: [{track_id: 8, pixels: [[5, 5, 6.1], [6, 6, 7.3]]}]});"
     )
@@ -134,7 +136,7 @@ def test_a_linked_objects_card_names_its_surface_and_depth_range() -> None:
 @needs_node
 def test_hovering_a_card_selects_its_object() -> None:
     picked = run_js(
-        SAM_PAGE,
+        CAR_PAGE,
         f"(() => {{ samCardRects = {CARDS}; const card = samCardRects[0];"
         " return samSurfaceAt(card.x + 2, card.y + 2); })()",
     )

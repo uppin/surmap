@@ -18,7 +18,7 @@
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⏳ `/green` Green — implement until every red test passes · milestones 1–9 @ `23fe7c1`; milestone 10 added
+- [wf 3] ✅ 2026-11-02 `/green` Green — implement until every red test passes · 1246 passed / 28 skipped; ruff, format, mypy strict green
   - [x] Milestone 1: `SurfaceMap` depth band and minimum points
   - [x] Milestone 2: the camera pose reaches `SurfaceMap` (`RegionResult.camera`, `region` event `viewpoint`, live backend from the dense line)
   - [x] Milestone 3: session-level `CloudViewer`; every `cloud_*` action works without a run and answers with `cloud_png`
@@ -31,8 +31,8 @@
   - [x] Acceptance: `tests/test_demo_sam_pick.py` passes
   - [x] Milestone 9: Follow (checked by default) — a chase view behind and above the camera along its heading, the camera at 3/4 image height with a camera marker; the un-mirrored projection
   - [x] Acceptance: `tests/test_demo_cloud_follow.py` passes
-  - [ ] Milestone 10: SAM view object cards — one non-overlapping card per object (id, depth range) with a leader to it, filled circles at both ends; hovering a card selects its object, clicking opens the feed
-  - [ ] Acceptance: `tests/test_demo_sam_cards.py` passes
+  - [x] Milestone 10: SAM view object cards — one non-overlapping card per object (id, depth range) with a leader to it, filled circles at both ends; hovering a card selects its object, clicking opens the feed
+  - [x] Acceptance: `tests/test_demo_sam_cards.py` passes
   - [x] Acceptance: `tests/test_survey_surfaces.py`, `tests/test_demo_object_feed.py`, `tests/test_demo_cloud_ptz.py` pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
@@ -304,6 +304,20 @@ V4, in the in-app browser on KITTI 0009 (cached rerun of `38b8dc54`, then a Repl
       azimuth (180° + 92° = 271°), with no jump.
     - **Re-check:** re-checking resumed following.
     - **Console:** no page errors.
+- **Milestone 10 (SAM object cards):**
+  - **Tests:** 8 new tests, red @ `746ad52`, now green.
+  - **Test fix:** the card test labels the shared stub objects `car`, because SAM's
+    objects always carry a label.
+  - **V4 on KITTI frame 13:**
+    - **Layout:** 13 cards, 0 overlaps, 0 off the image.
+    - **Content:** linked cards read `car #27 / 5.1–7.1 m` and `car #28 / 11.8–14.3 m`;
+      the others read `car · SAM n`.
+    - **Hover:** hovering car #27's card selected surface 27; the card, its leader and
+      track 8's mask turned yellow.
+    - **Click:** opened card #27 in the feed.
+    - **Console:** no page errors.
+  - **Seen, left as is:** with 13 objects the cards fill the top two rows of the image,
+    and leaders from far cars cross.
 - **Observed, out of scope:** near-left KITTI cars get points only on their rear. The
   sidecar's SGBM (`numDisparities` 128 at 620 px) cannot match the image's leftmost 128
   columns. That is also why some masks get no depth.
