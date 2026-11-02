@@ -23,7 +23,7 @@ from numpy.typing import NDArray
 from PIL import Image
 
 from surmap.slam.base import FrameResult
-from surmap.slam.dense import DenseFrame, RegionRig
+from surmap.slam.dense import DenseFrame, RegionRig, channel_camera
 from surmap.slam.regions import RegionQuery, RegionResult
 from surmap.slam.sidecar import SHARED_CONTAINER_ENV, SidecarError, _subprocess_runner
 from surmap.slam.stream_outbox import RegionReplies, SidecarOutbox
@@ -260,6 +260,10 @@ class StreamingRtabmapBackend:
         self._region_rig: RegionRig | None = None
         # Dense frames the sidecar journalled, until `poll_dense` drains them.
         self._dense: queue.Queue[DenseFrame] = queue.Queue()
+        # (frame, channel) -> the map transform its dense line placed points
+        # with. The sidecar sends that line before the region answer, so the
+        # answer can name its camera.
+        self._placed_from: dict[tuple[int, int], Pose] = {}
         # Newest odometry per frame, keypoints included, for the display.
         self._frame_odometry: dict[int, OdomUpdate] = {}
         self._final = threading.Event()
@@ -408,9 +412,12 @@ class StreamingRtabmapBackend:
                 self._ready.set()  # a bad hello (e.g. version mismatch) fails fast
                 continue
             if isinstance(message, RegionResult):
-                self._regions.deliver(message)
+                self._regions.deliver(self._with_camera(message))
                 continue
             if isinstance(message, DenseFrame):
+                self._placed_from[(message.frame_id, message.channel)] = message.to_map
+                while len(self._placed_from) > FRAME_ODOMETRY_KEPT:
+                    del self._placed_from[next(iter(self._placed_from))]
                 self._dense.put(message)
                 continue
             if isinstance(message, Ready):
@@ -467,6 +474,14 @@ class StreamingRtabmapBackend:
         if result is None:
             raise SidecarError(f"region query {query.query_id} got no answer within {timeout:g} s")
         return result
+
+    def _with_camera(self, result: RegionResult) -> RegionResult:
+        to_map = self._placed_from.get((result.frame_id, result.channel))
+        if result.camera is not None or to_map is None:
+            return result
+        rig = self._region_rig
+        camera = to_map if rig is None else channel_camera(to_map, rig, result.channel)
+        return replace(result, camera=camera)
 
     @property
     def region_rig(self) -> RegionRig | None:

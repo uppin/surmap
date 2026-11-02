@@ -3,7 +3,6 @@
 import json
 import shutil
 import subprocess
-import threading
 import urllib.request
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -11,14 +10,14 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from surmap.demo.view_math import VIEW_HELPERS
 
 from surmap.demo.events import RegionPlacer, SurfaceAssigner
-from surmap.demo.server import DemoEvent, make_demo_server
+from surmap.demo.server import DemoEvent
+from surmap.demo.view_math import VIEW_HELPERS
 from surmap.slam.dense import DenseBufferRegionSource, RegionRig
 from surmap.slam.regions import RegionQuery, RegionResult, RegionStatus
 from surmap.types import Pose, Vec3
-from tests.test_demo import _prepared_tiny
+from tests.test_demo_surfaces import a_map_around_the_region, a_running_console
 from tests.test_slam_dense import a_dense_frame, a_rig, a_wall
 
 DISPLAY = (200, 160)  # twice the test rig's 100 x 80
@@ -73,8 +72,9 @@ def test_a_region_carries_its_points_pixels_on_the_sam_image_with_their_range() 
     assert pixels.shape == (21 * 21, 3)
     np.testing.assert_allclose(pixels[:, :2].min(axis=0), [40.0, 40.0], atol=1e-3)
     np.testing.assert_allclose(pixels[:, :2].max(axis=0), [80.0, 80.0], atol=1e-3)
-    assert float(pixels[:, 2].min()) == pytest.approx(2.0, abs=1e-3)
-    assert float(pixels[:, 2].max()) < 2.3
+    # ... the square's points 2 m ahead are 0.4 m (nearest) to 1.2 x 0.8 m (corner) off-axis
+    assert float(np.min(pixels[:, 2])) == pytest.approx(np.hypot(2.0, 0.4), abs=1e-3)
+    assert float(np.max(pixels[:, 2])) == pytest.approx(np.sqrt(4 + 1.2**2 + 0.8**2), abs=1e-3)
 
 
 def test_region_pixels_are_sampled_to_at_most_1500() -> None:
@@ -136,7 +136,7 @@ def test_the_surface_is_built_from_the_band_seen_from_the_regions_camera() -> No
     assert isinstance(surfaces, list)
     assert [s["total_points"] for s in surfaces] == [100]
     depth = np.array(surfaces[0]["points"], np.float64)[:, 2]
-    assert float(depth.max()) == pytest.approx(5.0)
+    assert float(np.max(depth)) == pytest.approx(5.0)
 
 
 def test_a_source_without_a_rig_gives_regions_no_pixels() -> None:
@@ -154,19 +154,10 @@ def test_a_source_without_a_rig_gives_regions_no_pixels() -> None:
 
 @contextmanager
 def a_console_page(tmp_path: Path) -> Iterator[str]:
-    server = make_demo_server(
-        _prepared_tiny(tmp_path), host="127.0.0.1", port=0, with_rtabmap=False, sam_fake=True
-    )
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        host, port = str(server.server_address[0]), int(server.server_address[1])
-        with urllib.request.urlopen(f"http://{host}:{port}/", timeout=5) as response:
+    """The page of a console with a live map (so it has the 3D pane and the feed) and SAM."""
+    with a_running_console(tmp_path, a_map_around_the_region()) as base:
+        with urllib.request.urlopen(f"{base}/", timeout=5) as response:
             yield response.read().decode()
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
 
 
 def test_the_page_has_an_object_feed_fed_by_surfaces_and_snapshots(tmp_path: Path) -> None:
@@ -295,3 +286,47 @@ def test_the_rendered_page_script_parses(tmp_path: Path) -> None:
     assert NODE is not None
     checked = subprocess.run([NODE, "--check", str(path)], capture_output=True, text=True)
     assert checked.returncode == 0, checked.stderr
+
+
+STUB_DOM = """
+const elements = {};
+const element = (id) => (elements[id] ??= {
+  id, textContent: '', clientWidth: 400, clientHeight: 200, width: 0, height: 0, dataset: {},
+  addEventListener() {}, before() {}, setPointerCapture() {},
+  getContext: () => ({fillRect() {}, drawImage() {}}),
+});
+const $ = element;
+const document = {
+  getElementById: element, createElement: () => element('created'),
+  querySelectorAll: () => [], addEventListener() {},
+};
+const window = {devicePixelRatio: 1};
+class ResizeObserver { observe() {} }
+let mode = 'live', source = null, scrubSeq = 0;
+const fetch = async () => ({ok: true, json: async () => ({
+  azimuth: 0.5, elevation: 0.5, zoom: 2, surfaces_visible: false, cloud_png: null})});
+"""
+
+
+@needs_node
+def test_a_ptz_answer_updates_the_readout_and_the_surfaces_button() -> None:
+    # Given the 3D pane's script on a page with its elements
+    from surmap.demo.cloud_script import CLOUD_SCRIPT
+
+    script = (
+        STUB_DOM
+        + VIEW_HELPERS.format()
+        + CLOUD_SCRIPT.format()
+        + "\npostCloud({action: 'cloud_surfaces'}).then(() => console.log(JSON.stringify("
+        + "[elements['ptz-readout'].textContent, elements.created.textContent])));\n"
+    )
+
+    # When the server answers a PTZ post
+    assert NODE is not None
+    done = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=30)
+
+    # Then the readout shows the new pose and the surfaces button its new state
+    assert done.returncode == 0, done.stderr
+    readout, button = json.loads(done.stdout)
+    assert readout.startswith("az 29° · el 29° · zoom 2.00×")
+    assert button == "Show surfaces"

@@ -397,8 +397,10 @@ def dense_region_points(
     `disparity`, when given, is `frame`'s already decoded disparity.
     """
 
-    def answer(status: RegionStatus, points: tuple[Vec3, ...] = ()) -> RegionResult:
-        return RegionResult(query.query_id, query.frame_id, query.channel, status, points)
+    def answer(
+        status: RegionStatus, points: tuple[Vec3, ...] = (), camera: Pose | None = None
+    ) -> RegionResult:
+        return RegionResult(query.query_id, query.frame_id, query.channel, status, points, camera)
 
     if invalid_reason(query) is not None:
         return answer(RegionStatus.INVALID_QUERY)
@@ -426,7 +428,58 @@ def dense_region_points(
     position = frame.to_map.position
     placed = in_camera @ _rotation(frame.to_map).T + (position.x, position.y, position.z)
     rounded = np.round(placed, 4).tolist()
-    return answer(RegionStatus.OK, tuple(Vec3(x, y, z) for x, y, z in rounded))
+    return answer(
+        RegionStatus.OK,
+        tuple(Vec3(x, y, z) for x, y, z in rounded),
+        channel_camera(frame.to_map, rig, query.channel),
+    )
+
+
+def channel_camera(to_map: Pose, rig: RegionRig, channel: int) -> Pose:
+    """The rectified camera of `channel`: the right one sits +baseline along the left's x."""
+    if channel == 0:
+        return to_map
+    x, y, z = (_rotation(to_map) @ np.array([rig.baseline_m, 0.0, 0.0])).tolist()
+    position = to_map.position
+    return Pose(Vec3(position.x + x, position.y + y, position.z + z), to_map.orientation_xyzw)
+
+
+def project_to_display(
+    points: NDArray[np.float64] | NDArray[np.float32],
+    camera: Pose,
+    rig: RegionRig,
+    channel: int,
+    size: tuple[int, int],
+) -> NDArray[np.float64]:
+    """Map-frame points (N, 3) to pixels (N, 2) of the raw image shown at `size`.
+
+    The inverse of the region path: into `camera` (the channel's rectified
+    camera), rotated back by Rᵀ into the raw camera, distorted with K and D
+    (OpenCV's forward model), then scaled from the rig's size to `size`.
+    A point at or behind the camera has no pixel (NaN).
+    """
+    placed = np.asarray(points, np.float64).reshape(-1, 3)
+    position = camera.position
+    offset = placed - (position.x, position.y, position.z)
+    in_camera = offset @ _rotation(camera)  # Rᵀ applied to each row
+    rotation = np.array(rig.channels[channel].rotation, np.float64).reshape(3, 3)
+    raw_rays = in_camera @ rotation  # rectified -> raw camera: Rᵀ, row-wise
+    k = np.array(rig.channels[channel].camera_matrix, np.float64).reshape(3, 3)
+    coefficients = np.zeros(8, np.float64)
+    distortion = rig.channels[channel].distortion
+    coefficients[: len(distortion)] = distortion
+    k1, k2, p1, p2, k3, k4, k5, k6 = coefficients.tolist()
+    pixels = np.full((len(placed), 2), np.nan)
+    ahead = raw_rays[:, 2] > 1e-9
+    x = raw_rays[ahead, 0] / raw_rays[ahead, 2]
+    y = raw_rays[ahead, 1] / raw_rays[ahead, 2]
+    r2 = x * x + y * y
+    radial = (1 + ((k3 * r2 + k2) * r2 + k1) * r2) / (1 + ((k6 * r2 + k5) * r2 + k4) * r2)
+    xd = x * radial + 2 * p1 * x * y + p2 * (r2 + 2 * x * x)
+    yd = y * radial + p1 * (r2 + 2 * y * y) + 2 * p2 * x * y
+    pixels[ahead, 0] = (k[0, 0] * xd + k[0, 1] * yd + k[0, 2]) * size[0] / rig.width
+    pixels[ahead, 1] = (k[1, 1] * yd + k[1, 2]) * size[1] / rig.height
+    return pixels
 
 
 class DenseBufferRegionSource:
@@ -438,6 +491,10 @@ class DenseBufferRegionSource:
         # The newest frame's decoded disparity: SAM's masks on one frame
         # are asked one after another, so one PNG decode serves them all.
         self._decoded: tuple[tuple[int, int], NDArray[np.uint16]] | None = None
+
+    @property
+    def region_rig(self) -> RegionRig:
+        return self._rig
 
     def region_points(self, query: RegionQuery, timeout: float = 5.0) -> RegionResult:
         key = (query.frame_id, query.channel)

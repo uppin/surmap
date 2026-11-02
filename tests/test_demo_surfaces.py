@@ -34,8 +34,12 @@ from tests.test_demo import _prepared_tiny
 from tests.test_demo_regions import FakeRegionBackend, a_car_mask
 
 JPEG = b"\xff\xd8fake-jpeg\xff\xd9"
-# The fake region backend places every mask at these two points.
-REGION_POINTS = [[1.0, 2.0, 3.0], [1.5, 2.0, 3.0]]
+# The fake region backend places every mask on this patch: 24 x 3 points
+# 4 cm apart, enough for a dense region (`DENSE_REGION_MIN_POINTS`).
+REGION_POINTS = [
+    [round(1.0 + 0.04 * i, 3), round(2.0 + 0.04 * j, 3), 3.0] for i in range(24) for j in range(3)
+]
+A_CAR = tuple(Vec3(x, y, z) for x, y, z in REGION_POINTS)
 # The cloud view's empty-pixel colour, which a surface splat is blended over.
 BACKGROUND = (10, 12, 14)
 
@@ -46,12 +50,13 @@ class DriftingRegionBackend(FakeRegionBackend):
     def region_points(self, query: RegionQuery, timeout: float = 5.0) -> RegionResult:
         self.region_queries.append(query)
         shift = 0.5 * (query.frame_id - 1)
-        points = (Vec3(1.0 + shift, 2.0, 3.0), Vec3(1.5 + shift, 2.0, 3.0))
+        points = tuple(Vec3(p.x + shift, p.y, p.z) for p in A_CAR)
         return RegionResult(query.query_id, query.frame_id, query.channel, RegionStatus.OK, points)
 
 
 def a_map_around_the_region(backend: FakeRegionBackend | None = None) -> FakeRegionBackend:
     backend = backend if backend is not None else FakeRegionBackend()
+    backend.points = A_CAR
     corners = np.array([[0.0, 1.0, 2.0], [2.5, 3.0, 4.0]], np.float32)
     backend.cloud = MapCloud(corners, np.full((2, 3), 90, np.uint8))
     return backend
@@ -165,7 +170,7 @@ def test_the_same_object_on_the_next_frame_continues_its_surface(tmp_path: Path)
             "track_id": 1,
             "continued": False,
             "points": REGION_POINTS,
-            "total_points": 2,
+            "total_points": len(REGION_POINTS),
             "moving": False,
         }
     ]
@@ -176,7 +181,7 @@ def test_the_same_object_on_the_next_frame_continues_its_surface(tmp_path: Path)
             "track_id": 1,
             "continued": True,
             "points": [],
-            "total_points": 2,
+            "total_points": len(REGION_POINTS),
             "moving": False,
         }
     ]
@@ -376,6 +381,7 @@ def test_the_page_toggles_the_surface_layer_and_no_longer_posts_regions(tmp_path
     # Given the test console
     with a_running_console(tmp_path, a_map_around_the_region()) as base:
         # When the page loads, and a client posts each layer action with nothing playing
+        # (the view is the session's, so the surfaces toggle needs no run)
         with urllib.request.urlopen(f"{base}/", timeout=5) as response:
             page = response.read().decode()
         surfaces_status = post_status(f"{base}/control", {"action": "cloud_surfaces"})
@@ -383,7 +389,7 @@ def test_the_page_toggles_the_surface_layer_and_no_longer_posts_regions(tmp_path
 
     # Then the page offers the surfaces toggle, which is a known action; regions are gone
     assert "cloud_surfaces" in page and "setRegionLayer" not in page
-    assert (surfaces_status, regions_status) == (409, 400)
+    assert (surfaces_status, regions_status) == (200, 400)
 
 
 def test_the_page_calls_no_function_it_does_not_define(tmp_path: Path) -> None:

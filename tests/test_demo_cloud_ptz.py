@@ -6,12 +6,13 @@ import urllib.request
 from pathlib import Path
 
 import numpy as np
-from surmap.demo.cloud_view import CloudViewer
 
+from surmap.demo.cloud_view import CloudPose, CloudViewer
 from surmap.demo.server import PlaybackControls
 from tests.test_demo_regions import FakeRegionBackend
 from tests.test_demo_surfaces import a_map_around_the_region, a_running_console
 
+START = CloudPose().azimuth  # the view's default azimuth
 CORNERS = np.array([[0.0, 1.0, 2.0], [2.5, 3.0, 4.0], [1.0, 1.5, 3.5]], np.float32)
 GREY = np.full((3, 3), 120, np.uint8)
 BOUNDS = (CORNERS.min(axis=0), CORNERS.max(axis=0))
@@ -61,7 +62,7 @@ def test_every_runs_controls_share_the_sessions_view() -> None:
     first_run.cloud_orbit(0.5, 0.0)
 
     # Then the second run sees the same pose
-    assert second_run.cloud_pose().azimuth == 0.5
+    assert second_run.cloud_pose().azimuth == START + 0.5
 
 
 def test_the_3d_pane_moves_after_the_run_has_finished(tmp_path: Path) -> None:
@@ -74,7 +75,7 @@ def test_the_3d_pane_moves_after_the_run_has_finished(tmp_path: Path) -> None:
 
         # Then it is accepted and answered with the cloud drawn from the new pose
         assert status == 200
-        assert answer["azimuth"] == 0.4
+        assert answer["azimuth"] == START + 0.4
         assert isinstance(answer["cloud_png"], str) and answer["cloud_png"]
 
 
@@ -96,7 +97,7 @@ def test_before_anything_was_drawn_the_pose_still_moves(tmp_path: Path) -> None:
         status, answer = post(f"{base}/control", {"action": "cloud_orbit", "d_azimuth": 0.3})
 
         # Then the pose moves, with no image to show yet
-        assert (status, answer["azimuth"], answer["cloud_png"]) == (200, 0.3, None)
+        assert (status, answer["azimuth"], answer["cloud_png"]) == (200, START + 0.3, None)
 
 
 def test_the_view_carries_into_the_next_run(tmp_path: Path) -> None:
@@ -109,7 +110,7 @@ def test_the_view_carries_into_the_next_run(tmp_path: Path) -> None:
         answer = post(f"{base}/control", {"action": "cloud_orbit", "d_azimuth": 0.25})[1]
 
         # Then the two orbits add up: the run did not reset the view
-        assert answer["azimuth"] == 0.75
+        assert answer["azimuth"] == START + 0.5 + 0.25
 
 
 def test_pause_still_needs_a_run(tmp_path: Path) -> None:

@@ -17,6 +17,17 @@ surface's, and unowned voxels become the chosen surface's. Within a
 surface, points are deduplicated on a fine grid (default 2 cm) so a
 surface grows more complete, not unboundedly.
 
+Depth: a mask's edge pixels match the background behind the object, and
+far from the camera one disparity pixel is metres, so a region carries a
+tail along the viewing ray. Given the camera that saw it, a region keeps
+only the points within `depth_band_m` (default 1.5 m) of its median range
+(`object_points`). A region left with fewer than `min_points` has no
+depth yet: it neither starts nor continues a surface, and the object
+becomes a surface on the first frame with enough of it. The default (1)
+suits sparse projections (the mission's snapshot hits); dense SAM regions
+use `DENSE_REGION_MIN_POINTS` (50), below which a mask caught only a few
+stray disparities.
+
 Motion: points are already map-frame (ego-motion compensated by the
 RTAB-Map pose), so a static object's observations stay put. A surface
 whose region centroid has drifted at least `moving_displacement_m`
@@ -39,10 +50,15 @@ from dataclasses import dataclass, field
 import numpy as np
 from numpy.typing import NDArray
 
+from surmap.types import Vec3
+
 DEFAULT_VOXEL_M = 0.02
 DEFAULT_MATCH_VOXEL_M = 0.10
 DEFAULT_MIN_OVERLAP = 0.2
 DEFAULT_MOVING_DISPLACEMENT_M = 0.4
+DEFAULT_DEPTH_BAND_M = 1.5
+DEFAULT_MIN_POINTS = 1
+DENSE_REGION_MIN_POINTS = 50
 
 # Voxel indices are packed into one int64: 21 bits per axis, offset to be
 # non-negative — about +-21 km at 2 cm, far beyond any survey's map.
@@ -53,6 +69,22 @@ _AXIS_OFFSET = 1 << (_AXIS_BITS - 1)
 def _voxel_keys(points: NDArray[np.float32], size_m: float) -> NDArray[np.int64]:
     cells = np.floor(points.astype(np.float64) / size_m).astype(np.int64) + _AXIS_OFFSET
     return (cells[:, 0] << (2 * _AXIS_BITS)) | (cells[:, 1] << _AXIS_BITS) | cells[:, 2]
+
+
+def object_points(
+    points: NDArray[np.float32], viewpoint: Vec3 | None, band_m: float = DEFAULT_DEPTH_BAND_M
+) -> NDArray[np.float32]:
+    """The region's points within `band_m` of their median range from `viewpoint`.
+
+    Without a viewpoint nothing is cut.
+    """
+    points = np.asarray(points, dtype=np.float32).reshape(-1, 3)
+    if viewpoint is None or not len(points):
+        return points
+    camera = np.array([viewpoint.x, viewpoint.y, viewpoint.z], np.float64)
+    ranges = np.linalg.norm(points.astype(np.float64) - camera, axis=1)
+    kept: NDArray[np.float32] = points[np.abs(ranges - np.median(ranges)) <= band_m]
+    return kept
 
 
 @dataclass(frozen=True)
@@ -99,15 +131,23 @@ class SurfaceMap:
         match_voxel_m: float = DEFAULT_MATCH_VOXEL_M,
         min_overlap: float = DEFAULT_MIN_OVERLAP,
         moving_displacement_m: float = DEFAULT_MOVING_DISPLACEMENT_M,
+        depth_band_m: float = DEFAULT_DEPTH_BAND_M,
+        min_points: int = DEFAULT_MIN_POINTS,
     ) -> None:
         if voxel_m <= 0 or match_voxel_m <= 0:
             raise ValueError("voxel sizes must be positive")
+        if depth_band_m <= 0:
+            raise ValueError("depth_band_m must be positive")
+        if min_points < 1:
+            raise ValueError("min_points must be at least 1")
         if not 0.0 < min_overlap <= 1.0:
             raise ValueError("min_overlap must be in (0, 1]")
         self._voxel_m = voxel_m
         self._match_voxel_m = match_voxel_m
         self._min_overlap = min_overlap
         self._moving_displacement_m = moving_displacement_m
+        self._depth_band_m = depth_band_m
+        self._min_points = min_points
         self._owners: dict[int, int] = {}  # match voxel -> surface id
         self._shapes: dict[int, _Shape] = {}
         self._version = 0
@@ -118,11 +158,16 @@ class SurfaceMap:
         return self._version
 
     def assign(
-        self, frame_id: int, track_id: int, label: str, points: NDArray[np.float32]
+        self,
+        frame_id: int,
+        track_id: int,
+        label: str,
+        points: NDArray[np.float32],
+        viewpoint: Vec3 | None = None,
     ) -> SurfaceAssignment | None:
-        """Assign one region's points; None when the region has no points."""
-        points = np.asarray(points, dtype=np.float32).reshape(-1, 3)
-        if not len(points):
+        """Assign one region's points, banded from `viewpoint`; None without enough depth."""
+        points = object_points(points, viewpoint, self._depth_band_m)
+        if len(points) < self._min_points:
             return None
         match_keys = _voxel_keys(points, self._match_voxel_m)
         region_voxels = np.unique(match_keys)

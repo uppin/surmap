@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from surmap.demo.cloud_script import CLOUD_SCRIPT
+from surmap.demo.object_feed import OBJECT_FEED_MARKUP, OBJECT_FEED_SCRIPT
+from surmap.demo.sam_depth import SAM_DEPTH_SCRIPT
+from surmap.demo.view_math import VIEW_HELPERS
 
 PAGE = """<!DOCTYPE html>
 <html lang="en">
@@ -208,6 +211,8 @@ function drawSamPane(data) {{
   image.onload = () => {{
     samView.drawImage(image, 0, 0, samCanvas.width, samCanvas.height);
     drawSamObjects(samView, data.objects);
+    samLast = {{data, image}};
+    drawSamDepth(samView, data);
     URL.revokeObjectURL(image.src);
   }};
   image.src = 'data:image/jpeg;base64,' + data.image_b64;
@@ -299,6 +304,7 @@ async function showSnapshot(seq) {{
     drawImageFrame(snap.image_b64, snap.overlay, snap.objects, snap.camera,
       {{index: snap.seq, total: maxSeq + 1}});
     if (snap.sam) drawSamPane(snap.sam);
+    feedSnapshot(snap.surfaces, snap.frame_id);
     if (snap.cloud) {{
       setCloud(snap.cloud.cloud_png);
       lastMap = {{image: null, extent: snap.cloud.extent, trajectory: snap.cloud.trajectory_xy,
@@ -377,6 +383,7 @@ function attachListeners() {{
   source.addEventListener('run', (event) => {{
     const data = JSON.parse(event.data);
     currentRunId = data.run_id; frames = 0; maxSeq = -1; started = performance.now();
+    clearFeed();
     runInfo.innerHTML = data.replay_of === data.run_id
       ? `Run: <b>${{currentRunId.slice(0, 12)}}…</b> · cached rerun (not persisted again)`
       : `Run: <b>${{currentRunId.slice(0, 12)}}…</b> · persisting to SQLite…`;
@@ -386,6 +393,8 @@ function attachListeners() {{
     latestDetections = JSON.parse(event.data);
   }});
   source.addEventListener('sam', (event) => drawSamPane(JSON.parse(event.data)));
+  source.addEventListener('region', (event) => noteRegions(JSON.parse(event.data)));
+  source.addEventListener('surface', (event) => feedSurfaceEvent(JSON.parse(event.data)));
   source.addEventListener('frame', (event) => {{
     const data = JSON.parse(event.data);
     frames += 1;
@@ -558,7 +567,9 @@ updateHistoryLabel();
 """
 
 # Spliced in before the server formats PAGE, so its braces stay doubled.
-PAGE = PAGE.replace("__CLOUD_SCRIPT__", CLOUD_SCRIPT)
+PAGE = PAGE.replace(
+    "__CLOUD_SCRIPT__", VIEW_HELPERS + CLOUD_SCRIPT + SAM_DEPTH_SCRIPT + OBJECT_FEED_SCRIPT
+)
 
 RTAB_STAT = """    <h2>RTAB-Map</h2>
     <div class="stat" id="rtab">Waiting for playback…</div>"""
@@ -588,8 +599,10 @@ CM5_ASIDE = """  <aside>
       <p class="resize-hint">Drag the pane's bottom-right corner to resize
         it, or use Fullscreen.</p>
     </div>
+__OBJECT_FEED__
     <h2>Floor plan</h2>
     <canvas id="map" width="340" height="340"></canvas>
     <p class="legend">Top-down floor plan: every map point in its camera intensity,
     amber = camera trajectory, yellow wedge = the camera at the shown moment.</p>
   </aside>"""
+CM5_ASIDE = CM5_ASIDE.replace("__OBJECT_FEED__", OBJECT_FEED_MARKUP)

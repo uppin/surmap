@@ -14,18 +14,18 @@
   - [x] Create/update PRD documentation
   - [x] Create changeset
   - [x] Build and baseline healthy (Step 7)
-- [wf 2] ⏳ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
+- [wf 2] ✅ 2026-11-02 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 5 suites red @ `14c6bf4` (4 import errors, 1 assertion)
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Milestone 1: `SurfaceMap` depth band and minimum points
-  - [ ] Milestone 2: the camera pose reaches `SurfaceMap` (`RegionResult.camera`, `region` event `viewpoint`, live backend from the dense line)
-  - [ ] Milestone 3: session-level `CloudViewer`; every `cloud_*` action works without a run and answers with `cloud_png`
-  - [ ] Milestone 4: page — drags send their whole movement; the response image is shown
-  - [ ] Milestone 5: object feed module (`demo/object_feed.py`) spliced into the page
-  - [ ] Milestone 6: region pixels (`project_to_display`), `region` event `pixels`, SAM pane depth-gradient overlay
-  - [ ] Acceptance: `tests/test_survey_surfaces.py`, `tests/test_demo_object_feed.py`, `tests/test_demo_cloud_ptz.py` pass
+- [wf 3] ✅ 2026-11-02 `/green` Green — implement until every red test passes · 1203 passed / 28 skipped; ruff, format, mypy strict green
+  - [x] Milestone 1: `SurfaceMap` depth band and minimum points
+  - [x] Milestone 2: the camera pose reaches `SurfaceMap` (`RegionResult.camera`, `region` event `viewpoint`, live backend from the dense line)
+  - [x] Milestone 3: session-level `CloudViewer`; every `cloud_*` action works without a run and answers with `cloud_png`
+  - [x] Milestone 4: page — drags send their whole movement; the response image is shown
+  - [x] Milestone 5: object feed module (`demo/object_feed.py`) spliced into the page
+  - [x] Milestone 6: region pixels (`project_to_display`), `region` event `pixels`, SAM pane depth-gradient overlay
+  - [x] Acceptance: `tests/test_survey_surfaces.py`, `tests/test_demo_object_feed.py`, `tests/test_demo_cloud_ptz.py` pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] README.md § Dev console — object feed bullet; PTZ works after a run
@@ -166,6 +166,43 @@ V4, in the in-app browser on KITTI 0009 (cached rerun of `38b8dc54`, then a Repl
 
 **Approved:** pending — the user asked for the change in this session; V4 is the only way to exercise pointer input without a JS harness.
 
+## Validation Results
+
+### Verification run — 2026-11-02
+
+- **V1:** the five suites in **Command** went from red @ `14c6bf4` to green. Full suite:
+  1203 passed / 28 skipped. The JS helpers and the PTZ readout are exercised in node.
+- **Existing tests changed:**
+  - `test_demo_regions.py`: two region-dict equalities gain `viewpoint: None, pixels: []`.
+    The fake backend's points are now a settable `points`.
+  - `test_demo_surfaces.py`: the fake car is a 24 × 3 patch (72 points) instead of 2
+    points, because a 2-point region is now "no depth yet".
+    `test_the_page_toggles_the_surface_layer…` expects `cloud_surfaces` with nothing
+    playing to answer 200 (was 409): the view is the session's.
+  - My own red tests had two arithmetic errors, corrected to exact geometry: the
+    default azimuth is −0.8, not 0, and the square's nearest range is √(2² + 0.4²).
+- **Headless replay of `38b8dc54` through the new server:**
+  - Surfaces went from 42 to 28, the smallest from 1 point to 275, and moving from 3 to 2.
+  - Car surfaces are about 1.5 × 1.1 × 2.5–3.8 m.
+  - Region pixels: 94–98 % of each region's pixels lie inside its own mask.
+  - `cloud_orbit` after the run answers 200 with `cloud_png`.
+- **V4, in the in-app browser:**
+  - **Feed:** 28 cards (2 moving).
+  - **3D pane drag:** a real 200 px CDP mouse drag on the finished run turned the
+    3D pane from az −46° to +46°, the whole drag.
+  - **Pinch:** a ctrl+wheel pinch zoomed it to 0.55×.
+  - **Feed preview:** a feed card's preview orbited.
+  - **SAM pane:** draws depth-coloured points per car (for example `6.1–7.3 m`).
+  - **Scrub:** rebuilds the feed from the recorded surfaces.
+  - **Console:** no page errors.
+- **Flaky, unrelated:** `test_moving_differencing.py::test_differencing_is_within_frame_budget`
+  (a 200 ms wall-clock budget) failed 1 of 4 full runs while the console and browser
+  loaded the machine. It passed 5 of 5 alone, and `src/surmap/moving` is untouched since
+  `b2de4bf`. Not proven on an untouched checkout.
+- **Observed, out of scope:** near-left KITTI cars get points only on their rear. The
+  sidecar's SGBM (`numDisparities` 128 at 620 px) cannot match the image's leftmost 128
+  columns. That is also why some masks get no depth.
+
 ## Acceptance Tests
 
 ### surmap
@@ -189,6 +226,17 @@ V4, in the in-app browser on KITTI 0009 (cached rerun of `38b8dc54`, then a Repl
   and replays of existing recordings show the fix without a rebuild.
 - **±1.5 m and 50 points** come from the measured KITTI replay (discovery). They are
   constructor parameters, like `min_overlap`.
+- **The 50-point minimum is for dense regions only** (decided during Green).
+  `SurfaceMap`'s default stays 1, because mission objects (`surmap.mission.objects`) assign
+  sparse snapshot hits with no viewpoint, and 50 broke 12 mission tests and real mission
+  tracking. The demo's `SurfaceAssigner` uses `DENSE_REGION_MIN_POINTS` (50). The band
+  only applies with a viewpoint, so mission is unchanged.
+- **`render_cloud_view` and `CloudPose` moved to `demo/cloud_view.py`**, re-exported from
+  `server.py`, which shrank from 2188 to 2051 lines.
+- **A pre-existing page bug fixed in scope.** `surfacesButton` was a `const` inside the
+  `if (cloudCanvas)` block, so `postCloud` threw a swallowed `ReferenceError` after every
+  answer: the pose readout and the Hide/Show surfaces label never updated (on `main` too).
+  Found in the V4 run; reproduction `test_a_ptz_answer_updates_the_readout_and_the_surfaces_button`.
 - **SAM-pane points come from the region event, not the surface.** They are the
   region's banded points on that frame, so they match the mask. Snapshots don't
   journal region pixels, so a scrubbed moment shows masks only.

@@ -209,7 +209,7 @@ def test_points_far_behind_the_object_along_the_view_ray_are_cut_away() -> None:
     assert assignment is not None
     assert assignment.total_points == 400
     depth = surfaces.surfaces()[0].points[:, 2]
-    assert float(depth.max()) == pytest.approx(1.005, abs=1e-4)
+    assert float(np.max(depth)) == pytest.approx(1.005, abs=1e-4)
 
 
 def test_the_band_keeps_points_within_its_width_of_the_median_range() -> None:

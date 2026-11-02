@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import base64
 import html
-import io
 import itertools
 import json
 import math
@@ -38,6 +37,10 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
+from surmap.demo.cloud_view import CLOUD_VIEW_PX as CLOUD_VIEW_PX
+from surmap.demo.cloud_view import CloudPose as CloudPose
+from surmap.demo.cloud_view import CloudViewer, png_base64
+from surmap.demo.cloud_view import render_cloud_view as render_cloud_view
 from surmap.demo.datasets import (
     DATASETS,
     DISPLAY_HEIGHT,
@@ -73,7 +76,7 @@ from surmap.demo.surface_render import MOVING_ALPHA as MOVING_ALPHA
 from surmap.demo.surface_render import MOVING_COLOUR as MOVING_COLOUR
 from surmap.demo.surface_render import SURFACE_ALPHA as SURFACE_ALPHA
 from surmap.demo.surface_render import SURFACE_COLOURS as SURFACE_COLOURS
-from surmap.demo.surface_render import SurfaceLayer, draw_surfaces
+from surmap.demo.surface_render import SurfaceLayer
 from surmap.demo.surface_render import surface_tint as surface_tint
 from surmap.detection.detector import CoralDetector, decode_rgb
 from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
@@ -361,100 +364,7 @@ def render_floor_plan(xz: NDArray[np.float32], grey: NDArray[np.uint8], extent: 
         np.round(mean).astype(np.uint8).reshape(size, size)
     )
     rgba[:, :, 3] = np.round(alpha).astype(np.uint8).reshape(size, size)
-    return _png_base64(rgba)
-
-
-def _png_base64(rgba: NDArray[np.uint8]) -> str:
-    """An (H, W, 4) RGBA array as a base64 PNG (the panes' shared encoding)."""
-    out = io.BytesIO()
-    Image.fromarray(rgba, "RGBA").save(out, format="PNG")
-    return base64.b64encode(out.getvalue()).decode()
-
-
-@dataclass(frozen=True)
-class CloudPose:
-    """The 3D pane's PTZ pose: orbit angles, zoom and ground-plane pan.
-
-    The floor plan is this same pose family fixed at top-down; the
-    cloud view is the one the viewer orbits.
-    """
-
-    azimuth: float = -0.8
-    elevation: float = 0.85
-    zoom: float = 1.0
-    pan_x: float = 0.0
-    pan_z: float = 0.0
-
-
-CLOUD_VIEW_PX = (880, 440)
-
-
-def _project_points(
-    points: NDArray[np.float32],
-    pose: CloudPose,
-    centre: NDArray[np.float64],
-    span: float,
-    size: tuple[int, int],
-) -> tuple[NDArray[np.int64], NDArray[np.int64], NDArray[np.float64], NDArray[np.int64]]:
-    """Map-frame points to (u, v, depth, point indices) under the orbit pose."""
-    width, height = size
-    rel = points.astype(np.float64) - centre
-    x, up, fwd = rel[:, 0], -rel[:, 1], rel[:, 2]
-    ca, sa = math.cos(pose.azimuth), math.sin(pose.azimuth)
-    x, fwd = x * ca - fwd * sa, x * sa + fwd * ca
-    ce, se = math.cos(pose.elevation), math.sin(pose.elevation)
-    up, fwd = up * ce - fwd * se, up * se + fwd * ce
-    distance = span * 1.9 * pose.zoom
-    depth = distance - fwd
-    focal = 1.0 / math.tan(0.35)
-    inside = depth > distance * 0.05
-    indices = np.flatnonzero(inside)
-    u = np.floor(width / 2 + focal * x[inside] / depth[inside] * (height / 2))
-    v = np.floor(height / 2 - focal * up[inside] / depth[inside] * (height / 2))
-    ui, vi = u.astype(np.int64), v.astype(np.int64)
-    on = (ui >= 0) & (ui < width) & (vi >= 0) & (vi < height)
-    return ui[on], vi[on], depth[inside][on], indices[on]
-
-
-def render_cloud_view(
-    points: NDArray[np.float32],
-    colors: NDArray[np.uint8],
-    pose: CloudPose,
-    bounds: tuple[NDArray[np.float32], NDArray[np.float32]],
-    size: tuple[int, int] = CLOUD_VIEW_PX,
-    surfaces: SurfaceLayer = (),
-) -> str:
-    """Every map point rendered server-side from `pose`, as base64 PNG.
-
-    The 3D sibling of `render_floor_plan`: same contract — the whole
-    cloud, no sampling (so nothing flickers between updates), a
-    deterministic function of (cloud, pose). Only the projection
-    differs: an orbit camera instead of top-down. Nearest point wins
-    each pixel. Background matches the old WebGL clear colour.
-    """
-    width, height = size
-    rgba = np.zeros((height, width, 4), np.uint8)
-    rgba[:, :] = (10, 12, 14, 255)
-    if len(points) or surfaces:
-        lo, hi = (np.asarray(bound, dtype=np.float64) for bound in bounds)
-        centre = (lo + hi) / 2.0
-        centre[0] += pose.pan_x
-        centre[2] += pose.pan_z
-        span = max(float(np.max(hi - lo)), 0.5)
-        flat = rgba.reshape(-1, 4)
-        if len(points):
-            ui, vi, depth, indices = _project_points(points, pose, centre, span, size)
-            order = np.argsort(depth)[::-1]  # far first; near overwrites
-            pixels = (vi[order] * width + ui[order]).astype(np.int64)
-            chosen = indices[order]
-            flat[pixels, 0] = colors[chosen, 0]
-            flat[pixels, 1] = colors[chosen, 1]
-            flat[pixels, 2] = colors[chosen, 2]
-            flat[pixels, 3] = 255
-        draw_surfaces(
-            flat, size, surfaces, lambda part: _project_points(part, pose, centre, span, size)[:2]
-        )
-    return _png_base64(rgba)
+    return png_base64(rgba)
 
 
 FloorCamera = dict[str, float]
@@ -905,16 +815,17 @@ class _RateMeter:
 
 
 class PlaybackControls:
-    """Pause, resume or cancel one player from another thread."""
+    """Pause, resume or cancel one player from another thread.
 
-    def __init__(self) -> None:
+    Its 3D view is the session's `CloudViewer` (a fresh one when none is
+    given), so every run of one console shares the pose.
+    """
+
+    def __init__(self, viewer: CloudViewer | None = None) -> None:
         self._playing = threading.Event()
         self._playing.set()
         self._cancelled = threading.Event()
-        self._cloud_pose = CloudPose()
-        self._surfaces_visible = True
-        self._cloud_version = 0
-        self._cloud_lock = threading.Lock()
+        self.viewer = viewer if viewer is not None else CloudViewer()
 
     @property
     def paused(self) -> bool:
@@ -939,69 +850,33 @@ class PlaybackControls:
 
     @property
     def cloud_version(self) -> int:
-        return self._cloud_version
+        return self.viewer.version
 
     def cloud_pose(self) -> CloudPose:
-        with self._cloud_lock:
-            return self._cloud_pose
-
-    def _set_cloud_pose(self, pose: CloudPose) -> CloudPose:
-        with self._cloud_lock:
-            self._cloud_pose = pose
-            self._cloud_version += 1
-            return pose
+        return self.viewer.pose()
 
     def cloud_orbit(self, d_azimuth: float, d_elevation: float) -> CloudPose:
-        pose = self.cloud_pose()
-        return self._set_cloud_pose(
-            CloudPose(
-                azimuth=pose.azimuth + d_azimuth,
-                elevation=max(-1.5, min(1.5, pose.elevation + d_elevation)),
-                zoom=pose.zoom,
-                pan_x=pose.pan_x,
-                pan_z=pose.pan_z,
-            )
-        )
+        return self.viewer.orbit(d_azimuth, d_elevation)
 
     def cloud_zoom(self, factor: float) -> CloudPose:
-        pose = self.cloud_pose()
-        return self._set_cloud_pose(
-            CloudPose(
-                azimuth=pose.azimuth,
-                elevation=pose.elevation,
-                zoom=max(0.2, min(20.0, pose.zoom * factor)),
-                pan_x=pose.pan_x,
-                pan_z=pose.pan_z,
-            )
-        )
+        return self.viewer.zoom(factor)
 
     def cloud_pan(self, dx: float, dz: float) -> CloudPose:
-        pose = self.cloud_pose()
-        return self._set_cloud_pose(
-            CloudPose(
-                azimuth=pose.azimuth,
-                elevation=pose.elevation,
-                zoom=pose.zoom,
-                pan_x=pose.pan_x + dx,
-                pan_z=pose.pan_z + dz,
-            )
-        )
+        return self.viewer.pan(dx, dz)
 
     def cloud_reset(self) -> CloudPose:
-        return self._set_cloud_pose(CloudPose())
+        return self.viewer.reset()
 
     @property
     def surfaces_visible(self) -> bool:
-        return self._surfaces_visible
+        return self.viewer.surfaces_visible
 
     def set_surfaces_visible(self, visible: bool | None) -> None:
         """Show, hide (or, with None, toggle) the surface layer; re-renders the cloud."""
-        with self._cloud_lock:
-            self._surfaces_visible = (not self._surfaces_visible) if visible is None else visible
-            self._cloud_version += 1
+        self.viewer.set_surfaces_visible(visible)
 
     def shown_surfaces(self, layer: SurfaceLayer) -> SurfaceLayer:
-        return layer if self._surfaces_visible else ()
+        return self.viewer.shown_surfaces(layer)
 
 
 class DemoPlayer:
@@ -1105,12 +980,8 @@ class DemoPlayer:
                 "frame_id": frame_id,
                 "points": points,
                 "point_colors": colors,
-                "cloud_png": render_cloud_view(
-                    cloud.points,
-                    cloud.colors,
-                    self._controls.cloud_pose(),
-                    bounds,
-                    surfaces=self._controls.shown_surfaces(surfaces),
+                "cloud_png": self._controls.viewer.render(
+                    cloud.points, cloud.colors, bounds, surfaces
                 ),
                 **self._floor_plan(
                     cloud.points[:, [0, 2]], cloud.colors[:, 0], _floor_plane_trajectory(trajectory)
@@ -1320,12 +1191,8 @@ class DemoPlayer:
                                 np.maximum(self._cloud_bounds[1], hi),
                             )
                         )
-                        cloud_png = render_cloud_view(
-                            live_cloud.points,
-                            live_cloud.colors,
-                            self._controls.cloud_pose(),
-                            bounds,
-                            surfaces=self._controls.shown_surfaces(display.surfaces.layer()),
+                        cloud_png = self._controls.viewer.render(
+                            live_cloud.points, live_cloud.colors, bounds, display.surfaces.layer()
                         )
                     plan = self._floor_plan(
                         live_cloud.points[:, [0, 2]],
@@ -1405,6 +1272,7 @@ class _DemoHttpServer(ThreadingHTTPServer):
     prepared: dict[str, PreparedDataset]
     preparations: dict[str, _Preparation]
     current: PlaybackControls | None
+    cloud_viewer: CloudViewer  # the session's 3D view, shared by every run
     run_engine: _RunEngine | None
     history_store: RunHistoryStore
 
@@ -1449,13 +1317,7 @@ class _DemoHttpServer(ThreadingHTTPServer):
                 bounds: tuple[NDArray[np.float32], NDArray[np.float32]],
                 layer: SurfaceLayer,
             ) -> str:
-                return render_cloud_view(
-                    points,
-                    colors,
-                    controls.cloud_pose(),
-                    bounds,
-                    surfaces=controls.shown_surfaces(layer),
-                )
+                return controls.viewer.render(points, colors, bounds, layer)
 
             return JournalPlayer(
                 store, run_id, controls=controls, fps=fps, render_cloud=render
@@ -1744,6 +1606,7 @@ def make_demo_server(
     server.prepared = {prepared.spec.dataset_id: prepared} if prepared is not None else {}
     server.preparations = {}
     server.current = None
+    server.cloud_viewer = CloudViewer()
     server.run_engine = None
     return server
 
@@ -1778,7 +1641,7 @@ class _RunEngine:
         self.replay_of = replay_of
         # An unrecorded rerun persists nothing: viewers see the recording itself.
         self.record = record
-        self.controls = PlaybackControls()
+        self.controls = PlaybackControls(server.cloud_viewer)
         self.run_id = ""
         self.done = threading.Event()
         self._lock = threading.Lock()
@@ -1989,14 +1852,11 @@ class _DemoHandler(BaseHTTPRequestHandler):
                         snap_points = np.array(cloud["points"], dtype=np.float32).reshape(-1, 3)
                         snap_colors = np.array(cloud.get("colors") or [], dtype=np.uint8)
                         if len(snap_points) and len(snap_colors) == len(snap_points):
-                            live = self.server.current or PlaybackControls()
-                            layer = surface_layer(snapshot.get("surfaces"))
-                            cloud["cloud_png"] = render_cloud_view(
+                            cloud["cloud_png"] = self.server.cloud_viewer.render(
                                 snap_points,
                                 snap_colors.reshape(-1, 3),
-                                live.cloud_pose(),
                                 (snap_points.min(axis=0), snap_points.max(axis=0)),
-                                surfaces=live.shown_surfaces(layer),
+                                surface_layer(snapshot.get("surfaces")),
                             )
                     self._send_json(200, snapshot)
                 return
@@ -2068,28 +1928,30 @@ class _DemoHandler(BaseHTTPRequestHandler):
             )
             if action not in ("pause", "resume", *cloud_actions):
                 self._send(400, "text/plain", b"action must be pause, resume or a cloud_* action")
-            elif controls is None:
-                self._send(409, "text/plain", b"nothing is playing")
             elif action in ("pause", "resume"):
-                controls.pause() if action == "pause" else controls.resume()
-                self._send_json(200, {"state": "paused" if controls.paused else "playing"})
+                if controls is None:
+                    self._send(409, "text/plain", b"nothing is playing")
+                else:
+                    controls.pause() if action == "pause" else controls.resume()
+                    self._send_json(200, {"state": "paused" if controls.paused else "playing"})
             else:
+                # The view is the session's: it moves with or without a run,
+                # and answers with the last scene drawn from the new pose.
+                viewer = self.server.cloud_viewer
                 if action == "cloud_orbit":
-                    pose = controls.cloud_orbit(
+                    pose = viewer.orbit(
                         float(body.get("d_azimuth") or 0.0), float(body.get("d_elevation") or 0.0)
                     )
                 elif action == "cloud_zoom":
-                    pose = controls.cloud_zoom(float(body.get("factor") or 1.0))
+                    pose = viewer.zoom(float(body.get("factor") or 1.0))
                 elif action == "cloud_pan":
-                    pose = controls.cloud_pan(
-                        float(body.get("dx") or 0.0), float(body.get("dz") or 0.0)
-                    )
+                    pose = viewer.pan(float(body.get("dx") or 0.0), float(body.get("dz") or 0.0))
                 elif action == "cloud_surfaces":
                     visible = body.get("visible")
-                    controls.set_surfaces_visible(visible if isinstance(visible, bool) else None)
-                    pose = controls.cloud_pose()
+                    viewer.set_surfaces_visible(visible if isinstance(visible, bool) else None)
+                    pose = viewer.pose()
                 else:
-                    pose = controls.cloud_reset()
+                    pose = viewer.reset()
                 self._send_json(
                     200,
                     {
@@ -2098,7 +1960,8 @@ class _DemoHandler(BaseHTTPRequestHandler):
                         "zoom": pose.zoom,
                         "pan_x": pose.pan_x,
                         "pan_z": pose.pan_z,
-                        "surfaces_visible": controls.surfaces_visible,
+                        "surfaces_visible": viewer.surfaces_visible,
+                        "cloud_png": viewer.rerender(),
                     },
                 )
             return

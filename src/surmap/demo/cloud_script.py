@@ -5,9 +5,11 @@ renders *every* map point into a PNG (`render_cloud_view` in
 server.py, the orbit sibling of `render_floor_plan`) and this
 script only displays the image. The only difference from the
 floor plan is the PTZ pose, which lives server-side in
-`PlaybackControls`: buttons, drag and wheel post pose deltas to
-`/control`, and the player re-renders with the next map event
-(and immediately when the pose version changes). No sampling,
+the session's `CloudViewer` (`cloud_view.py`): buttons, drag and wheel
+post pose deltas to `/control`, which answers with the last scene drawn
+from the new pose (`cloud_png`) — during a run, after it and on a
+scrubbed moment alike. Deltas made while a post waits are merged
+(`mergeCloudBody`), so a drag sends its whole movement. No sampling,
 no client-side geometry — nothing can flicker or go sparse. The SAM
 surface layer is drawn into the same image server-side; the
 Surfaces button only shows or hides it (`cloud_surfaces`).
@@ -23,6 +25,8 @@ CLOUD_SCRIPT = """// --- 3D point cloud: server-rendered image, PTZ pose on the 
 const cloudCanvas = $('cloud');
 const cloudCtx = cloudCanvas ? cloudCanvas.getContext('2d') : null;
 let cloudImage = null;
+// Created with the pane's other controls below; declared here so postCloud sees it.
+let surfacesButton = null;
 async function postCloud(body) {{
   try {{
     const response = await fetch('/control', {{
@@ -31,15 +35,23 @@ async function postCloud(body) {{
     }});
     if (!response.ok) return;
     const pose = await response.json();
-    surfacesButton.textContent = pose.surfaces_visible ? 'Hide surfaces' : 'Show surfaces';
+    // The server answers with the last scene drawn from the new pose; a
+    // moment scrubbed during a live run is drawn again from its snapshot.
+    if (mode === 'scrub' && source) showSnapshot(scrubSeq);
+    else if (pose.cloud_png) setCloud(pose.cloud_png);
+    if (surfacesButton) {{
+      surfacesButton.textContent = pose.surfaces_visible ? 'Hide surfaces' : 'Show surfaces';
+    }}
     $('ptz-readout').textContent =
       `az ${{Math.round(pose.azimuth * 57.3)}}° · el ${{Math.round(pose.elevation * 57.3)}}° `
-      + `· zoom ${{pose.zoom.toFixed(2)}}× — re-rendered with the next map update`;
-  }} catch (error) {{ /* stream not live; pose applies to the next run */ }}
+      + `· zoom ${{pose.zoom.toFixed(2)}}×`;
+  }} catch (error) {{ /* server unreachable; the next post carries the movement */ }}
 }}
 let cloudPostTimer = null, cloudPending = null;
 function postCloudDebounced(body) {{
-  cloudPending = body;
+  // Moves made while a post waits add up (mergeCloudBody), so a drag
+  // sends its whole movement, not the last pointer event's.
+  cloudPending = mergeCloudBody(cloudPending, body);
   if (cloudPostTimer) return;
   cloudPostTimer = setTimeout(() => {{
     cloudPostTimer = null;
@@ -106,15 +118,19 @@ cloudCanvas.addEventListener('pointermove', (event) => {{
     postCloudDebounced({{action: 'cloud_orbit', d_azimuth: dx * 0.008, d_elevation: dy * 0.008}});
   }}
 }});
-cloudCanvas.addEventListener('pointerup', () => {{ cloudDrag = null; }});
+const endCloudDrag = () => {{ cloudDrag = null; }};
+cloudCanvas.addEventListener('pointerup', endCloudDrag);
+cloudCanvas.addEventListener('pointercancel', endCloudDrag);
+cloudCanvas.addEventListener('lostpointercapture', endCloudDrag);
 cloudCanvas.addEventListener('wheel', (event) => {{
   event.preventDefault();
-  postCloudDebounced({{action: 'cloud_zoom', factor: Math.exp(event.deltaY * 0.001)}});
+  const rate = event.ctrlKey ? 0.01 : 0.001;  // ctrl+wheel is a trackpad pinch
+  postCloudDebounced({{action: 'cloud_zoom', factor: Math.exp(event.deltaY * rate)}});
 }}, {{passive: false}});
 cloudCanvas.addEventListener('contextmenu', (event) => event.preventDefault());
 // SAM surfaces: the server draws the station's surface layer into the
 // cloud image; this button only toggles it.
-const surfacesButton = document.createElement('button');
+surfacesButton = document.createElement('button');
 surfacesButton.className = 'btn';
 surfacesButton.type = 'button';
 surfacesButton.textContent = 'Hide surfaces';
