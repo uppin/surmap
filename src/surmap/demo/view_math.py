@@ -16,6 +16,8 @@ No DOM here, so the functions run in node on their own
   nearest pixel (x, y) within `radius`, or 0.
 - `selectionMask(ids, id)` is an RGBA overlay of every pixel of surface `id`.
 - `isClick(down, up)` tells a click (released within 4 px) from a drag.
+- `polygonContains(polygon, x, y)` is the even-odd test on a SAM mask outline;
+  `maskAt(objects, x, y)` is the track of the smallest mask under (x, y), or 0.
 
 Spliced into the page before the server formats it, so its braces stay
 doubled for str.format.
@@ -63,6 +65,31 @@ function selectionMask(ids, id) {{
     }}
   }}
   return mask;
+}}
+function polygonContains(polygon, x, y) {{
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {{
+    const [xi, yi] = polygon[i], [xj, yj] = polygon[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }}
+  return inside;
+}}
+function polygonArea(polygon) {{
+  let twice = 0;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {{
+    twice += polygon[j][0] * polygon[i][1] - polygon[i][0] * polygon[j][1];
+  }}
+  return Math.abs(twice) / 2;
+}}
+function maskAt(objects, x, y) {{
+  let best = 0, bestArea = Infinity;
+  for (const object of objects || []) {{
+    const polygon = object.mask_polygon || [];
+    if (polygon.length < 3 || !polygonContains(polygon, x, y)) continue;
+    const area = polygonArea(polygon);
+    if (area < bestArea) {{ best = object.track_id; bestArea = area; }}
+  }}
+  return best;
 }}
 const CLICK_SLOP_PX = 4;
 function isClick(down, up) {{

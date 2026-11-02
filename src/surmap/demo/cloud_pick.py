@@ -12,6 +12,9 @@ surface each pixel shows without any geometry of its own:
   orbits) scrolls the feed to that surface's card and highlights it
   (`focusFeedItem`, `object_feed.py`).
 - Hovering a feed card selects its surface in the pane.
+- The SAM view shares the selection: hovering a mask selects its surface
+  here, and a surface selected here is outlined on its masks there
+  (`sam_depth.py`).
 
 Spliced into the page before the server formats it, so its braces stay
 doubled for str.format.
@@ -62,6 +65,7 @@ function refreshCloudSelection() {{
       new ImageData(mask, cloudIds.width, cloudIds.height), 0, 0);
   }}
   drawCloud();
+  redrawSam();  // the SAM view outlines the selected surface's masks (sam_depth.py)
 }}
 function setCloudSelection(surfaceId, event) {{
   if (surfaceId !== cloudSelected) {{ cloudSelected = surfaceId; refreshCloudSelection(); }}

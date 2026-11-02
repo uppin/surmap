@@ -210,10 +210,8 @@ function drawSamPane(data) {{
   if (!data.image_b64) return;
   const image = new Image();
   image.onload = () => {{
-    samView.drawImage(image, 0, 0, samCanvas.width, samCanvas.height);
-    drawSamObjects(samView, data.objects);
     samLast = {{data, image}};
-    drawSamDepth(samView, data);
+    redrawSam();  // masks, their dense points and the shared selection (sam_depth.py)
     URL.revokeObjectURL(image.src);
   }};
   image.src = 'data:image/jpeg;base64,' + data.image_b64;
@@ -395,7 +393,10 @@ function attachListeners() {{
   }});
   source.addEventListener('sam', (event) => drawSamPane(JSON.parse(event.data)));
   source.addEventListener('region', (event) => noteRegions(JSON.parse(event.data)));
-  source.addEventListener('surface', (event) => feedSurfaceEvent(JSON.parse(event.data)));
+  source.addEventListener('surface', (event) => {{
+    feedSurfaceEvent(JSON.parse(event.data));
+    noteSurfaces(JSON.parse(event.data));
+  }});
   source.addEventListener('frame', (event) => {{
     const data = JSON.parse(event.data);
     frames += 1;

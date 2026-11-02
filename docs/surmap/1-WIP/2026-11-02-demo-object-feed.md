@@ -18,7 +18,7 @@
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⏳ `/green` Green — implement until every red test passes · milestones 1–7 @ `b830fc4`; milestone 8 added
+- [wf 3] ✅ 2026-11-02 `/green` Green — implement until every red test passes · 1224 passed / 28 skipped; ruff, format, mypy strict green
   - [x] Milestone 1: `SurfaceMap` depth band and minimum points
   - [x] Milestone 2: the camera pose reaches `SurfaceMap` (`RegionResult.camera`, `region` event `viewpoint`, live backend from the dense line)
   - [x] Milestone 3: session-level `CloudViewer`; every `cloud_*` action works without a run and answers with `cloud_png`
@@ -27,8 +27,8 @@
   - [x] Milestone 6: region pixels (`project_to_display`), `region` event `pixels`, SAM pane depth-gradient overlay
   - [x] Milestone 7: hover picking — `cloud_ids_png` beside every `cloud_png`; hover shows the surface id and selects all its pixels; clicking it scrolls the feed to its card and highlights it (and hovering a card selects it in the pane)
   - [x] Acceptance: `tests/test_demo_cloud_pick.py` passes
-  - [ ] Milestone 8: SAM pane in the same selection — hovering a mask selects its surface (3D points light up), clicking it opens the feed card; hovering a surface in 3D (or its card) outlines its masks on the SAM frame shown
-  - [ ] Acceptance: `tests/test_demo_sam_pick.py` passes
+  - [x] Milestone 8: SAM pane in the same selection — hovering a mask selects its surface (3D points light up), clicking it opens the feed card; hovering a surface in 3D (or its card) outlines its masks on the SAM frame shown
+  - [x] Acceptance: `tests/test_demo_sam_pick.py` passes
   - [x] Acceptance: `tests/test_survey_surfaces.py`, `tests/test_demo_object_feed.py`, `tests/test_demo_cloud_ptz.py` pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
@@ -244,6 +244,16 @@ V4, in the in-app browser on KITTI 0009 (cached rerun of `38b8dc54`, then a Repl
   - **Found in the V4 run:** nested smooth `scrollIntoView` did not scroll the feed in
     the webview. The feed's `scrollTop` is now set from the card's offset. The tooltip
     also flips left at the pane's right edge.
+- **Milestone 8 (SAM view in the selection):**
+  - **Tests:** 6 new tests, red @ `307860b`, now green.
+  - **V4, real CDP mouse events:**
+    - **SAM hover:** hovering car track 8's mask on frame 13, which became surface 27,
+      lights all 112 of surface 27's pixels in 3D and outlines the mask. Its title reads
+      `car #27 — click to open in the feed`.
+    - **SAM click:** clicking the mask brings card #27 into view in the feed.
+    - **3D hover:** hovering surface 27 in 3D outlines track 8 on the SAM frame.
+    - **Leave:** leaving clears both views.
+    - **Console:** no page errors.
 - **Observed, out of scope:** near-left KITTI cars get points only on their rear. The
   sidecar's SGBM (`numDisparities` 128 at 620 px) cannot match the image's leftmost 128
   columns. That is also why some masks get no depth.
