@@ -78,6 +78,7 @@ from surmap.demo.surface_render import SURFACE_ALPHA as SURFACE_ALPHA
 from surmap.demo.surface_render import SURFACE_COLOURS as SURFACE_COLOURS
 from surmap.demo.surface_render import SurfaceLayer
 from surmap.demo.surface_render import surface_tint as surface_tint
+from surmap.demo.surface_timeline import SurfaceTimelines
 from surmap.detection.detector import CoralDetector, decode_rgb
 from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
 from surmap.detection.source import CoralDetectionSource, DetectionSource
@@ -1292,6 +1293,7 @@ class _DemoHttpServer(ThreadingHTTPServer):
     preparations: dict[str, _Preparation]
     current: PlaybackControls | None
     cloud_viewer: CloudViewer  # the session's 3D view, shared by every run
+    surface_timelines: SurfaceTimelines  # rewound moments' surfaces, today's logic
     run_engine: _RunEngine | None
     history_store: RunHistoryStore
 
@@ -1627,6 +1629,7 @@ def make_demo_server(
     server.preparations = {}
     server.current = None
     server.cloud_viewer = CloudViewer()
+    server.surface_timelines = SurfaceTimelines(server.history_store)
     server.run_engine = None
     return server
 
@@ -1867,6 +1870,12 @@ class _DemoHandler(BaseHTTPRequestHandler):
                 if snapshot is None:
                     self._send(404, "text/plain", b"unknown moment")
                 else:
+                    # A journalled run's moment shows today's surface logic, not the
+                    # surfaces recorded with the logic it ran with (surface_timeline.py).
+                    timeline = self.server.surface_timelines.get(parts[1])
+                    if timeline is not None:
+                        frame_id = int(str(snapshot["frame_id"]))
+                        snapshot["surfaces"], snapshot["surface_tracks"] = timeline.at(frame_id)
                     cloud = snapshot.get("cloud")
                     if isinstance(cloud, dict) and isinstance(cloud.get("points"), list):
                         snap_points = np.array(cloud["points"], dtype=np.float32).reshape(-1, 3)

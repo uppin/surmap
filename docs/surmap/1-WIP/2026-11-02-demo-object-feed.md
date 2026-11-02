@@ -18,7 +18,7 @@
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ✅ 2026-11-02 `/green` Green — implement until every red test passes · 1249 passed / 28 skipped; ruff, format, mypy strict green
+- [wf 3] ✅ 2026-11-02 `/green` Green — implement until every red test passes · 1255 passed / 28 skipped; ruff, format, mypy strict green
   - [x] Milestone 1: `SurfaceMap` depth band and minimum points
   - [x] Milestone 2: the camera pose reaches `SurfaceMap` (`RegionResult.camera`, `region` event `viewpoint`, live backend from the dense line)
   - [x] Milestone 3: session-level `CloudViewer`; every `cloud_*` action works without a run and answers with `cloud_png`
@@ -33,6 +33,8 @@
   - [x] Acceptance: `tests/test_demo_cloud_follow.py` passes
   - [x] Milestone 10: SAM view object cards — one non-overlapping card per object (id, depth range) with a leader to it, filled circles at both ends; hovering a card selects its object, clicking opens the feed
   - [x] Acceptance: `tests/test_demo_sam_cards.py` passes
+  - [x] Milestone 11: a rewound moment of a journalled run shows today's surface logic (`SurfaceTimeline`, once per run) and its SAM track → surface pairs
+  - [x] Acceptance: `tests/test_demo_scrub_surfaces.py` passes
   - [x] Milestone 10b: each card as close to its own object as it fits — beside its mask box, not in rows at the top; leaders from the card's nearest edge
   - [x] Acceptance: `tests/test_survey_surfaces.py`, `tests/test_demo_object_feed.py`, `tests/test_demo_cloud_ptz.py` pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
@@ -346,6 +348,14 @@ V4, in the in-app browser on KITTI 0009 (cached rerun of `38b8dc54`, then a Repl
   - **Found while testing:** a careless replacement had deleted the SAM selection block
     (`samSelectedTracks`, `drawSamSelection`, the canvas listeners). The
     `test_demo_sam_pick.py` tests caught it, and it was restored from `HEAD`.
+- **Milestone 11 (rewound moments):**
+  - **Found by the user:** rewinding KITTI 0009 showed the recording's pre-fix surfaces
+    (1- to 5-point surfaces, 6.5–9.9 m smears, a parked car "moving"). A grey SAM card
+    and a feed surface also shared the number 3.
+  - **Tests:** 6 new tests, red before `surface_timeline.py`, now green.
+  - **Live:** frame 2 of `38b8dc54` now shows six car-sized surfaces (1.5–1.8 × 1.0–1.4
+    × 2.1–2.9 m) with tracks 4, 6, 8 and 9 linked. The first rewind of a run takes
+    2.3 s; later ones are cached.
 - **Observed, out of scope:** near-left KITTI cars get points only on their rear. The
   sidecar's SGBM (`numDisparities` 128 at 620 px) cannot match the image's leftmost 128
   columns. That is also why some masks get no depth.

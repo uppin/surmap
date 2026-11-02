@@ -298,6 +298,8 @@ async function showSnapshot(seq) {{
     if (ticket !== scrubFetch) return;
     drawImageFrame(snap.image_b64, snap.overlay, snap.objects, snap.camera,
       {{index: snap.seq, total: maxSeq + 1}});
+    // Which surface each SAM track became on this frame, so its cards link.
+    noteSurfaces({{frame_id: snap.frame_id, surfaces: snap.surface_tracks || []}});
     if (snap.sam) drawSamPane(snap.sam);
     feedSnapshot(snap.surfaces, snap.frame_id);
     if (snap.cloud) {{
