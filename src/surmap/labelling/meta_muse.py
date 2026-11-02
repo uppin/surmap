@@ -1,18 +1,20 @@
-"""One civilian scene note per call, from hosted Muse Spark.
+"""One civilian scene note per call, from Muse Wonder on the Meta Model API.
 
 The station posts a mapped JPEG and the on-board labels to the Meta
 Model API Responses endpoint and reads back a search-and-rescue
 description. The prompt asks for no flight advice. The default model
-is hosted Muse Spark. ``SURMAP_META_MODEL`` or the constructor may
-select another covered id, including Muse Wonder. Muse Wonder Full
-and the Baseten slug ``meta-models/muse-spark-open-1026`` are refused.
+is Muse Wonder (``muse-wonder-1.0``) for the scene note, per-object
+labels, and SAM concepts. ``SURMAP_META_MODEL`` or the constructor may
+select another covered id, such as hosted Muse Spark (``muse-spark-1.3``).
+Muse Wonder Full and the Baseten slug ``meta-models/muse-spark-open-1026``
+are refused.
 
 The live request shape was checked on 2026-10-28: ``POST
 https://api.meta.ai/v1/responses`` with ``Authorization: Bearer
 $MODEL_API_KEY``. ``reasoning.effort`` defaults to ``high``. A
 constructor argument wins over ``SURMAP_META_REASONING_EFFORT``,
 which must be ``low``, ``medium``, or ``high``. ``max_output_tokens``
-defaults to 4096 (visible output plus reasoning) and
+defaults to 8192 (visible output plus reasoning, sized for Muse Wonder) and
 ``SURMAP_META_MAX_OUTPUT_TOKENS`` overrides that when the constructor
 omits a cap. Image input follows Meta's image-understanding guide:
 an ``input_image`` part whose ``image_url`` is a ``data:`` URL string.
@@ -38,10 +40,10 @@ from urllib.parse import urlsplit, urlunsplit
 from surmap.labelling.baseten_muse import ObjectLabel
 from surmap.types import Vec3
 
-HOSTED_MUSE_SPARK_MODEL = "muse-spark-1.3"
+HOSTED_MUSE_WONDER_MODEL = "muse-wonder-1.0"
 META_MODEL_API_BASE_URL = "https://api.meta.ai/v1"
 DEFAULT_REASONING_EFFORT = "high"
-DEFAULT_MAX_OUTPUT_TOKENS = 4096
+DEFAULT_MAX_OUTPUT_TOKENS = 8192
 _MIN_OUTPUT_TOKENS = 16
 _REASONING_EFFORTS = frozenset({"low", "medium", "high"})
 _REASONING_ENV = "SURMAP_META_REASONING_EFFORT"
@@ -205,7 +207,7 @@ class MetaMuseSceneClient:
 
 
 class MetaMuseLabelClient:
-    """One noun phrase per crop, from hosted Muse Spark on the Meta Model API.
+    """One noun phrase per crop, from Muse Wonder on the Meta Model API.
 
     Same Responses endpoint and bearer key as ``MetaMuseSceneClient``.
     The map point is not sent. Tests pass a transport and do not open a socket.
@@ -325,7 +327,7 @@ def concept_text_format(max_concepts: int) -> dict[str, object]:
 
 
 class MetaMuseConceptClient:
-    """Muse Spark picks the concepts SAM 3.1 segments in one keyframe.
+    """Muse Wonder picks the concepts SAM 3.1 segments in one keyframe.
 
     Uses structured output on the Responses API (``text.format`` with a
     JSON schema; ``response_format`` is the Chat Completions field and
@@ -461,7 +463,7 @@ def _resolve_model(explicit: str | None) -> str:
         return _check_model(explicit)
     raw = os.environ.get(_MODEL_ENV, "").strip()
     if not raw:
-        return _check_model(HOSTED_MUSE_SPARK_MODEL)
+        return _check_model(HOSTED_MUSE_WONDER_MODEL)
     return _check_model(raw)
 
 

@@ -63,24 +63,25 @@ parser emits (inclusive max plus one), the same convention as
 prompt. `score` is the `c` field, or `1.0` when `c` is absent.
 `track_id` is the wire object id.
 
-## Assumed
+## Verified live
 
-Checked on 2026-10-28 against the SAM pages and the Responses page
-on dev.meta.ai, and against a verified text Responses call
-(`output[]`, `usage.input_tokens`, `usage.output_tokens`). A live
-`sam-3.1` response was not captured. These parts are therefore
-assumptions, isolated in `read_responses_body`:
+On 2026-11-02 `scripts/check_meta_sam.py` sent one LADI v2 aerial
+image (CC BY 4.0) with the prompt `building` to `sam-3.1` and got 25
+detections, scores 0.54 to 0.86, each with a box and a mask. The
+response confirmed what was earlier inferred from a text Responses
+call:
 
-- A non-streaming SAM response uses that same JSON envelope: the
+- A non-streaming SAM response uses the Responses JSON envelope: the
   grammar arrives as `output[].content[]` blocks with
   `type: output_text`.
-- Reasoning tokens, when present, are
-  `usage.output_tokens_details.reasoning_tokens`. Text usage that
-  was verified had no reasoning field, so a missing field is
-  `None`, not zero.
-- The request includes `type: message` on the input item, as the
-  SAM segmenting examples do. The verified text-call body omitted
-  that field.
+- `usage` carries `input_tokens`, `output_tokens` and
+  `output_tokens_details.reasoning_tokens` (all `0` for SAM) plus
+  `images_processed`. A missing reasoning field is `None`, not zero.
+- The request with `type: message` on the input item, as in the SAM
+  segmenting examples, is accepted.
+
+An image with nothing matching the prompt (the 32×32 default fixture)
+returns one empty `output_text` block, which parses as no detections.
 
 The grammar itself (frame marker, inclusive box, base85 mask) is
 the documented one. The request's model id, URL, bearer auth, and

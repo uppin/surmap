@@ -118,7 +118,7 @@ def test_meta_uses_strict_text_format_with_every_class(tmp_path: Path) -> None:
 
     assert classes == frozenset({"flooding_any", "water_any"})
     body = fake.bodies[0]
-    assert body["model"] == "muse-spark-1.3"
+    assert body["model"] == "muse-wonder-1.0"
     assert "response_format" not in body
     text = body["text"]
     assert isinstance(text, dict)
@@ -296,3 +296,101 @@ def test_cli_scores_both_providers_and_writes_a_report(
 def test_download_only_needs_no_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SURMAP_LIVE_META", raising=False)
     assert cli.main(["--download-only", "--limit", "2"], loader=lambda c, **_k: _samples(c)) == 0
+
+
+class _SequenceBaseten:
+    def __init__(self, choices: list[dict[str, object]]) -> None:
+        self.choices = choices
+        self.bodies: list[dict[str, object]] = []
+
+    def post(self, url: str, headers: Mapping[str, str], body: bytes) -> bytes:
+        self.bodies.append(json.loads(body))
+        choice = self.choices[len(self.bodies) - 1]
+        return json.dumps({"choices": [choice], "usage": {"prompt_tokens": 10}}).encode()
+
+
+def test_baseten_retries_once_with_double_budget_when_cut_off(tmp_path: Path) -> None:
+    fake = _SequenceBaseten(
+        [
+            {"message": {"content": ""}, "finish_reason": "length"},
+            {
+                "message": {
+                    "content": None,
+                    "tool_calls": [
+                        {"function": {"name": "record_classes", "arguments": _answer("roads_any")}}
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            },
+        ]
+    )
+    classifier = BasetenLadiClassifier(
+        transport=fake, api_key="b", ledger=UsageLedger(tmp_path / "u.jsonl")
+    )
+
+    assert classifier.classify(_jpeg()) == frozenset({"roads_any"})
+    assert [body["max_tokens"] for body in fake.bodies] == [4096, 8192]
+
+
+def test_baseten_reports_finish_reason_when_reply_is_empty(tmp_path: Path) -> None:
+    empty: dict[str, object] = {
+        "message": {"content": "I see a flooded street."},
+        "finish_reason": "stop",
+    }
+    fake = _SequenceBaseten([empty, empty])
+    classifier = BasetenLadiClassifier(
+        transport=fake, api_key="b", ledger=UsageLedger(tmp_path / "u.jsonl")
+    )
+
+    with pytest.raises(LadiError, match="finish_reason=stop.*flooded street"):
+        classifier.classify(_jpeg())
+    assert len(fake.bodies) == 2
+
+
+def test_baseten_forces_the_tool_when_reply_stops_without_an_answer(tmp_path: Path) -> None:
+    fake = _SequenceBaseten(
+        [
+            {"message": {"content": "Looks like storm damage."}, "finish_reason": "stop"},
+            {
+                "message": {
+                    "content": None,
+                    "tool_calls": [
+                        {"function": {"name": "record_classes", "arguments": _answer("trees_any")}}
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            },
+        ]
+    )
+    classifier = BasetenLadiClassifier(
+        transport=fake, api_key="b", ledger=UsageLedger(tmp_path / "u.jsonl")
+    )
+
+    assert classifier.classify(_jpeg()) == frozenset({"trees_any"})
+    assert [body["tool_choice"] for body in fake.bodies] == ["auto", "required"]
+
+
+def test_baseten_reads_json_from_list_content(tmp_path: Path) -> None:
+    fake = _SequenceBaseten(
+        [
+            {
+                "message": {"content": [{"type": "text", "text": _answer("roads_any")}]},
+                "finish_reason": "stop",
+            }
+        ]
+    )
+    classifier = BasetenLadiClassifier(
+        transport=fake, api_key="b", ledger=UsageLedger(tmp_path / "u.jsonl")
+    )
+
+    assert classifier.classify(_jpeg()) == frozenset({"roads_any"})
+
+
+def test_meta_classifier_follows_surmap_meta_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SURMAP_META_MODEL", "muse-spark-1.3")
+    classifier = MetaLadiClassifier(api_key="m", ledger=UsageLedger(tmp_path / "u.jsonl"))
+
+    assert classifier.model == "muse-spark-1.3"
+    assert classifier.request_body(_jpeg())["model"] == "muse-spark-1.3"

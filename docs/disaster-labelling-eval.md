@@ -27,7 +27,7 @@ uv run python scripts/eval_disaster_labelling.py --download-only --limit 10
 
 | Provider | Model | Output |
 |---|---|---|
-| `meta` | `muse-spark-1.3` on the Meta Model API | Responses API `text.format` JSON schema (strict), one boolean per class, `reasoning.effort` `low` |
+| `meta` | `muse-wonder-1.0` on the Meta Model API (`SURMAP_META_MODEL` overrides) | Responses API `text.format` JSON schema (strict), one boolean per class, `reasoning.effort` `low` |
 | `baseten` | `meta-models/muse-spark-open-1026` on Baseten | `record_classes` tool call with `tool_choice` `auto` and `reasoning_effort` `low`. JSON in the reply text is the fallback, because Baseten has no JSON mode for this model |
 
 ## Gates and budget

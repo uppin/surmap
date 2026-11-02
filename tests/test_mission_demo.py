@@ -50,7 +50,7 @@ _QUESTION = "Where are the survivors?"
 
 @pytest.fixture(autouse=True)
 def _no_live_concepts(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Muse Spark concept proposals answer ``person`` without a socket."""
+    """Muse Wonder concept proposals answer ``person`` without a socket."""
 
     def propose(self: MetaMuseConceptClient, frame_jpeg: bytes) -> tuple[str, ...]:
         del self, frame_jpeg
@@ -720,12 +720,12 @@ def test_live_meta_mission_calls_meta_sam_meta_labels_and_records_them(
     def label(self: object, jpeg: bytes, coarse_label: str, xyz: Vec3) -> ObjectLabel:
         del self, coarse_label
         seen["jpeg"] = jpeg
-        seen["label_model"] = "muse-spark-1.3"
+        seen["label_model"] = "muse-wonder-1.0"
         return ObjectLabel(
             label="survivor",
             description="a person in the crop",
             confidence=None,
-            model_id="muse-spark-1.3",
+            model_id="muse-wonder-1.0",
             raw_text="survivor",
             map_point=xyz,
         )
@@ -749,7 +749,7 @@ def test_live_meta_mission_calls_meta_sam_meta_labels_and_records_them(
     report = json.loads(result.report_path.read_text(encoding="utf-8"))
     snapshot = json.loads(result.snapshot_path.read_text(encoding="utf-8"))
 
-    # Then SAM saw raw RGB, labels came from Muse Spark, and the report has no developer notes
+    # Then SAM saw raw RGB, labels came from Muse Wonder, and the report has no developer notes
     assert seen["encoding"] == "raw_rgb"
     assert seen["prompt"] == "person"
     assert isinstance(seen["jpeg"], bytes)
@@ -765,10 +765,10 @@ def test_live_meta_mission_calls_meta_sam_meta_labels_and_records_them(
     assert sam_calls[0]["confidences"] == [None]
     assert sam_calls[0]["elapsed_s"] >= 0
     label_call = next(call for call in calls if call["role"] == "label")
-    assert label_call["model_id"] == "muse-spark-1.3"
+    assert label_call["model_id"] == "muse-wonder-1.0"
     scene_call = next(call for call in calls if call["role"] == "scene_note")
-    assert scene_call["model_id"] == "muse-spark-1.3"
-    assert snapshot["landmarks"][0]["model_id"] == "muse-spark-1.3"
+    assert scene_call["model_id"] == "muse-wonder-1.0"
+    assert snapshot["landmarks"][0]["model_id"] == "muse-wonder-1.0"
     snapshot_sam = [call for call in snapshot["meta_calls"] if call["role"] == "sam"]
     assert snapshot_sam[0]["model_id"] == "sam-3.1"
     assert "secret-model-key" not in result.report_path.read_text(encoding="utf-8")

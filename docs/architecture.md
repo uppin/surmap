@@ -102,7 +102,7 @@ use it. A non-Meta choice must name the gap it fills, here.
 | Job | Model | Meta? | Notes |
 |---|---|---|---|
 | Segmentation + video tracking (base) | SAM 3.1 | Yes | §3.1 |
-| Scene note (API) | Muse Spark `muse-spark-1.3` on the Meta Model API | Yes | §3.2. Per-object labels: Muse Spark on the Meta API, or Muse Spark Open on Baseten |
+| Scene note (API) | Muse Wonder `muse-wonder-1.0` on the Meta Model API | Yes | §3.2. Per-object labels: Muse Wonder on the Meta API, or Muse Spark Open on Baseten |
 | Object detection (Edge TPU) | SSD MobileNet V2 or EfficientDet-Lite, Edge TPU-compiled `.tflite` | No | Meta publishes no Edge TPU detector; Coral requires Edge TPU-compiled TFLite. Final choice by CM5 benchmark |
 | Object tracking (on-board) | Lightweight box tracker (Kalman / IoU association) over detector output | No | Classical algorithm, not a learned model. SAM 3.1 also tracks, but on the base station, after the fact / downstream |
 | Pose and mapping | RTAB-Map | No | SLAM system, not a learned model; no Meta equivalent |
@@ -138,22 +138,24 @@ use it. A non-Meta choice must name the gap it fills, here.
 
 ### 3.2 Scene note and labels
 
-The labeller the code calls is Muse Spark. There is no Llama client
-in this repository.
+On the Meta Model API the labeller the code calls is Muse Wonder. On
+Baseten it is open-weight Muse Spark Open. There is no Llama client in
+this repository.
 
 **Scene note.** `MetaMuseSceneClient`
 (`src/surmap/labelling/meta_muse.py`) posts one JPEG and the on-board
 label strings to `POST https://api.meta.ai/v1/responses`. The default
-model id is `muse-spark-1.3`. Auth is `Authorization: Bearer` from
+model id is `muse-wonder-1.0`. Auth is `Authorization: Bearer` from
 `MODEL_API_KEY`. `SURMAP_META_MODEL` or the constructor may select
-another covered id. The client refuses Muse Wonder Full and the
-Baseten slug `meta-models/muse-spark-open-1026`. The prompt asks for
+another covered id, such as hosted Muse Spark `muse-spark-1.3`. The
+client refuses Muse Wonder Full and the Baseten slug
+`meta-models/muse-spark-open-1026`. The prompt asks for
 a civilian search-and-rescue description and for no flight advice.
 The live mission (`scripts/mission_demo.py --live` with
 `SURMAP_LIVE_META=1`) writes one note per run.
 
 **Per-object labels.** `MetaMuseLabelClient` (same module) labels one
-JPEG crop with `muse-spark-1.3` at `reasoning.effort` `low`. The live
+JPEG crop with `muse-wonder-1.0` at `reasoning.effort` `low`. The live
 mission calls it once per merged object (`surmap.mission.objects`), not
 once per frame. `BasetenMuseLabelClient`
 (`src/surmap/labelling/baseten_muse.py`) labels it with open-weight
@@ -243,7 +245,7 @@ session through the same messages.
 | `surmap_depth` | Stereo matching → depth → point cloud, each point carrying source pixel `(u, v)` and `frame_id` |
 | `surmap_sam` | SAM 3.1 (RTX 5060 Ti): segment/track one video channel; concept prompts from on-board coarse labels |
 | `surmap_fuse` | Project SAM masks onto the point cloud using RTAB-Map poses → 3D object regions with full provenance |
-| `surmap_landmarks` | Design name only. No such node is in the tree. The scene-note client that exists is §3.2 (`muse-spark-1.3`) |
+| `surmap_landmarks` | Design name only. No such node is in the tree. The scene-note client that exists is §3.2 (`muse-wonder-1.0`) |
 | `surmap_map` | Merge landmarks + geometry into the semantic map; anchor to GPS; version and export snapshots |
 
 One drone's footage at a time in this phase.
@@ -283,7 +285,7 @@ Machine 2 (ROS2):
          ─► surmap_sam (SAM 3.1, concept prompts from on-board labels)
          ─► fuse (masks × cloud × RTAB-Map pose; refines the on-board
             box-based object points with true mask boundaries)
-         ─► landmarks ─► Muse Spark scene note (`muse-spark-1.3`, §3.2)
+         ─► landmarks ─► Muse Wonder scene note (`muse-wonder-1.0`, §3.2)
          ─► semantic map (GPS-anchored, incrementally updated)
 ```
 

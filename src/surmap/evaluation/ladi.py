@@ -1,4 +1,4 @@
-"""Per-class F1 of Muse Spark on LADI v2 aerial disaster imagery.
+"""Per-class F1 of Meta Muse models on LADI v2 aerial disaster imagery.
 
 LADI v2 (MIT Lincoln Laboratory, CC BY 4.0, Hugging Face
 ``MITLL/LADI-v2-dataset``) is a multi-label set of Civil Air Patrol
@@ -12,8 +12,10 @@ drops the EXIF block and its GPS tags. No data is committed.
 
 Two classifiers are compared:
 
-* ``MetaLadiClassifier``: hosted ``muse-spark-1.3`` on the Meta Model API,
-  with structured output (``text.format`` JSON schema, strict).
+* ``MetaLadiClassifier``: Muse Wonder ``muse-wonder-1.0`` on the Meta Model
+  API by default (``SURMAP_META_MODEL=muse-spark-1.3`` selects hosted Muse
+  Spark), with
+  structured output (``text.format`` JSON schema, strict).
 * ``BasetenLadiClassifier``: open-weight ``meta-models/muse-spark-open-1026``
   on Baseten, with a ``record_classes`` tool call (Baseten has no JSON
   mode for this model) and ``reasoning_effort`` ``low``.
@@ -44,10 +46,10 @@ from surmap.labelling.baseten_muse import (
     ChatTransport,
 )
 from surmap.labelling.meta_muse import (
-    HOSTED_MUSE_SPARK_MODEL,
     META_MODEL_API_BASE_URL,
     MetaMuseTransport,
     UrllibMetaMuseTransport,
+    _resolve_model,
 )
 from surmap.usage import UsageLedger, UsageRecord
 
@@ -281,7 +283,7 @@ def _key(explicit: str | None, env: str) -> str:
 
 
 class MetaLadiClassifier:
-    """Hosted Muse Spark with ``text.format`` structured output."""
+    """Muse Wonder on the Meta Model API with ``text.format`` structured output."""
 
     provider = "meta"
 
@@ -290,14 +292,16 @@ class MetaLadiClassifier:
         *,
         transport: MetaMuseTransport | None = None,
         api_key: str | None = None,
-        model: str = HOSTED_MUSE_SPARK_MODEL,
+        model: str | None = None,
         ledger: UsageLedger | None = None,
         reasoning_effort: str = "low",
-        max_output_tokens: int = 2048,
+        max_output_tokens: int = 8192,
     ) -> None:
         self._transport = transport if transport is not None else UrllibMetaMuseTransport()
         self._api_key = api_key
-        self._model = model
+        # Same rule as the mission clients: argument, then SURMAP_META_MODEL,
+        # then Muse Wonder. Wonder Full and Baseten slugs are refused.
+        self._model = _resolve_model(model)
         self._ledger = ledger if ledger is not None else UsageLedger()
         self._effort = reasoning_effort
         self._max_output_tokens = max_output_tokens
@@ -403,7 +407,7 @@ class BasetenLadiClassifier:
         model: str = BASETEN_MODEL_ID,
         ledger: UsageLedger | None = None,
         reasoning_effort: str = "low",
-        max_tokens: int = 2048,
+        max_tokens: int = 4096,
     ) -> None:
         self._transport = transport
         self._api_key = api_key
@@ -416,7 +420,9 @@ class BasetenLadiClassifier:
     def model(self) -> str:
         return self._model
 
-    def request_body(self, jpeg: bytes) -> dict[str, object]:
+    def request_body(
+        self, jpeg: bytes, max_tokens: int | None = None, *, force_tool: bool = False
+    ) -> dict[str, object]:
         return {
             "model": self._model,
             "messages": [
@@ -429,13 +435,31 @@ class BasetenLadiClassifier:
                 }
             ],
             "tools": [RECORD_CLASSES_TOOL],
-            "tool_choice": "auto",
+            "tool_choice": "required" if force_tool else "auto",
             "reasoning_effort": self._effort,
-            "max_tokens": self._max_tokens,
+            "max_tokens": self._max_tokens if max_tokens is None else max_tokens,
         }
 
     def classify(self, jpeg: bytes) -> frozenset[str]:
-        body = json.dumps(self.request_body(jpeg)).encode("utf-8")
+        """One call, retried once when it gives no answer.
+
+        A reply cut off by ``max_tokens`` is retried with double the budget; a reply
+        that stopped normally without a ``record_classes`` call or JSON is retried
+        with ``tool_choice="required"`` so the model has to call the tool.
+        """
+        try:
+            return self._classify_once(jpeg, self._max_tokens)
+        except _TruncatedReply:
+            return self._classify_once(jpeg, self._max_tokens * 2)
+        except _NoAnswer:
+            return self._classify_once(jpeg, self._max_tokens, force_tool=True)
+
+    def _classify_once(
+        self, jpeg: bytes, max_tokens: int, *, force_tool: bool = False
+    ) -> frozenset[str]:
+        body = json.dumps(self.request_body(jpeg, max_tokens, force_tool=force_tool)).encode(
+            "utf-8"
+        )
         self._ledger.check(self.provider)
         headers = {
             "Authorization": f"Bearer {_key(self._api_key, 'BASETEN_API_KEY')}",
@@ -465,6 +489,28 @@ class BasetenLadiClassifier:
         return self._transport
 
 
+class _TruncatedReply(LadiError):
+    """No answer because the completion hit ``max_tokens``."""
+
+
+class _NoAnswer(LadiError):
+    """The completion stopped without a ``record_classes`` call or JSON text."""
+
+
+def _message_text(message: Mapping[str, object]) -> str:
+    """Reply text whether ``content`` is a string or a list of text parts."""
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            str(part.get("text", ""))
+            for part in content
+            if isinstance(part, dict) and isinstance(part.get("text"), str)
+        )
+    return ""
+
+
 def _tool_or_text(response: Mapping[str, object]) -> Mapping[str, object]:
     choices = response.get("choices")
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
@@ -482,10 +528,20 @@ def _tool_or_text(response: Mapping[str, object]) -> Mapping[str, object]:
                     return _json(arguments.encode("utf-8"))
                 if isinstance(arguments, dict):
                     return {str(key): value for key, value in arguments.items()}
-    content = message.get("content")
-    if isinstance(content, str) and "{" in content:
-        return _json(content[content.index("{") : content.rindex("}") + 1].encode("utf-8"))
-    raise LadiError("Baseten reply had neither a record_classes call nor JSON text")
+    content = _message_text(message)
+    if "{" in content and "}" in content[content.index("{") :]:
+        try:
+            return _json(content[content.index("{") : content.rindex("}") + 1].encode("utf-8"))
+        except LadiError:
+            pass
+    finish_reason = choices[0].get("finish_reason")
+    if finish_reason == "length":
+        raise _TruncatedReply("Baseten reply hit max_tokens before a record_classes call")
+    snippet = " ".join(content.split())[:160]
+    raise _NoAnswer(
+        f"Baseten reply had neither a record_classes call nor JSON text "
+        f"(finish_reason={finish_reason}, content={snippet!r})"
+    )
 
 
 @dataclass(frozen=True)

@@ -1,4 +1,4 @@
-"""Muse Spark picks SAM concepts via structured output. No network."""
+"""Muse Wonder picks SAM concepts via structured output. No network."""
 
 import json
 from collections.abc import Mapping
@@ -59,7 +59,7 @@ def test_the_request_uses_responses_text_format_not_response_format() -> None:
     assert fmt["schema"]["required"] == ["concepts"]
     assert fmt["schema"]["additionalProperties"] is False
     assert body["reasoning"] == {"effort": "low"}
-    assert body["model"] == "muse-spark-1.3"
+    assert body["model"] == "muse-wonder-1.0"
     assert concepts == ("person", "debris pile")
 
 
