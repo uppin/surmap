@@ -231,6 +231,11 @@ Details: [docs/deployment.md](docs/deployment.md).
   (tool call) on LADI v2 aerial disaster imagery (CC BY 4.0), downloaded
   on demand; no data is committed
   ([docs/disaster-labelling-eval.md](docs/disaster-labelling-eval.md)).
+- `scripts/download_disaster_data.py`: caches two open disaster datasets
+  outside the repo: the Boreal Forest Fire UAV smoke dataset (CC BY 4.0,
+  Fairdata) and NOAA's 28 January 2025 Eaton and Palisades fire imagery
+  tiles (CC0-1.0, `noaa-eri-pds`), with subsets, limits, and dry runs
+  ([docs/disaster-datasets.md](docs/disaster-datasets.md)).
 - `scripts/usage_report.py`: credit usage per provider, model, and day
   ([docs/credits-usage.md](docs/credits-usage.md)).
 
