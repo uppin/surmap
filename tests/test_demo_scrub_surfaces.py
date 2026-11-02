@@ -10,9 +10,8 @@ import json
 import urllib.request
 from pathlib import Path
 
-from surmap.demo.surface_timeline import SurfaceTimeline
-
 from surmap.demo.history import RunHistoryStore
+from surmap.demo.surface_timeline import SurfaceTimeline
 from tests.test_demo_replay import MASK_PIXELS, Console, a_console, a_recorded_run
 from tests.test_demo_replay_sam import JPEG
 
