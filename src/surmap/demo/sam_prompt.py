@@ -38,10 +38,19 @@ def sam_pane(
     size: tuple[int, int],
     execution: str = "",
 ) -> str:
-    """The SAM pane: the prompt form (read-only when fixed) and its view."""
-    if prompt is None:
-        return ""
+    """The SAM pane: the prompt form (read-only when fixed) and its view.
+
+    Without SAM (`prompt` None) the pane is passive and hidden: a
+    replayed or rewound run's recorded SAM masks still have a view,
+    shown when the first of them arrives.
+    """
     width, height = size
+    if prompt is None:
+        return (
+            '<div class="sam-pane" id="sam-pane" hidden><h2>SAM — recorded masks</h2>'
+            f'<canvas id="sam-view" width="{width}" height="{height}"></canvas>'
+            '<p class="legend" id="sam-status">SAM masks recorded with the run.</p></div>'
+        )
     status = (
         f"SAM ({execution}): waiting for the first result…"
         if execution
@@ -53,7 +62,7 @@ def sam_pane(
         else '><button type="submit">Apply</button>'
     )
     return (
-        '<div class="sam-pane"><h2>SAM 3.1 (video) — own rate</h2>'
+        '<div class="sam-pane" id="sam-pane"><h2>SAM 3.1 (video) — own rate</h2>'
         '<form class="controls" method="get" action="/">'
         f'<input type="hidden" name="dataset" value="{html.escape(dataset_id)}">'
         '<label for="sam-prompt">SAM prompt</label>'
