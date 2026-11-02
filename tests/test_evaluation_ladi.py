@@ -333,7 +333,10 @@ def test_baseten_retries_once_with_double_budget_when_cut_off(tmp_path: Path) ->
 
 
 def test_baseten_reports_finish_reason_when_reply_is_empty(tmp_path: Path) -> None:
-    empty = {"message": {"content": "I see a flooded street."}, "finish_reason": "stop"}
+    empty: dict[str, object] = {
+        "message": {"content": "I see a flooded street."},
+        "finish_reason": "stop",
+    }
     fake = _SequenceBaseten([empty, empty])
     classifier = BasetenLadiClassifier(
         transport=fake, api_key="b", ledger=UsageLedger(tmp_path / "u.jsonl")
