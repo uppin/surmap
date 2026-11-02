@@ -1,12 +1,12 @@
 """A frame's dense depth as an image the page lays over the video.
 
 The page's "Dense depth" toggle asks the server for the shown frame's
-depth (`GET /dense-depth`): the stereo reconstructor's per-pixel depth
-for that frame's display pair (`StereoReconstructor.depth_map`),
-painted in the same near → far ramp as the tracked points, stretched
-to the frame's display size. Pixels with no stereo match stay
-transparent, so the frame shows through. It is a view of the pair
-only: nothing here reaches RTAB-Map (docs/architecture.md section 1).
+depth (`GET /runs/<run_id>/dense-depth`): RTAB-Map's own dense stereo,
+the SGBM disparity its sidecar journalled for that frame, read per
+display pixel (`surmap.slam.dense.display_depth`) and painted in the
+same near → far ramp as the tracked points. Pixels with no match stay
+transparent, so the frame shows through. It is a read-only view of
+RTAB-Map's output (docs/architecture.md section 1).
 """
 
 from __future__ import annotations

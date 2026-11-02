@@ -172,10 +172,13 @@ uv run python scripts/demo.py
   the camera (the background a mask edge catches is cut away), and a
   region needs 50 such points to start or grow a surface.
 - **Video toggles**: **RTAB-Map points** (checked by default) shows or
-  hides the frame's tracked features; **Dense depth** lays the shown
-  frame's dense stereo depth over it in the same near → far colours
-  (`GET /dense-depth?dataset=<id>&t_ns=<t>`, matched on demand from the
-  display pair, clear where nothing matched), live or on a rewound moment.
+  hides the frame's tracked features; **Dense depth** lays RTAB-Map's
+  dense stereo depth of the shown frame over it in the same near → far
+  colours (`GET /runs/<run_id>/dense-depth?frame_id=<n>`: the SGBM
+  disparity the sidecar journalled for that frame, a replay reading its
+  recording's; clear where nothing matched), live or on a rewound moment.
+  Only frames RTAB-Map computed dense stereo for (the SAM frames) have it;
+  nothing else is matched in its place.
 - **3D pane** (server-rendered, every map point): **Follow** (checked by
   default) frames it like a navigation app, from behind and above the
   camera along its heading, with the camera low in view; tilt and zoom
@@ -207,6 +210,12 @@ uv run python scripts/demo.py
   recorded there. Headless: `python -m surmap.demo.run_archive export
   RUN_ID FILE` and `import FILE` (`--history-db` to pick the store). The
   447-frame KITTI 0009 SAM run is about 200 MB exported.
+- **Rebuild RTAB-Map** (`GET /stream?rebuild_rtabmap=<run_id>`): runs
+  RTAB-Map live again over the run's scene while SAM is not run: each frame
+  gets the masks the run recorded for it (`surmap.demo.sam_journal`, by
+  `t_ns`). The result is a new recording, with the current sidecar's map
+  and dense buffer, that becomes the scene's cached run. Use it after a
+  sidecar change, or on a host without the SAM runtime.
 - **Replay run** (speed 1×, 4× or max; `GET /stream?replay=<run_id>&speed=N`):
   every run keeps a journal of its events and RTAB-Map's dense buffer
   (the disparity computed for each SAM frame, with its pose), so a

@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from surmap.demo.datasets import scaled_sensor_yaml
-from surmap.slam.dense import DenseBufferRegionSource, DenseFrame, RegionRig
+from surmap.slam.dense import DenseBufferRegionSource, DenseFrame, RegionRig, decode_disparity
 from surmap.slam.regions import RegionQuery, RegionResult, RegionStatus
 from surmap.slam.streaming import StreamingRtabmapBackend
 from tests.test_slam_streaming_e2e import FIXTURE, _require_prepared
@@ -137,3 +137,35 @@ def test_the_journal_covers_a_sam_outline_pixel_for_pixel_like_the_live_sidecar(
     assert live.status is RegionStatus.OK and len(live.points) > 1_000
     assert len(offline.points) == len(live.points)
     np.testing.assert_allclose(_xyz(offline), _xyz(live), atol=1e-3)
+
+
+def matched_share(frame: DenseFrame, columns: slice) -> float:
+    """The share of `columns` of a journalled disparity that RTAB-Map matched."""
+    disparity = decode_disparity(frame.disparity_png)
+    return float((disparity[:, columns] > 0).mean())
+
+
+def test_the_left_channels_disparity_reaches_the_left_edge_of_the_frame(
+    journalled: Journalled,
+) -> None:
+    # Given the left channel's journalled disparity (SGBM searches 80 px on a 376 px frame)
+    left = next(frame for frame in journalled.dense if frame.channel == 0)
+
+    # When its band of the first 80 columns is compared with the frame's middle
+    edge, middle = matched_share(left, slice(8, 80)), matched_share(left, slice(150, 226))
+
+    # Then the band is matched as well as the middle is, not left empty
+    assert edge > 0.5 * middle
+
+
+def test_the_right_channels_disparity_reaches_the_right_edge_of_the_frame(
+    journalled: Journalled,
+) -> None:
+    # Given the right channel's journalled disparity, matched in mirrored images
+    right = next(frame for frame in journalled.dense if frame.channel == 1)
+
+    # When its band of the last 80 columns is compared with the frame's middle
+    edge, middle = matched_share(right, slice(296, 368)), matched_share(right, slice(150, 226))
+
+    # Then the band is matched as well as the middle is, not left empty
+    assert edge > 0.5 * middle
