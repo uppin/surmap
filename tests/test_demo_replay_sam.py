@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
+from surmap.demo.cloud_view import FollowCamera
 from surmap.demo.history import RunHistoryStore
 from surmap.demo.replay import Bounds, CloudRenderer, JournalPlayer
 from surmap.demo.server import make_demo_server
@@ -61,6 +62,7 @@ def a_render() -> tuple[list[int], CloudRenderer]:
         colors: NDArray[np.uint8],
         bounds: Bounds,
         layer: SurfaceLayer,
+        camera: FollowCamera | None,
     ) -> dict[str, str]:
         calls.append(len(points))
         return {"cloud_png": "png", "cloud_ids_png": "ids"}

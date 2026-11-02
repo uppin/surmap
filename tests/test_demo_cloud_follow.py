@@ -14,7 +14,8 @@ from surmap.demo.history import RunHistoryStore
 from surmap.demo.replay import Bounds, JournalPlayer
 from surmap.demo.server import DemoPlayer, PlaybackControls
 from surmap.demo.surface_render import SurfaceLayer
-from tests.test_demo import _prepared_tiny
+from surmap.types import Pose, Vec3
+from tests.test_demo import _odom_with, _prepared_tiny
 from tests.test_demo_cloud_pick import decode, ids_of
 from tests.test_demo_cloud_ptz import play_to_the_end, post
 from tests.test_demo_object_feed import a_console_page
@@ -203,13 +204,19 @@ def test_a_ptz_answer_says_whether_the_view_follows(tmp_path: Path) -> None:
         )
 
 
+def a_driving_map() -> FakeRegionBackend:
+    """A live map whose camera moves 1 m along +z per frame."""
+    odometry = {n: _odom_with(pose=Pose(Vec3(0.0, 0.0, float(n)))) for n in (1, 2)}
+    return a_map_around_the_region(FakeRegionBackend(odometry=odometry))
+
+
 def test_the_live_view_is_drawn_for_the_shown_frames_camera(tmp_path: Path) -> None:
     # When a live run plays
     controls = PlaybackControls()
     player = DemoPlayer(
         _prepared_tiny(tmp_path),
         fps=1000.0,
-        backend_factory=a_map_around_the_region,
+        backend_factory=a_driving_map,
         sam_source=a_car_mask(),
         controls=controls,
     )
@@ -266,7 +273,7 @@ def test_a_replay_draws_each_view_for_the_camera_of_the_frame_before_it(tmp_path
 
 
 def test_a_scrubbed_moment_is_drawn_for_its_own_camera(tmp_path: Path) -> None:
-    with a_running_console(tmp_path, a_map_around_the_region()) as base:
+    with a_running_console(tmp_path, a_driving_map()) as base:
         play_to_the_end(base)
         with urllib.request.urlopen(f"{base}/runs", timeout=5) as response:
             run_id = json.loads(response.read())["runs"][0]["run_id"]

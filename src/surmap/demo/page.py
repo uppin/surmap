@@ -581,6 +581,8 @@ CM5_ASIDE = """  <aside>
     <div class="cloud-pane" id="cloud-pane">
       <div class="cloud-head">
         <h2>Point cloud (3D)</h2>
+        <label class="stat" title="Follow the camera from behind and above it">
+          <input type="checkbox" id="cloud-follow" checked> Follow</label>
         <button class="btn" id="cloud-reset" type="button">Reset view</button>
         <button class="btn" id="cloud-fullscreen" type="button">Fullscreen</button>
       </div>

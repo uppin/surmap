@@ -18,7 +18,7 @@
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⏳ `/green` Green — implement until every red test passes · milestones 1–8 @ `c797933`; milestone 9 added
+- [wf 3] ✅ 2026-11-02 `/green` Green — implement until every red test passes · 1238 passed / 28 skipped; ruff, format, mypy strict green
   - [x] Milestone 1: `SurfaceMap` depth band and minimum points
   - [x] Milestone 2: the camera pose reaches `SurfaceMap` (`RegionResult.camera`, `region` event `viewpoint`, live backend from the dense line)
   - [x] Milestone 3: session-level `CloudViewer`; every `cloud_*` action works without a run and answers with `cloud_png`
@@ -29,8 +29,8 @@
   - [x] Acceptance: `tests/test_demo_cloud_pick.py` passes
   - [x] Milestone 8: SAM pane in the same selection — hovering a mask selects its surface (3D points light up), clicking it opens the feed card; hovering a surface in 3D (or its card) outlines its masks on the SAM frame shown
   - [x] Acceptance: `tests/test_demo_sam_pick.py` passes
-  - [ ] Milestone 9: Follow (checked by default) — a chase view behind and above the camera along its heading, the camera at 3/4 image height with a camera marker; the un-mirrored projection
-  - [ ] Acceptance: `tests/test_demo_cloud_follow.py` passes
+  - [x] Milestone 9: Follow (checked by default) — a chase view behind and above the camera along its heading, the camera at 3/4 image height with a camera marker; the un-mirrored projection
+  - [x] Acceptance: `tests/test_demo_cloud_follow.py` passes
   - [x] Acceptance: `tests/test_survey_surfaces.py`, `tests/test_demo_object_feed.py`, `tests/test_demo_cloud_ptz.py` pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
@@ -273,6 +273,24 @@ V4, in the in-app browser on KITTI 0009 (cached rerun of `38b8dc54`, then a Repl
     - **3D hover:** hovering surface 27 in 3D outlines track 8 on the SAM frame.
     - **Leave:** leaving clears both views.
     - **Console:** no page errors.
+- **Milestone 9 (Follow):**
+  - **Tests:** 14 new tests, red @ `ecef12b`, now green.
+  - **Existing tests changed:**
+    - `test_demo_replay_sam.py`'s fake renderer takes the camera.
+    - `test_demo_regions.py`'s `FakeRegionBackend` passes `odometry` through.
+    - `test_demo_cloud_pick.py::test_the_id_image_holds_each_surfaces_id…` views from
+      azimuth π. Its "7 left of 9" held only because the image was mirrored: the
+      default azimuth −0.8 looks toward +x/−z, where +x truly runs left.
+  - **V4 on KITTI 0009:**
+    - **Opening:** the page opens with Follow checked. The camera arrow sits low and
+      centred, pointing up the road, and parked cars on the camera's left are drawn
+      left of it.
+    - **Replay:** during a 1× replay the framed camera advanced from z = 4.5 to
+      20.2 m with heading +z.
+    - **Take-over:** a real 200 px drag unchecked Follow and continued from the follow
+      azimuth (180° + 92° = 271°), with no jump.
+    - **Re-check:** re-checking resumed following.
+    - **Console:** no page errors.
 - **Observed, out of scope:** near-left KITTI cars get points only on their rear. The
   sidecar's SGBM (`numDisparities` 128 at 620 px) cannot match the image's leftmost 128
   columns. That is also why some masks get no depth.
@@ -323,5 +341,11 @@ V4, in the in-app browser on KITTI 0009 (cached rerun of `38b8dc54`, then a Repl
   and selects, so moving across the pane never scrolls the feed under the reader.
 - **Picking uses a server-rendered id image**, so the page needs no geometry and the
   pick matches exactly what is drawn, including occlusion by a moving surface.
+- **Follow frames on the floor camera** (`x, z, dx, dz`), which frames already carry,
+  so recordings replay with Follow and nothing new is journalled. The view's height is
+  the map's mid-height, not the camera's, because frames don't journal it.
+- **The mirror fix changes every 3D render.** It is what makes left and right right in
+  the chase view. The default free view (azimuth −0.8) now shows the scene the right
+  way round, so it looks flipped next to before.
 - **The PTZ pose is per session, not per viewer.** The console already has one run
   shared by all viewers.

@@ -3,6 +3,7 @@
 import base64
 import io
 import json
+import math
 import subprocess
 import urllib.request
 from pathlib import Path
@@ -11,7 +12,7 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
-from surmap.demo.cloud_view import CloudViewer
+from surmap.demo.cloud_view import CloudPose, CloudViewer
 from surmap.demo.history import RENDER_ONLY
 from surmap.demo.view_math import VIEW_HELPERS
 from tests.test_demo_cloud_ptz import play_to_the_end, post
@@ -49,8 +50,10 @@ def ids_of(png_b64: str) -> NDArray[np.int64]:
 
 
 def test_the_id_image_holds_each_surfaces_id_on_the_pixels_it_drew() -> None:
-    # Given a map with surfaces 7 and 9 over it
+    # Given a map with surfaces 7 (at smaller x) and 9 over it, viewed from behind
+    # along +z, where +x is on the right
     viewer = CloudViewer()
+    viewer.orbit(math.pi - CloudPose().azimuth, 0.0)
 
     # When the view is drawn
     view = viewer.render_view(MAP, GREY, BOUNDS, ((7, LEFT, False), (9, RIGHT, False)))

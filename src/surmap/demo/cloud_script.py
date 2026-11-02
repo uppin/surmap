@@ -14,6 +14,10 @@ no client-side geometry — nothing can flicker or go sparse. The SAM
 surface layer is drawn into the same image server-side; the
 Surfaces button only shows or hides it (`cloud_surfaces`).
 
+The Follow box (checked by default) asks the server to frame the view
+behind and above the shown frame's camera (`CloudViewer.follow`); an
+orbit or a pan takes over, and every answer re-syncs the box.
+
 Kept separate from page.py so both files stay under the 500-line
 gate; page.py splices CLOUD_SCRIPT into PAGE before the server
 formats it, so its braces stay doubled for str.format.
@@ -27,6 +31,8 @@ const cloudCtx = cloudCanvas ? cloudCanvas.getContext('2d') : null;
 let cloudImage = null;
 // Created with the pane's other controls below; declared here so postCloud sees it.
 let surfacesButton = null;
+// Follow the camera like a navigation app; an orbit or a pan on the server turns it off.
+const followBox = $('cloud-follow');
 async function postCloud(body) {{
   try {{
     const response = await fetch('/control', {{
@@ -39,12 +45,14 @@ async function postCloud(body) {{
     // moment scrubbed during a live run is drawn again from its snapshot.
     if (mode === 'scrub' && source) showSnapshot(scrubSeq);
     else if (pose.cloud_png) setCloud(pose.cloud_png, pose.cloud_ids_png);
+    if (followBox) followBox.checked = pose.follow;
     if (surfacesButton) {{
       surfacesButton.textContent = pose.surfaces_visible ? 'Hide surfaces' : 'Show surfaces';
     }}
-    $('ptz-readout').textContent =
-      `az ${{Math.round(pose.azimuth * 57.3)}}° · el ${{Math.round(pose.elevation * 57.3)}}° `
-      + `· zoom ${{pose.zoom.toFixed(2)}}×`;
+    // While following, the azimuth is the camera's heading, not the free pose's.
+    $('ptz-readout').textContent = (pose.follow ? 'following the camera · '
+      : `az ${{Math.round(pose.azimuth * 57.3)}}° · `)
+      + `el ${{Math.round(pose.elevation * 57.3)}}° · zoom ${{pose.zoom.toFixed(2)}}×`;
   }} catch (error) {{ /* server unreachable; the next post carries the movement */ }}
 }}
 let cloudPostTimer = null, cloudPending = null;
@@ -98,6 +106,12 @@ document.querySelectorAll('[data-ptz]').forEach((button) => {{
 }});
 if (cloudCanvas) {{
 $('cloud-reset').addEventListener('click', () => postCloud({{action: 'cloud_reset'}}));
+if (followBox) {{
+  followBox.addEventListener('change',
+    () => postCloud({{action: 'cloud_follow', follow: followBox.checked}}));
+  // The box starts checked: the page opens following the camera.
+  postCloud({{action: 'cloud_follow', follow: followBox.checked}});
+}}
 $('cloud-fullscreen').addEventListener('click', () => {{
   const pane = $('cloud-pane');
   if (document.fullscreenElement) document.exitFullscreen();

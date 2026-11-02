@@ -39,7 +39,7 @@ from PIL import Image
 
 from surmap.demo.cloud_view import CLOUD_VIEW_PX as CLOUD_VIEW_PX
 from surmap.demo.cloud_view import CloudPose as CloudPose
-from surmap.demo.cloud_view import CloudViewer, png_base64
+from surmap.demo.cloud_view import CloudViewer, FollowCamera, png_base64
 from surmap.demo.cloud_view import render_cloud_view as render_cloud_view
 from surmap.demo.datasets import (
     DATASETS,
@@ -392,6 +392,13 @@ def floor_camera(pose: Pose, calibration: DemoCalibration) -> FloorCamera:
     }
 
 
+def _follow_camera(value: object) -> FollowCamera | None:
+    """A journalled or snapshot floor camera, when it is one."""
+    if not isinstance(value, dict) or not all(k in value for k in ("x", "z", "dx", "dz")):
+        return None
+    return {str(key): float(number) for key, number in value.items()}
+
+
 def _floor_plane_trajectory(trajectory: list[Pose]) -> list[list[float]]:
     return [[round(pose.position.x, 3), round(pose.position.z, 3)] for pose in trajectory]
 
@@ -701,6 +708,7 @@ class _Display:
         self._sam: list[DemoEvent] = []
         self._jpegs: dict[int, bytes] = {}
         self._shown = 0
+        self.camera: FollowCamera | None = None  # the shown frame's, for the 3D pane's Follow
 
     def add_frame(self, frame: _HeldFrame) -> None:
         self._frames.append(frame)
@@ -720,6 +728,7 @@ class _Display:
             overlay, camera = shown
             self._frames.popleft()
             self._shown = head.frame_id
+            self.camera = camera
             self._jpegs[head.frame_id] = head.jpeg
             while len(self._jpegs) > SAM_FRAME_CACHE:
                 self._jpegs.pop(next(iter(self._jpegs)))
@@ -954,7 +963,11 @@ class DemoPlayer:
         }
 
     def _map_event(
-        self, backend: LiveSlamBackend, frame_id: int, surfaces: SurfaceLayer
+        self,
+        backend: LiveSlamBackend,
+        frame_id: int,
+        surfaces: SurfaceLayer,
+        camera: FollowCamera | None = None,
     ) -> DemoEvent:
         cloud = backend.map_cloud()
         points, colors = cloud_points(cloud)
@@ -980,7 +993,9 @@ class DemoPlayer:
                 "frame_id": frame_id,
                 "points": points,
                 "point_colors": colors,
-                **self._controls.viewer.render_view(cloud.points, cloud.colors, bounds, surfaces),
+                **self._controls.viewer.render_view(
+                    cloud.points, cloud.colors, bounds, surfaces, camera
+                ),
                 **self._floor_plan(
                     cloud.points[:, [0, 2]], cloud.colors[:, 0], _floor_plane_trajectory(trajectory)
                 ),
@@ -1135,7 +1150,9 @@ class DemoPlayer:
                     if now - last_map_emit >= 0.33 or version != self._cloud_version:
                         last_map_emit = now
                         self._cloud_version = version
-                        yield self._map_event(backend, index + 1, display.surfaces.layer())
+                        yield self._map_event(
+                            backend, index + 1, display.surfaces.layer(), display.camera
+                        )
                 # Server-side pacing: one frame interval per frame,
                 # however long processing took — never a catch-up burst.
                 remaining = 1.0 / self._fps - (time.monotonic() - frame_started)
@@ -1190,7 +1207,11 @@ class DemoPlayer:
                             )
                         )
                         view = self._controls.viewer.render_view(
-                            live_cloud.points, live_cloud.colors, bounds, display.surfaces.layer()
+                            live_cloud.points,
+                            live_cloud.colors,
+                            bounds,
+                            display.surfaces.layer(),
+                            display.camera,
                         )
                     plan = self._floor_plan(
                         live_cloud.points[:, [0, 2]],
@@ -1314,8 +1335,9 @@ class _DemoHttpServer(ThreadingHTTPServer):
                 colors: NDArray[np.uint8],
                 bounds: tuple[NDArray[np.float32], NDArray[np.float32]],
                 layer: SurfaceLayer,
+                camera: FollowCamera | None,
             ) -> dict[str, str]:
-                return controls.viewer.render_view(points, colors, bounds, layer)
+                return controls.viewer.render_view(points, colors, bounds, layer, camera)
 
             return JournalPlayer(
                 store, run_id, controls=controls, fps=fps, render_cloud=render
@@ -1856,6 +1878,7 @@ class _DemoHandler(BaseHTTPRequestHandler):
                                     snap_colors.reshape(-1, 3),
                                     (snap_points.min(axis=0), snap_points.max(axis=0)),
                                     surface_layer(snapshot.get("surfaces")),
+                                    _follow_camera(snapshot.get("camera")),
                                 )
                             )
                     self._send_json(200, snapshot)
@@ -1925,6 +1948,7 @@ class _DemoHandler(BaseHTTPRequestHandler):
                 "cloud_pan",
                 "cloud_reset",
                 "cloud_surfaces",
+                "cloud_follow",
             )
             if action not in ("pause", "resume", *cloud_actions):
                 self._send(400, "text/plain", b"action must be pause, resume or a cloud_* action")
@@ -1950,6 +1974,9 @@ class _DemoHandler(BaseHTTPRequestHandler):
                     visible = body.get("visible")
                     viewer.set_surfaces_visible(visible if isinstance(visible, bool) else None)
                     pose = viewer.pose()
+                elif action == "cloud_follow":
+                    viewer.set_follow(body.get("follow") is not False)
+                    pose = viewer.pose()
                 else:
                     pose = viewer.reset()
                 self._send_json(
@@ -1961,6 +1988,8 @@ class _DemoHandler(BaseHTTPRequestHandler):
                         "pan_x": pose.pan_x,
                         "pan_z": pose.pan_z,
                         "surfaces_visible": viewer.surfaces_visible,
+                        "follow": viewer.follow,
+                        "camera": viewer.camera,
                         **(viewer.rerender_view() or {"cloud_png": None, "cloud_ids_png": None}),
                     },
                 )

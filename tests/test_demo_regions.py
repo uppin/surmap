@@ -9,6 +9,7 @@ from pathlib import Path
 from surmap.demo.datasets import DISPLAY_HEIGHT, DISPLAY_WIDTH
 from surmap.demo.server import DemoEvent, DemoPlayer, make_demo_server
 from surmap.slam.regions import RegionQuery, RegionResult, RegionStatus
+from surmap.slam.stream_protocol import OdomUpdate
 from surmap.survey.sam import InMemoryVideoSamDetector, SamDetection
 from surmap.types import Vec3
 from tests.test_demo import FakeLiveBackend, _prepared_tiny
@@ -19,8 +20,10 @@ MASK = ((10.0, 10.0), (60.0, 10.0), (60.0, 50.0), (10.0, 50.0))
 class FakeRegionBackend(FakeLiveBackend):
     """Live backend double that also answers region queries with fixed points."""
 
-    def __init__(self, status: RegionStatus = RegionStatus.OK) -> None:
-        super().__init__()
+    def __init__(
+        self, status: RegionStatus = RegionStatus.OK, odometry: dict[int, OdomUpdate] | None = None
+    ) -> None:
+        super().__init__(odometry=odometry)
         self._status = status
         self.region_queries: list[RegionQuery] = []
         # Where every mask is placed (a test may give the car more points).
