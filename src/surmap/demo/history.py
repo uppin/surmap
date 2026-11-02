@@ -25,6 +25,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import cast
 
@@ -59,7 +60,7 @@ def _journalled(kind: str, data: dict[str, object]) -> dict[str, object]:
 
 ColourList = list[list[int]]
 
-_SCHEMA = """
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
     run_id TEXT PRIMARY KEY,
     dataset_id TEXT NOT NULL,
@@ -149,11 +150,21 @@ class RunHistoryStore:
         self._db = sqlite3.connect(path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         with self._lock, self._db:
-            self._db.executescript(_SCHEMA)
+            self._db.executescript(SCHEMA)
 
     @property
     def path(self) -> Path:
         return self._path
+
+    @contextmanager
+    def exclusive(self) -> Iterator[sqlite3.Connection]:
+        """The store's own connection, held under its lock for one bulk operation.
+
+        Run export and import (`surmap.demo.run_archive`) copy a run's rows
+        through it, so nothing else writes to the store mid-copy.
+        """
+        with self._lock:
+            yield self._db
 
     def close(self) -> None:
         with self._lock:

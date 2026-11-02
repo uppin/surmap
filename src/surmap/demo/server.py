@@ -23,6 +23,8 @@ import itertools
 import json
 import math
 import queue
+import shutil
+import tempfile
 import threading
 import time
 from collections import deque
@@ -37,6 +39,7 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
+from surmap.demo import run_archive
 from surmap.demo.cloud_view import CLOUD_VIEW_PX as CLOUD_VIEW_PX
 from surmap.demo.cloud_view import CloudPose as CloudPose
 from surmap.demo.cloud_view import CloudViewer, FollowCamera, png_base64
@@ -1834,6 +1837,48 @@ class _DemoHandler(BaseHTTPRequestHandler):
     def _send_json(self, status: int, body: dict[str, object]) -> None:
         self._send(status, "application/json", json.dumps(body).encode())
 
+    def _send_export(self, run_id: str) -> None:
+        """The run as a `.surmaprun` download (`surmap.demo.run_archive`)."""
+        store = self.server.history_store
+        run = store.get_run(run_id)
+        if run is None:
+            self._send(404, "text/plain", b"unknown run")
+            return
+        with tempfile.TemporaryDirectory(dir=store.path.parent) as scratch:
+            out = Path(scratch) / run_archive.archive_name(str(run["dataset_id"]), run_id)
+            try:
+                run_archive.export_from(store, run_id, out)
+            except run_archive.RunNotExportable as exc:
+                self._send(409, "text/plain", str(exc).encode())
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(out.stat().st_size))
+            self.send_header("Content-Disposition", f'attachment; filename="{out.name}"')
+            self.end_headers()
+            with out.open("rb") as archive:
+                shutil.copyfileobj(archive, self.wfile, 1 << 20)
+
+    def _receive_import(self) -> None:
+        """Import an uploaded `.surmaprun` file into the history."""
+        store = self.server.history_store
+        remaining = int(self.headers.get("Content-Length") or 0)
+        with tempfile.TemporaryDirectory(dir=store.path.parent) as scratch:
+            upload = Path(scratch) / f"upload{run_archive.SUFFIX}"
+            with upload.open("wb") as archive:
+                while remaining > 0:
+                    chunk = self.rfile.read(min(remaining, 1 << 20))
+                    if not chunk:
+                        break
+                    archive.write(chunk)
+                    remaining -= len(chunk)
+            try:
+                report = run_archive.import_into(store, upload)
+            except run_archive.NotARunArchive as exc:
+                self._send(400, "text/plain", str(exc).encode())
+                return
+        self._send_json(200, {"imported": report.imported, "skipped": report.skipped})
+
     def _scene(self, query: dict[str, list[str]]) -> str | None:
         """The requested scene id (default: the launcher's), or None if unknown."""
         dataset_id = query.get("dataset", [self.server.default_dataset])[0]
@@ -1860,6 +1905,9 @@ class _DemoHandler(BaseHTTPRequestHandler):
                     self._send(404, "text/plain", b"unknown run")
                 else:
                     self._send_json(200, {**run, "timeline": store.timeline(parts[1])})
+                return
+            if len(parts) == 3 and parts[2] == "export":
+                self._send_export(parts[1])
                 return
             if len(parts) == 3 and parts[2] == "snapshot":
                 try:
@@ -1942,6 +1990,9 @@ class _DemoHandler(BaseHTTPRequestHandler):
                 self._send(404, "text/plain", b"unknown scene")
                 return
             self._send_json(202, {"state": self.server.prepare(dataset_id)})
+            return
+        if url.path == "/runs/import":
+            self._receive_import()
             return
         if url.path == "/control":
             length = int(self.headers.get("Content-Length") or 0)

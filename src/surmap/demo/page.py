@@ -5,6 +5,7 @@ from __future__ import annotations
 from surmap.demo.cloud_pick import CLOUD_PICK_MARKUP, CLOUD_PICK_SCRIPT
 from surmap.demo.cloud_script import CLOUD_SCRIPT
 from surmap.demo.object_feed import OBJECT_FEED_MARKUP, OBJECT_FEED_SCRIPT
+from surmap.demo.run_archive_ui import RUN_ARCHIVE_MARKUP, RUN_ARCHIVE_SCRIPT
 from surmap.demo.sam_depth import SAM_DEPTH_SCRIPT
 from surmap.demo.view_math import VIEW_HELPERS
 
@@ -94,6 +95,7 @@ PAGE = """<!DOCTYPE html>
     <button class="btn" id="run-replay" type="button"
       title="Play the run again from its journal: no RTAB-Map, no SAM; regions and
       surfaces are recomputed by the current code">Replay run</button>
+__RUN_ARCHIVE__
     <select id="replay-speed" title="Replay speed">
       <option value="1">1×</option><option value="4">4×</option>
       <option value="0">max</option>
@@ -569,8 +571,13 @@ updateHistoryLabel();
 # Spliced in before the server formats PAGE, so its braces stay doubled.
 PAGE = PAGE.replace(
     "__CLOUD_SCRIPT__",
-    VIEW_HELPERS + CLOUD_SCRIPT + CLOUD_PICK_SCRIPT + SAM_DEPTH_SCRIPT + OBJECT_FEED_SCRIPT,
-)
+    VIEW_HELPERS
+    + CLOUD_SCRIPT
+    + CLOUD_PICK_SCRIPT
+    + SAM_DEPTH_SCRIPT
+    + OBJECT_FEED_SCRIPT
+    + RUN_ARCHIVE_SCRIPT,
+).replace("__RUN_ARCHIVE__", RUN_ARCHIVE_MARKUP)
 
 RTAB_STAT = """    <h2>RTAB-Map</h2>
     <div class="stat" id="rtab">Waiting for playback…</div>"""

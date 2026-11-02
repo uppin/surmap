@@ -10,6 +10,9 @@ import urllib.request
 from pathlib import Path
 
 import pytest
+
+from surmap.demo.history import RunHistoryStore
+from surmap.demo.replay import JournalPlayer
 from surmap.demo.run_archive import (
     ImportReport,
     NotARunArchive,
@@ -17,9 +20,6 @@ from surmap.demo.run_archive import (
     export_run,
     import_runs,
 )
-
-from surmap.demo.history import RunHistoryStore
-from surmap.demo.replay import JournalPlayer
 from tests.test_demo_replay import Console, a_console, a_recorded_run, kinds
 
 # Every table a run's rows live in, and the columns that make a row (ids left out:
@@ -49,6 +49,11 @@ def rows_of(db: Path, run_id: str) -> dict[str, list[tuple[object, ...]]]:
             ).fetchall()
             for table, columns in RUN_TABLES.items()
         }
+
+
+def replayed(db: Path, run_id: str) -> list[str]:
+    """The kinds of event a replay of `run_id` from the history at `db` plays."""
+    return [event.kind for event in JournalPlayer(RunHistoryStore(db), run_id).events()]
 
 
 def an_empty_store(tmp_path: Path, name: str) -> Path:
@@ -93,12 +98,10 @@ def test_an_imported_run_replays_like_the_original(tmp_path: Path) -> None:
     import_runs(target, archive)
 
     # When both are replayed
-    def replayed(db: Path) -> list[str]:
-        return [event.kind for event in JournalPlayer(RunHistoryStore(db), run_id).events()]
+    imported, original = replayed(target, run_id), replayed(tmp_path / "history.db", run_id)
 
     # Then they play the same events, surfaces from the imported dense buffer included
-    imported = replayed(target)
-    assert imported == replayed(tmp_path / "history.db")
+    assert imported == original
     assert "surface" in imported
 
 
@@ -240,13 +243,9 @@ def test_another_console_imports_an_uploaded_run(tmp_path: Path) -> None:
     assert run_id in listed
 
 
-@pytest.mark.parametrize(
-    ("path", "status"),
-    [("/runs/no-such-run/export", 404)],
-)
-def test_exporting_an_unknown_run_is_not_found(tmp_path: Path, path: str, status: int) -> None:
+def test_exporting_an_unknown_run_is_not_found(tmp_path: Path) -> None:
     with a_console(tmp_path) as console:
-        assert download(f"{console.base}{path}")[0] == status
+        assert download(f"{console.base}/runs/no-such-run/export")[0] == 404
 
 
 def test_uploading_something_else_is_a_bad_request(tmp_path: Path) -> None:
