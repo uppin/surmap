@@ -28,6 +28,10 @@ Bounds = tuple[NDArray[np.float32], NDArray[np.float32]]
 # Draws the 3D view of (points, colours, bounds, surface layer) as PNG base64.
 CloudRenderer = Callable[[NDArray[np.float32], NDArray[np.uint8], Bounds, SurfaceLayer], str]
 
+# A replay draws the map view at most this often, as the live player does;
+# a slow recording journals one map update per frame.
+MAP_INTERVAL_S = 0.33
+
 
 class ReplayControls(Protocol):
     """What a replay obeys: pause and cancel (the demo's `PlaybackControls` fits)."""
@@ -55,7 +59,10 @@ class JournalPlayer:
     `fps` paces frames (0: as fast as possible). `surfaces` is the
     surface logic under test (default: a fresh `SurfaceMap`).
     `render_cloud`, when given, redraws each map view with the replay's
-    surfaces; without it the views are left out.
+    surfaces; without it the views are left out. Map updates are drawn
+    at most every `MAP_INTERVAL_S` of `clock` time (the newest one held
+    back is drawn before the end), and the journal is streamed, so a
+    long run starts at once.
     """
 
     def __init__(
@@ -67,6 +74,7 @@ class JournalPlayer:
         fps: float = 0.0,
         surfaces: SurfaceMap | None = None,
         render_cloud: CloudRenderer | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if fps < 0:
             raise ValueError("fps must not be negative")
@@ -76,6 +84,7 @@ class JournalPlayer:
         self._fps = fps
         self._assigner = SurfaceAssigner(surfaces)
         self._render_cloud = render_cloud
+        self._clock = clock
         self._bounds: Bounds | None = None
 
     def _placer(self) -> RegionPlacer | None:
@@ -122,7 +131,9 @@ class JournalPlayer:
             {"message": f"Replaying run {run_id[:8]} from its journal (no RTAB-Map, no SAM)"},
         )
         last_frame = 0.0
-        for kind, data in store.journal(run_id):
+        last_map: float | None = None
+        held_map: dict[str, object] | None = None  # the newest map not drawn yet
+        for kind, data in store.journal_events(run_id):
             while self._controls.paused and not self._controls.cancelled:
                 self._controls.wait_while_paused(0.05)
             if self._controls.cancelled:
@@ -133,8 +144,18 @@ class JournalPlayer:
                 last_frame = self._pace(last_frame)
                 jpeg = store.frame_jpeg(run_id, int(str(data["frame_id"]))) or b""
                 yield DemoEvent("frame", data, jpeg=jpeg)
-            elif kind in ("map", "final"):
-                yield DemoEvent(kind, self._view(data))
+            elif kind == "map":
+                now = self._clock()
+                if last_map is None or now - last_map >= MAP_INTERVAL_S:
+                    last_map, held_map = now, None
+                    yield DemoEvent("map", self._view(data))
+                else:
+                    held_map = data
+            elif kind == "final":
+                if held_map is not None:
+                    yield DemoEvent("map", self._view(held_map))
+                    held_map = None
+                yield DemoEvent("final", self._view(data))
             elif kind == "sam":
                 jpeg = store.frame_jpeg(run_id, int(str(data["frame_id"]))) or b""
                 sam = DemoEvent("sam", data, jpeg=jpeg)
@@ -146,3 +167,5 @@ class JournalPlayer:
                         yield surface
             else:
                 yield DemoEvent(kind, data)
+        if held_map is not None:
+            yield DemoEvent("map", self._view(held_map))

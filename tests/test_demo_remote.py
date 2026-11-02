@@ -427,9 +427,11 @@ def test_the_page_hides_panes_for_hosts_that_do_not_answer(tmp_path: Path) -> No
         with urllib.request.urlopen(f"{base}/", timeout=5) as response:
             page = response.read().decode()
 
-        # Then neither host contributes panes (markup gone, CSS may stay)
+        # Then neither host contributes live panes (markup gone, CSS may stay);
+        # SAM keeps only its hidden view for a recorded run's masks
         assert 'id="cloud-pane"' not in page
-        assert 'id="sam-view"' not in page
+        assert 'id="sam-prompt"' not in page
+        assert '<div class="sam-pane" id="sam-pane" hidden>' in page
     finally:
         server.shutdown()
         thread.join(timeout=5)

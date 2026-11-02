@@ -218,7 +218,10 @@ back from that journal without starting RTAB-Map or SAM. Frames, map
 and SAM masks come from the journal, while regions and surfaces are
 recomputed by the current code (`surmap.demo.replay.JournalPlayer`
 takes the `SurfaceMap` under tuning). Each replay is saved as a new
-run naming its source, for comparison. `--sam-fake` does the same without a GPU or model —
+run naming its source, for comparison. A replay or a rewound moment
+shows the run's recorded SAM masks even on a console started without
+SAM, and a long journal starts playing at once (it is streamed, and
+map views are drawn at the live 0.33 s cadence). `--sam-fake` does the same without a GPU or model —
 a stand-in SAM outlines the centre of every frame. The live panel shows keyframe
 count, cloud size, odometry state, SLAM lag in frames and dropped
 frames. Add a dataset by adding one registry entry.

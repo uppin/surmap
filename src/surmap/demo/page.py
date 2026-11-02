@@ -195,6 +195,8 @@ function drawSamObjects(ctx, objects) {{
 }}
 function drawSamPane(data) {{
   if (!samView) return;
+  const samPane = document.getElementById('sam-pane');
+  if (samPane) samPane.hidden = false;
   if (samStatus) {{
     samStatus.textContent = `SAM frame ${{data.frame_id}} · ${{data.objects.length}} object(s) · `
       + `updated ${{new Date().toLocaleTimeString()}} (SAM runs at its own rate; `
@@ -295,6 +297,7 @@ async function showSnapshot(seq) {{
     if (ticket !== scrubFetch) return;
     drawImageFrame(snap.image_b64, snap.overlay, snap.objects, snap.camera,
       {{index: snap.seq, total: maxSeq + 1}});
+    if (snap.sam) drawSamPane(snap.sam);
     if (snap.cloud) {{
       setCloud(snap.cloud.cloud_png);
       lastMap = {{image: null, extent: snap.cloud.extent, trajectory: snap.cloud.trajectory_xy,
@@ -423,6 +426,16 @@ function attachListeners() {{
     refreshRuns(currentRunId);
     source.close(); source = null;
     updateHistoryLabel('run finished and persisted — scrub or load it any time');
+  }});
+  source.addEventListener('ended', (event) => {{
+    // The server ended this stream: stop, so EventSource does not
+    // reconnect and start another run.
+    const reason = JSON.parse(event.data).reason;
+    if (source) {{ source.close(); source = null; }}
+    pauseButton.disabled = true;
+    if (reason === 'taken over') {{
+      playback.textContent = 'Another viewer took this run over — Restart or Replay to watch here.';
+    }}
   }});
   source.onerror = () => {{
     if (frames === 0 && mode === 'live') {{

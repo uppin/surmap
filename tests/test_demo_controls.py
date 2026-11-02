@@ -264,9 +264,10 @@ def test_a_new_viewer_takes_the_stream_over(tmp_path: Path) -> None:
         second: queue.Queue[str] = queue.Queue()
         threading.Thread(target=stream_kinds, args=(f"{base}/stream", second), daemon=True).start()
 
-        # Then the second gets frames and the first stream ends
+        # Then the second gets frames and the first stream ends, saying so
         assert second.get(timeout=10) == "run"
         assert second.get(timeout=10) == "frame"
+        assert first.get(timeout=10) == "ended"
         assert first.get(timeout=10) == "end"
 
 
