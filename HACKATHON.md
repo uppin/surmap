@@ -96,6 +96,7 @@ detector ([docs/coral-edge-tpu-model-spike.md](docs/coral-edge-tpu-model-spike.m
 | EfficientDet-Lite0, SSD MobileNet V2, SSDLite MobileDet (Coral/Google) | INT8 detectors, COCO labels | `surmap.detection` via LiteRT; Edge TPU artifacts pinned by `scripts/fetch_coral_model.py` | Greedy IoU tracker, separate `StreamDetections` stream, stereo object points inside tracked boxes |
 | ConnectRPC (connect-python 0.12.1) | HTTP/Protobuf RPC | Imported serving kit, see above | Survey contracts `Cm5SurveyService`, `StationSamService` |
 | EuRoC MAV (ETH ASL) | Stereo/IMU dataset | Dev-console scene `euroc-v1-01-easy`, RTAB-Map e2e subset | Download on demand, SHA-256 pinned, not re-hosted |
+| LADI v2 (MIT Lincoln Laboratory) | Aerial disaster imagery, multi-label, CC BY 4.0 | `scripts/eval_disaster_labelling.py` per-class F1 of the Muse clients | Downloaded on demand from Hugging Face `MITLL/LADI-v2-dataset`, re-encoded without EXIF, cached outside the repo, not re-hosted |
 | KITTI raw (KIT, TTI) | Driving stereo dataset, CC BY-NC-SA 3.0 | Dev-console scene `kitti-2011-09-26-drive-0009`, KITTI tracking parser | Converted locally, not re-hosted, credited on the page |
 | NTU VIRAL (NTU Singapore) | UAV dataset, CC BY-NC-SA 4.0 | Dev-console scene `ntu-viral-sbs-01` | Stereo extrinsics recalibrated from the authors' checkerboard pairs |
 | ETH3D `cables_2` | Stereo SLAM sequence | Ten downscaled pairs in `tests/fixtures/eth3d_cables2` (research-use terms in the fixture README) | Test data only |

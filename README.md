@@ -202,6 +202,11 @@ Details: [docs/deployment.md](docs/deployment.md).
   Modal, station ONNX, replay) on a recorded disaster-block flight —
   IoU, boundary F1, 3D survivor recall, cost
   ([docs/segmentation-benchmark.md](docs/segmentation-benchmark.md)).
+- `scripts/eval_disaster_labelling.py`: per-class F1 of hosted Muse
+  Spark (structured output) and open-weight Muse Spark Open on Baseten
+  (tool call) on LADI v2 aerial disaster imagery (CC BY 4.0), downloaded
+  on demand; no data is committed
+  ([docs/disaster-labelling-eval.md](docs/disaster-labelling-eval.md)).
 - `scripts/usage_report.py`: credit usage per provider, model, and day
   ([docs/credits-usage.md](docs/credits-usage.md)).
 
