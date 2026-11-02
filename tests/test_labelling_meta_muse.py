@@ -266,7 +266,7 @@ def test_reasoning_effort_must_be_low_medium_or_high(monkeypatch: pytest.MonkeyP
         MetaMuseSceneClient(api_key=_API_KEY, transport=UnusedTransport(), reasoning_effort="max")
 
 
-def test_scene_note_defaults_max_output_tokens_to_4096() -> None:
+def test_scene_note_defaults_max_output_tokens_to_8192() -> None:
     # Given no output cap
     transport = RecordingTransport(a_message("Debris across the road."))
     client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport)
@@ -274,8 +274,8 @@ def test_scene_note_defaults_max_output_tokens_to_4096() -> None:
     # When the note is requested
     client.note(("debris",), a_jpeg())
 
-    # Then the body caps visible output and reasoning at 4096
-    assert posted(transport)[2]["max_output_tokens"] == 4096
+    # Then the body caps visible output and reasoning at 8192
+    assert posted(transport)[2]["max_output_tokens"] == 8192
 
 
 def test_max_output_tokens_comes_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:

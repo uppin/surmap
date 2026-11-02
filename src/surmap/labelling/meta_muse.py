@@ -14,7 +14,7 @@ https://api.meta.ai/v1/responses`` with ``Authorization: Bearer
 $MODEL_API_KEY``. ``reasoning.effort`` defaults to ``high``. A
 constructor argument wins over ``SURMAP_META_REASONING_EFFORT``,
 which must be ``low``, ``medium``, or ``high``. ``max_output_tokens``
-defaults to 4096 (visible output plus reasoning) and
+defaults to 8192 (visible output plus reasoning, sized for Muse Wonder) and
 ``SURMAP_META_MAX_OUTPUT_TOKENS`` overrides that when the constructor
 omits a cap. Image input follows Meta's image-understanding guide:
 an ``input_image`` part whose ``image_url`` is a ``data:`` URL string.
@@ -43,7 +43,7 @@ from surmap.types import Vec3
 HOSTED_MUSE_WONDER_MODEL = "muse-wonder-1.0"
 META_MODEL_API_BASE_URL = "https://api.meta.ai/v1"
 DEFAULT_REASONING_EFFORT = "high"
-DEFAULT_MAX_OUTPUT_TOKENS = 4096
+DEFAULT_MAX_OUTPUT_TOKENS = 8192
 _MIN_OUTPUT_TOKENS = 16
 _REASONING_EFFORTS = frozenset({"low", "medium", "high"})
 _REASONING_ENV = "SURMAP_META_REASONING_EFFORT"

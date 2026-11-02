@@ -295,7 +295,7 @@ class MetaLadiClassifier:
         model: str | None = None,
         ledger: UsageLedger | None = None,
         reasoning_effort: str = "low",
-        max_output_tokens: int = 2048,
+        max_output_tokens: int = 8192,
     ) -> None:
         self._transport = transport if transport is not None else UrllibMetaMuseTransport()
         self._api_key = api_key
