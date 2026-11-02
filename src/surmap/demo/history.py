@@ -420,6 +420,21 @@ class RunHistoryStore:
             run_id = source
         return run_id
 
+    def latest_recording(self, dataset_id: str) -> str | None:
+        """The scene's newest complete, journalled recording (never a replay), if any.
+
+        This is the run the console reruns by default.
+        """
+        with self._lock:
+            row = self._db.execute(
+                "SELECT run_id FROM runs WHERE dataset_id = ? AND status = 'completed'"
+                " AND run_id NOT IN (SELECT run_id FROM run_sources)"
+                " AND EXISTS (SELECT 1 FROM events WHERE events.run_id = runs.run_id)"
+                " ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                (dataset_id,),
+            ).fetchone()
+        return str(row["run_id"]) if row is not None else None
+
     def _journalled(self, run_id: str) -> bool:
         with self._lock:
             row = self._db.execute(

@@ -1428,10 +1428,12 @@ class _DemoHttpServer(ThreadingHTTPServer):
 
         return self._take_over(lambda: _RunEngine(self, prepared.spec.dataset_id, title, play))
 
-    def start_replay(self, run_id: str, speed: float) -> _RunEngine | None:
-        """Replay `run_id` from its journal as a new run (see `start_run`).
+    def start_replay(self, run_id: str, speed: float, record: bool = True) -> _RunEngine | None:
+        """Replay `run_id` from its journal (see `start_run`).
 
-        `speed` multiplies the scene's frame rate; 0 plays as fast as possible.
+        `speed` multiplies the scene's frame rate; 0 plays as fast as
+        possible. Recorded, the replay is a new run naming its source;
+        unrecorded (the console's default rerun) it persists nothing.
         """
         source = self.history_store.get_run(run_id)
         assert source is not None
@@ -1460,7 +1462,9 @@ class _DemoHttpServer(ThreadingHTTPServer):
             ).events()
 
         title = f"Replay of {source['title']}"
-        return self._take_over(lambda: _RunEngine(self, dataset_id, title, play, replay_of=run_id))
+        return self._take_over(
+            lambda: _RunEngine(self, dataset_id, title, play, replay_of=run_id, record=record)
+        )
 
     def _take_over(self, create: Callable[[], _RunEngine]) -> _RunEngine | None:
         with self.run_lock:
@@ -1512,6 +1516,8 @@ class _DemoHttpServer(ThreadingHTTPServer):
                 "state": "missing",
                 "progress": None,
                 "error": "",
+                # What the page reruns by default (None: only Rebuild plays it).
+                "cached_run": self.history_store.latest_recording(dataset_id),
             }
             with self.state_lock:
                 job = self.preparations.get(dataset_id)
@@ -1761,12 +1767,17 @@ class _RunEngine:
         play: Callable[[PlaybackControls], Iterator[DemoEvent]],
         *,
         replay_of: str | None = None,
+        record: bool = True,
     ) -> None:
+        if not record and replay_of is None:
+            raise ValueError("only a replay can run unrecorded")
         self._server = server
         self.dataset_id = dataset_id
         self._title = title
         self._play_events = play
         self.replay_of = replay_of
+        # An unrecorded rerun persists nothing: viewers see the recording itself.
+        self.record = record
         self.controls = PlaybackControls()
         self.run_id = ""
         self.done = threading.Event()
@@ -1777,9 +1788,13 @@ class _RunEngine:
 
     def start(self) -> None:
         store = self._server.history_store
-        self.run_id = store.create_run(self.dataset_id, self._title)
-        if self.replay_of is not None:
-            store.record_source(self.run_id, self.replay_of)
+        if not self.record:
+            assert self.replay_of is not None
+            self.run_id = self.replay_of
+        else:
+            self.run_id = store.create_run(self.dataset_id, self._title)
+            if self.replay_of is not None:
+                store.record_source(self.run_id, self.replay_of)
         self._latest["run"] = DemoEvent(
             "run",
             {"run_id": self.run_id, "dataset_id": self.dataset_id, "replay_of": self.replay_of},
@@ -1843,6 +1858,49 @@ class _RunEngine:
         for subscriber in subscribers:
             self._offer(subscriber, None)
 
+    def _record(
+        self, event: DemoEvent, last_frame_id: int, last_map: dict[str, object]
+    ) -> tuple[int, dict[str, object]]:
+        """Persist one event into the run's history; returns the map state it carries."""
+        store = self._server.history_store
+        if event.kind == "rig":
+            store.record_rig(self.run_id, event.data)
+        elif event.kind == "dense":
+            store.record_dense(self.run_id, dense_frame_of(event))
+        else:
+            store.record_event(self.run_id, event.kind, event.data)
+        if event.kind == "frame" and event.jpeg:
+            last_frame_id = int(str(event.data["frame_id"]))
+            overlay_raw = event.data["detections"]
+            camera_raw = event.data.get("camera")
+            store.record_frame(
+                self.run_id,
+                index=int(str(event.data["index"])),
+                frame_id=last_frame_id,
+                t_ns=int(str(event.data["t_ns"])),
+                jpeg=event.jpeg,
+                overlay=overlay_raw if isinstance(overlay_raw, list) else [],
+                camera=camera_raw if isinstance(camera_raw, dict) else None,
+            )
+        elif event.kind == "map":
+            last_frame_id = int(str(event.data["frame_id"]))
+            last_map = dict(event.data)
+            _record_map(store, self.run_id, event.data, last_frame_id)
+        elif event.kind == "surface":
+            store.record_surface_event(self.run_id, event.data)
+        elif event.kind == "detections":
+            objects_raw = event.data["objects"]
+            store.record_detections(
+                self.run_id,
+                frame_id=int(str(event.data["frame_id"])),
+                t_ns=int(str(event.data["t_ns"])),
+                objects=objects_raw if isinstance(objects_raw, list) else [],
+            )
+        elif event.kind == "final":
+            # The final cloud keeps the last map's keyframe/odom stats.
+            _record_map(store, self.run_id, {**last_map, **event.data}, last_frame_id)
+        return last_frame_id, last_map
+
     def _play(self) -> None:
         server = self._server
         store = server.history_store
@@ -1851,50 +1909,20 @@ class _RunEngine:
         last_map: dict[str, object] = {}
         try:
             for event in self._play_events(self.controls):
-                if event.kind == "rig":
-                    store.record_rig(self.run_id, event.data)
-                elif event.kind == "dense":
-                    store.record_dense(self.run_id, dense_frame_of(event))
-                else:
-                    store.record_event(self.run_id, event.kind, event.data)
-                if event.kind == "frame" and event.jpeg:
-                    last_frame_id = int(str(event.data["frame_id"]))
-                    overlay_raw = event.data["detections"]
-                    camera_raw = event.data.get("camera")
-                    store.record_frame(
-                        self.run_id,
-                        index=int(str(event.data["index"])),
-                        frame_id=last_frame_id,
-                        t_ns=int(str(event.data["t_ns"])),
-                        jpeg=event.jpeg,
-                        overlay=overlay_raw if isinstance(overlay_raw, list) else [],
-                        camera=camera_raw if isinstance(camera_raw, dict) else None,
-                    )
-                elif event.kind == "map":
-                    last_frame_id = int(str(event.data["frame_id"]))
-                    last_map = dict(event.data)
-                    _record_map(store, self.run_id, event.data, last_frame_id)
-                elif event.kind == "surface":
-                    store.record_surface_event(self.run_id, event.data)
-                elif event.kind == "detections":
-                    objects_raw = event.data["objects"]
-                    store.record_detections(
-                        self.run_id,
-                        frame_id=int(str(event.data["frame_id"])),
-                        t_ns=int(str(event.data["t_ns"])),
-                        objects=objects_raw if isinstance(objects_raw, list) else [],
-                    )
-                elif event.kind == "final":
-                    # The final cloud keeps the last map's keyframe/odom stats.
-                    _record_map(store, self.run_id, {**last_map, **event.data}, last_frame_id)
+                if self.record:
+                    last_frame_id, last_map = self._record(event, last_frame_id, last_map)
+                if event.kind == "final":
                     completed = True
                 if event.kind not in JOURNAL_ONLY:
                     self._publish(event)
-            completed = True
+            # A player cancelled by a takeover returns early: cut short,
+            # that run is no complete recording to rerun.
+            completed = not self.controls.cancelled
         except Exception:
             completed = False
         finally:
-            store.finish_run(self.run_id, "completed" if completed else "interrupted")
+            if self.record:
+                store.finish_run(self.run_id, "completed" if completed else "interrupted")
             self.done.set()
             self._finish_subscribers()
             with server.state_lock:
@@ -1975,7 +2003,11 @@ class _DemoHandler(BaseHTTPRequestHandler):
             self._send(404, "text/plain", b"not found")
             return
         if url.path == "/stream" and "replay" in query:
-            self._replay(query["replay"][0], query.get("speed", ["1"])[0])
+            self._replay(
+                query["replay"][0],
+                query.get("speed", ["1"])[0],
+                record=query.get("record", ["1"])[0] != "0",
+            )
             return
         if url.path in ("/", "/stream"):
             dataset_id = self._scene(query)
@@ -2086,7 +2118,7 @@ class _DemoHandler(BaseHTTPRequestHandler):
         )
         self._serve(engine)
 
-    def _replay(self, run_id: str, speed_raw: str) -> None:
+    def _replay(self, run_id: str, speed_raw: str, *, record: bool = True) -> None:
         run = self.server.history_store.get_run(run_id)
         if run is None or not run["replayable"]:
             self._send(404, "text/plain", b"no journalled run to replay")
@@ -2095,7 +2127,7 @@ class _DemoHandler(BaseHTTPRequestHandler):
             speed = max(0.0, float(speed_raw))
         except ValueError:
             speed = 1.0
-        self._serve(self.server.start_replay(run_id, speed))
+        self._serve(self.server.start_replay(run_id, speed, record))
 
     def _serve(self, engine: _RunEngine | None) -> None:
         """Stream a run's published events to this viewer as SSE."""

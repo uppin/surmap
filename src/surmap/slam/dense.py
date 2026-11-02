@@ -387,9 +387,15 @@ def _rotation(pose: Pose) -> NDArray[np.float64]:
 
 
 def dense_region_points(
-    query: RegionQuery, rig: RegionRig, frame: DenseFrame | None
+    query: RegionQuery,
+    rig: RegionRig,
+    frame: DenseFrame | None,
+    disparity: NDArray[np.uint16] | None = None,
 ) -> RegionResult:
-    """Every journalled dense point inside `query`'s polygon, in the map frame."""
+    """Every journalled dense point inside `query`'s polygon, in the map frame.
+
+    `disparity`, when given, is `frame`'s already decoded disparity.
+    """
 
     def answer(status: RegionStatus, points: tuple[Vec3, ...] = ()) -> RegionResult:
         return RegionResult(query.query_id, query.frame_id, query.channel, status, points)
@@ -404,7 +410,8 @@ def dense_region_points(
         rig.height / query.height,
     )
     outline = round_half_away(undistort_points(raw, channel))
-    disparity = decode_disparity(frame.disparity_png)
+    if disparity is None:
+        disparity = decode_disparity(frame.disparity_png)
     inside = fill_poly(outline, rig.width, rig.height) & (disparity > 0)
     v, u = np.nonzero(inside)
     projection = np.array(channel.projection, np.float64).reshape(3, 4)
@@ -428,10 +435,18 @@ class DenseBufferRegionSource:
     def __init__(self, rig: RegionRig, frames: Iterable[DenseFrame]) -> None:
         self._rig = rig
         self._frames = {(frame.frame_id, frame.channel): frame for frame in frames}
+        # The newest frame's decoded disparity: SAM's masks on one frame
+        # are asked one after another, so one PNG decode serves them all.
+        self._decoded: tuple[tuple[int, int], NDArray[np.uint16]] | None = None
 
     def region_points(self, query: RegionQuery, timeout: float = 5.0) -> RegionResult:
-        frame = self._frames.get((query.frame_id, query.channel))
-        return dense_region_points(query, self._rig, frame)
+        key = (query.frame_id, query.channel)
+        frame = self._frames.get(key)
+        if frame is None:
+            return dense_region_points(query, self._rig, None)
+        if self._decoded is None or self._decoded[0] != key:
+            self._decoded = (key, decode_disparity(frame.disparity_png))
+        return dense_region_points(query, self._rig, frame, self._decoded[1])
 
 
 @runtime_checkable

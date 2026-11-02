@@ -240,3 +240,27 @@ def test_polygon_vertices_round_half_away_from_zero_like_the_sidecar() -> None:
 
     # Then they round away from zero
     np.testing.assert_array_equal(round_half_away(halves), [[1, 2], [3, -1], [-2, 3]])
+
+
+def test_the_dense_buffer_decodes_each_frames_disparity_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import surmap.slam.dense as dense
+
+    # Given a buffer holding one frame, and a count of PNG decodes
+    decodes: list[int] = []
+    real_decode = dense.decode_disparity
+
+    def counting_decode(png: bytes) -> NDArray[np.uint16]:
+        decodes.append(len(png))
+        return real_decode(png)
+
+    monkeypatch.setattr(dense, "decode_disparity", counting_decode)
+    source = DenseBufferRegionSource(a_rig(), [a_dense_frame(a_wall(2.5))])
+
+    # When SAM's many masks on that frame are asked
+    answers = [source.region_points(a_query()) for _ in range(5)]
+
+    # Then its disparity was decoded once, and every answer is the same
+    assert len(decodes) == 1
+    assert all(answer.points == answers[0].points for answer in answers)
