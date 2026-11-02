@@ -501,9 +501,7 @@ def run_live_mission(
     labeller = _live_labeller(services.labels, recorder, model=ollama_model)
     note_client: MetaMuseSceneClient | OllamaSceneClient | None
     if services.scene_note == "meta":
-        note_client = MetaMuseSceneClient(
-            transport=_meta_muse_transport(recorder, "scene_note")
-        )
+        note_client = MetaMuseSceneClient(transport=_meta_muse_transport(recorder, "scene_note"))
     elif services.scene_note == "ollama":
         note_client = OllamaSceneClient(model=ollama_model)
     else:
@@ -1026,7 +1024,7 @@ def _relabel(
     detections: list[SurvivorDetection],
     descriptions: dict[int, str],
     model_ids: dict[int, str],
-    labeller: _FixtureLabeller | BasetenMuseLabelClient | MetaMuseLabelClient,
+    labeller: _FixtureLabeller | BasetenMuseLabelClient | MetaMuseLabelClient | OllamaLabelClient,
     raw: RawFrame,
     sighting: Sighting,
     box: tuple[float, float, float, float] | None,
