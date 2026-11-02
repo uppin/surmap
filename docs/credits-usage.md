@@ -8,17 +8,16 @@ turn a live call on, and how spend is recorded.
 
 ## Credits
 
-| Source | Job | Id | Status |
+| Source | Job | Id | Client |
 |---|---|---|---|
-| [Meta Model API](https://dev.meta.ai/docs/models) | Scene note over the mapped area. SAM 3.1 boxes and masks | Hosted Muse Spark `muse-spark-1.3`. SAM `sam-3.1` | Planned |
-| [Baseten Model APIs](https://docs.baseten.co/inference/model-apis/overview) | Per-object semantic labels from a JPEG crop | `meta-models/muse-spark-open-1026` at `https://inference.baseten.co/v1` | client in tree; live call gated |
-| Modal | GPU for station-side SAM 3.1 behind the in-tree ONNX adapter | No Modal app in this repo | Planned |
+| [Meta Model API](https://dev.meta.ai/docs/models) | Scene note, per-object labels, SAM 3.1 masks, Ask the map, voice | `muse-spark-1.3`, `sam-3.1`, `muse-wonder-1.0`, `muse-voice-transcribe-1.0` | `surmap.labelling.meta_muse`, `surmap.survey.meta_sam`, `surmap.mapqa` |
+| [Baseten Model APIs](https://docs.baseten.co/inference/model-apis/overview) | Open-weight per-object labels from a JPEG crop | `meta-models/muse-spark-open-1026` at `https://inference.baseten.co/v1` | `surmap.labelling.baseten_muse` |
+| Modal | GPU for SAM 3.1 (app `surmap-sam`); a Muse Spark Open check endpoint | `facebook/sam3.1`; `meta-models/Muse-Spark-Open-816B-A42B` | `surmap.survey.modal_sam`, `surmap.labelling.modal_muse` |
 
-Muse Spark Open is not on Meta Model API. Baseten hosts it here.
-Hosted Muse Spark (`muse-spark-1.3`) is still the planned model for a
-scene note and is not called from this tree. Modal is not called.
-The geometric pipeline (stereo, Coral detection, RTAB-Map, the demo)
-does not use these credits.
+Every live call is gated by its `SURMAP_LIVE_*` flag. Muse Spark Open
+is not on the Meta Model API; Baseten hosts it. The geometric pipeline
+(stereo, Coral detection, RTAB-Map, the dev console) does not use
+these credits.
 
 ## Baseten Muse Spark Open labels
 
@@ -70,8 +69,8 @@ one, or a usage log copied from a machine that has one.
 
 ## Credit usage and limits
 
-Shared ledger for every hosted call. Other agents pass an instance and
-use it as a callback; the method names below are the interface.
+Shared ledger for every hosted call. Clients take an instance and use
+it as a callback; the names below are the interface.
 
 ```python
 @dataclass(frozen=True)
