@@ -118,7 +118,7 @@ def test_meta_uses_strict_text_format_with_every_class(tmp_path: Path) -> None:
 
     assert classes == frozenset({"flooding_any", "water_any"})
     body = fake.bodies[0]
-    assert body["model"] == "muse-spark-1.3"
+    assert body["model"] == "muse-wonder-1.0"
     assert "response_format" not in body
     text = body["text"]
     assert isinstance(text, dict)
@@ -386,8 +386,8 @@ def test_baseten_reads_json_from_list_content(tmp_path: Path) -> None:
 def test_meta_classifier_follows_surmap_meta_model(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("SURMAP_META_MODEL", "muse-wonder-1.0")
+    monkeypatch.setenv("SURMAP_META_MODEL", "muse-spark-1.3")
     classifier = MetaLadiClassifier(api_key="m", ledger=UsageLedger(tmp_path / "u.jsonl"))
 
-    assert classifier.model == "muse-wonder-1.0"
-    assert classifier.request_body(_jpeg())["model"] == "muse-wonder-1.0"
+    assert classifier.model == "muse-spark-1.3"
+    assert classifier.request_body(_jpeg())["model"] == "muse-spark-1.3"

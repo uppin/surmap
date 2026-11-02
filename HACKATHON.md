@@ -69,14 +69,18 @@ CI use fixtures and fake transports.
 | Model | Provider and endpoint | Code | Role | Demo path |
 |---|---|---|---|---|
 | SAM 3.1 `sam-3.1` | Meta Model API, `POST https://api.meta.ai/v1/responses`, `Authorization: Bearer $MODEL_API_KEY` | `surmap.survey.meta_sam.MetaSamDetector` | Boxes and masks for one frame and one noun-phrase concept | `mission_demo.py --live` with `SURMAP_LIVE_META=1`; `seg_bench.py run --route meta`; `scripts/check_meta_sam.py` |
-| Muse Spark `muse-spark-1.3` | Meta Model API, `POST /v1/responses` | `surmap.labelling.meta_muse` (`MetaMuseSceneClient`, `MetaMuseLabelClient`) | Picks the SAM concepts per keyframe (structured output, `text.format`); per-object label from a crop; civilian SAR scene note from a keyframe | Live mission with `SURMAP_LIVE_META=1` |
-| Muse Wonder `muse-wonder-1.0` | Meta Model API, `POST /v1/responses` | `surmap.mapqa` (`MapQa`, `answer`) | Questions and a Markdown situation report over a snapshot | `python -m surmap.mapqa ask/report/serve`; viewer `POST /ask` when `SURMAP_LIVE_META=1` |
+| Muse Wonder `muse-wonder-1.0` | Meta Model API, `POST /v1/responses` | `surmap.labelling.meta_muse` (`MetaMuseConceptClient`, `MetaMuseLabelClient`, `MetaMuseSceneClient`); `surmap.mapqa` (`MapQa`, `answer`) | Picks the SAM concepts per keyframe (structured output, `text.format`); per-object label from a crop; civilian SAR scene note from a keyframe; questions and a Markdown situation report over a snapshot | Live mission with `SURMAP_LIVE_META=1`; `python -m surmap.mapqa ask/report/serve`; viewer `POST /ask` when `SURMAP_LIVE_META=1` |
 | Muse Voice Transcribe `muse-voice-transcribe-1.0` | Meta Model API, `POST /v1/asr/transcribe` (multipart, `PUSH_TO_TALK`, WAV) | `surmap.mapqa.client` | Spoken question to text, then Ask the map | `python -m surmap.mapqa ask-voice` |
 | Muse Spark Open `meta-models/muse-spark-open-1026` | Baseten, `POST https://inference.baseten.co/v1/chat/completions`, bearer `BASETEN_API_KEY` | `surmap.labelling.baseten_muse.BasetenMuseLabelClient` | Open-weight per-object label from a crop: `reasoning_effort` `low`, fields from a `record_label` tool call (JSON mode is not supported for this model on Baseten) | Live mission whenever `SURMAP_LIVE_BASETEN=1`, with or without Meta; `seg_bench.py label --provider baseten` |
 | Muse Spark Open `meta-models/Muse-Spark-Open-816B-A42B` | Modal shared endpoint, `MODAL_MUSE_URL` + proxy token | `surmap.labelling.modal_muse` | One chat completion | `scripts/check_modal_muse.py` only |
 | SAM 3.1 `facebook/sam3.1` (`sam3.1_multiplex.pt`) | Modal GPU app `surmap-sam` (L4), `MODAL_SAM_URL` | `surmap.survey.modal_sam`, `modal_sam_app` | Remote GPU masks | Live mission with `SURMAP_LIVE_MODAL=1` and `--sam-route modal` (or Meta unset); `station_main --detector sam3-modal` |
 | SAM 3.1 `facebook/sam3.1` | Station GPU, PyTorch | `surmap.survey.sam3_torch` | Continuous video segmentation in 16-frame windows | `scripts/demo.py --sam-device cuda:0`; `station_main --detector sam31-torch` |
 | SAM 3.1 ONNX export | Station, ONNX Runtime | `surmap.survey.sam3` | Same detector port for an exported model | `station_main --detector sam3 --sam3-model <path>` |
+
+On the Meta Model API every text call (concepts, labels, scene note,
+Q&A, report) defaults to Muse Wonder. Muse Spark runs only as open-weight
+Muse Spark Open on Baseten (and the Modal check endpoint). Muse Wonder
+has not been scored on the LADI v2 eval yet.
 
 Request details (reasoning effort, token caps, usage callbacks, budget
 env vars) are in [docs/credits-usage.md](docs/credits-usage.md),

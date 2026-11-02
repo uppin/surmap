@@ -1,7 +1,8 @@
-"""Scene notes from hosted Muse Spark on the Meta Model API.
+"""Scene notes from Muse Wonder on the Meta Model API.
 
-The fake transport pins the request the owner verified on 2026-10-28:
-POST https://api.meta.ai/v1/responses, model muse-spark-1.3, and the
+The fake transport pins the request shape the owner verified on 2026-10-28
+(POST https://api.meta.ai/v1/responses) with the default model
+muse-wonder-1.0, and the
 assistant note taken only from message output_text. A live call runs
 only when SURMAP_LIVE_META=1.
 """
@@ -119,7 +120,7 @@ def prompt_text(body: Mapping[str, object]) -> str:
     return text
 
 
-def test_scene_note_posts_hosted_muse_spark_and_returns_the_message_text() -> None:
+def test_scene_note_posts_muse_wonder_and_returns_the_message_text() -> None:
     # Given a mapped frame labelled debris and vehicle
     transport = RecordingTransport(a_message("Flooded street. Two vehicles."))
     client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport)
@@ -133,7 +134,7 @@ def test_scene_note_posts_hosted_muse_spark_and_returns_the_message_text() -> No
     assert parts.scheme == "https"
     assert parts.hostname == "api.meta.ai"
     assert parts.path == "/v1/responses"
-    assert body["model"] == "muse-spark-1.3"
+    assert body["model"] == "muse-wonder-1.0"
     assert body["stream"] is False
     assert headers["Authorization"] == f"Bearer {_API_KEY}"
     assert note == "Flooded street. Two vehicles."
@@ -381,7 +382,7 @@ def test_on_usage_receives_token_counts_from_the_response() -> None:
 
     # Then the ledger hook gets the Meta counts and the note is unchanged
     assert note == "Debris across the road."
-    assert seen == [("meta", "muse-spark-1.3", 120, 40, 11)]
+    assert seen == [("meta", "muse-wonder-1.0", 120, 40, 11)]
 
 
 def test_on_usage_leaves_reasoning_tokens_empty_when_the_detail_is_absent() -> None:
@@ -400,7 +401,7 @@ def test_on_usage_leaves_reasoning_tokens_empty_when_the_detail_is_absent() -> N
     ) -> None:
         seen.append(reasoning_tokens)
         assert provider == "meta"
-        assert model == "muse-spark-1.3"
+        assert model == "muse-wonder-1.0"
         assert (input_tokens, output_tokens) == (10, 4)
 
     client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport, on_usage=on_usage)
@@ -485,25 +486,25 @@ def test_hooks_run_around_the_request_and_skip_usage_when_it_is_missing() -> Non
     assert events == ["before:meta", "post"]
 
 
-def test_muse_wonder_is_allowed_and_the_default_stays_muse_spark() -> None:
-    # Given Muse Wonder, which the credits cover, and no model override
-    wonder = RecordingTransport(a_message("Debris across the road."))
+def test_muse_spark_is_still_allowed_and_the_default_is_muse_wonder() -> None:
+    # Given hosted Muse Spark asked for explicitly, and no model override
+    spark = RecordingTransport(a_message("Debris across the road."))
     default = RecordingTransport(a_message("Debris across the road."))
-    wonder_client = MetaMuseSceneClient(model="muse-wonder-1.0", api_key=_API_KEY, transport=wonder)
+    spark_client = MetaMuseSceneClient(model="muse-spark-1.3", api_key=_API_KEY, transport=spark)
     default_client = MetaMuseSceneClient(api_key=_API_KEY, transport=default)
 
     # When each note is requested
-    wonder_client.note(("debris",), a_jpeg())
+    spark_client.note(("debris",), a_jpeg())
     default_client.note(("debris",), a_jpeg())
 
-    # Then Wonder is sent as asked, and the default remains hosted Muse Spark
-    assert posted(wonder)[2]["model"] == "muse-wonder-1.0"
-    assert posted(default)[2]["model"] == "muse-spark-1.3"
+    # Then Muse Spark is sent as asked, and the default is Muse Wonder
+    assert posted(spark)[2]["model"] == "muse-spark-1.3"
+    assert posted(default)[2]["model"] == "muse-wonder-1.0"
 
 
 def test_the_model_comes_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Given the env selects Muse Wonder
-    monkeypatch.setenv("SURMAP_META_MODEL", "muse-wonder-1.0")
+    # Given the env selects hosted Muse Spark
+    monkeypatch.setenv("SURMAP_META_MODEL", "muse-spark-1.3")
     transport = RecordingTransport(a_message("Debris across the road."))
     client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport)
 
@@ -511,20 +512,20 @@ def test_the_model_comes_from_the_environment(monkeypatch: pytest.MonkeyPatch) -
     client.note(("debris",), a_jpeg())
 
     # Then that id is what gets sent
-    assert posted(transport)[2]["model"] == "muse-wonder-1.0"
+    assert posted(transport)[2]["model"] == "muse-spark-1.3"
 
 
 def test_constructor_model_overrides_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Given the env says Wonder and the constructor says Muse Spark
-    monkeypatch.setenv("SURMAP_META_MODEL", "muse-wonder-1.0")
+    # Given the env says Muse Spark and the constructor says Wonder
+    monkeypatch.setenv("SURMAP_META_MODEL", "muse-spark-1.3")
     transport = RecordingTransport(a_message("Debris across the road."))
-    client = MetaMuseSceneClient(model="muse-spark-1.3", api_key=_API_KEY, transport=transport)
+    client = MetaMuseSceneClient(model="muse-wonder-1.0", api_key=_API_KEY, transport=transport)
 
     # When the note is requested
     client.note(("debris",), a_jpeg())
 
     # Then the constructor id wins
-    assert posted(transport)[2]["model"] == "muse-spark-1.3"
+    assert posted(transport)[2]["model"] == "muse-wonder-1.0"
 
 
 @pytest.mark.parametrize("model_id", ["muse-wonder-full", "muse-wonder_full", "Muse-Wonder-Full"])

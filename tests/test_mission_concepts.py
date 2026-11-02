@@ -1,4 +1,4 @@
-"""Muse Spark chooses the concepts SAM 3.1 segments in the live mission."""
+"""Muse Wonder chooses the concepts SAM 3.1 segments in the live mission."""
 
 from pathlib import Path
 
@@ -71,7 +71,7 @@ def mission(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[str]]:
             label=coarse_label,
             description=coarse_label,
             confidence=None,
-            model_id="muse-spark-1.3",
+            model_id="muse-wonder-1.0",
             raw_text=coarse_label,
             map_point=xyz,
         )

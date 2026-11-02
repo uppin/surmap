@@ -10,7 +10,7 @@ turn a live call on, and how spend is recorded.
 
 | Source | Job | Id | Client |
 |---|---|---|---|
-| [Meta Model API](https://dev.meta.ai/docs/models) | Scene note, per-object labels, SAM 3.1 masks, Ask the map, voice | `muse-spark-1.3`, `sam-3.1`, `muse-wonder-1.0`, `muse-voice-transcribe-1.0` | `surmap.labelling.meta_muse`, `surmap.survey.meta_sam`, `surmap.mapqa` |
+| [Meta Model API](https://dev.meta.ai/docs/models) | SAM concepts, scene note, per-object labels, Ask the map (Muse Wonder); SAM 3.1 masks; voice | `muse-wonder-1.0`, `sam-3.1`, `muse-voice-transcribe-1.0` | `surmap.labelling.meta_muse`, `surmap.survey.meta_sam`, `surmap.mapqa` |
 | [Baseten Model APIs](https://docs.baseten.co/inference/model-apis/overview) | Open-weight per-object labels from a JPEG crop | `meta-models/muse-spark-open-1026` at `https://inference.baseten.co/v1` | `surmap.labelling.baseten_muse` |
 | Modal | GPU for SAM 3.1 (app `surmap-sam`); a Muse Spark Open check endpoint | `facebook/sam3.1`; `meta-models/Muse-Spark-Open-816B-A42B` | `surmap.survey.modal_sam`, `surmap.labelling.modal_muse` |
 

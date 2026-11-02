@@ -69,7 +69,7 @@ def answer_map_question(
 ) -> AskAnswer:
     """Answer one map question.
 
-    Live Muse Spark Q&A is `surmap.mapqa.answer` when that package
+    Live Muse Wonder Q&A is `surmap.mapqa.answer` when that package
     imports, `SURMAP_LIVE_META=1`, and `allow_live` is true. Any other
     case uses the label match.
     """

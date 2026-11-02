@@ -50,7 +50,7 @@ def _responses_body(text: str) -> dict[str, object]:
 
 
 class _FakeMuse:
-    """Stands in for HTTPS to the Meta Responses API (Muse Spark)."""
+    """Stands in for HTTPS to the Meta Responses API (Muse Wonder)."""
 
     def __init__(self, timeout_s: float = 60.0) -> None:
         del timeout_s
@@ -172,7 +172,7 @@ def test_a_live_run_with_record_writes_every_model_call_without_the_key(
     assert "sam" in roles
     assert "label" in roles
     assert roles[-1] == "scene_note"
-    assert {call.model for call in calls} == {"sam-3.1", "muse-spark-1.3"}
+    assert {call.model for call in calls} == {"sam-3.1", "muse-wonder-1.0"}
     for path in recording.iterdir():
         assert _KEY not in path.read_text(encoding="utf-8")
         assert "secret-model-key" not in path.read_text(encoding="utf-8")
@@ -221,7 +221,7 @@ def test_offline_replay_labels_the_report_as_recorded_live_responses(
     sources = [call["source"] for call in report["model_calls"]]
     assert sources
     assert all(source.startswith("recorded live response from ") for source in sources)
-    assert any("muse-spark-1.3" in source for source in sources)
+    assert any("muse-wonder-1.0" in source for source in sources)
     assert result.metrics.basis == "recorded-live"
     assert result.snapshot_path.is_file()
 
@@ -302,7 +302,7 @@ def test_the_cli_replays_a_named_recording_offline(
     # Then it says the run is recorded and names each recorded response
     assert code == 0
     assert "recorded live run" in printed
-    assert "recorded live response from muse-spark-1.3" in printed
+    assert "recorded live response from muse-wonder-1.0" in printed
 
 
 def test_fixtures_flag_ignores_a_recording(

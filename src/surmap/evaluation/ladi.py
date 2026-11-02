@@ -1,4 +1,4 @@
-"""Per-class F1 of Muse Spark on LADI v2 aerial disaster imagery.
+"""Per-class F1 of Meta Muse models on LADI v2 aerial disaster imagery.
 
 LADI v2 (MIT Lincoln Laboratory, CC BY 4.0, Hugging Face
 ``MITLL/LADI-v2-dataset``) is a multi-label set of Civil Air Patrol
@@ -12,8 +12,9 @@ drops the EXIF block and its GPS tags. No data is committed.
 
 Two classifiers are compared:
 
-* ``MetaLadiClassifier``: hosted ``muse-spark-1.3`` on the Meta Model API
-  (``SURMAP_META_MODEL=muse-wonder-1.0`` selects Muse Wonder), with
+* ``MetaLadiClassifier``: Muse Wonder ``muse-wonder-1.0`` on the Meta Model
+  API by default (``SURMAP_META_MODEL=muse-spark-1.3`` selects hosted Muse
+  Spark), with
   structured output (``text.format`` JSON schema, strict).
 * ``BasetenLadiClassifier``: open-weight ``meta-models/muse-spark-open-1026``
   on Baseten, with a ``record_classes`` tool call (Baseten has no JSON
@@ -282,7 +283,7 @@ def _key(explicit: str | None, env: str) -> str:
 
 
 class MetaLadiClassifier:
-    """Hosted Muse Spark with ``text.format`` structured output."""
+    """Muse Wonder on the Meta Model API with ``text.format`` structured output."""
 
     provider = "meta"
 
@@ -299,7 +300,7 @@ class MetaLadiClassifier:
         self._transport = transport if transport is not None else UrllibMetaMuseTransport()
         self._api_key = api_key
         # Same rule as the mission clients: argument, then SURMAP_META_MODEL,
-        # then hosted Muse Spark. Wonder Full and Baseten slugs are refused.
+        # then Muse Wonder. Wonder Full and Baseten slugs are refused.
         self._model = _resolve_model(model)
         self._ledger = ledger if ledger is not None else UsageLedger()
         self._effort = reasoning_effort

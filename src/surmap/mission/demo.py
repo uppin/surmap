@@ -278,7 +278,7 @@ def live_sam_prompt() -> str:
 
 
 def pinned_sam_prompt() -> str | None:
-    """``SURMAP_SAM_PROMPT`` when set. It wins over Muse Spark's concept list."""
+    """``SURMAP_SAM_PROMPT`` when set. It wins over Muse Wonder's concept list."""
     chosen = os.environ.get("SURMAP_SAM_PROMPT", "").strip()
     return chosen or None
 
@@ -289,7 +289,7 @@ def live_max_concepts() -> int:
 
 
 def live_concept_every() -> int:
-    """Ask Muse Spark for new concepts every N posed frames (``SURMAP_CONCEPT_EVERY``)."""
+    """Ask Muse Wonder for new concepts every N posed frames (``SURMAP_CONCEPT_EVERY``)."""
     return _env_int("SURMAP_CONCEPT_EVERY", DEFAULT_CONCEPT_EVERY, 1, 10_000)
 
 
@@ -344,8 +344,8 @@ def detection_crop_jpeg(
 def build_live_services(*, sam_route: str | None = None) -> LiveServices:
     """Check the live flags and keys. Does not send a request or log a key.
 
-    ``SURMAP_LIVE_META=1`` selects Meta SAM, Muse Spark concepts and
-    labels, and the Muse Spark scene note. ``SURMAP_LIVE_BASETEN=1``
+    ``SURMAP_LIVE_META=1`` selects Meta SAM, Muse Wonder concepts and
+    labels, and the Muse Wonder scene note. ``SURMAP_LIVE_BASETEN=1``
     moves per-object labels to open-weight Muse Spark Open on Baseten,
     with or without the Meta flag. Modal SAM is used when the Meta flag
     is unset and ``SURMAP_LIVE_MODAL=1``; the Meta scene note is then
@@ -780,7 +780,7 @@ def _propose_concepts(
     previous: tuple[str, ...],
     meta_calls: list[MetaCallRecord],
 ) -> tuple[str, ...]:
-    """Muse Spark's concepts for this keyframe; the previous list if the reply is unusable."""
+    """Muse Wonder's concepts for this keyframe; the previous list if the reply is unusable."""
     started = time.perf_counter()
     try:
         chosen = client.propose(frame_jpeg)

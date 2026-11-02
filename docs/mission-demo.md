@@ -32,9 +32,9 @@ Outputs land in `mission-demo-out/` (gitignored):
 ## What the command chains
 
 1. **Session.** Offline exports `tests/fixtures/sitl_capture_tiny/` to EuRoC. That fixture is not a flight of the disaster block. Perception uses a second recorded fixture: one camera point per person in the ground-truth JSON, posed at the offset in `src/surmap/mission/fixtures/offline_perception.json`. If `gz` is missing, that is expected for this mode.
-2. **SAM 3.1 masks.** Offline uses a recorded polygon. Live uses Meta when `SURMAP_LIVE_META=1`, otherwise Modal when `SURMAP_LIVE_MODAL=1`. `--sam-route modal` (with `SURMAP_LIVE_MODAL=1`) moves only SAM to Modal while Meta keeps the concepts, labels, and scene note. SAM runs on every posed frame. With `SURMAP_LIVE_META=1`, Muse Spark (`MetaMuseConceptClient`) picks the concepts: a Responses API call with `text.format` set to a JSON schema returns up to `SURMAP_SAM_MAX_CONCEPTS` noun phrases (1–8, default 4), re-checked locally (at most four words, no lists, negation, or positions), with `person` always first. It is asked again every `SURMAP_CONCEPT_EVERY` posed frames (default 10); an unusable reply keeps the previous list. Each concept is one SAM request. `SURMAP_SAM_PROMPT` pins one concept and skips the proposal call.
+2. **SAM 3.1 masks.** Offline uses a recorded polygon. Live uses Meta when `SURMAP_LIVE_META=1`, otherwise Modal when `SURMAP_LIVE_MODAL=1`. `--sam-route modal` (with `SURMAP_LIVE_MODAL=1`) moves only SAM to Modal while Meta keeps the concepts, labels, and scene note. SAM runs on every posed frame. With `SURMAP_LIVE_META=1`, Muse Wonder `muse-wonder-1.0` (`MetaMuseConceptClient`) picks the concepts: a Responses API call with `text.format` set to a JSON schema returns up to `SURMAP_SAM_MAX_CONCEPTS` noun phrases (1–8, default 4), re-checked locally (at most four words, no lists, negation, or positions), with `person` always first. It is asked again every `SURMAP_CONCEPT_EVERY` posed frames (default 10); an unusable reply keeps the previous list. Each concept is one SAM request. `SURMAP_SAM_PROMPT` pins one concept and skips the proposal call.
 3. **Mask to cloud, one object per thing.** `points_in_mask` keeps the sparse RTAB-Map keyframe points that project inside the mask. When none do (a low-texture shirt, a rubble pile, or an empty sparse map), `DenseStereoFallback` (`src/surmap/mission/dense.py`) matches that frame's own stereo pair with the pure-NumPy `surmap.survey.stereo` matcher, once per frame, under the same depth cap and minimum disparity as the streaming backend, and the mask claims those points instead. `impact.json` → `mask_point_sources` counts observations per source (`sparse-rtabmap`, `stereo-fallback`) and lists each track's sources. A mask with no points from either is dropped. Nothing is written back into RTAB-Map. `ObjectMerger` (`src/surmap/mission/objects.py`) feeds each mask's points to a `SurfaceMap` per coarse label (voxel overlap continues a surface; a 40 cm drift marks it moving), so an object seen in many frames is one track with one observation per frame.
-4. **Labels and a scene note.** Offline labels each object `survivor` and writes a fixture scene note. A live label call is made once per object, when its surface first appears, and once more if it turns moving; later sightings make no model call. With `SURMAP_LIVE_META=1`, live labels use Muse Spark `muse-spark-1.3` on the Meta Model API at `reasoning.effort` `low` (`SURMAP_META_LABEL_REASONING_EFFORT` overrides), and the scene note uses the same API at `high`. The scene note gets one summary line per mapped object (label, motion, frames seen, map position) and is asked for three sections: Immediate hazards, Survivor locations, Access and debris blockages. With `SURMAP_LIVE_BASETEN=1` (and `BASETEN_API_KEY`), labels use open-weight Muse Spark Open `meta-models/muse-spark-open-1026` on Baseten instead, with or without the Meta flag: `reasoning_effort` `low`, structured fields from a `record_label` tool call.
+4. **Labels and a scene note.** Offline labels each object `survivor` and writes a fixture scene note. A live label call is made once per object, when its surface first appears, and once more if it turns moving; later sightings make no model call. With `SURMAP_LIVE_META=1`, live labels use Muse Wonder `muse-wonder-1.0` on the Meta Model API at `reasoning.effort` `low` (`SURMAP_META_LABEL_REASONING_EFFORT` overrides), and the scene note uses the same API at `high`. The scene note gets one summary line per mapped object (label, motion, frames seen, map position) and is asked for three sections: Immediate hazards, Survivor locations, Access and debris blockages. With `SURMAP_LIVE_BASETEN=1` (and `BASETEN_API_KEY`), labels use open-weight Muse Spark Open `meta-models/muse-spark-open-1026` on Baseten instead, with or without the Meta flag: `reasoning_effort` `low`, structured fields from a `record_label` tool call.
 5. **Snapshot.** `build_snapshot` anchors the tracks to the disaster-block GPS origin.
 6. **Viewer.** `http://127.0.0.1:8770/` shows the snapshot. The impact line is `GET /impact`.
 7. **Question.** The report answers "Where are the survivors?" Highlighted points are the matched landmarks. `POST /ask` on the viewer does the same. If `surmap.mapqa` is installed and `SURMAP_LIVE_META=1`, that POST delegates to `surmap.mapqa.answer`.
@@ -77,9 +77,9 @@ the same function a real dump uses.
 Live still does not enable PX4 motors. Fly or replay on the WSL host
 that has PX4, then point the command at the capture.
 
-This is the live command. It calls Meta SAM 3.1 (`sam-3.1`), Muse Spark
-labels (`muse-spark-1.3`), and the Muse Spark scene note. It does not
-need Baseten.
+This is the live command. It calls Meta SAM 3.1 (`sam-3.1`), Muse
+Wonder concepts and labels (`muse-wonder-1.0`), and the Muse Wonder
+scene note. It does not need Baseten.
 
 ```bash
 # terminal 1 — simulator, GUI on WSLg
@@ -101,7 +101,7 @@ uv run python scripts/mission_demo.py --live --capture ~/sitl-runs/disaster-01
 to launch SITL yourself and pass the capture. If `gz` is missing it
 tells you the same, because a live score needs that recording.
 
-`SURMAP_LIVE_META=1` selects Muse Spark concepts, Meta SAM, Muse Spark
+`SURMAP_LIVE_META=1` selects Muse Wonder concepts, Meta SAM, Muse Wonder
 labels, and the scene note. Baseten (`SURMAP_LIVE_BASETEN=1`,
 `BASETEN_API_KEY`) takes over labels whenever it is set. Modal SAM
 (`SURMAP_LIVE_MODAL=1`, `MODAL_SAM_URL`) is used when `SURMAP_LIVE_META`
