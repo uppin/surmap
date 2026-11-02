@@ -186,11 +186,6 @@ class StereoReconstructor:
             points.append(Vec3((col - cx) * z / fx, (row - cy) * z / fy, z))
         return tuple(points)
 
-    def depth_map(self, left: FrameImage, right: FrameImage, rig: StereoRig) -> NDArray[np.float32]:
-        """Per-pixel depth (m) at the matching resolution; 0 where nothing matched."""
-        depth, _ = self._matched(left, right, rig)
-        return depth.astype(np.float32)
-
     def _matched(
         self, left: FrameImage, right: FrameImage, rig: StereoRig
     ) -> tuple[NDArray[np.float64], int]:

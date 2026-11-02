@@ -75,6 +75,7 @@ from surmap.demo.page import CM5_ASIDE, PAGE, RTAB_STAT
 from surmap.demo.remote import RemoteCm5Backend, RemoteDetectionSource, RemoteSamDetector
 from surmap.demo.remote import fetch_capabilities as _fetch_capabilities
 from surmap.demo.replay import JournalPlayer
+from surmap.demo.sam_journal import JournalSamDetector
 from surmap.demo.sam_prompt import SamPromptPolicy, sam_pane
 from surmap.demo.surface_render import MOVING_ALPHA as MOVING_ALPHA
 from surmap.demo.surface_render import MOVING_COLOUR as MOVING_COLOUR
@@ -88,7 +89,7 @@ from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
 from surmap.detection.source import CoralDetectionSource, DetectionSource
 from surmap.detection.tracker import TrackedDetection
 from surmap.slam.base import FrameResult
-from surmap.slam.dense import DenseJournalSource
+from surmap.slam.dense import DenseJournalSource, display_depth, region_rig_from_message
 from surmap.slam.regions import RegionPointSource
 from surmap.slam.sidecar import SidecarRtabmapBackend
 from surmap.slam.stream_protocol import Keypoint, MapUpdate, OdomUpdate, Rectification
@@ -655,21 +656,25 @@ def _display_jpeg(prepared: PreparedDataset, channel: int, t_ns: int) -> bytes:
     return target.read_bytes()
 
 
-def dense_depth_frame(prepared: PreparedDataset, t_ns: int) -> bytes:
-    """One frame's display pair as a dense depth overlay PNG (`surmap.demo.dense_view`)."""
-    size = prepared.spec.display_size
-    calibration = load_calibration(prepared).scaled(*size)
-    rig = StereoRig(
-        fx=calibration.fx,
-        fy=calibration.fy,
-        cx=calibration.cx,
-        cy=calibration.cy,
-        baseline_m=calibration.baseline_m,
-    )
-    stops = prepared.spec.depth_stops_m
-    stereo = StereoReconstructor(max_depth_m=max(prepared.spec.max_map_depth_m, stops[-1]))
-    left, right = (FrameImage(*size, "mjpeg", _display_jpeg(prepared, c, t_ns)) for c in (0, 1))
-    return dense_depth_png(stereo.depth_map(left, right, rig), size, stops, DEPTH_COLOURS)
+def dense_depth_frame(
+    store: RunHistoryStore, run_id: str, frame_id: int, stops: tuple[float, float, float]
+) -> bytes | None:
+    """RTAB-Map's dense depth of one frame of a run, as an overlay PNG (`surmap.demo.dense_view`).
+
+    It is the disparity the sidecar journalled for that frame (a replay
+    reads its recording's), never recomputed; None when RTAB-Map
+    computed none for the frame.
+    """
+    root = store.root_run(run_id)
+    journalled = store.rig(root)
+    frame = store.dense_frame(root, frame_id)
+    if journalled is None or frame is None:
+        return None
+    size_raw = journalled["display_size"]
+    assert isinstance(size_raw, list) and len(size_raw) == 2
+    size = (int(size_raw[0]), int(size_raw[1]))
+    depth = display_depth(region_rig_from_message(journalled["rig"]), frame, size)
+    return dense_depth_png(depth, size, stops, DEPTH_COLOURS)
 
 
 def _display_jpeg_path(prepared: PreparedDataset, channel: int, t_ns: int) -> Path:
@@ -1318,14 +1323,31 @@ class _DemoHttpServer(ThreadingHTTPServer):
     run_engine: _RunEngine | None
     history_store: RunHistoryStore
 
-    def start_run(self, prepared: PreparedDataset, sam_prompt: str | None) -> _RunEngine | None:
+    def start_run(
+        self,
+        prepared: PreparedDataset,
+        sam_prompt: str | None,
+        *,
+        sam_from: str | None = None,
+    ) -> _RunEngine | None:
         """Start a fresh live server-side run, taking over from the current one.
 
-        The previous run (if any) is cancelled and its subscribers
-        ended; None when it does not stop in time.
+        With `sam_from`, SAM is not run: that recorded run's journalled
+        masks answer each frame (`surmap.demo.sam_journal`), so only the
+        RTAB-Map part is rebuilt. The previous run (if any) is cancelled
+        and its subscribers ended; None when it does not stop in time.
         """
         title = prepared.spec.title + (f" · SAM: {sam_prompt}" if sam_prompt else "")
         options = self.player_options
+        if sam_from is not None:
+            source = self.history_store.get_run(sam_from)
+            assert source is not None
+            title = f"{source['title']} · RTAB-Map rebuilt from {sam_from[:8]}"
+            options = {
+                **options,
+                "sam_source": JournalSamDetector(self.history_store, sam_from),
+                "sam_streamer": None,
+            }
 
         def play(controls: PlaybackControls) -> Iterator[DemoEvent]:
             player = DemoPlayer(
@@ -1927,6 +1949,9 @@ class _DemoHandler(BaseHTTPRequestHandler):
             if len(parts) == 3 and parts[2] == "export":
                 self._send_export(parts[1])
                 return
+            if len(parts) == 3 and parts[2] == "dense-depth":
+                self._dense_depth(parts[1], query)
+                return
             if len(parts) == 3 and parts[2] == "snapshot":
                 try:
                     seq = int(query.get("seq", ["0"])[0])
@@ -1960,8 +1985,8 @@ class _DemoHandler(BaseHTTPRequestHandler):
                 return
             self._send(404, "text/plain", b"not found")
             return
-        if url.path == "/dense-depth":
-            self._dense_depth(query)
+        if url.path == "/stream" and "rebuild_rtabmap" in query:
+            self._rebuild_rtabmap(query["rebuild_rtabmap"][0])
             return
         if url.path == "/stream" and "replay" in query:
             self._replay(
@@ -2077,18 +2102,22 @@ class _DemoHandler(BaseHTTPRequestHandler):
             return
         self._send(404, "text/plain", b"not found")
 
-    def _dense_depth(self, query: dict[str, list[str]]) -> None:
-        """The dense depth overlay of one of the scene's frames, by its t_ns."""
-        dataset_id = self._scene(query)
-        prepared = None if dataset_id is None else self.server.prepared_scene(dataset_id)
+    def _dense_depth(self, run_id: str, query: dict[str, list[str]]) -> None:
+        """RTAB-Map's dense depth overlay of one frame of a run, by its frame id."""
+        store = self.server.history_store
+        run = store.get_run(run_id)
         try:
-            t_ns = int(query.get("t_ns", [""])[0])
+            frame_id = int(query.get("frame_id", [""])[0])
         except ValueError:
-            t_ns = -1
-        if prepared is None or t_ns not in prepared.timestamps_ns:
-            self._send(404, "text/plain", b"no such frame")
+            frame_id = -1
+        spec = None if run is None else self.server.catalog.get(str(run["dataset_id"]))
+        png = (
+            None if spec is None else dense_depth_frame(store, run_id, frame_id, spec.depth_stops_m)
+        )
+        if png is None:
+            self._send(404, "text/plain", b"no RTAB-Map dense depth for this frame")
             return
-        self._send(200, "image/png", dense_depth_frame(prepared, t_ns))
+        self._send(200, "image/png", png)
 
     def _stream(self, dataset_id: str, requested_prompt: str | None) -> None:
         prepared = self.server.prepared_scene(dataset_id)
@@ -2103,6 +2132,18 @@ class _DemoHandler(BaseHTTPRequestHandler):
             prepared, self.server.sam_prompt(dataset_id, requested_prompt)
         )
         self._serve(engine)
+
+    def _rebuild_rtabmap(self, run_id: str) -> None:
+        """A new live RTAB-Map run of `run_id`'s scene, with `run_id`'s SAM masks."""
+        run = self.server.history_store.get_run(run_id)
+        if run is None or not run["replayable"]:
+            self._send(404, "text/plain", b"no journalled run to rebuild")
+            return
+        prepared = self.server.prepared_scene(str(run["dataset_id"]))
+        if prepared is None:
+            self._send(409, "text/plain", b"scene not downloaded yet; POST /prepare first")
+            return
+        self._serve(self.server.start_run(prepared, None, sam_from=run_id))
 
     def _replay(self, run_id: str, speed_raw: str, *, record: bool = True) -> None:
         run = self.server.history_store.get_run(run_id)

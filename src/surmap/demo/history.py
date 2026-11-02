@@ -409,6 +409,24 @@ class RunHistoryStore:
             )
         return frames
 
+    def dense_frame(self, run_id: str, frame_id: int, channel: int = 0) -> DenseFrame | None:
+        """One frame's journalled dense buffer, if RTAB-Map computed one for it."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM dense_frames WHERE run_id = ? AND frame_id = ? AND channel = ?",
+                (run_id, frame_id, channel),
+            ).fetchone()
+        if row is None:
+            return None
+        x, y, z, qx, qy, qz, qw = (float(v) for v in json.loads(row["to_map"]))
+        return DenseFrame(
+            int(row["frame_id"]),
+            int(row["t_ns"]),
+            int(row["channel"]),
+            Pose(Vec3(x, y, z), (qx, qy, qz, qw)),
+            bytes(row["disparity_png"]),
+        )
+
     def record_source(self, run_id: str, source_run_id: str) -> None:
         """`run_id` replays `source_run_id`'s journal."""
         with self._lock, self._db:

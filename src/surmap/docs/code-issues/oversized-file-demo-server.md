@@ -16,6 +16,7 @@
 | 2026-10-31 | 1814 → 1836 | `feat/demo-sam-prompt` (after merging `feat/sam-surfaces`): prompt resolution and the SAM pane markup went into `demo/sam_prompt.py`; the +22 is the per-run prompt plumbed through `DemoPlayer`, `make_demo_server` and the stream handler |
 | 2026-11-02 | 2188 → 2089 | `feat/demo-object-feed`: the 3D render and its session state (pose, Follow, picking ids) moved to the new `demo/cloud_view.py`, rewound-moment surfaces to `demo/surface_timeline.py`; the file shrank |
 | 2026-11-02 | 2089 → 2140 | `feat/demo-run-export-import`: the archive logic is the new `demo/run_archive.py`; the +51 are the two routes and the handlers that stream an export out and an upload in (candidates to move next to `run_archive.py`) |
+| 2026-11-02 | 2174 → 2215 | `fix/demo-dense-depth-t-ns`: the per-pixel depth read is `slam/dense.display_depth` and the journalled SAM source `demo/sam_journal.py`; the +41 are the run-scoped dense-depth route and the Rebuild RTAB-Map route and `start_run` override |
 
 ## What the tool found
 

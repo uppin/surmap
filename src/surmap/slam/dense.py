@@ -482,6 +482,43 @@ def project_to_display(
     return pixels
 
 
+def display_depth(rig: RegionRig, frame: DenseFrame, size: tuple[int, int]) -> NDArray[np.float32]:
+    """Depth (m) of each pixel of `frame`'s raw image shown at `size`; 0 where none.
+
+    The region path applied to every pixel: shown pixel centre to raw pixel
+    to rectified pixel (rounded as `lround` does), the journalled disparity
+    read there and turned into `z = fx * b / d` up to the depth cap. A
+    pixel therefore has the depth its region points would have.
+    """
+    width, height = size
+    channel = rig.channels[frame.channel]
+    cols, rows = np.meshgrid(
+        np.arange(width, dtype=np.float64), np.arange(height, dtype=np.float64)
+    )
+    # Pixel centres scale onto pixel centres; at the rig's own size this is the identity.
+    raw = np.stack(
+        [
+            (cols.ravel() + 0.5) * rig.width / width - 0.5,
+            (rows.ravel() + 0.5) * rig.height / height - 0.5,
+        ],
+        axis=1,
+    )
+    rectified = round_half_away(undistort_points(raw, channel))
+    u, v = rectified[:, 0], rectified[:, 1]
+    inside = (u >= 0) & (u < rig.width) & (v >= 0) & (v < rig.height)
+    disparity = decode_disparity(frame.disparity_png)
+    subpixels = np.zeros(len(raw), np.float64)
+    subpixels[inside] = disparity[v[inside], u[inside]]
+    fx = np.array(channel.projection, np.float64)[0]
+    with np.errstate(divide="ignore"):
+        depth = np.where(
+            subpixels > 0, fx * rig.baseline_m / (subpixels / DISPARITY_SUBPIXELS), 0.0
+        )
+    depth = np.where(depth <= rig.max_depth_m, depth, 0.0)
+    shown: NDArray[np.float32] = depth.reshape(height, width).astype(np.float32)
+    return shown
+
+
 class DenseBufferRegionSource:
     """`RegionPointSource` over journalled dense frames; a frame it lacks has expired."""
 

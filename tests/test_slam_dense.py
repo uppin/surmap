@@ -14,6 +14,7 @@ from surmap.slam.dense import (
     RegionRig,
     decode_disparity,
     dense_region_points,
+    display_depth,
     encode_disparity,
     fill_poly,
     project_to_display,
@@ -330,3 +331,55 @@ def test_points_behind_the_camera_do_not_project() -> None:
     # Then only the one in front has a pixel, at the image centre
     assert np.isnan(pixels[0]).all()
     np.testing.assert_allclose(pixels[1], [CX, CY])
+
+
+def test_each_display_pixel_gets_the_depth_of_the_disparity_it_was_rectified_onto() -> None:
+    # Given a journalled wall 2 m away (fx * b / d = 50 * 0.1 / 2.5)
+    frame = a_dense_frame(a_wall(disparity_px=2.5))
+
+    # When its depth is read for the display image at the rig's size
+    depth = display_depth(a_rig(), frame, (WIDTH, HEIGHT))
+
+    # Then every pixel of the frame sits on the wall
+    assert depth.shape == (HEIGHT, WIDTH)
+    np.testing.assert_allclose(depth, 2.0, rtol=1e-6)
+
+
+def test_display_depth_is_read_at_the_size_the_frame_is_shown() -> None:
+    # Given a wall journalled only on the rig's left half
+    disparity = a_wall(disparity_px=2.5)
+    disparity[:, WIDTH // 2 :] = 0
+
+    # When it is read for a display image twice the rig's size
+    depth = display_depth(a_rig(), a_dense_frame(disparity), (2 * WIDTH, 2 * HEIGHT))
+
+    # Then the left half of the shown frame has the wall, the right half nothing
+    assert depth.shape == (2 * HEIGHT, 2 * WIDTH)
+    np.testing.assert_allclose(depth[:, : WIDTH - 2], 2.0, rtol=1e-6)
+    assert not depth[:, WIDTH + 2 :].any()
+
+
+def test_display_pixels_without_a_disparity_or_beyond_the_depth_cap_have_no_depth() -> None:
+    # Given a wall 50 m away, past a 30 m cap, with a hole RTAB-Map did not match
+    disparity = a_wall(disparity_px=0.1)
+    disparity[10:20, 10:20] = 0
+
+    # When its depth is read
+    depth = display_depth(a_rig(max_depth_m=30.0), a_dense_frame(disparity), (WIDTH, HEIGHT))
+
+    # Then no pixel has a depth
+    assert not depth.any()
+
+
+def test_a_distorted_display_pixel_reads_the_disparity_where_it_was_rectified() -> None:
+    # Given a barrel-distorted lens, and a disparity only at one raw pixel's rectified spot
+    rig = a_rig(distortion=(-0.28, 0.07, 0.0002, 0.00002))
+    u, v = round_half_away(undistort_points(np.array([[80.0, 70.0]]), rig.channels[0]))[0]
+    disparity = np.zeros((HEIGHT, WIDTH), np.uint16)
+    disparity[v, u] = round(2.5 * SUBPIXELS)
+
+    # When its depth is read for the raw display image
+    depth = display_depth(rig, a_dense_frame(disparity), (WIDTH, HEIGHT))
+
+    # Then the raw pixel has that depth
+    assert depth[70, 80] == pytest.approx(2.0)
