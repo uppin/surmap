@@ -70,6 +70,9 @@ PAGE = """<!DOCTYPE html>
   .ptz {{ display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 8px;
     font-size: 12px; color: #9aa3ad; }}
   .ptz .btn {{ padding: 4px 8px; }}
+  .view-toggles {{ display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+    margin-top: 6px; }}
+  .view-toggles label {{ cursor: pointer; }}
   .resize-hint {{ font-size: 11px; color: #7c8590; margin-top: 4px; }}
 </style>
 </head>
@@ -110,6 +113,13 @@ __RUN_ARCHIVE__
 <main>
   <div class="stage">
     <canvas id="view" width="{width}" height="{height}"></canvas>
+    <div class="view-toggles">
+      <label class="stat" title="RTAB-Map's tracked features on this frame, coloured by depth">
+        <input type="checkbox" id="show-points" checked> RTAB-Map points</label>
+      <label class="stat" title="Dense stereo depth of this frame, in the same near → far colours">
+        <input type="checkbox" id="show-dense"> Dense depth</label>
+      <span class="legend" id="dense-status"></span>
+    </div>
     <p class="legend">
       <span class="dot" style="background:{near}"></span> near ({near_label}) &nbsp;
       <span class="dot" style="background:{mid}"></span> {mid_label} &nbsp;
@@ -214,18 +224,71 @@ function drawSamPane(data) {{
   }};
   image.src = 'data:image/jpeg;base64,' + data.image_b64;
 }}
-function drawImageFrame(imageB64, overlay, objects, camera, labelData) {{
-  const image = new Image();
-  image.onload = () => {{
-    view.drawImage(image, 0, 0, view.canvas.width, view.canvas.height);
+// The shown frame, kept so the point / dense depth toggles can redraw it.
+const showPoints = $('show-points'), showDense = $('show-dense');
+const denseStatus = $('dense-status');
+const denseImages = new Map();  // t_ns -> dense depth overlay image, newest last
+const DENSE_FRAMES = 16;
+let shownFrame = null, denseLoading = null;
+let viewScene = SCENE;  // the scene the shown frames come from (a loaded run's)
+function redrawView() {{
+  if (!shownFrame || !shownFrame.image) return;
+  const {{image, overlay, objects, tNs}} = shownFrame;
+  view.drawImage(image, 0, 0, view.canvas.width, view.canvas.height);
+  if (showDense.checked) {{
+    const dense = denseImages.get(tNs);
+    if (dense) {{
+      view.globalAlpha = 0.65;
+      view.drawImage(dense, 0, 0, view.canvas.width, view.canvas.height);
+      view.globalAlpha = 1;
+    }} else {{
+      loadDense(tNs);
+    }}
+  }} else {{
+    denseStatus.textContent = '';
+  }}
+  if (showPoints.checked) {{
     for (const point of (overlay || [])) {{
       view.fillStyle = point.c;
       view.beginPath();
       view.arc(point.x, point.y, point.d < {near_m} * 1.5 ? 2.2 : 1.4, 0, Math.PI * 2);
       view.fill();
     }}
-    drawBoxes(objects);
-    URL.revokeObjectURL(image.src);
+  }}
+  drawBoxes(objects);
+}}
+function loadDense(tNs) {{
+  // One request at a time: live frames that arrive meanwhile are skipped,
+  // and the frame shown when it lands asks next.
+  if (tNs === undefined || tNs === null || denseLoading !== null) return;
+  denseLoading = tNs;
+  denseStatus.textContent = 'Matching dense depth…';
+  const image = new Image();
+  const done = (ok) => {{
+    denseLoading = null;
+    if (ok) {{
+      denseImages.set(tNs, image);
+      while (denseImages.size > DENSE_FRAMES) denseImages.delete(denseImages.keys().next().value);
+      denseStatus.textContent = 'Dense stereo depth of this frame; clear = no match.';
+    }} else {{
+      denseStatus.textContent = 'Dense depth unavailable for this frame.';
+    }}
+    if (ok || (shownFrame && shownFrame.tNs !== tNs)) redrawView();
+  }};
+  image.onload = () => done(true);
+  image.onerror = () => done(false);
+  image.src = '/dense-depth?dataset=' + encodeURIComponent(viewScene)
+    + '&t_ns=' + encodeURIComponent(tNs);
+}}
+showPoints.addEventListener('change', redrawView);
+showDense.addEventListener('change', redrawView);
+function drawImageFrame(imageB64, overlay, objects, camera, labelData, tNs) {{
+  const image = new Image();
+  const frame = {{image: null, overlay, objects, tNs}};
+  image.onload = () => {{
+    frame.image = image;
+    shownFrame = frame;
+    redrawView();
   }};
   image.src = 'data:image/jpeg;base64,' + imageB64;
   lastCamera = camera || null;
@@ -299,7 +362,7 @@ async function showSnapshot(seq) {{
     const snap = await (await fetch(`/runs/${{currentRunId}}/snapshot?seq=${{seq}}`)).json();
     if (ticket !== scrubFetch) return;
     drawImageFrame(snap.image_b64, snap.overlay, snap.objects, snap.camera,
-      {{index: snap.seq, total: maxSeq + 1}});
+      {{index: snap.seq, total: maxSeq + 1}}, snap.t_ns);
     // Which surface each SAM track became on this frame, so its cards link.
     noteSurfaces({{frame_id: snap.frame_id, surfaces: snap.surface_tracks || []}});
     if (snap.sam) drawSamPane(snap.sam);
@@ -359,6 +422,7 @@ $('run-load').addEventListener('click', async () => {{
   if (!runId) return;
   const detail = await (await fetch(`/runs/${{runId}}`)).json();
   currentRunId = runId;
+  viewScene = detail.dataset_id || SCENE;
   maxSeq = detail.timeline.length - 1;
   slider.max = String(Math.max(0, maxSeq));
   runInfo.innerHTML = `Run: <b>${{runId.slice(0, 12)}}…</b> · `
@@ -382,6 +446,7 @@ function attachListeners() {{
   source.addEventListener('run', (event) => {{
     const data = JSON.parse(event.data);
     currentRunId = data.run_id; frames = 0; maxSeq = -1; started = performance.now();
+    viewScene = data.dataset_id || SCENE;
     clearFeed();
     runInfo.innerHTML = data.replay_of === data.run_id
       ? `Run: <b>${{currentRunId.slice(0, 12)}}…</b> · cached rerun (not persisted again)`
@@ -408,7 +473,7 @@ function attachListeners() {{
     scrubSeq = data.index; slider.value = String(scrubSeq);
     const fps = (frames / ((performance.now() - started) / 1000)).toFixed(1);
     drawImageFrame(data.image_b64, data.detections, null, data.camera,
-      {{index: data.index, total: data.total}});
+      {{index: data.index, total: data.total}}, data.t_ns);
     playback.innerHTML = `Frame <b>${{data.index + 1}} / ${{data.total}}</b><br>`
       + `Stream rate <b>${{fps}} fps</b><br>Overlay points this frame <b>${{data.point_count}}</b>`;
     updateHistoryLabel();

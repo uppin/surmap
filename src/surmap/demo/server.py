@@ -58,6 +58,7 @@ from surmap.demo.datasets import (
     load_calibration,
     scaled_sensor_yaml,
 )
+from surmap.demo.dense_view import dense_depth_png
 from surmap.demo.events import (
     JOURNAL_ONLY,
     RegionPlacer,
@@ -652,6 +653,23 @@ def _display_jpeg(prepared: PreparedDataset, channel: int, t_ns: int) -> bytes:
         with Image.open(prepared.frame_path(channel, t_ns)) as frame:
             frame.resize((width, height)).convert("L").save(target, format="JPEG", quality=85)
     return target.read_bytes()
+
+
+def dense_depth_frame(prepared: PreparedDataset, t_ns: int) -> bytes:
+    """One frame's display pair as a dense depth overlay PNG (`surmap.demo.dense_view`)."""
+    size = prepared.spec.display_size
+    calibration = load_calibration(prepared).scaled(*size)
+    rig = StereoRig(
+        fx=calibration.fx,
+        fy=calibration.fy,
+        cx=calibration.cx,
+        cy=calibration.cy,
+        baseline_m=calibration.baseline_m,
+    )
+    stops = prepared.spec.depth_stops_m
+    stereo = StereoReconstructor(max_depth_m=max(prepared.spec.max_map_depth_m, stops[-1]))
+    left, right = (FrameImage(*size, "mjpeg", _display_jpeg(prepared, c, t_ns)) for c in (0, 1))
+    return dense_depth_png(stereo.depth_map(left, right, rig), size, stops, DEPTH_COLOURS)
 
 
 def _display_jpeg_path(prepared: PreparedDataset, channel: int, t_ns: int) -> Path:
@@ -1942,6 +1960,9 @@ class _DemoHandler(BaseHTTPRequestHandler):
                 return
             self._send(404, "text/plain", b"not found")
             return
+        if url.path == "/dense-depth":
+            self._dense_depth(query)
+            return
         if url.path == "/stream" and "replay" in query:
             self._replay(
                 query["replay"][0],
@@ -2055,6 +2076,19 @@ class _DemoHandler(BaseHTTPRequestHandler):
                 )
             return
         self._send(404, "text/plain", b"not found")
+
+    def _dense_depth(self, query: dict[str, list[str]]) -> None:
+        """The dense depth overlay of one of the scene's frames, by its t_ns."""
+        dataset_id = self._scene(query)
+        prepared = None if dataset_id is None else self.server.prepared_scene(dataset_id)
+        try:
+            t_ns = int(query.get("t_ns", [""])[0])
+        except ValueError:
+            t_ns = -1
+        if prepared is None or t_ns not in prepared.timestamps_ns:
+            self._send(404, "text/plain", b"no such frame")
+            return
+        self._send(200, "image/png", dense_depth_frame(prepared, t_ns))
 
     def _stream(self, dataset_id: str, requested_prompt: str | None) -> None:
         prepared = self.server.prepared_scene(dataset_id)
