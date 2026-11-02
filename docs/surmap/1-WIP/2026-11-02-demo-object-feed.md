@@ -18,7 +18,7 @@
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⏳ `/green` Green — implement until every red test passes · milestones 1–10 @ `3025050`; milestone 10b added
+- [wf 3] ✅ 2026-11-02 `/green` Green — implement until every red test passes · 1249 passed / 28 skipped; ruff, format, mypy strict green
   - [x] Milestone 1: `SurfaceMap` depth band and minimum points
   - [x] Milestone 2: the camera pose reaches `SurfaceMap` (`RegionResult.camera`, `region` event `viewpoint`, live backend from the dense line)
   - [x] Milestone 3: session-level `CloudViewer`; every `cloud_*` action works without a run and answers with `cloud_png`
@@ -33,7 +33,7 @@
   - [x] Acceptance: `tests/test_demo_cloud_follow.py` passes
   - [x] Milestone 10: SAM view object cards — one non-overlapping card per object (id, depth range) with a leader to it, filled circles at both ends; hovering a card selects its object, clicking opens the feed
   - [x] Acceptance: `tests/test_demo_sam_cards.py` passes
-  - [ ] Milestone 10b: each card as close to its own object as it fits — beside its mask box, not in rows at the top; leaders from the card's nearest edge
+  - [x] Milestone 10b: each card as close to its own object as it fits — beside its mask box, not in rows at the top; leaders from the card's nearest edge
   - [x] Acceptance: `tests/test_survey_surfaces.py`, `tests/test_demo_object_feed.py`, `tests/test_demo_cloud_ptz.py` pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
@@ -185,8 +185,14 @@ sidecar's SGBM settings.
     is now negated, so the camera's right is drawn on the right.
 
 - **SAM view object cards (milestone 10):**
-  - **Cards.** Each SAM object gets a card: `label #surface` when linked (else
-    `label · SAM track`), and its depth range. Masks keep their outline; the loose text
+  - **Cards.** Each SAM object gets a card, colour-coded:
+    - **cyan** `label #surface` once its object is a surface;
+    - **grey** `label #track` (SAM's track id) while it has too few depth points to be
+      in 3D;
+    - **yellow** when selected.
+
+    It shows its depth range when it has any, and a legend under the SAM view says what
+    the colours mean. (Milestone 10b replaced a `label · SAM track` text tag.) Masks keep their outline; the loose text
     labels are gone.
   - **Layout.** Each card goes to the nearest free spot next to its own object's mask box
     (`layoutCards`):
@@ -325,8 +331,21 @@ V4, in the in-app browser on KITTI 0009 (cached rerun of `38b8dc54`, then a Repl
       track 8's mask turned yellow.
     - **Click:** opened card #27 in the feed.
     - **Console:** no page errors.
-  - **Seen, left as is:** with 13 objects the cards fill the top two rows of the image,
-    and leaders from far cars cross.
+  - **Seen, then fixed in 10b:** with 13 objects the row layout filled the top two rows
+    of the image, and leaders from far cars crossed.
+- **Milestone 10b (cards next to their objects, colour-coded):**
+  - **Tests:** 4 layout tests rewritten for the new requirement (red @ `0ba61a1`), plus
+    a colour and legend test. Two earlier assertions were replaced: "rows at the top"
+    and "leader from the bottom edge".
+  - **V4 on KITTI frame 13:**
+    - **Layout:** 13 cards, 0 overlaps. 9 of 13 sit within 4 px of their own mask box;
+      the farthest is 34 px away.
+    - **Leaders:** 7–64 px, against 30–100+ px in rows.
+    - **Colours:** cyan `car #27` and `car #28`, the rest grey, with the legend shown.
+    - **Console:** no page errors.
+  - **Found while testing:** a careless replacement had deleted the SAM selection block
+    (`samSelectedTracks`, `drawSamSelection`, the canvas listeners). The
+    `test_demo_sam_pick.py` tests caught it, and it was restored from `HEAD`.
 - **Observed, out of scope:** near-left KITTI cars get points only on their rear. The
   sidecar's SGBM (`numDisparities` 128 at 620 px) cannot match the image's leftmost 128
   columns. That is also why some masks get no depth.

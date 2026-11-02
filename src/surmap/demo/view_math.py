@@ -18,10 +18,11 @@ No DOM here, so the functions run in node on their own
 - `isClick(down, up)` tells a click (released within 4 px) from a drag.
 - `polygonContains(polygon, x, y)` is the even-odd test on a SAM mask outline;
   `maskAt(objects, x, y)` is the track of the smallest mask under (x, y), or 0.
-- `layoutCards(items, width, height)` places one card per object in rows from
-  the top of the image: each as close above its object as it fits, never
-  overlapping another and never off the image, with a leader from the
-  card's bottom edge (`from`) to the object (`to`). `cardAt(cards, x, y)` is
+- `layoutCards(items, width, height)` places one card per object as close to
+  its own object's box as it fits: just above it when free, else the
+  nearest free spot beside it, never overlapping another card, never off
+  the image and not over its object while a spot beside it is free; with a
+  leader from the card's nearest edge point (`from`) to the object (`to`). `cardAt(cards, x, y)` is
   the key of the card under (x, y), or 0.
 
 Spliced into the page before the server formats it, so its braces stay
@@ -96,37 +97,52 @@ function maskAt(objects, x, y) {{
   }}
   return best;
 }}
-const CARD_MARGIN_PX = 4, CARD_GAP_PX = 4;
+const CARD_MARGIN_PX = 4, CARD_GAP_PX = 4, CARD_GRID_PX = 4;
+const cardLayouts = new Map();  // memo: the same frame's cards are laid out once
 function layoutCards(items, width, height) {{
-  const rowHeight = Math.max(0, ...items.map((item) => item.height)) + CARD_GAP_PX;
-  const rows = [];  // per row: the [x, x + width] spans already taken
-  const placed = new Map();
-  const order = items.map((item, i) => i).sort((a, b) => items[a].anchor[0] - items[b].anchor[0]);
+  const memo = JSON.stringify([items, width, height]);
+  if (cardLayouts.has(memo)) return cardLayouts.get(memo);
+  const boxOf = (item) => item.box || [...item.anchor, ...item.anchor];
+  const area = (b) => (b[2] - b[0]) * (b[3] - b[1]);
+  // Smallest objects first: they have the fewest free spots near them.
+  const order = items.map((_, i) => i)
+    .sort((a, b) => area(boxOf(items[a])) - area(boxOf(items[b])) || a - b);
+  const placed = [], laid = new Map();
   for (const i of order) {{
-    const item = items[i];
-    const lo = CARD_MARGIN_PX, hi = Math.max(lo, width - CARD_MARGIN_PX - item.width);
-    const preferred = Math.min(hi, Math.max(lo, item.anchor[0] - item.width / 2));
-    const free = (spans, x) => spans.every(([a, b]) => x + item.width + CARD_GAP_PX <= a
-      || x >= b + CARD_GAP_PX);
-    let choice = null;
-    for (let row = 0; choice === null; row++) {{
-      const y = CARD_MARGIN_PX + row * rowHeight;
-      const last = y + item.height > height - CARD_MARGIN_PX;
-      if (row === rows.length) rows.push([]);
-      const spans = rows[row];
-      const candidates = [preferred, ...spans.flatMap(([a, b]) =>
-        [b + CARD_GAP_PX, a - CARD_GAP_PX - item.width])]
-        .filter((x) => x >= lo && x <= hi && free(spans, x))
-        .sort((a, b) => Math.abs(a - preferred) - Math.abs(b - preferred));
-      if (candidates.length) choice = {{x: candidates[0], y, row}};
-      else if (last) choice = {{x: preferred, y: Math.max(CARD_MARGIN_PX, y - rowHeight), row}};
+    const item = items[i], w = item.width, h = item.height;
+    const [bx1, by1, bx2, by2] = boxOf(item), cx = (bx1 + bx2) / 2, cy = (by1 + by2) / 2;
+    const maxX = Math.max(CARD_MARGIN_PX, width - CARD_MARGIN_PX - w);
+    const maxY = Math.max(CARD_MARGIN_PX, height - CARD_MARGIN_PX - h);
+    const clamp = ([x, y]) => [Math.min(maxX, Math.max(CARD_MARGIN_PX, x)),
+      Math.min(maxY, Math.max(CARD_MARGIN_PX, y))];
+    // Just above, below, left and right of the box; then every free spot on a grid.
+    const candidates = [[cx - w / 2, by1 - CARD_GAP_PX - h], [cx - w / 2, by2 + CARD_GAP_PX],
+      [bx1 - CARD_GAP_PX - w, cy - h / 2], [bx2 + CARD_GAP_PX, cy - h / 2]].map(clamp);
+    for (let y = CARD_MARGIN_PX; y <= maxY; y += CARD_GRID_PX) {{
+      for (let x = CARD_MARGIN_PX; x <= maxX; x += CARD_GRID_PX) candidates.push([x, y]);
     }}
-    rows[choice.row].push([choice.x, choice.x + item.width]);
-    const fromX = Math.min(choice.x + item.width - 4, Math.max(choice.x + 4, item.anchor[0]));
-    placed.set(i, {{key: item.key, x: choice.x, y: choice.y, width: item.width,
-      height: item.height, from: [fromX, choice.y + item.height], to: item.anchor}});
+    let best = candidates[0], bestScore = Infinity;
+    for (const [x, y] of candidates) {{
+      if (placed.some((p) => x < p.x + p.width + CARD_GAP_PX && p.x < x + w + CARD_GAP_PX
+        && y < p.y + p.height + CARD_GAP_PX && p.y < y + h + CARD_GAP_PX)) continue;
+      const dx = Math.max(bx1 - (x + w), x - bx2, 0), dy = Math.max(by1 - (y + h), y - by2, 0);
+      const covers = x < bx2 && bx1 < x + w && y < by2 && by1 < y + h;
+      // Touching (within the gap) is as close as it gets; then the most centred above it.
+      const score = Math.max(Math.hypot(dx, dy), CARD_GAP_PX) + (covers ? 1e4 : 0)
+        + 1e-3 * Math.abs(x + w / 2 - cx) + 1e-4 * Math.max(0, y - by1);
+      if (score < bestScore) {{ best = [x, y]; bestScore = score; }}
+    }}
+    const [x, y] = best;
+    const card = {{key: item.key, x, y, width: w, height: h, to: item.anchor,
+      from: [Math.min(x + w, Math.max(x, item.anchor[0])),
+        Math.min(y + h, Math.max(y, item.anchor[1]))]}};
+    placed.push(card);
+    laid.set(i, card);
   }}
-  return items.map((_, i) => placed.get(i));
+  const cards = items.map((_, i) => laid.get(i));
+  cardLayouts.set(memo, cards);
+  while (cardLayouts.size > 64) cardLayouts.delete(cardLayouts.keys().next().value);
+  return cards;
 }}
 function cardAt(cards, x, y) {{
   const card = (cards || []).find((c) => x >= c.x && x <= c.x + c.width

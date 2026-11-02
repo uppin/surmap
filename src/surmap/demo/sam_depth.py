@@ -1,27 +1,29 @@
-"""The SAM pane's dense points: each mask's own depth, drawn over it.
+"""The SAM pane's dense points and object cards, in the shared selection.
 
 A `region` event names, per SAM mask, the object's own dense points (the
 surface layer's depth band) as `[u, v, range_m]` on the SAM image
 (`pixels`, `surmap.demo.events.RegionPlacer`). The SAM pane keeps the
 last frames' regions and draws them over the masks of the frame it
 shows: each point coloured near → far over that object's own range
-(`depthColour` in `view_math.py`).
+(`depthColour` in `view_math.py`). A region that arrives after its
+frame's image was drawn redraws the pane. A scrubbed moment carries no
+region pixels, so it shows masks only.
 
 Each object's id sits on a card (`samCardsFor`, laid out by `layoutCards`):
-`label #surface` once its object is a surface (else `label · SAM track`),
-and its depth range. Cards never overlap and stay on the image; a leader
-with a filled circle at each end joins a card to its object. The selected
-object's card is yellow, and hovering a card selects its object, like
-hovering its mask. A region that arrives after its frame's image was drawn redraws
-the pane. A scrubbed moment carries no region pixels, so it shows masks
-only.
+`label #surface` in cyan once the object is a surface (it is in 3D), else
+`label #track` (SAM's track id) in grey: too few depth points to be in 3D
+yet; and its depth range when it has any. A card
+sits as close to its own object as it fits (just above it when free, else
+the nearest free spot beside it); cards never overlap and stay on the
+image, and a leader with a filled circle at each end joins a card to its
+object.
 
-The SAM view also shares the 3D pane's selection (`cloudSelected`,
+The SAM view shares the 3D pane's selection (`cloudSelected`,
 `cloud_pick.py`). `surface` events say which surface each SAM track became
-on each frame (`noteSurfaces`). Hovering a mask (`maskAt`) selects that
-surface, which lights up its points in 3D, and a click opens its feed
-card. A surface selected anywhere (3D hover, a feed card) is outlined in
-yellow on the masks of the shown frame that became it.
+on each frame (`noteSurfaces`). Hovering a mask (`maskAt`) or its card
+(`cardAt`) selects that surface, which lights up its points in 3D, and a
+click opens its feed card. A surface selected anywhere (3D hover, a feed
+card) is drawn in yellow: its masks' outline and its card.
 
 Spliced into the page before the server formats it, so its braces stay
 doubled for str.format.
@@ -35,6 +37,9 @@ const samSurfaces = new Map();  // frame id -> (SAM track id -> surface id)
 const SAM_REGION_FRAMES = 32;
 let samLast = null;
 let samCardRects = [];  // the cards last drawn, for hovering
+// Card colours: a surface (in 3D), pending (too few depth points yet), selected.
+const SAM_LINKED_COLOUR = '#22d3ee', SAM_PENDING_COLOUR = '#8a939c';
+const SAM_SELECTED_COLOUR = '#ffd23c';
 function remember(frames, frameId, value) {{
   frames.set(frameId, value);
   while (frames.size > SAM_REGION_FRAMES) frames.delete(frames.keys().next().value);
@@ -69,8 +74,8 @@ function samCardsFor(data, measure) {{
   const items = [], details = new Map();
   for (const object of data.objects || []) {{
     const surface = (tracks && tracks.get(object.track_id)) || 0;
-    const lines = [surface ? `${{object.label}} #${{surface}}`
-      : `${{object.label}} · SAM ${{object.track_id}}`];
+    // Without a surface (not in 3D yet) the card names SAM's track; its colour says so.
+    const lines = [`${{object.label}} #${{surface || object.track_id}}`];
     const pixels = (regions.get(object.track_id) || {{}}).pixels || [];
     if (pixels.length) {{
       const ranges = pixels.map(([, , range]) => range);
@@ -82,9 +87,13 @@ function samCardsFor(data, measure) {{
       ? [polygon.reduce((s, p) => s + p[0], 0) / polygon.length,
         polygon.reduce((s, p) => s + p[1], 0) / polygon.length]
       : [(x1 + x2) / 2, (y1 + y2) / 2];
-    items.push({{key: object.track_id, anchor,
+    const box = polygon.length >= 3
+      ? [Math.min(...polygon.map((p) => p[0])), Math.min(...polygon.map((p) => p[1])),
+        Math.max(...polygon.map((p) => p[0])), Math.max(...polygon.map((p) => p[1]))]
+      : [x1, y1, x2, y2];
+    items.push({{key: object.track_id, anchor, box,
       width: Math.ceil(Math.max(...lines.map(measure))) + 12, height: 6 + 13 * lines.length}});
-    details.set(object.track_id, {{lines, surface}});
+    details.set(object.track_id, {{lines, surface, pending: !surface}});
   }}
   const width = samCanvas ? samCanvas.width : 620, height = samCanvas ? samCanvas.height : 188;
   return layoutCards(items, width, height).map((card) => ({{...card, ...details.get(card.key)}}));
@@ -92,24 +101,26 @@ function samCardsFor(data, measure) {{
 function drawSamCards(ctx, data) {{
   ctx.font = '11px system-ui';
   samCardRects = samCardsFor(data, (text) => ctx.measureText(text).width);
+  // Cyan: a surface (in 3D); grey: pending, too few depth points yet; yellow: selected.
+  const colour = (card) => (card.surface && card.surface === cloudSelected) ? SAM_SELECTED_COLOUR
+    : card.pending ? SAM_PENDING_COLOUR : SAM_LINKED_COLOUR;
   // Leaders under the cards, a filled circle at each end.
   ctx.lineWidth = 1.5;
   for (const card of samCardRects) {{
-    const selected = card.surface && card.surface === cloudSelected;
-    ctx.strokeStyle = ctx.fillStyle = selected ? '#ffd23c' : '#22d3ee';
+    ctx.strokeStyle = ctx.fillStyle = colour(card);
     ctx.beginPath(); ctx.moveTo(...card.from); ctx.lineTo(...card.to); ctx.stroke();
     for (const [x, y] of [card.from, card.to]) {{
       ctx.beginPath(); ctx.arc(x, y, 3, 0, 2 * Math.PI); ctx.fill();
     }}
   }}
   for (const card of samCardRects) {{
-    const selected = card.surface && card.surface === cloudSelected;
+    const selected = colour(card) === SAM_SELECTED_COLOUR;
     ctx.fillStyle = 'rgba(12, 14, 17, 0.9)';
     ctx.fillRect(card.x, card.y, card.width, card.height);
-    ctx.strokeStyle = selected ? '#ffd23c' : '#22d3ee'; ctx.lineWidth = selected ? 2 : 1;
+    ctx.strokeStyle = colour(card); ctx.lineWidth = selected ? 2 : 1;
     ctx.strokeRect(card.x + 0.5, card.y + 0.5, card.width - 1, card.height - 1);
     card.lines.forEach((line, i) => {{
-      ctx.fillStyle = i ? '#9fdcea' : '#e8f8ff';
+      ctx.fillStyle = card.pending ? '#b8c0c8' : i ? '#9fdcea' : '#e8f8ff';
       ctx.fillText(line, card.x + 6, card.y + 14 + 13 * i);
     }});
   }}

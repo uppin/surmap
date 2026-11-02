@@ -186,11 +186,14 @@ def test_a_linked_objects_card_names_its_surface_and_depth_range() -> None:
         + "\nnoteRegions({frame_id: 13,"
         + " regions: [{track_id: 8, pixels: [[5, 5, 6.1], [6, 6, 7.3]]}]});"
     )
-    cards = run_js(prelude, f"{CARDS}.map((card) => [card.key, card.lines, card.surface])")
-    # Then track 8's card names car #27 and its range; track 5's names its SAM track
+    cards = run_js(
+        prelude, f"{CARDS}.map((card) => [card.key, card.lines, card.surface, card.pending])"
+    )
+    # Then track 8's card names car #27 and its range; track 5, with no points yet, is
+    # named by its track and marked pending (drawn in the pending colour, no "SAM" tag)
     assert cards == [
-        [8, ["car #27", "6.1–7.3 m"], 27],
-        [5, ["car · SAM 5"], 0],
+        [8, ["car #27", "6.1–7.3 m"], 27, False],
+        [5, ["car #5"], 0, True],
     ]
 
 
@@ -211,3 +214,13 @@ def test_the_sam_view_draws_cards_not_loose_labels(tmp_path: Path) -> None:
     redraw = script.split("function redrawSam()", 1)[1].split("\n}", 1)[0]
     assert "fillText" not in objects
     assert "drawSamCards(" in redraw
+
+
+def test_cards_of_objects_without_points_are_colour_coded_and_explained(tmp_path: Path) -> None:
+    with a_console_page(tmp_path) as page:
+        script = page.split("<script>", 1)[1]
+    cards = script.split("function drawSamCards(", 1)[1].split("\n}", 1)[0]
+    # A pending card has its own colour, and the SAM view's legend says what each means
+    assert "card.pending" in cards and "SAM_PENDING_COLOUR" in cards
+    assert "SAM " not in cards
+    assert 'id="sam-card-legend"' in page

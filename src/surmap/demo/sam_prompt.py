@@ -30,6 +30,16 @@ class SamPromptPolicy:
         return asked or self.override or scene_default
 
 
+# What the SAM view's object cards' colours mean (sam_depth.py).
+SAM_CARD_LEGEND = (
+    '<p class="legend" id="sam-card-legend">Cards: <span style="color:#22d3ee">cyan</span>'
+    " = an object in 3D (its surface id) · "
+    '<span style="color:#8a939c">grey</span> = not in 3D yet, too few depth points'
+    " (SAM's track id) · "
+    '<span style="color:#ffd23c">yellow</span> = selected.</p>'
+)
+
+
 def sam_pane(
     dataset_id: str,
     prompt: str | None,
@@ -49,7 +59,8 @@ def sam_pane(
         return (
             '<div class="sam-pane" id="sam-pane" hidden><h2>SAM — recorded masks</h2>'
             f'<canvas id="sam-view" width="{width}" height="{height}"></canvas>'
-            '<p class="legend" id="sam-status">SAM masks recorded with the run.</p></div>'
+            '<p class="legend" id="sam-status">SAM masks recorded with the run.</p>'
+            f"{SAM_CARD_LEGEND}</div>"
         )
     status = (
         f"SAM ({execution}): waiting for the first result…"
@@ -71,5 +82,6 @@ def sam_pane(
         f'<input id="sam-prompt" name="prompt" maxlength="{MAX_SAM_PROMPT_CHARS}" '
         f'value="{html.escape(prompt)}" {editable}</form>'
         f'<canvas id="sam-view" width="{width}" height="{height}"></canvas>'
-        f'<p class="legend" id="sam-status">{html.escape(status)}</p></div>'
+        f'<p class="legend" id="sam-status">{html.escape(status)}</p>'
+        f"{SAM_CARD_LEGEND}</div>"
     )
