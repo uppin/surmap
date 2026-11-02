@@ -102,18 +102,3 @@ SURMAP_LIVE_META=1 MODEL_API_KEY='paste-key-here' uv run python scripts/check_me
 
 `--image` and `--prompt` override the defaults. The script does not
 call Meta unless both `SURMAP_LIVE_META=1` and `MODEL_API_KEY` are set.
-
-## SAM cell for HACKATHON.md
-
-`HACKATHON.md` is not on `main`. When that table exists, the SAM
-row should say:
-
-- Credits status: hosted SAM is `surmap.survey.meta_sam`, model id
-  `sam-3.1` (configurable), `POST /v1/responses`. Live tests only
-  with `SURMAP_LIVE_META=1`.
-- Third-party use: `MetaSamDetector` posts frames to the Model API.
-  `surmap.survey.sam3` remains the ONNX path. No checkpoint is
-  downloaded.
-- What this repo adds: the `SamDetector` mapping to `SamDetection`,
-  the shared `mask_outline` polygon, `on_usage`, `before_call`, and
-  `max_calls_per_session` (default 5000, or `SURMAP_META_SAM_MAX_CALLS`).

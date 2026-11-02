@@ -4,11 +4,10 @@ Offline scores for the three SAM routes on a recorded disaster-block
 flight. The bench does not fly the aircraft and does not call a model
 unless `run` or `label` is started with the matching `SURMAP_LIVE_*`
 flag. Design of the survey is [architecture.md](architecture.md). The
-SLAM ↔ segmentation field names. PR #48
-(`docs/segmentation-protocol-guidelines.md` on
-`feat/segmentation-protocol-guidelines`) is the handoff note. This
-bench follows it where the code already agrees. Disagreements are
-listed at the end.
+SLAM ↔ segmentation field names are in
+[segmentation-protocol-guidelines.md](segmentation-protocol-guidelines.md).
+This bench follows them where the code already agrees. Disagreements
+are listed at the end.
 
 ## Scoring frame and clock
 
@@ -307,9 +306,9 @@ uv run python scripts/seg_bench.py label \
   --out "$HOME/sitl-runs/labelled.json"
 ```
 
-`--provider modal` uses `SURMAP_LIVE_MODAL` instead. Meta's client in
-this tree writes a scene note, not a per-landmark label, so
-`--provider meta` refuses.
+`--provider modal` uses `SURMAP_LIVE_MODAL` instead. The bench does not
+wire `--provider meta`; the live mission labels with Meta through
+`MetaMuseLabelClient`.
 
 The mission command can keep SAM on Modal while Meta labels and writes
 the scene note. The default SAM route stays Meta (hosted `sam-3.1`)
@@ -333,9 +332,9 @@ uv run python scripts/mission_demo.py --live \
   --no-viewer
 ```
 
-## Where this disagrees with PR #48
+## Where this disagrees with the protocol guidelines
 
-PR #48 is guidance. It does not pick a side. This bench does, for scoring only.
+The guidelines are guidance. It does not pick a side. This bench does, for scoring only.
 
 - The report's map frame is `gazebo_enu` (origin at the PX4 home). The
   protocol example uses `rtabmap_map`. `surmap.types.Pose` still has no

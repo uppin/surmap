@@ -30,6 +30,9 @@
   #impact { margin: 0; padding: 8px 16px; background: #1a1408; color: #f0d7a2;
     border-bottom: 1px solid var(--line); font-size: 13px; }
   #impact[hidden] { display: none; }
+  #provenance { margin: 0; padding: 4px 16px 8px; background: #1a1408; color: #c9b58a;
+    border-bottom: 1px solid var(--line); font-size: 12px; }
+  #provenance[hidden] { display: none; }
   main { flex: 1; min-height: 0; display: grid; gap: 10px; padding: 12px 10px 10px;
     grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
     grid-template-rows: minmax(0, 1fr) 228px; }
@@ -100,6 +103,7 @@
 </header>
 <div class="progress"><span id="progress"></span></div>
 <p id="impact" hidden></p>
+<p id="provenance" hidden></p>
 <main>
   <section class="pane camera">
     <canvas id="camera" width="640" height="360"></canvas>
@@ -274,11 +278,24 @@ fetch("/impact").then(async (response) => {
   const errorText = error == null ? "n/a" : `${Number(error).toFixed(2)} m`;
   const first = impact.time_to_first_detection_s;
   const firstText = first == null ? "n/a" : `${Number(first).toFixed(1)} s`;
-  const basis = impact.basis === "fixtures" ? "computed from fixtures" : (impact.basis || "live");
+  const basis = impact.basis === "fixtures" ? "computed from fixtures"
+    : impact.basis === "recorded-live" ? `recorded live run, ${impact.recorded_at}`
+    : (impact.basis || "live");
   node.hidden = false;
   node.textContent = `Impact (${basis}): ${impact.found} of ${impact.total} survivors, `
     + `mean position error ${errorText}, time to first detection ${firstText}. `
     + (impact.ask_answer || "");
+  const provenance = document.getElementById("provenance");
+  const calls = Array.isArray(impact.model_calls) ? impact.model_calls : [];
+  if (calls.length) {
+    provenance.hidden = false;
+    provenance.textContent = calls
+      .map((call) => `${call.role}: ${call.source}${call.output ? ` — ${call.output}` : ""}`)
+      .join(" · ");
+  } else if (impact.model_call_source === "fixture") {
+    provenance.hidden = false;
+    provenance.textContent = "Model outputs: fixtures, not live model calls.";
+  }
 }).catch(() => {});
 
 document.getElementById("ask").addEventListener("submit", async (event) => {

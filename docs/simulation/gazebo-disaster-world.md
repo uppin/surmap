@@ -133,7 +133,6 @@ Recorded in the repo:
 - `docs/simulation/px4-sitl.md` marks Gazebo Harmonic, a built `px4_sitl_default` under `~/PX4-Autopilot`, and ROS 2 Jazzy as present on a WSL host. It also says the stereo spawn line was checked against PX4 `main` and was not launched from this repo.
 - `docs/simulation/disaster-world.md` says the launch checklist was checked against PX4 `main` (`px4-rc.gzsim` starts `gz sim -g` when `HEADLESS` is unset) and was not executed on the machine that added the world, because that VM has no `gz` binary.
 - Unit tests load the ground-truth JSON, check it against the SDF poses, and export the tiny capture to EuRoC. They do not start Gazebo.
-- PR #18's test plan still leaves the operator WSL run unchecked.
 
 Not recorded in the committed notes: a screenshot of this world, a PX4
 console line "Ready for takeoff", a flown lawnmower, a ROS 2 dump of
@@ -141,8 +140,3 @@ this block, or RTAB-Map tracking those frames. The host checklist
 skill (`.agents/skills/px4-sitl-test/SKILL.md`) marks the launch,
 camera topics, and bridge as unverified until someone runs them on the
 WSL machine.
-
-Ginas's WSL, as reported for this demo and not pasted into the runbook
-above, has shown the world rendering and PX4 reaching Ready for
-takeoff. Treat that as an operator report until it is written into
-`docs/simulation/disaster-world.md` with the console text.

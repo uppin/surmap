@@ -74,7 +74,7 @@ truth is `POSE`. A SITL capture with `gps.csv` is `GPS FIX`.
 |---|---|---|
 | `euroc` (default) | `surmap.demo.datasets` cache | `mav0/state_groundtruth_estimate0/data.csv`, extracted from the cached zip when the demo extract did not keep it |
 | `preview` | bundled `surmap.semantic_map_snapshot.v1` fixture | scripted east/north/up path over that fixture |
-| `sitl` | PR #18 capture directory (`calibration.json`, `frames.jsonl`, `images/`, optional `gps.csv`) | GPS converted with the snapshot's 111320 m/degree scale |
+| `sitl` | SITL capture directory (`calibration.json`, `frames.jsonl`, `images/`, optional `gps.csv`) | GPS converted with the snapshot's 111320 m/degree scale |
 
 ```bash
 uv run python scripts/viewer.py --source preview --fps 12 --loop
@@ -86,8 +86,9 @@ uv run python scripts/viewer.py --source sitl --capture ~/sitl-runs/hover-01 \
 
 `--snapshot` is a `surmap.semantic_map_snapshot.v1` file. Preview loads
 a bundled one when the flag is omitted. EuRoC and SITL show an empty
-landmark list until a snapshot is passed. The reader does not import
-the unmerged writer (PR #35). The fixture file is
+landmark list until a snapshot is passed. The reader
+(`surmap.viewer.snapshot`) is separate from the writer
+(`surmap.map.snapshot`). The fixture file is
 `src/surmap/viewer/fixtures/semantic_map_snapshot.json`. Tests read
 that copy.
 

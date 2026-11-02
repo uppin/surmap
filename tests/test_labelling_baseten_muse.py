@@ -693,3 +693,95 @@ def test_live_baseten_labels_a_crop(monkeypatch: pytest.MonkeyPatch) -> None:
     assert labelled.label != ""
     assert labelled.raw_text != ""
     assert labelled.finish_reason == "stop"
+
+
+def a_tool_completion(arguments: str, *, content: str | None = None) -> dict[str, object]:
+    completion = a_completion(content)
+    choices = completion["choices"]
+    assert isinstance(choices, list)
+    message = choices[0]["message"]
+    message["tool_calls"] = [
+        {
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "record_label", "arguments": arguments},
+        }
+    ]
+    choices[0]["finish_reason"] = "tool_calls"
+    return completion
+
+
+def test_the_request_offers_record_label_and_sends_low_reasoning_explicitly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given no reasoning override in the environment
+    monkeypatch.delenv("SURMAP_BASETEN_REASONING_EFFORT", raising=False)
+    monkeypatch.delenv("SURMAP_BASETEN_TOOL_LABELS", raising=False)
+    transport = RecordingTransport(
+        a_tool_completion(
+            '{"label": "rubble", "description": "Broken concrete.", "confidence": 0.8}'
+        )
+    )
+    client = BasetenMuseLabelClient(api_key="test-key", transport=transport)
+
+    # When one crop is labelled
+    labelled = client.label(b"\xff\xd8jpeg", "debris", Vec3(1.0, 2.0, 3.0))
+
+    # Then the body asks for low effort, offers the tool, and never JSON mode
+    body = json.loads(transport.posts[0].body)
+    assert body["model"] == "meta-models/muse-spark-open-1026"
+    assert body["reasoning_effort"] == "low"
+    assert "response_format" not in body
+    assert body["tool_choice"] == "auto"
+    tool = body["tools"][0]
+    assert tool["function"]["name"] == "record_label"
+    assert tool["function"]["parameters"]["required"] == ["label", "description", "confidence"]
+    # And the label comes from the tool arguments
+    assert labelled.label == "rubble"
+    assert labelled.description == "Broken concrete."
+    assert labelled.confidence == pytest.approx(0.8)
+    assert labelled.map_point == Vec3(1.0, 2.0, 3.0)
+    assert labelled.finish_reason == "tool_calls"
+
+
+def test_a_reply_without_a_tool_call_falls_back_to_the_text_lines() -> None:
+    transport = RecordingTransport(
+        a_completion("label: car\ndescription: A parked car.\nconfidence: 0.6")
+    )
+    labelled = BasetenMuseLabelClient(api_key="test-key", transport=transport).label(
+        b"\xff\xd8jpeg", "car", Vec3(0.0, 0.0, 0.0)
+    )
+    assert labelled.label == "car"
+    assert labelled.confidence == pytest.approx(0.6)
+
+
+def test_bad_tool_arguments_fall_back_to_the_text_lines() -> None:
+    transport = RecordingTransport(
+        a_tool_completion('{"label": "", "confidence": 3}', content="label: roof\n")
+    )
+    labelled = BasetenMuseLabelClient(api_key="test-key", transport=transport).label(
+        b"\xff\xd8jpeg", "roof", Vec3(0.0, 0.0, 0.0)
+    )
+    assert labelled.label == "roof"
+
+
+def test_an_out_of_range_confidence_is_dropped() -> None:
+    transport = RecordingTransport(
+        a_tool_completion('{"label": "tree", "description": "", "confidence": 7}')
+    )
+    labelled = BasetenMuseLabelClient(api_key="test-key", transport=transport).label(
+        b"\xff\xd8jpeg", "tree", Vec3(0.0, 0.0, 0.0)
+    )
+    assert labelled.label == "tree"
+    assert labelled.confidence is None
+
+
+def test_tool_labels_can_be_turned_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SURMAP_BASETEN_TOOL_LABELS", "0")
+    transport = RecordingTransport(a_completion("label: car"))
+    BasetenMuseLabelClient(api_key="test-key", transport=transport).label(
+        b"\xff\xd8jpeg", "car", Vec3(0.0, 0.0, 0.0)
+    )
+    body = json.loads(transport.posts[0].body)
+    assert "tools" not in body
+    assert "tool_choice" not in body

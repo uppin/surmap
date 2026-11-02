@@ -47,6 +47,8 @@ _REASONING_EFFORTS = frozenset({"low", "medium", "high"})
 _REASONING_ENV = "SURMAP_META_REASONING_EFFORT"
 _MAX_OUTPUT_ENV = "SURMAP_META_MAX_OUTPUT_TOKENS"
 _MODEL_ENV = "SURMAP_META_MODEL"
+LABEL_REASONING_EFFORT = "low"
+_LABEL_REASONING_ENV = "SURMAP_META_LABEL_REASONING_EFFORT"
 
 BeforeCall = Callable[[str], None]
 OnUsage = Callable[[str, str, int, int, int | None], None]
@@ -151,9 +153,21 @@ class MetaMuseSceneClient:
     def model(self) -> str:
         return self._model
 
-    def note(self, labels: Sequence[str], frame_jpeg: bytes) -> str:
-        """Describe the mapped area. ``labels`` are on-board detector names."""
-        prompt = _prompt(labels)
+    def note(
+        self,
+        labels: Sequence[str],
+        frame_jpeg: bytes,
+        *,
+        object_summary: Sequence[str] = (),
+    ) -> str:
+        """Describe the mapped area. ``labels`` are on-board detector names.
+
+        ``object_summary`` is one line per mapped object after 3D
+        deduplication (for example ``"person, static, 2 frames"``). The
+        reply is plain text with three headed sections; see
+        ``SCENE_NOTE_SECTIONS``.
+        """
+        prompt = _prompt(labels, object_summary)
         if not frame_jpeg.startswith(b"\xff\xd8"):
             raise MetaMuseSceneError("scene note frame must be a JPEG")
         encoded = base64.b64encode(frame_jpeg).decode("ascii")
@@ -195,6 +209,10 @@ class MetaMuseLabelClient:
 
     Same Responses endpoint and bearer key as ``MetaMuseSceneClient``.
     The map point is not sent. Tests pass a transport and do not open a socket.
+
+    A crop label is a direct-answer task, so ``reasoning.effort`` defaults
+    to ``low`` (``SURMAP_META_LABEL_REASONING_EFFORT`` or the constructor
+    overrides it). The scene note and Ask the map keep ``high``.
     """
 
     def __init__(
@@ -207,8 +225,14 @@ class MetaMuseLabelClient:
         timeout_s: float = 60.0,
         before_call: BeforeCall | None = None,
         on_usage: OnUsage | None = None,
+        reasoning_effort: str | None = None,
     ) -> None:
         self._model = _resolve_model(model)
+        self._reasoning_effort = _check_effort(
+            reasoning_effort
+            if reasoning_effort is not None
+            else os.environ.get(_LABEL_REASONING_ENV, LABEL_REASONING_EFFORT)
+        )
         self._url = _responses_url(base_url)
         self._api_key = api_key
         self._before_call = before_call
@@ -221,6 +245,10 @@ class MetaMuseLabelClient:
     def model(self) -> str:
         return self._model
 
+    @property
+    def reasoning_effort(self) -> str:
+        return self._reasoning_effort
+
     def label(self, jpeg: bytes, coarse_label: str, xyz: Vec3) -> ObjectLabel:
         """Label one JPEG crop. ``xyz`` is attached after the reply."""
         if not jpeg.startswith(b"\xff\xd8"):
@@ -230,7 +258,7 @@ class MetaMuseLabelClient:
             model=self._model,
             prompt=_label_prompt(coarse_label),
             image_url=f"data:image/jpeg;base64,{encoded}",
-            reasoning_effort=DEFAULT_REASONING_EFFORT,
+            reasoning_effort=self._reasoning_effort,
             max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
         )
         headers = {
@@ -259,6 +287,163 @@ class MetaMuseLabelClient:
         if not stripped:
             raise MetaMuseSceneError("MODEL_API_KEY is not set")
         return stripped
+
+
+CONCEPT_SCHEMA_NAME = "sam_concepts"
+DEFAULT_MAX_CONCEPTS = 4
+CONCEPT_REASONING_EFFORT = "low"
+CONCEPT_MAX_OUTPUT_TOKENS = 2048
+ALWAYS_SEGMENTED = "person"
+_CONCEPT_MAX_WORDS = 4
+_CONCEPT_MAX_CHARS = 40
+_CONCEPT_BLOCKED_WORDS = frozenset(
+    {"no", "not", "without", "left", "right", "above", "below", "near", "behind", "and", "or"}
+)
+
+
+def concept_text_format(max_concepts: int) -> dict[str, object]:
+    """Responses API ``text.format``: a JSON object holding a list of noun phrases."""
+    return {
+        "type": "json_schema",
+        "name": CONCEPT_SCHEMA_NAME,
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "concepts": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        f"At most {max_concepts} short noun phrases SAM 3.1 should segment."
+                    ),
+                }
+            },
+            "required": ["concepts"],
+            "additionalProperties": False,
+        },
+    }
+
+
+class MetaMuseConceptClient:
+    """Muse Spark picks the concepts SAM 3.1 segments in one keyframe.
+
+    Uses structured output on the Responses API (``text.format`` with a
+    JSON schema; ``response_format`` is the Chat Completions field and
+    is not sent here). Every returned phrase is checked again locally:
+    SAM takes one short noun phrase per request, so lists, negation,
+    and spatial words are dropped. ``person`` is always first, because
+    finding people is the point of the survey.
+    """
+
+    def __init__(
+        self,
+        *,
+        transport: MetaMuseTransport | None = None,
+        api_key: str | None = None,
+        model: str | None = None,
+        max_concepts: int = DEFAULT_MAX_CONCEPTS,
+        base_url: str = META_MODEL_API_BASE_URL,
+        timeout_s: float = 60.0,
+        before_call: BeforeCall | None = None,
+        on_usage: OnUsage | None = None,
+    ) -> None:
+        if max_concepts < 1:
+            raise MetaMuseSceneError("max_concepts must be at least 1")
+        self._model = _resolve_model(model)
+        self._max_concepts = max_concepts
+        self._url = _responses_url(base_url)
+        self._api_key = api_key
+        self._before_call = before_call
+        self._on_usage = on_usage
+        self._transport = (
+            transport if transport is not None else UrllibMetaMuseTransport(timeout_s=timeout_s)
+        )
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    @property
+    def max_concepts(self) -> int:
+        return self._max_concepts
+
+    def propose(self, frame_jpeg: bytes) -> tuple[str, ...]:
+        """Concepts to segment, ``person`` first, at most ``max_concepts``."""
+        if not frame_jpeg.startswith(b"\xff\xd8"):
+            raise MetaMuseSceneError("concept frame must be a JPEG")
+        encoded = base64.b64encode(frame_jpeg).decode("ascii")
+        body = _request_body(
+            model=self._model,
+            prompt=_concept_prompt(self._max_concepts),
+            image_url=f"data:image/jpeg;base64,{encoded}",
+            reasoning_effort=CONCEPT_REASONING_EFFORT,
+            max_output_tokens=CONCEPT_MAX_OUTPUT_TOKENS,
+        )
+        body["text"] = {"format": concept_text_format(self._max_concepts)}
+        headers = {
+            "Authorization": f"Bearer {_bearer(self._api_key)}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        if self._before_call is not None:
+            self._before_call("meta")
+        payload = self._transport.post_json(self._url, headers, body)
+        _notify_usage(payload, self._model, self._on_usage)
+        return parse_concepts(_scene_note_text(payload), self._max_concepts)
+
+
+def parse_concepts(text: str, max_concepts: int) -> tuple[str, ...]:
+    """Validated concepts from the structured reply. ``person`` is always first."""
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise MetaMuseSceneError("concept reply was not JSON") from exc
+    raw = parsed.get("concepts") if isinstance(parsed, dict) else None
+    if not isinstance(raw, list):
+        raise MetaMuseSceneError("concept reply had no concepts list")
+    chosen: list[str] = [ALWAYS_SEGMENTED]
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        concept = clean_concept(item)
+        if concept and concept not in chosen:
+            chosen.append(concept)
+    return tuple(chosen[:max_concepts])
+
+
+def clean_concept(text: str) -> str:
+    """One short noun phrase SAM accepts, or an empty string."""
+    words = text.strip().strip(".").lower().split()
+    if not words or len(words) > _CONCEPT_MAX_WORDS:
+        return ""
+    phrase = " ".join(words)
+    if len(phrase) > _CONCEPT_MAX_CHARS:
+        return ""
+    if any(word in _CONCEPT_BLOCKED_WORDS for word in words):
+        return ""
+    if not all(char.isalpha() or char in " -" for char in phrase):
+        return ""
+    return phrase
+
+
+def _concept_prompt(max_concepts: int) -> str:
+    return (
+        "You help a civilian search-and-rescue team map a disaster area from a "
+        "survey drone's camera. Look at this frame and list up to "
+        f"{max_concepts} things a segmentation model should outline so responders "
+        "can find people who need help, damage, and blocked access: for example "
+        "person, collapsed building, debris pile, flooded road, vehicle. Each item "
+        "must be one short noun phrase of at most four words, with no lists, no "
+        "negation, and no positions. Return JSON only. Do not give flight advice."
+    )
+
+
+def _bearer(explicit: str | None) -> str:
+    key = explicit if explicit is not None else os.environ.get("MODEL_API_KEY", "")
+    stripped = key.strip()
+    if not stripped:
+        raise MetaMuseSceneError("MODEL_API_KEY is not set")
+    return stripped
 
 
 def _label_prompt(coarse_label: str) -> str:
@@ -336,19 +521,33 @@ def _responses_url(base_url: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, f"{path}/responses", "", ""))
 
 
-def _prompt(labels: Sequence[str]) -> str:
+SCENE_NOTE_SECTIONS = ("Immediate hazards", "Survivor locations", "Access and debris blockages")
+
+
+def _prompt(labels: Sequence[str], object_summary: Sequence[str] = ()) -> str:
     if isinstance(labels, str):
         raise MetaMuseSceneError("scene-note labels must be a sequence of labels, not one string")
+    if isinstance(object_summary, str):
+        raise MetaMuseSceneError("object summary must be a sequence of lines, not one string")
     cleaned = [_one_label(label) for label in labels]
     if cleaned:
         context = "On-board labels: " + ", ".join(cleaned) + "."
     else:
         context = "No on-board labels were recorded."
+    summary = [" ".join(line.split()) for line in object_summary if line.strip()]
+    if summary:
+        context += " Mapped objects, one line each after 3D deduplication:\n" + "\n".join(
+            f"- {line}" for line in summary
+        )
+    sections = ", ".join(f'"{name}"' for name in SCENE_NOTE_SECTIONS)
     return (
         "Write one civilian search-and-rescue scene note for a disaster-response "
         "team looking at a mapped area. Describe landmarks, debris, and vehicles "
-        f"visible in the image. {context} Do not give flight advice, navigation, "
-        "or any instruction to an aircraft."
+        f"visible in the image. {context}\n"
+        f"Use three short sections with these headings, in order: {sections}. "
+        'Write "None seen" under a heading with nothing to report. Only report '
+        "what the image or the mapped objects support. Do not give flight advice, "
+        "navigation, or any instruction to an aircraft."
     )
 
 

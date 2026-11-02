@@ -1,10 +1,16 @@
 """Per-object labels from Baseten Muse Spark Open.
 
 The live call is opt-in. Tests pass a transport and never open a socket.
-Reasoning stays on (``reasoning_effort`` defaults to ``low``, or
-``SURMAP_BASETEN_REASONING_EFFORT`` when set to low, medium, or high).
-The client does not send a flag that claims reasoning is off, and it
-does not ask for JSON mode. ``max_tokens`` caps the completion,
+Reasoning stays on: the request always sends ``reasoning_effort``,
+``low`` by default (Baseten's own default for Muse Spark Open is
+``xhigh``), or ``SURMAP_BASETEN_REASONING_EFFORT`` when set to low,
+medium, or high. The client does not send a flag that claims reasoning
+is off, and it does not ask for JSON mode, which Muse Spark Open does
+not support on Baseten. Structured fields come from a ``record_label``
+function tool instead (tool calling is supported); a reply without a
+tool call falls back to the ``label:`` / ``description:`` /
+``confidence:`` text lines. ``SURMAP_BASETEN_TOOL_LABELS=0`` turns the
+tool off. ``max_tokens`` caps the completion,
 including reasoning tokens (default 4096, floor 2048, or
 ``SURMAP_BASETEN_MAX_TOKENS``). The map point is not sent to the model.
 """
@@ -33,12 +39,41 @@ _COMPLETIONS_URL = "https://inference.baseten.co/v1/chat/completions"
 _ALLOWED_EFFORT = frozenset({"low", "medium", "high"})
 _EFFORT_ENV = "SURMAP_BASETEN_REASONING_EFFORT"
 _MAX_TOKENS_ENV = "SURMAP_BASETEN_MAX_TOKENS"
+_TOOL_ENV = "SURMAP_BASETEN_TOOL_LABELS"
 _SYSTEM_PROMPT = (
     "You are a humanitarian search-and-rescue mapping assistant. "
     "After a natural disaster, you help emergency responders inventory "
     "what is visible in one photo crop for a civilian map. "
     "Reply in plain text, not JSON."
 )
+_TOOL_SYSTEM_PROMPT = (
+    "You are a humanitarian search-and-rescue mapping assistant. "
+    "After a natural disaster, you help emergency responders inventory "
+    "what is visible in one photo crop for a civilian map. "
+    "Call the record_label tool once with your answer."
+)
+RECORD_LABEL_TOOL: dict[str, object] = {
+    "type": "function",
+    "function": {
+        "name": "record_label",
+        "description": "Record the inventory entry for the object in the photo crop.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "description": "Short object name, e.g. debris, vehicle, roof, person.",
+                },
+                "description": {"type": "string", "description": "One sentence."},
+                "confidence": {"type": "number", "description": "From 0 to 1."},
+            },
+            "required": ["label", "description", "confidence"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+}
+_MAX_LABEL_CHARS = 80
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 
 
@@ -117,8 +152,12 @@ class BasetenMuseLabelClient:
         max_tokens: int | None = None,
         clock: Callable[[], float] | None = None,
         timeout_s: float = 120.0,
+        tool_labels: bool | None = None,
     ) -> None:
         self._api_key = api_key
+        self._tool_labels = (
+            tool_labels if tool_labels is not None else os.environ.get(_TOOL_ENV, "").strip() != "0"
+        )
         self._model_id = model_id
         self._transport = transport
         self._ledger = ledger if ledger is not None else UsageLedger()
@@ -160,8 +199,18 @@ class BasetenMuseLabelClient:
                 self._clock(),
             )
         )
-        raw_text = _content_text(_message(response))
         finish_reason = _finish_reason(response)
+        tooled = _tool_label(response, requested_model=self._model_id)
+        if tooled is not None:
+            return replace(
+                tooled,
+                map_point=xyz,
+                finish_reason=finish_reason,
+                input_tokens=prompt_tokens,
+                output_tokens=completion_tokens,
+                reasoning_tokens=reasoning_tokens,
+            )
+        raw_text = _content_text(_message(response))
         if raw_text.strip():
             labelled = _object_label(response, requested_model=self._model_id)
             if labelled.label.strip():
@@ -222,13 +271,18 @@ class BasetenMuseLabelClient:
             "role": "user",
             "content": [image_part, text_part],
         }
-        system_message: dict[str, object] = {"role": "system", "content": _SYSTEM_PROMPT}
-        return {
+        prompt = _TOOL_SYSTEM_PROMPT if self._tool_labels else _SYSTEM_PROMPT
+        system_message: dict[str, object] = {"role": "system", "content": prompt}
+        payload: dict[str, object] = {
             "model": self._model_id,
             "messages": [system_message, user_message],
             "reasoning_effort": self._reasoning_effort,
             "max_tokens": max_tokens,
         }
+        if self._tool_labels:
+            payload["tools"] = [RECORD_LABEL_TOOL]
+            payload["tool_choice"] = "auto"
+        return payload
 
 
 def _resolve_reasoning_effort(explicit: str | None) -> str:
@@ -349,6 +403,51 @@ def _object_label(response: dict[str, object], *, requested_model: str) -> Objec
         raw_text=raw_text,
         reasoning_text=reasoning_text,
     )
+
+
+def _tool_label(response: dict[str, object], *, requested_model: str) -> ObjectLabel | None:
+    """The ``record_label`` tool call, validated. ``None`` when there is no usable call."""
+    message = _message(response)
+    calls = message.get("tool_calls")
+    if not isinstance(calls, list):
+        return None
+    for call in calls:
+        if not isinstance(call, dict):
+            continue
+        function = call.get("function")
+        if not isinstance(function, dict) or function.get("name") != "record_label":
+            continue
+        arguments = function.get("arguments")
+        if not isinstance(arguments, str):
+            continue
+        try:
+            parsed = json.loads(arguments)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        label = parsed.get("label")
+        if not isinstance(label, str) or not label.strip():
+            continue
+        description = parsed.get("description")
+        confidence = parsed.get("confidence")
+        reasoning = message.get("reasoning_content")
+        return ObjectLabel(
+            label=" ".join(label.split())[:_MAX_LABEL_CHARS],
+            description=description.strip() if isinstance(description, str) else "",
+            confidence=_unit_interval(confidence),
+            model_id=_served_model(response, requested_model),
+            raw_text=arguments,
+            reasoning_text=reasoning if isinstance(reasoning, str) else None,
+        )
+    return None
+
+
+def _unit_interval(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    number = float(value)
+    return number if 0.0 <= number <= 1.0 else None
 
 
 def _served_model(response: dict[str, object], requested_model: str) -> str:
