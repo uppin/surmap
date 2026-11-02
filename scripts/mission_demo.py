@@ -11,8 +11,9 @@ Live with ``SURMAP_LIVE_META=1`` and ``MODEL_API_KEY`` calls Meta SAM
 3.1, Muse Spark labels, and the Muse Spark scene note. Baseten and
 Modal are optional fallbacks when that Meta flag is unset
 (``SURMAP_LIVE_BASETEN``, ``SURMAP_LIVE_MODAL``). Keys are read only
-inside those clients. Pass a capture directory. This process does not
-enable PX4 motors.
+inside those clients. ``--sam-route modal`` (with ``SURMAP_LIVE_MODAL=1``)
+moves only SAM to Modal; Meta SAM stays the default. Pass a capture
+directory. This process does not enable PX4 motors.
 
     export SURMAP_LIVE_META=1
     export MODEL_API_KEY='your-key'
@@ -44,6 +45,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--live", action="store_true", help="use flagged live services")
     parser.add_argument("--offline", action="store_true", help="recorded fixtures (the default)")
     parser.add_argument("--capture", type=Path, default=None, help="SITL capture directory")
+    parser.add_argument(
+        "--sam-route",
+        choices=("meta", "modal"),
+        default=None,
+        help="pin the SAM adapter. Default: Meta when SURMAP_LIVE_META=1, "
+        "otherwise Modal. Labels and the scene note do not follow it.",
+    )
     parser.add_argument("--output", type=Path, default=Path("mission-demo-out"))
     parser.add_argument("--report", type=Path, default=None, help="copy of the impact JSON")
     parser.add_argument("--no-viewer", action="store_true")
@@ -78,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
                 capture,
                 max_depth_m=args.max_depth_m,
                 min_disparity_px=args.min_disparity_px,
+                sam_route=args.sam_route,
             )
         else:
             result = run_offline_mission(args.output)

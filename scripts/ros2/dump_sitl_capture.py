@@ -39,6 +39,21 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--baseline-m", type=float, default=0.07)
     parser.add_argument("--calibration-id", default="gazebo-surmap-stereo-v1")
     parser.add_argument("--pair-slop-ns", type=int, default=20_000_000)
+    parser.add_argument(
+        "--seg",
+        default="",
+        help="Ground-truth instance segmentation Image topic (optional)",
+    )
+    parser.add_argument(
+        "--seg-class",
+        default="",
+        help="Ground-truth semantic segmentation Image topic (optional)",
+    )
+    parser.add_argument(
+        "--pose",
+        default="",
+        help="Ground-truth camera PoseStamped topic (translation + quaternion)",
+    )
     return parser
 
 
@@ -81,6 +96,9 @@ def main(argv: list[str] | None = None) -> int:
 
     left_buf: dict[int, object] = {}
     right_buf: dict[int, object] = {}
+    seg_buf: dict[int, object] = {}
+    class_buf: dict[int, object] = {}
+    pose_buf: list[object] = []
     pairs: list[tuple[int, object, object]] = []
     gps_rows: list[list[float | int]] = []
     cam_info: dict[str, float | int] = {
@@ -108,6 +126,20 @@ def main(argv: list[str] | None = None) -> int:
             if args.gps:
                 self.create_subscription(
                     NavSatFix, args.gps, self._on_gps, qos_profile_sensor_data
+                )
+            if args.seg:
+                self.create_subscription(
+                    Image, args.seg, self._on_seg, qos_profile_sensor_data
+                )
+            if args.seg_class:
+                self.create_subscription(
+                    Image, args.seg_class, self._on_class, qos_profile_sensor_data
+                )
+            if args.pose:
+                from geometry_msgs.msg import PoseStamped
+
+                self.create_subscription(
+                    PoseStamped, args.pose, self._on_pose, qos_profile_sensor_data
                 )
 
         def _stamp_ns(self, msg: Image) -> int:
@@ -139,6 +171,31 @@ def main(argv: list[str] | None = None) -> int:
             right_buf[self._stamp_ns(msg)] = msg
             self._try_pair()
 
+        def _on_seg(self, msg: Image) -> None:
+            seg_buf[self._stamp_ns(msg)] = msg
+
+        def _on_class(self, msg: Image) -> None:
+            class_buf[self._stamp_ns(msg)] = msg
+
+        def _on_pose(self, msg: object) -> None:
+            header = getattr(msg, "header")
+            pose = getattr(msg, "pose")
+            stamp = header.stamp
+            t_ns = int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
+            position = pose.position
+            quat = pose.orientation
+            frame = str(header.frame_id) or "gazebo_enu"
+            pose_buf.append(
+                sitl_dump.StampedPose(
+                    t_ns,
+                    float(position.x),
+                    float(position.y),
+                    float(position.z),
+                    (float(quat.x), float(quat.y), float(quat.z), float(quat.w)),
+                    frame=frame,
+                )
+            )
+
         def _try_pair(self) -> None:
             pair = sitl_dump.take_stereo_pair(left_buf, right_buf, slop_ns=args.pair_slop_ns)
             if pair is not None:
@@ -162,23 +219,50 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     frames_path = out / "frames.jsonl"
+    seg_hits = 0
+    pose_hits = 0
+    pose_lines: list[str] = []
     with frames_path.open("w", encoding="utf-8") as frames_out:
         for frame_id, (t_ns, left_msg, right_msg) in enumerate(pairs):
             left_name = f"images/left_{frame_id:04d}.png"
             right_name = f"images/right_{frame_id:04d}.png"
             sitl_dump.image_msg_to_png(left_msg, out / left_name)
             sitl_dump.image_msg_to_png(right_msg, out / right_name)
-            frames_out.write(
-                json.dumps(
-                    {
-                        "frame_id": frame_id,
-                        "t_ns": t_ns,
-                        "left": left_name,
-                        "right": right_name,
-                    }
-                )
-                + "\n"
+            record: dict[str, object] = {
+                "frame_id": frame_id,
+                "t_ns": t_ns,
+                "clock": "sim_time",
+                "left": left_name,
+                "right": right_name,
+            }
+            seg_stamp = sitl_dump.nearest_stamp(tuple(seg_buf), t_ns, slop_ns=args.pair_slop_ns)
+            if seg_stamp is not None:
+                seg_name = f"images/seg_{frame_id:04d}.png"
+                sitl_dump.label_image_to_png(seg_buf[seg_stamp], out / seg_name)
+                record["seg"] = seg_name
+                seg_hits += 1
+            class_stamp = sitl_dump.nearest_stamp(
+                tuple(class_buf), t_ns, slop_ns=args.pair_slop_ns
             )
+            if class_stamp is not None:
+                class_name = f"images/class_{frame_id:04d}.png"
+                sitl_dump.label_image_to_png(class_buf[class_stamp], out / class_name)
+                record["seg_class"] = class_name
+            pose = sitl_dump.nearest_pose(pose_buf, t_ns, slop_ns=args.pair_slop_ns)
+            if pose is not None:
+                record["pose"] = sitl_dump.pose_record(pose)
+                pose_lines.append(json.dumps(sitl_dump.pose_record(pose)))
+                pose_hits += 1
+            frames_out.write(json.dumps(record) + "\n")
+
+    if args.seg and seg_hits == 0:
+        print("no segmentation image matched a stereo pair", file=sys.stderr)
+        return 1
+    if args.pose and pose_hits == 0:
+        print("no ground-truth pose matched a stereo pair", file=sys.stderr)
+        return 1
+    if pose_lines:
+        (out / "poses.jsonl").write_text("\n".join(pose_lines) + "\n", encoding="utf-8")
 
     calibration = {
         "calibration_id": args.calibration_id,
@@ -201,7 +285,10 @@ def main(argv: list[str] | None = None) -> int:
             writer.writerow(["t_ns", "lat", "lon", "alt", "accuracy_m"])
             writer.writerows(gps_rows)
 
-    print(f"wrote {len(pairs)} pairs (+ {len(gps_rows)} GPS) → {out}")
+    print(
+        f"wrote {len(pairs)} pairs (+ {len(gps_rows)} GPS, "
+        f"{seg_hits} seg, {pose_hits} poses) → {out}"
+    )
     return 0
 
 

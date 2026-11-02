@@ -262,13 +262,18 @@ def detection_crop_jpeg(
     return out.getvalue()
 
 
-def build_live_services() -> LiveServices:
+def build_live_services(*, sam_route: str | None = None) -> LiveServices:
     """Check the live flags and keys. Does not send a request or log a key.
 
     ``SURMAP_LIVE_META=1`` selects Meta SAM, Muse Spark labels, and the
     Muse Spark scene note. Baseten labels and Modal SAM are used only
     when that Meta flag is unset and their own flags are set. The Meta
     scene note is then ``none``.
+
+    ``sam_route`` (``meta`` or ``modal``) pins only the SAM adapter, for
+    example to benchmark Modal SAM while Meta still labels and writes
+    the scene note. ``None`` keeps the default above: Meta SAM whenever
+    ``SURMAP_LIVE_META=1``.
     """
     meta = os.environ.get("SURMAP_LIVE_META") == "1"
     baseten = os.environ.get("SURMAP_LIVE_BASETEN") == "1"
@@ -280,19 +285,38 @@ def build_live_services() -> LiveServices:
         labels = "baseten" if baseten else ""
         scene = "none"
         problems: list[str] = []
-        if not sam:
+        if not sam and sam_route is None:
             problems.append("set SURMAP_LIVE_META=1 or SURMAP_LIVE_MODAL=1 for SAM 3.1")
         if not labels:
             problems.append("set SURMAP_LIVE_META=1 or SURMAP_LIVE_BASETEN=1 for labels")
         if problems:
             raise MissionConfigError("; ".join(problems))
-    if meta and not os.environ.get("MODEL_API_KEY", "").strip():
+    sam = resolve_sam_route(sam_route, default=sam, meta=meta, modal=modal)
+    if (meta or sam == "meta") and not os.environ.get("MODEL_API_KEY", "").strip():
         raise MissionConfigError("MODEL_API_KEY is not set")
     if labels == "baseten" and not os.environ.get("BASETEN_API_KEY", "").strip():
         raise MissionConfigError("BASETEN_API_KEY is not set")
     if sam == "modal" and not os.environ.get("MODAL_SAM_URL", "").strip():
         raise MissionConfigError("MODAL_SAM_URL is not set")
     return LiveServices(sam=sam, labels=labels, scene_note=scene)
+
+
+def resolve_sam_route(explicit: str | None, *, default: str, meta: bool, modal: bool) -> str:
+    """The SAM adapter: ``default`` unless an explicit route is given.
+
+    Labels and the scene note do not follow this choice.
+    """
+    if explicit is None:
+        return default
+    if explicit == "meta":
+        if not meta:
+            raise MissionConfigError("set SURMAP_LIVE_META=1 for --sam-route meta")
+        return "meta"
+    if explicit == "modal":
+        if not modal:
+            raise MissionConfigError("set SURMAP_LIVE_MODAL=1 for --sam-route modal")
+        return "modal"
+    raise MissionConfigError("--sam-route must be meta or modal")
 
 
 def run_offline_mission(output_dir: Path) -> MissionResult:
@@ -359,6 +383,7 @@ def run_live_mission(
     *,
     max_depth_m: float | None = None,
     min_disparity_px: float | None = None,
+    sam_route: str | None = None,
 ) -> MissionResult:
     """Real SAM, labels, and scene note. The cloud is the streaming RTAB-Map map."""
     capture_dir = resolve_live_session(capture)
@@ -366,7 +391,7 @@ def run_live_mission(
         frames, calibration, gps = load_sitl_capture(capture_dir)
     except (OSError, ValueError) as exc:
         raise MissionConfigError(str(exc)) from exc
-    services = build_live_services()
+    services = build_live_services(sam_route=sam_route)
     output_dir.mkdir(parents=True, exist_ok=True)
     euroc_path = export_euroc_session(output_dir / "euroc", frames, calibration, gps).root
     truth = load_disaster_ground_truth()

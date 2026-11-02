@@ -9,6 +9,7 @@ import json
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
+from typing import Protocol, cast
 
 import pytest
 from PIL import Image
@@ -17,6 +18,7 @@ from surmap.labelling.baseten_muse import ObjectLabel
 from surmap.labelling.meta_muse import MetaMuseLabelClient, MetaMuseSceneClient
 from surmap.mission.demo import (
     MissionConfigError,
+    _live_segmenter,
     build_live_services,
     detection_crop_jpeg,
     live_map_backend,
@@ -272,6 +274,166 @@ def test_live_services_refuse_a_provider_whose_flag_is_unset(
 
     with pytest.raises(MissionConfigError, match="SURMAP_LIVE_META"):
         build_live_services()
+
+
+def test_a_blank_sam_prompt_falls_back_to_person(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given a blank override
+    monkeypatch.setenv("SURMAP_SAM_PROMPT", "   ")
+
+    # When the prompt is read
+    prompt = live_sam_prompt()
+
+    # Then the blank value does not replace person
+    assert prompt == "person"
+
+
+def test_the_live_meta_segmenter_is_built_with_that_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a stand-in that records the prompt and does not call Meta
+    prompts: list[str] = []
+
+    class _Recording:
+        model = "sam-3.1"
+
+        def __init__(self, *, prompt: str = "object", **_kwargs: object) -> None:
+            prompts.append(prompt)
+
+    monkeypatch.setattr("surmap.mission.demo.MetaSamDetector", _Recording)
+    monkeypatch.setenv("SURMAP_SAM_PROMPT", "survivor")
+
+    # When the Meta segmenter is built
+    _live_segmenter("meta")
+
+    # Then the detector is asked for that phrase
+    assert prompts == ["survivor"]
+
+
+def test_an_undecodable_fixture_image_is_left_unchanged() -> None:
+    # Given the recorded fixture bytes, which are not a picture
+    fixture = bytes.fromhex("ffd8ffd9")
+
+    # When a crop is requested
+    crop = detection_crop_jpeg(fixture, (1.0, 1.0, 4.0, 4.0))
+
+    # Then the fixture labeller still receives those bytes
+    assert crop == fixture
+
+
+def test_the_live_mission_sends_muse_a_crop_around_the_detection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given a capture and a detection whose box does not fill the 64x48 frame
+    _allow_live_flags(monkeypatch)
+    _block_network(monkeypatch)
+    recording = _RecordingMap(snapshot=(_MAP_POINT,))
+    crops: list[bytes] = []
+    monkeypatch.setattr(
+        "surmap.mission.demo.open_live_map", lambda _calibration, **_kwargs: recording
+    )
+    monkeypatch.setattr(MetaSamDetector, "detect", _detect_inset_person)
+    monkeypatch.setattr(MetaMuseLabelClient, "label", _remembering_jpeg(crops))
+    monkeypatch.setattr(MetaMuseSceneClient, "note", _scene_note)
+
+    # When the live mission labels the claimed point
+    run_live_mission(tmp_path, _CAPTURE)
+
+    # Then the JPEG is smaller than the capture frame
+    assert crops
+    with Image.open(io.BytesIO(crops[0])) as opened:
+        width, height = opened.size
+    assert width < 64
+    assert height < 48
+
+
+def test_meta_stays_the_default_sam_route_when_modal_is_also_flagged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given both the Meta and Modal flags
+    _allow_live_flags(monkeypatch)
+    monkeypatch.setenv("SURMAP_LIVE_MODAL", "1")
+    monkeypatch.setenv("MODAL_SAM_URL", "http://modal.test/sam")
+
+    # When services are built with no explicit route
+    services = build_live_services()
+
+    # Then SAM is still the hosted Meta route
+    assert services.sam == "meta"
+    assert services.scene_note == "meta"
+
+
+def test_an_explicit_modal_sam_route_keeps_labels_and_the_scene_note_on_meta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given both live flags, so Meta is available for the scene note
+    _allow_live_flags(monkeypatch)
+    monkeypatch.setenv("SURMAP_LIVE_MODAL", "1")
+    monkeypatch.setenv("MODAL_SAM_URL", "http://modal.test/sam")
+
+    # When SAM is pinned to Modal
+    services = build_live_services(sam_route="modal")
+
+    # Then SAM is Modal and the labels and scene note are still Meta
+    assert services.sam == "modal"
+    assert services.labels == "meta"
+    assert services.scene_note == "meta"
+
+
+def test_an_explicit_meta_sam_route_does_not_require_the_modal_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given both flags, and no Modal URL
+    _allow_live_flags(monkeypatch)
+    monkeypatch.setenv("SURMAP_LIVE_MODAL", "1")
+    monkeypatch.delenv("MODAL_SAM_URL", raising=False)
+
+    # When SAM is pinned to Meta
+    services = build_live_services(sam_route="meta")
+
+    # Then the scene note and SAM both use Meta
+    assert services.sam == "meta"
+    assert services.scene_note == "meta"
+
+
+def test_modal_sam_without_its_flag_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given Meta and Baseten, and Modal switched off
+    _allow_live_flags(monkeypatch)
+
+    # When the operator asks for the Modal SAM route
+    with pytest.raises(MissionConfigError, match="SURMAP_LIVE_MODAL"):
+        build_live_services(sam_route="modal")
+
+
+def test_the_sam_route_flag_is_forwarded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given the mission command
+    module = _mission_script()
+    seen: dict[str, object] = {}
+
+    def halt(output: Path, capture: Path, **kwargs: object) -> None:
+        del output, capture
+        seen["sam_route"] = kwargs.get("sam_route")
+        raise MissionConfigError("stop before any service call")
+
+    monkeypatch.setattr(module, "run_live_mission", halt)
+
+    # When it is started with an explicit SAM route
+    code = module.main(
+        [
+            "--live",
+            "--sam-route",
+            "modal",
+            "--capture",
+            str(tmp_path),
+            "--output",
+            str(tmp_path),
+            "--no-viewer",
+        ]
+    )
+
+    # Then the route reaches the mission and no service is built
+    assert code == 2
+    assert seen["sam_route"] == "modal"
 
 
 def test_live_map_backend_names_the_streaming_rtabmap_backend() -> None:
@@ -746,3 +908,51 @@ def _block_network(monkeypatch: pytest.MonkeyPatch) -> None:
 def _skipped(people: tuple[PersonGroundTruth, ...], skip_ids: tuple[str, ...]) -> int:
     ids = {person.id for person in people}
     return sum(1 for person_id in skip_ids if person_id in ids)
+
+
+class _MissionCli(Protocol):
+    def main(self, argv: list[str]) -> int: ...
+
+    run_live_mission: Callable[..., object]
+
+
+def _mission_script() -> _MissionCli:
+    import importlib.util
+
+    path = Path("scripts/mission_demo.py")
+    spec = importlib.util.spec_from_file_location("mission_demo_cli", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return cast(_MissionCli, module)
+
+
+async def _detect_inset_person(self: object, frame: RawFrame) -> tuple[SamDetection, ...]:
+    del self, frame
+    return (
+        SamDetection(
+            label="person",
+            score=0.9,
+            box_xyxy=(28.0, 20.0, 36.0, 30.0),
+            mask_polygon=((28.0, 20.0), (36.0, 20.0), (36.0, 30.0), (28.0, 30.0)),
+            track_id=None,
+        ),
+    )
+
+
+def _remembering_jpeg(
+    crops: list[bytes],
+) -> Callable[[object, bytes, str, Vec3], ObjectLabel]:
+    def label(self: object, jpeg: bytes, coarse_label: str, xyz: Vec3) -> ObjectLabel:
+        del self, coarse_label
+        crops.append(jpeg)
+        return ObjectLabel(
+            label="survivor",
+            description="survivor in the disaster block",
+            confidence=None,
+            model_id="test-double",
+            raw_text="survivor",
+            map_point=xyz,
+        )
+
+    return label
