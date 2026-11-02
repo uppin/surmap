@@ -11,11 +11,13 @@ That journalled disparity is the source of truth for replays: nothing
 here recomputes stereo. `dense_region_points` repeats only the sidecar's
 geometry (deploy/rtabmap-stream/main.cpp `answerRegion`): the polygon
 from requester pixels to raw pixels to rectified pixels (OpenCV's
-iterative `undistortPoints`), rasterised, back-projected with
-`z = fx * b / d` up to the depth cap, and placed in the map frame.
-The raster is PIL's rather than `cv::fillPoly`, so an edge pixel can
-differ. Points stay a read-only layer on RTAB-Map's output
-(docs/architecture.md section 1).
+iterative `undistortPoints`), its vertices rounded as `lround` does,
+rasterised exactly as `cv::fillPoly` does (`fill_poly`, a port of
+OpenCV 4.6), back-projected with `z = fx * b / d` up to the depth cap,
+and placed in the map frame. The same pixels therefore give the same
+points; only float32 (sidecar) against float64 rounding can move a
+coordinate by its last printed digit. Points stay a read-only layer
+on RTAB-Map's output (docs/architecture.md section 1).
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
-from PIL import Image, ImageDraw
+from PIL import Image
 
 from surmap.slam.regions import RegionQuery, RegionResult, RegionStatus, invalid_reason
 from surmap.types import Pose, Vec3
@@ -175,12 +177,200 @@ def undistort_points(pixels: NDArray[np.float64], channel: ChannelRig) -> NDArra
     return rectified
 
 
-def _polygon_mask(outline: NDArray[np.int64], width: int, height: int) -> NDArray[np.bool_]:
-    """The filled polygon, its edges included (as `cv::fillPoly` fills them)."""
-    image = Image.new("L", (width, height), 0)
-    vertices = [(int(u), int(v)) for u, v in outline.tolist()]
-    ImageDraw.Draw(image).polygon(vertices, fill=255, outline=255)
-    mask: NDArray[np.bool_] = np.asarray(image) > 0
+def round_half_away(values: NDArray[np.float64]) -> NDArray[np.int64]:
+    """C's `lround`: to the nearest integer, halves away from zero."""
+    rounded: NDArray[np.int64] = (np.sign(values) * np.floor(np.abs(values) + 0.5)).astype(np.int64)
+    return rounded
+
+
+# OpenCV's fixed point for polygon edges (drawing.cpp XY_SHIFT / XY_ONE).
+_XY_SHIFT = 16
+_XY_ONE = 1 << _XY_SHIFT
+
+
+def _trunc_div(a: int, b: int) -> int:
+    """C integer division (towards zero), unlike Python's floor division."""
+    quotient = abs(a) // abs(b)
+    return quotient if (a >= 0) == (b > 0) else -quotient
+
+
+def _clip_line(
+    width: int, height: int, p1: tuple[int, int], p2: tuple[int, int]
+) -> tuple[int, int, int, int] | None:
+    """OpenCV's `clipLine`: the segment clipped to the image, or None outside it."""
+    (x1, y1), (x2, y2) = p1, p2
+    right, bottom = width - 1, height - 1
+
+    def code(x: int, y: int) -> int:
+        return (x < 0) + (x > right) * 2 + (y < 0) * 4 + (y > bottom) * 8
+
+    c1, c2 = code(x1, y1), code(x2, y2)
+    if (c1 & c2) == 0 and (c1 | c2) != 0:
+        if c1 & 12:
+            a = 0 if c1 < 8 else bottom
+            x1 += int(float(a - y1) * (x2 - x1) / (y2 - y1))
+            y1 = a
+            c1 = (x1 < 0) + (x1 > right) * 2
+        if c2 & 12:
+            a = 0 if c2 < 8 else bottom
+            x2 += int(float(a - y2) * (x2 - x1) / (y2 - y1))
+            y2 = a
+            c2 = (x2 < 0) + (x2 > right) * 2
+        if (c1 & c2) == 0 and (c1 | c2) != 0:
+            if c1:
+                a = 0 if c1 == 1 else right
+                y1 += int(float(a - x1) * (y2 - y1) / (x2 - x1))
+                x1 = a
+                c1 = 0
+            if c2:
+                a = 0 if c2 == 1 else right
+                y2 += int(float(a - x2) * (y2 - y1) / (x2 - x1))
+                x2 = a
+                c2 = 0
+    return (x1, y1, x2, y2) if (c1 | c2) == 0 else None
+
+
+def _line8(mask: NDArray[np.bool_], p1: tuple[int, int], p2: tuple[int, int]) -> None:
+    """OpenCV's 8-connected `Line` (a left-to-right `LineIterator`)."""
+    height, width = mask.shape
+    if not (
+        0 <= p1[0] < width and 0 <= p2[0] < width and 0 <= p1[1] < height and 0 <= p2[1] < height
+    ):
+        clipped = _clip_line(width, height, p1, p2)
+        if clipped is None:
+            return
+        p1, p2 = (clipped[0], clipped[1]), (clipped[2], clipped[3])
+    delta_x = delta_y = 1
+    dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+    if dx < 0:
+        dx, dy, p1 = -dx, -dy, p2
+    if dy < 0:
+        dy, delta_y = -dy, -1
+    vertical = dy > dx
+    if vertical:
+        dx, dy = dy, dx
+        delta_x, delta_y = delta_y, delta_x
+    err = dx - (dy + dy)
+    plus_delta, minus_delta = dx + dx, -(dy + dy)
+    # (step in x, step in y) when err >= 0 ("minus") and the extra when err < 0 ("plus")
+    minus = (0, delta_x) if vertical else (delta_x, 0)
+    plus = (delta_y, 0) if vertical else (0, delta_y)
+    x, y = p1
+    for _ in range(dx + 1):
+        mask[y, x] = True
+        if err < 0:
+            err += minus_delta + plus_delta
+            x, y = x + minus[0] + plus[0], y + minus[1] + plus[1]
+        else:
+            err += minus_delta
+            x, y = x + minus[0], y + minus[1]
+
+
+class _Edge:
+    __slots__ = ("y0", "y1", "x", "dx", "next")
+
+    def __init__(self, y0: int, y1: int, x: int, dx: int) -> None:
+        self.y0, self.y1, self.x, self.dx = y0, y1, x, dx
+        self.next: _Edge | None = None
+
+
+def fill_poly(outline: NDArray[np.int64], width: int, height: int) -> NDArray[np.bool_]:
+    """The pixels `cv::fillPoly` (8-connected, no shift) covers for one polygon.
+
+    A port of OpenCV 4.6 drawing.cpp `CollectPolyEdges` +
+    `FillEdgeCollection`: every edge is drawn as an 8-connected line,
+    then spans between active edges are filled scanline by scanline in
+    16-bit fixed point.
+    """
+    mask = np.zeros((height, width), bool)
+    vertices = [(int(u), int(v)) for u, v in outline.reshape(-1, 2).tolist()]
+    if not vertices:
+        return mask
+    edges: list[_Edge] = []
+    x0, y0 = vertices[-1][0] << _XY_SHIFT, vertices[-1][1]
+    for u, v in vertices:
+        x1, y1 = u << _XY_SHIFT, v
+        _line8(
+            mask, ((x0 + (_XY_ONE >> 1)) >> _XY_SHIFT, y0), ((x1 + (_XY_ONE >> 1)) >> _XY_SHIFT, y1)
+        )
+        if y0 != y1:
+            dx = _trunc_div(x1 - x0, y1 - y0)
+            edges.append(_Edge(y0, y1, x0, dx) if y0 < y1 else _Edge(y1, y0, x1, dx))
+        x0, y0 = x1, y1
+    if len(edges) < 2:
+        return mask
+    y_min = min(edge.y0 for edge in edges)
+    y_max = max(edge.y1 for edge in edges)
+    ends = [edge.x + (edge.y1 - edge.y0) * edge.dx for edge in edges]
+    x_min = min(min(edge.x for edge in edges), min(ends))
+    x_max = max(max(edge.x for edge in edges), max(ends))
+    if y_max < 0 or y_min >= height or x_max < 0 or x_min >= (width << _XY_SHIFT):
+        return mask
+    edges.sort(key=lambda edge: (edge.y0, edge.x, edge.dx))
+    sentinel = _Edge(2**31 - 1, 0, 0, 0)
+    edges.append(sentinel)
+    total = len(edges) - 1
+    head = _Edge(0, 0, 0, 0)  # `tmp`: the active list hangs off head.next
+    i = 0
+    e = edges[0]
+    y_max = min(y_max, height)
+    y = e.y0
+    while y < y_max:
+        draw = False
+        clip = y < 0
+        prelast: _Edge = head
+        last = head.next
+        while last is not None or e.y0 == y:
+            if last is not None and last.y1 == y:
+                prelast.next = last.next  # an edge leaves at its lower end
+                last = last.next
+                continue
+            keep_prelast = prelast
+            if last is not None and (e.y0 > y or last.x < e.x):
+                prelast, last = last, last.next
+            elif i < total:
+                prelast.next = e  # an edge joins at its upper end
+                e.next = last
+                prelast = e
+                i += 1
+                e = edges[i]
+            else:
+                break
+            if draw:
+                if not clip:
+                    if keep_prelast.x > prelast.x:
+                        xa = (prelast.x + _XY_ONE - 1) >> _XY_SHIFT
+                        xb = keep_prelast.x >> _XY_SHIFT
+                    else:
+                        xa = (keep_prelast.x + _XY_ONE - 1) >> _XY_SHIFT
+                        xb = prelast.x >> _XY_SHIFT
+                    if xa < width and xb >= 0:
+                        mask[y, max(xa, 0) : min(xb, width - 1) + 1] = True
+                keep_prelast.x += keep_prelast.dx
+                prelast.x += prelast.dx
+            draw = not draw
+        # Bubble-sort the active list by x, as OpenCV does.
+        keep: _Edge | None = None
+        while True:
+            prelast = head
+            last = head.next
+            exchanged: _Edge | None = None
+            while last is not keep and last is not None and last.next is not None:
+                after = last.next
+                if last.x > after.x:
+                    prelast.next = after
+                    last.next = after.next
+                    after.next = last
+                    prelast = after
+                    exchanged = prelast
+                else:
+                    prelast, last = last, after
+            if exchanged is None:
+                break
+            keep = exchanged
+            if keep is head.next or keep is head:
+                break
+        y += 1
     return mask
 
 
@@ -213,9 +403,9 @@ def dense_region_points(
         rig.width / query.width,
         rig.height / query.height,
     )
-    outline = np.rint(undistort_points(raw, channel)).astype(np.int64)
+    outline = round_half_away(undistort_points(raw, channel))
     disparity = decode_disparity(frame.disparity_png)
-    inside = _polygon_mask(outline, rig.width, rig.height) & (disparity > 0)
+    inside = fill_poly(outline, rig.width, rig.height) & (disparity > 0)
     v, u = np.nonzero(inside)
     projection = np.array(channel.projection, np.float64).reshape(3, 4)
     fx, fy, cx, cy = projection[0, 0], projection[1, 1], projection[0, 2], projection[1, 2]

@@ -31,8 +31,12 @@ frame's map transform is frozen at that first query. `ready` carries
 newly computed disparity (16-bit PNG, base64), before its region
 answer. That disparity is the source of truth: Python repeats only the
 polygon geometry. That is OpenCV's iterative `undistortPoints` in
-numpy, a PIL raster, back-projection and the map transform. No OpenCV
-is added. A v4 image or native binary is now rejected by version.
+numpy, the vertices rounded like `lround`, `cv::fillPoly` ported from
+OpenCV 4.6 (`surmap.slam.dense.fill_poly`), back-projection and the map
+transform. No OpenCV is added. The port is checked against golden
+masks from the sidecar image's own OpenCV 4.6
+(`tests/fixtures/fill_poly_golden.json`, `scripts/gen_fill_poly_golden.py`);
+pip's OpenCV 5.0 clips off-frame edges differently. A v4 image or native binary is now rejected by version.
 
 Verification: gates green (ruff, format, mypy strict, pytest 1049
 passed / 12 skipped with the EuRoC fixture and the rebuilt image).
@@ -42,6 +46,14 @@ on EuRoC V1_01 (120 frames, real sidecar, fake SAM): live run 34 s;
 replay at max speed 10 s over HTTP, 2.0 s for the bare player. Both
 streamed 120 frame / 120 sam / 120 region / 116 surface events, and
 the replayed regions matched the live ones exactly on all 116 frames
-(0.00 % point count, 0.00 mm centroid). Journal cost: 3.4 MB of
-disparity per 116 frames. Runs recorded before this change hold no
+(0.00 % point count, 0.00 mm centroid). Those were the fake SAM's
+rectangles. Real SAM 3.1 outlines on KITTI 0009 (447 frames, 4,024 car
+masks) exposed a raster mismatch in a first version that filled
+polygons with PIL: 2,249 masks differed (median −1.5 % points). With
+the `fillPoly` port all 4,024 masks match the live sidecar's point
+count exactly, coordinates within 1 mm (float32 against float64
+rounding). Two regions of that run were dropped live (frames 119 and
+132): the first query on a frame computes a full-frame SGBM, which can
+exceed the 2 s region timeout under amd64 emulation. Journal cost:
+3.4 MB of disparity per 116 EuRoC frames, 20.9 MB per 427 KITTI frames. Runs recorded before this change hold no
 journal and are listed as not replayable.

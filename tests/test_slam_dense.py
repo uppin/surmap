@@ -1,5 +1,8 @@
 """Offline region answers from RTAB-Map's journalled dense buffer (no sidecar)."""
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pytest
 from numpy.typing import NDArray
@@ -12,6 +15,8 @@ from surmap.slam.dense import (
     decode_disparity,
     dense_region_points,
     encode_disparity,
+    fill_poly,
+    round_half_away,
     undistort_points,
 )
 from surmap.slam.regions import RegionPointSource, RegionQuery, RegionResult, RegionStatus
@@ -197,3 +202,41 @@ def test_a_malformed_query_is_invalid_like_the_sidecar_says() -> None:
 
     # Then it is rejected, as the sidecar would
     assert result.status is RegionStatus.INVALID_QUERY
+
+
+GOLDEN = Path(__file__).parent / "fixtures" / "fill_poly_golden.json"
+
+
+def golden_cases() -> list[dict[str, object]]:
+    loaded = json.loads(GOLDEN.read_text())
+    cases = loaded["cases"]
+    assert isinstance(cases, list)
+    return cases
+
+
+@pytest.mark.parametrize("case", golden_cases(), ids=lambda case: str(case["name"]))
+def test_a_polygon_covers_exactly_the_pixels_the_sidecars_fillpoly_does(
+    case: dict[str, object],
+) -> None:
+    # Given a polygon and the mask OpenCV's fillPoly gave it (the sidecar's raster)
+    golden = json.loads(GOLDEN.read_text())
+    width, height = int(golden["width"]), int(golden["height"])
+    expected = np.zeros((height, width), bool)
+    rows = case["rows"]
+    assert isinstance(rows, list)
+    for row in rows:
+        expected[row[0], row[1:]] = True
+
+    # When the journal's raster fills it
+    mask = fill_poly(np.array(case["polygon"], np.int64), width, height)
+
+    # Then it covers exactly the same pixels
+    np.testing.assert_array_equal(mask, expected)
+
+
+def test_polygon_vertices_round_half_away_from_zero_like_the_sidecar() -> None:
+    # Given rectified vertices on exact halves (C++ lround, not banker's rounding)
+    halves = np.array([[0.5, 1.5], [2.5, -0.5], [-1.5, 3.49]])
+
+    # Then they round away from zero
+    np.testing.assert_array_equal(round_half_away(halves), [[1, 2], [3, -1], [-2, 3]])

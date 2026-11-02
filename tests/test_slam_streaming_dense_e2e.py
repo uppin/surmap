@@ -13,6 +13,16 @@ from surmap.slam.streaming import StreamingRtabmapBackend
 from tests.test_slam_streaming_e2e import FIXTURE, _require_prepared
 from tests.test_slam_streaming_regions_e2e import CENTRE, _box_polygon, _feed_fixture, _xyz
 
+SAM_LIKE_OUTLINE = (
+    (121.3, 80.6),
+    (180.2, 66.4),
+    (255.7, 92.1),
+    (231.4, 128.8),
+    (190.5, 112.2),
+    (176.9, 166.3),
+    (128.4, 151.7),
+)
+
 
 @dataclass(frozen=True)
 class Journalled:
@@ -23,8 +33,10 @@ class Journalled:
     left: RegionResult
     left_again: RegionResult
     right: RegionResult
+    outline: RegionResult
     left_query: RegionQuery
     right_query: RegionQuery
+    outline_query: RegionQuery
 
 
 @pytest.fixture(scope="module")
@@ -42,6 +54,8 @@ def journalled() -> Journalled:
     target = len(timestamps) - 5
     left_query = RegionQuery(1, target, 0, 376, 240, _box_polygon(CENTRE))
     right_query = RegionQuery(3, target, 1, 376, 240, _box_polygon(CENTRE))
+    # A SAM-like outline: slanted edges, a concave notch, fractional vertices.
+    outline_query = RegionQuery(4, target, 0, 376, 240, SAM_LIKE_OUTLINE)
     try:
         _feed_fixture(backend, timestamps)
         deadline = time.monotonic() + 30
@@ -53,10 +67,19 @@ def journalled() -> Journalled:
             RegionQuery(2, target, 0, 376, 240, left_query.polygon), timeout=10.0
         )
         right = backend.region_points(right_query, timeout=10.0)
+        outline = backend.region_points(outline_query, timeout=10.0)
         rig = backend.region_rig
         assert rig is not None
         return Journalled(
-            rig, backend.poll_dense(), left, left_again, right, left_query, right_query
+            rig,
+            backend.poll_dense(),
+            left,
+            left_again,
+            right,
+            outline,
+            left_query,
+            right_query,
+            outline_query,
         )
     finally:
         backend.close()
@@ -99,3 +122,18 @@ def test_the_journal_answers_the_right_region_as_the_live_sidecar_did(
     )
 
     assert_same_region(offline, journalled.right)
+
+
+def test_the_journal_covers_a_sam_outline_pixel_for_pixel_like_the_live_sidecar(
+    journalled: Journalled,
+) -> None:
+    # When a slanted, concave outline is asked of the journalled dense buffer
+    offline = DenseBufferRegionSource(journalled.rig, journalled.dense).region_points(
+        journalled.outline_query
+    )
+
+    # Then it is the live answer point for point (to float32 rounding)
+    live = journalled.outline
+    assert live.status is RegionStatus.OK and len(live.points) > 1_000
+    assert len(offline.points) == len(live.points)
+    np.testing.assert_allclose(_xyz(offline), _xyz(live), atol=1e-3)
