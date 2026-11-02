@@ -416,7 +416,9 @@ class BasetenLadiClassifier:
     def model(self) -> str:
         return self._model
 
-    def request_body(self, jpeg: bytes, max_tokens: int | None = None) -> dict[str, object]:
+    def request_body(
+        self, jpeg: bytes, max_tokens: int | None = None, *, force_tool: bool = False
+    ) -> dict[str, object]:
         return {
             "model": self._model,
             "messages": [
@@ -429,20 +431,31 @@ class BasetenLadiClassifier:
                 }
             ],
             "tools": [RECORD_CLASSES_TOOL],
-            "tool_choice": "auto",
+            "tool_choice": "required" if force_tool else "auto",
             "reasoning_effort": self._effort,
             "max_tokens": self._max_tokens if max_tokens is None else max_tokens,
         }
 
     def classify(self, jpeg: bytes) -> frozenset[str]:
-        """One call; a reply cut off by ``max_tokens`` is retried once with double the budget."""
+        """One call, retried once when it gives no answer.
+
+        A reply cut off by ``max_tokens`` is retried with double the budget; a reply
+        that stopped normally without a ``record_classes`` call or JSON is retried
+        with ``tool_choice="required"`` so the model has to call the tool.
+        """
         try:
             return self._classify_once(jpeg, self._max_tokens)
         except _TruncatedReply:
             return self._classify_once(jpeg, self._max_tokens * 2)
+        except _NoAnswer:
+            return self._classify_once(jpeg, self._max_tokens, force_tool=True)
 
-    def _classify_once(self, jpeg: bytes, max_tokens: int) -> frozenset[str]:
-        body = json.dumps(self.request_body(jpeg, max_tokens)).encode("utf-8")
+    def _classify_once(
+        self, jpeg: bytes, max_tokens: int, *, force_tool: bool = False
+    ) -> frozenset[str]:
+        body = json.dumps(self.request_body(jpeg, max_tokens, force_tool=force_tool)).encode(
+            "utf-8"
+        )
         self._ledger.check(self.provider)
         headers = {
             "Authorization": f"Bearer {_key(self._api_key, 'BASETEN_API_KEY')}",
@@ -476,6 +489,24 @@ class _TruncatedReply(LadiError):
     """No answer because the completion hit ``max_tokens``."""
 
 
+class _NoAnswer(LadiError):
+    """The completion stopped without a ``record_classes`` call or JSON text."""
+
+
+def _message_text(message: Mapping[str, object]) -> str:
+    """Reply text whether ``content`` is a string or a list of text parts."""
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            str(part.get("text", ""))
+            for part in content
+            if isinstance(part, dict) and isinstance(part.get("text"), str)
+        )
+    return ""
+
+
 def _tool_or_text(response: Mapping[str, object]) -> Mapping[str, object]:
     choices = response.get("choices")
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
@@ -493,15 +524,19 @@ def _tool_or_text(response: Mapping[str, object]) -> Mapping[str, object]:
                     return _json(arguments.encode("utf-8"))
                 if isinstance(arguments, dict):
                     return {str(key): value for key, value in arguments.items()}
-    content = message.get("content")
-    if isinstance(content, str) and "{" in content:
-        return _json(content[content.index("{") : content.rindex("}") + 1].encode("utf-8"))
+    content = _message_text(message)
+    if "{" in content and "}" in content[content.index("{") :]:
+        try:
+            return _json(content[content.index("{") : content.rindex("}") + 1].encode("utf-8"))
+        except LadiError:
+            pass
     finish_reason = choices[0].get("finish_reason")
     if finish_reason == "length":
         raise _TruncatedReply("Baseten reply hit max_tokens before a record_classes call")
-    raise LadiError(
+    snippet = " ".join(content.split())[:160]
+    raise _NoAnswer(
         f"Baseten reply had neither a record_classes call nor JSON text "
-        f"(finish_reason={finish_reason})"
+        f"(finish_reason={finish_reason}, content={snippet!r})"
     )
 
 

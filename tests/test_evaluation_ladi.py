@@ -333,11 +333,51 @@ def test_baseten_retries_once_with_double_budget_when_cut_off(tmp_path: Path) ->
 
 
 def test_baseten_reports_finish_reason_when_reply_is_empty(tmp_path: Path) -> None:
-    fake = _SequenceBaseten([{"message": {"content": ""}, "finish_reason": "stop"}])
+    empty = {"message": {"content": "I see a flooded street."}, "finish_reason": "stop"}
+    fake = _SequenceBaseten([empty, empty])
     classifier = BasetenLadiClassifier(
         transport=fake, api_key="b", ledger=UsageLedger(tmp_path / "u.jsonl")
     )
 
-    with pytest.raises(LadiError, match="finish_reason=stop"):
+    with pytest.raises(LadiError, match="finish_reason=stop.*flooded street"):
         classifier.classify(_jpeg())
-    assert len(fake.bodies) == 1
+    assert len(fake.bodies) == 2
+
+
+def test_baseten_forces_the_tool_when_reply_stops_without_an_answer(tmp_path: Path) -> None:
+    fake = _SequenceBaseten(
+        [
+            {"message": {"content": "Looks like storm damage."}, "finish_reason": "stop"},
+            {
+                "message": {
+                    "content": None,
+                    "tool_calls": [
+                        {"function": {"name": "record_classes", "arguments": _answer("trees_any")}}
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            },
+        ]
+    )
+    classifier = BasetenLadiClassifier(
+        transport=fake, api_key="b", ledger=UsageLedger(tmp_path / "u.jsonl")
+    )
+
+    assert classifier.classify(_jpeg()) == frozenset({"trees_any"})
+    assert [body["tool_choice"] for body in fake.bodies] == ["auto", "required"]
+
+
+def test_baseten_reads_json_from_list_content(tmp_path: Path) -> None:
+    fake = _SequenceBaseten(
+        [
+            {
+                "message": {"content": [{"type": "text", "text": _answer("roads_any")}]},
+                "finish_reason": "stop",
+            }
+        ]
+    )
+    classifier = BasetenLadiClassifier(
+        transport=fake, api_key="b", ledger=UsageLedger(tmp_path / "u.jsonl")
+    )
+
+    assert classifier.classify(_jpeg()) == frozenset({"roads_any"})
