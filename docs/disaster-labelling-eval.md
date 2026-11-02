@@ -57,3 +57,11 @@ class, then macro F1 (over classes with support) and micro F1. `--out`
 writes the same numbers as JSON with the per-image truth and predictions.
 Ten images are a smoke test, not a benchmark. Do not quote them as model
 accuracy.
+
+## Reasoning effort
+
+Both providers run at `low` reasoning effort by default. `--reasoning-effort medium` or `high` applies to both; at `medium` or `high` the Baseten budget starts at 8192 tokens. The effort is written into each report.
+
+    SURMAP_EVAL_MAX_IMAGES=100 SURMAP_LIVE_META=1 \
+        uv run python scripts/eval_disaster_labelling.py --provider meta --limit 100 \
+        --reasoning-effort high --out ~/surmap-eval/wonder-high.json
