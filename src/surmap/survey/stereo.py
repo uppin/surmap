@@ -168,6 +168,33 @@ class StereoReconstructor:
 
     def reconstruct(self, left: FrameImage, right: FrameImage, rig: StereoRig) -> tuple[Vec3, ...]:
         """Camera-frame points seen by both cameras in this pair."""
+        depth, scale = self._matched(left, right, rig)
+        fx = rig.fx / scale
+        fy = rig.fy / scale
+        cx = rig.cx / scale
+        cy = rig.cy / scale
+        valid = depth > 0
+        rows, cols_out = np.nonzero(valid[:: self._stride, :: self._stride])
+        rows = rows * self._stride
+        cols_out = cols_out * self._stride
+        if len(rows) > self._max_points:
+            pick = np.linspace(0, len(rows) - 1, self._max_points).astype(int)
+            rows, cols_out = rows[pick], cols_out[pick]
+        points = []
+        for row, col in zip(rows.tolist(), cols_out.tolist(), strict=True):
+            z = float(depth[row, col])
+            points.append(Vec3((col - cx) * z / fx, (row - cy) * z / fy, z))
+        return tuple(points)
+
+    def depth_map(self, left: FrameImage, right: FrameImage, rig: StereoRig) -> NDArray[np.float32]:
+        """Per-pixel depth (m) at the matching resolution; 0 where nothing matched."""
+        depth, _ = self._matched(left, right, rig)
+        return depth.astype(np.float32)
+
+    def _matched(
+        self, left: FrameImage, right: FrameImage, rig: StereoRig
+    ) -> tuple[NDArray[np.float64], int]:
+        """Left-right consistent depth in range, and the downscale it was matched at."""
         left_gray = decode_grayscale(left)
         right_gray = decode_grayscale(right)
         # The rig's two cameras need not deliver identically sized frames.
@@ -194,20 +221,7 @@ class StereoReconstructor:
         consistent = np.abs(reverse_at_partner - disparity) <= 1.0
 
         fx = rig.fx / scale
-        fy = rig.fy / scale
-        cx = rig.cx / scale
-        cy = rig.cy / scale
         with np.errstate(divide="ignore", invalid="ignore"):
             depth = np.where(disparity >= 2, fx * rig.baseline_m / np.maximum(disparity, 1.0), 0.0)
         valid = consistent & (depth >= self._min_depth_m) & (depth <= self._max_depth_m)
-        rows, cols_out = np.nonzero(valid[:: self._stride, :: self._stride])
-        rows = rows * self._stride
-        cols_out = cols_out * self._stride
-        if len(rows) > self._max_points:
-            pick = np.linspace(0, len(rows) - 1, self._max_points).astype(int)
-            rows, cols_out = rows[pick], cols_out[pick]
-        points = []
-        for row, col in zip(rows.tolist(), cols_out.tolist(), strict=True):
-            z = float(depth[row, col])
-            points.append(Vec3((col - cx) * z / fx, (row - cy) * z / fy, z))
-        return tuple(points)
+        return np.where(valid, depth, 0.0), scale

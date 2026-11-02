@@ -171,6 +171,11 @@ uv run python scripts/demo.py
   A region keeps only its points within 1.5 m of its median range from
   the camera (the background a mask edge catches is cut away), and a
   region needs 50 such points to start or grow a surface.
+- **Video toggles**: **RTAB-Map points** (checked by default) shows or
+  hides the frame's tracked features; **Dense depth** lays the shown
+  frame's dense stereo depth over it in the same near → far colours
+  (`GET /dense-depth?dataset=<id>&t_ns=<t>`, matched on demand from the
+  display pair, clear where nothing matched), live or on a rewound moment.
 - **3D pane** (server-rendered, every map point): **Follow** (checked by
   default) frames it like a navigation app, from behind and above the
   camera along its heading, with the camera low in view; tilt and zoom
