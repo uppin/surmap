@@ -36,6 +36,7 @@ from surmap.labelling.meta_muse import (
     UrllibMetaMuseTransport,
 )
 from surmap.map.snapshot import MetaCallRecord, build_snapshot, write_snapshot
+from surmap.mission.dense import SPARSE_RTABMAP, STEREO_FALLBACK, DenseStereoFallback
 from surmap.mission.metrics import (
     ImpactMetrics,
     OfflinePerception,
@@ -184,15 +185,10 @@ def live_map_backend() -> str:
     return _MAP_BACKEND_LIVE
 
 
-def open_live_map(
-    calibration: StereoCalibrationSpec,
-    *,
-    max_depth_m: float | None = None,
-    min_disparity_px: float | None = None,
-) -> LiveMap:
-    """Open the streaming backend calibrated from a capture. This starts the sidecar."""
-    from surmap.slam.streaming import StreamingRtabmapBackend
-
+def stream_limits(
+    max_depth_m: float | None = None, min_disparity_px: float | None = None
+) -> tuple[float, float]:
+    """Depth cap and minimum disparity, as the streaming backend resolves them."""
     depth_m = _resolved_limit(
         max_depth_m,
         "SURMAP_MAX_DEPTH_M",
@@ -207,6 +203,19 @@ def open_live_map(
         minimum=0.0,
         exclusive=False,
     )
+    return depth_m, disparity_px
+
+
+def open_live_map(
+    calibration: StereoCalibrationSpec,
+    *,
+    max_depth_m: float | None = None,
+    min_disparity_px: float | None = None,
+) -> LiveMap:
+    """Open the streaming backend calibrated from a capture. This starts the sidecar."""
+    from surmap.slam.streaming import StreamingRtabmapBackend
+
+    depth_m, disparity_px = stream_limits(max_depth_m, min_disparity_px)
     return StreamingRtabmapBackend(
         cam0_yaml=render_cam_sensor_yaml(calibration, 0),
         cam1_yaml=render_cam_sensor_yaml(calibration, 1),
@@ -508,6 +517,16 @@ def run_live_mission(
         calibration.cy,
         calibration.baseline_m,
     )
+    depth_cap_m, min_disparity = stream_limits(max_depth_m, min_disparity_px)
+    dense = DenseStereoFallback(
+        rig,
+        calibration.width,
+        calibration.height,
+        max_depth_m=depth_cap_m,
+        min_disparity_px=min_disparity,
+    )
+    point_sources: dict[int, set[str]] = {}
+    observations_by_source = {SPARSE_RTABMAP: 0, STEREO_FALLBACK: 0}
     tracks: list[ObjectTrack3D] = []
     detections: list[SurvivorDetection] = []
     clouds: dict[int, tuple[Vec3, ...]] = {}
@@ -522,7 +541,7 @@ def run_live_mission(
         if first_jpeg == _FIXTURE_JPEG:
             first_jpeg = _as_jpeg(image)
         pose = poses.get(frame.frame_id)
-        if pose is None or not map_cloud:
+        if pose is None:
             continue
         raw = live_raw_frame(
             frame.frame_id,
@@ -558,6 +577,17 @@ def run_live_mission(
                 calibration.height,
                 pose,
             )
+            source = SPARSE_RTABMAP
+            if not claimed:
+                claimed = points_in_mask(
+                    dense.camera_points(frame),
+                    rig,
+                    detection.mask_polygon,
+                    calibration.width,
+                    calibration.height,
+                    pose,
+                )
+                source = STEREO_FALLBACK
             sighting = merger.observe(raw.frame_id, detection.label, claimed)
             if sighting is None:
                 continue
@@ -577,8 +607,12 @@ def run_live_mission(
                     meta_calls,
                 )
                 merger.bind(sighting, track_id)
+                point_sources.setdefault(track_id, set()).add(source)
+                observations_by_source[source] += 1
                 continue
             _extend_track(tracks, clouds, sighting, raw, claimed)
+            point_sources.setdefault(sighting.track_id, set()).add(source)
+            observations_by_source[source] += 1
             if sighting.turned_moving:
                 _relabel(
                     tracks,
@@ -640,12 +674,21 @@ def run_live_mission(
         match_radius_m=load_offline_perception().match_radius_m,
         basis="live",
     )
-    note = "Computed from the live run. " + (
-        "The cloud came from the live RTAB-Map streaming backend."
-        if map_cloud
-        else "The live RTAB-Map streaming backend returned no map points, "
-        "so positions were not estimated."
-    )
+    if map_cloud:
+        cloud_note = "The cloud came from the live RTAB-Map streaming backend."
+    elif observations_by_source[STEREO_FALLBACK]:
+        cloud_note = (
+            "The live RTAB-Map streaming backend returned no map points; "
+            "object positions came from dense stereo on the capture frames."
+        )
+    else:
+        cloud_note = (
+            "The live RTAB-Map streaming backend returned no map points, "
+            "so positions were not estimated."
+        )
+    if map_cloud and observations_by_source[STEREO_FALLBACK]:
+        cloud_note += " Masks with no sparse points used dense stereo on that frame."
+    note = "Computed from the live run. " + cloud_note
     report_path = output_dir / "impact.json"
     _write_report(
         report_path,
@@ -658,6 +701,9 @@ def run_live_mission(
         gazebo="capture",
         meta_calls=tuple(meta_calls),
         model_call_source=_SOURCE_LIVE,
+        mask_point_sources=_mask_point_sources(
+            observations_by_source, point_sources, dense.reconstructions
+        ),
     )
     if recorder is not None and record_dir is not None:
         write_recording(
@@ -1023,8 +1069,9 @@ def _write_report(
     gazebo: str,
     meta_calls: Sequence[MetaCallRecord],
     model_call_source: str,
+    mask_point_sources: dict[str, object] | None = None,
 ) -> None:
-    body = {
+    body: dict[str, object] = {
         "schema": "surmap.mission_impact.v1",
         "basis": metrics.basis,
         "basis_note": basis_note,
@@ -1049,7 +1096,20 @@ def _write_report(
         "gazebo": gazebo,
         "euroc_session": str(euroc_path),
     }
+    if mask_point_sources is not None:
+        body["mask_point_sources"] = mask_point_sources
     path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+
+
+def _mask_point_sources(
+    observations: dict[str, int], per_track: dict[int, set[str]], reconstructions: int
+) -> dict[str, object]:
+    """Where each object's 3D points came from: sparse RTAB-Map or the stereo fallback."""
+    return {
+        "observations": dict(observations),
+        "tracks": {str(track_id): sorted(names) for track_id, names in sorted(per_track.items())},
+        "stereo_reconstructions": reconstructions,
+    }
 
 
 def _as_jpeg(image: bytes) -> bytes:

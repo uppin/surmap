@@ -675,7 +675,12 @@ def test_live_mission_forwards_the_depth_cap_to_the_streaming_backend(
         seen["min_disparity_px"] = min_disparity_px
         return _RecordingMap(snapshot=())
 
+    async def detect_nothing(self: object, frame: RawFrame) -> tuple[SamDetection, ...]:
+        del self, frame
+        return ()
+
     monkeypatch.setattr("surmap.mission.demo.open_live_map", opener)
+    monkeypatch.setattr(MetaSamDetector, "detect", detect_nothing)
     monkeypatch.setattr(MetaMuseSceneClient, "note", _scene_note)
 
     # When the live mission runs
@@ -808,19 +813,19 @@ def test_live_mission_says_when_the_streaming_backend_returns_no_points(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Given a streaming map that finishes with an empty snapshot
+    # Given an empty streaming map and the tiny capture, whose frames are flat grey
     _allow_live_flags(monkeypatch)
     _block_network(monkeypatch)
     recording = _RecordingMap(snapshot=())
 
-    async def refuse_detect(self: object, frame: RawFrame) -> tuple[SamDetection, ...]:
-        del self, frame
-        raise AssertionError("live mission called SAM with no map cloud")
+    def refuse_label(self: object, jpeg: bytes, coarse_label: str, xyz: Vec3) -> ObjectLabel:
+        raise AssertionError("an object with no 3D points must not be labelled")
 
     monkeypatch.setattr(
         "surmap.mission.demo.open_live_map", lambda _calibration, **_kwargs: recording
     )
-    monkeypatch.setattr(MetaSamDetector, "detect", refuse_detect)
+    monkeypatch.setattr(MetaSamDetector, "detect", _detect_person)
+    monkeypatch.setattr(MetaMuseLabelClient, "label", refuse_label)
     monkeypatch.setattr(MetaMuseSceneClient, "note", _scene_note)
 
     # When the live mission runs
@@ -833,6 +838,12 @@ def test_live_mission_says_when_the_streaming_backend_returns_no_points(
     assert result.metrics.basis == "live"
     assert report["map_backend"] == "live-rtabmap"
     assert "not estimated" in str(report["basis_note"]).lower()
+    assert report["mask_point_sources"]["observations"] == {
+        "sparse-rtabmap": 0,
+        "stereo-fallback": 0,
+    }
+    # And the dense fallback ran once per frame with a mask, not once per mask
+    assert report["mask_point_sources"]["stereo_reconstructions"] == 2
     assert "secret-model-key" not in json.dumps(report)
 
 
