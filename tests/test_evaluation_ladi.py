@@ -296,3 +296,48 @@ def test_cli_scores_both_providers_and_writes_a_report(
 def test_download_only_needs_no_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SURMAP_LIVE_META", raising=False)
     assert cli.main(["--download-only", "--limit", "2"], loader=lambda c, **_k: _samples(c)) == 0
+
+
+class _SequenceBaseten:
+    def __init__(self, choices: list[dict[str, object]]) -> None:
+        self.choices = choices
+        self.bodies: list[dict[str, object]] = []
+
+    def post(self, url: str, headers: Mapping[str, str], body: bytes) -> bytes:
+        self.bodies.append(json.loads(body))
+        choice = self.choices[len(self.bodies) - 1]
+        return json.dumps({"choices": [choice], "usage": {"prompt_tokens": 10}}).encode()
+
+
+def test_baseten_retries_once_with_double_budget_when_cut_off(tmp_path: Path) -> None:
+    fake = _SequenceBaseten(
+        [
+            {"message": {"content": ""}, "finish_reason": "length"},
+            {
+                "message": {
+                    "content": None,
+                    "tool_calls": [
+                        {"function": {"name": "record_classes", "arguments": _answer("roads_any")}}
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            },
+        ]
+    )
+    classifier = BasetenLadiClassifier(
+        transport=fake, api_key="b", ledger=UsageLedger(tmp_path / "u.jsonl")
+    )
+
+    assert classifier.classify(_jpeg()) == frozenset({"roads_any"})
+    assert [body["max_tokens"] for body in fake.bodies] == [4096, 8192]
+
+
+def test_baseten_reports_finish_reason_when_reply_is_empty(tmp_path: Path) -> None:
+    fake = _SequenceBaseten([{"message": {"content": ""}, "finish_reason": "stop"}])
+    classifier = BasetenLadiClassifier(
+        transport=fake, api_key="b", ledger=UsageLedger(tmp_path / "u.jsonl")
+    )
+
+    with pytest.raises(LadiError, match="finish_reason=stop"):
+        classifier.classify(_jpeg())
+    assert len(fake.bodies) == 1

@@ -163,9 +163,15 @@ def segment(item: dict[str, Any]) -> dict[str, Any]:
     image = _open_image(item)
     _model, processor = _load_sam()
     del _model
+    import torch
+
     started = time.perf_counter()
-    state = processor.set_image(image)
-    output = processor.set_text_prompt(state=state, prompt=text)
+    # The SAM 3.1 checkpoint keeps some layers in bf16; without the
+    # autocast the vendor predictor enters, matmuls fail with a
+    # BFloat16/Float dtype mismatch (same fix as sam3_torch).
+    with torch.autocast("cuda", dtype=torch.bfloat16):
+        state = processor.set_image(image)
+        output = processor.set_text_prompt(state=state, prompt=text)
     elapsed = time.perf_counter() - started
     width, height = image.size
     return pack_detections(

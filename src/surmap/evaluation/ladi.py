@@ -403,7 +403,7 @@ class BasetenLadiClassifier:
         model: str = BASETEN_MODEL_ID,
         ledger: UsageLedger | None = None,
         reasoning_effort: str = "low",
-        max_tokens: int = 2048,
+        max_tokens: int = 4096,
     ) -> None:
         self._transport = transport
         self._api_key = api_key
@@ -416,7 +416,7 @@ class BasetenLadiClassifier:
     def model(self) -> str:
         return self._model
 
-    def request_body(self, jpeg: bytes) -> dict[str, object]:
+    def request_body(self, jpeg: bytes, max_tokens: int | None = None) -> dict[str, object]:
         return {
             "model": self._model,
             "messages": [
@@ -431,11 +431,18 @@ class BasetenLadiClassifier:
             "tools": [RECORD_CLASSES_TOOL],
             "tool_choice": "auto",
             "reasoning_effort": self._effort,
-            "max_tokens": self._max_tokens,
+            "max_tokens": self._max_tokens if max_tokens is None else max_tokens,
         }
 
     def classify(self, jpeg: bytes) -> frozenset[str]:
-        body = json.dumps(self.request_body(jpeg)).encode("utf-8")
+        """One call; a reply cut off by ``max_tokens`` is retried once with double the budget."""
+        try:
+            return self._classify_once(jpeg, self._max_tokens)
+        except _TruncatedReply:
+            return self._classify_once(jpeg, self._max_tokens * 2)
+
+    def _classify_once(self, jpeg: bytes, max_tokens: int) -> frozenset[str]:
+        body = json.dumps(self.request_body(jpeg, max_tokens)).encode("utf-8")
         self._ledger.check(self.provider)
         headers = {
             "Authorization": f"Bearer {_key(self._api_key, 'BASETEN_API_KEY')}",
@@ -465,6 +472,10 @@ class BasetenLadiClassifier:
         return self._transport
 
 
+class _TruncatedReply(LadiError):
+    """No answer because the completion hit ``max_tokens``."""
+
+
 def _tool_or_text(response: Mapping[str, object]) -> Mapping[str, object]:
     choices = response.get("choices")
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
@@ -485,7 +496,13 @@ def _tool_or_text(response: Mapping[str, object]) -> Mapping[str, object]:
     content = message.get("content")
     if isinstance(content, str) and "{" in content:
         return _json(content[content.index("{") : content.rindex("}") + 1].encode("utf-8"))
-    raise LadiError("Baseten reply had neither a record_classes call nor JSON text")
+    finish_reason = choices[0].get("finish_reason")
+    if finish_reason == "length":
+        raise _TruncatedReply("Baseten reply hit max_tokens before a record_classes call")
+    raise LadiError(
+        f"Baseten reply had neither a record_classes call nor JSON text "
+        f"(finish_reason={finish_reason})"
+    )
 
 
 @dataclass(frozen=True)

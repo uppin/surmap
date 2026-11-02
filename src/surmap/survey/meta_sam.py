@@ -36,16 +36,18 @@ Responses call that returned ``output[]`` plus
   Those detections are kept with ``score is None``. ``track_id`` is
   the wire object id.
 
-Assumed, because a live ``sam-3.1`` response was not captured:
+Verified against a live ``sam-3.1`` call on 2026-11-02
+(``scripts/check_meta_sam.py`` on a LADI v2 aerial image, prompt
+``building``, 25 detections):
 
 * A non-streaming SAM call uses the same JSON envelope as a text
   Responses call: ``output[].content[]`` blocks of type
-  ``output_text``, and ``usage`` with ``input_tokens`` and
-  ``output_tokens``. That envelope is isolated in
-  `read_responses_body`.
-* Reasoning tokens are ``usage.output_tokens_details.reasoning_tokens``
-  when that integer is present, and ``None`` when the object is
-  absent. The verified text usage had no reasoning field.
+  ``output_text`` carrying the box and mask grammar. That envelope is
+  read in `read_responses_body`.
+* ``usage`` has ``input_tokens``, ``output_tokens`` and
+  ``output_tokens_details.reasoning_tokens``, all ``0`` for SAM, plus
+  ``images_processed``. Reasoning tokens are ``None`` when the details
+  object is absent.
 
 `on_usage` is ``(provider, model, input_tokens, output_tokens,
 reasoning_tokens)`` with provider ``meta``. `before_call` is invoked
@@ -169,7 +171,7 @@ def sam_responses_payload(model: str, prompt: str, image_data_url: str) -> dict[
 def read_responses_body(body: Mapping[str, object]) -> tuple[str, int, int, int | None]:
     """Split a Responses JSON object into text and token counts.
 
-    This is the envelope assumed for SAM from text Responses calls:
+    This is the envelope a live ``sam-3.1`` call returns (verified 2026-11-02):
     ``output_text`` blocks, ``input_tokens``, ``output_tokens``, and
     optional ``output_tokens_details.reasoning_tokens``.
     """
