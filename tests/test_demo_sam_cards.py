@@ -5,16 +5,43 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
+
 from surmap.demo.view_math import VIEW_HELPERS
 from tests.test_demo_object_feed import a_console_page, needs_node
 from tests.test_demo_sam_pick import SAM_PAGE, run_js
 
 WIDTH, HEIGHT = 620, 188  # the KITTI display size
 
-# Five cards, 90 x 30 px, all for objects bunched around (300, 120).
+# Five cards, 90 x 30 px, for small far objects (12 x 8 px boxes) bunched around (300, 120).
 BUNCHED = json.dumps(
-    [{"key": k, "anchor": [300 + 4 * k, 120], "width": 90, "height": 30} for k in range(5)]
+    [
+        {
+            "key": k,
+            "anchor": [300 + 14 * k, 120],
+            "box": [294 + 14 * k, 116, 306 + 14 * k, 124],
+            "width": 90,
+            "height": 30,
+        }
+        for k in range(5)
+    ]
 )
+
+
+def gap(card: "Card", box: tuple[float, float, float, float]) -> float:
+    """How far a card is from a mask box (0 when they touch or overlap)."""
+    dx = max(box[0] - (card.x + card.width), card.x - box[2], 0.0)
+    dy = max(box[1] - (card.y + card.height), card.y - box[3], 0.0)
+    return float((dx * dx + dy * dy) ** 0.5)
+
+
+def covers(card: "Card", box: tuple[float, float, float, float]) -> bool:
+    return (
+        card.x < box[2]
+        and box[0] < card.x + card.width
+        and card.y < box[3]
+        and box[1] < card.y + card.height
+    )
 
 
 @dataclass(frozen=True)
@@ -83,20 +110,54 @@ def test_cards_stay_on_the_image() -> None:
 
 
 @needs_node
-def test_a_card_with_room_sits_centred_over_its_object() -> None:
-    (card,) = laid_out(json.dumps([{"key": 7, "anchor": [300, 150], "width": 90, "height": 30}]))
+def test_a_card_with_room_sits_right_above_its_object() -> None:
+    # Given one car whose mask box spans (250, 100)-(350, 170)
+    item = {"key": 7, "anchor": [300, 135], "box": [250, 100, 350, 170], "width": 90, "height": 30}
+
+    # When its card is laid out
+    (card,) = laid_out(json.dumps([item]))
+
+    # Then it sits centred just above the box, touching distance away, not over the car
     assert card.key == 7
     assert card.x + card.width / 2 == 300
-    assert card.y + card.height <= 150
+    assert gap(card, (250, 100, 350, 170)) <= 4
+    assert not covers(card, (250, 100, 350, 170))
 
 
 @needs_node
-def test_each_card_leads_to_its_object() -> None:
+def test_with_no_room_above_a_card_goes_beside_or_below_its_object_not_far_off() -> None:
+    # Given a car at the top edge of the image
+    item = {"key": 1, "anchor": [300, 20], "box": [260, 2, 340, 40], "width": 90, "height": 30}
+
+    # Then its card still touches the car's box, without covering it
+    (card,) = laid_out(json.dumps([item]))
+    assert gap(card, (260, 2, 340, 40)) <= 4
+    assert not covers(card, (260, 2, 340, 40))
+
+
+@needs_node
+def test_bunched_objects_cards_stay_near_their_own_objects() -> None:
+    # Given five small far cars side by side
+    cards = laid_out(BUNCHED)
+
+    # Then every card is placed near its own car, the nearest ones touching distance away
+    gaps = sorted(gap(card, (294 + 14 * card.key, 116, 306 + 14 * card.key, 124)) for card in cards)
+    assert gaps[0] <= 4
+    assert all(g <= 80 for g in gaps), gaps
+
+
+@needs_node
+def test_each_card_leads_to_its_object_from_its_nearest_edge() -> None:
     for card in laid_out(BUNCHED):
-        # The leader runs from the card's bottom edge to the object's anchor
-        assert card.end == (300.0 + 4 * card.key, 120.0)
-        assert card.start[1] == card.y + card.height
-        assert card.x <= card.start[0] <= card.x + card.width
+        # The leader ends on the object's anchor and starts on the card's edge, at the
+        # point of the card nearest that anchor
+        ax, ay = 300.0 + 14 * card.key, 120.0
+        assert card.end == (ax, ay)
+        nearest = (
+            min(max(ax, card.x), card.x + card.width),
+            min(max(ay, card.y), card.y + card.height),
+        )
+        assert card.start == pytest.approx(nearest)
 
 
 @needs_node

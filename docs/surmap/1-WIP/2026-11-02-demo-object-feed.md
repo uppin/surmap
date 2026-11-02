@@ -18,7 +18,7 @@
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ✅ 2026-11-02 `/green` Green — implement until every red test passes · 1246 passed / 28 skipped; ruff, format, mypy strict green
+- [wf 3] ⏳ `/green` Green — implement until every red test passes · milestones 1–10 @ `3025050`; milestone 10b added
   - [x] Milestone 1: `SurfaceMap` depth band and minimum points
   - [x] Milestone 2: the camera pose reaches `SurfaceMap` (`RegionResult.camera`, `region` event `viewpoint`, live backend from the dense line)
   - [x] Milestone 3: session-level `CloudViewer`; every `cloud_*` action works without a run and answers with `cloud_png`
@@ -33,6 +33,7 @@
   - [x] Acceptance: `tests/test_demo_cloud_follow.py` passes
   - [x] Milestone 10: SAM view object cards — one non-overlapping card per object (id, depth range) with a leader to it, filled circles at both ends; hovering a card selects its object, clicking opens the feed
   - [x] Acceptance: `tests/test_demo_sam_cards.py` passes
+  - [ ] Milestone 10b: each card as close to its own object as it fits — beside its mask box, not in rows at the top; leaders from the card's nearest edge
   - [x] Acceptance: `tests/test_survey_surfaces.py`, `tests/test_demo_object_feed.py`, `tests/test_demo_cloud_ptz.py` pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
@@ -187,10 +188,18 @@ sidecar's SGBM settings.
   - **Cards.** Each SAM object gets a card: `label #surface` when linked (else
     `label · SAM track`), and its depth range. Masks keep their outline; the loose text
     labels are gone.
-  - **Layout.** `layoutCards` packs cards in rows from the top of the image, each centred
-    over its object where it fits, never overlapping and never off the image.
-  - **Leaders.** A leader runs from the card's bottom to the object's centroid, with a
-    filled circle at each end.
+  - **Layout.** Each card goes to the nearest free spot next to its own object's mask box
+    (`layoutCards`):
+    - the nearest spot that overlaps no other card and stays on the image;
+    - not over the object itself while a spot beside it is free;
+    - centred just above the box first, then below, left and right, then the nearest
+      free point further out;
+    - smallest objects first, since they have the fewest free spots near them.
+
+    (Milestone 10b: the first layout packed cards in rows at the top of the image, far
+    from their objects.)
+  - **Leaders.** A leader runs from the card's nearest edge point to the object's
+    centroid, with a filled circle at each end.
   - **Selection.** Hovering a card selects its object, like hovering its mask, and a
     click opens the feed. The selected object's card is drawn in yellow.
 
