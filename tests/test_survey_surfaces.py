@@ -8,9 +8,11 @@ rows deep, one layer thick.
 """
 
 import numpy as np
+import pytest
 from numpy.typing import NDArray
 
-from surmap.survey.surfaces import SurfaceMap
+from surmap.survey.surfaces import SurfaceMap, object_points
+from surmap.types import Vec3
 
 
 def a_patch(x: float, columns: int = 20) -> NDArray[np.float32]:
@@ -180,3 +182,108 @@ def test_a_moving_surface_stays_moving_when_it_stops() -> None:
 
     # Then it is still marked moving: the smear it left is still motion
     assert assignment is not None and assignment.moving is True
+
+
+# The camera that saw the patches, 4 m in front of their z = 1.005 plane.
+CAMERA = Vec3(0.2, 0.2, -3.0)
+
+
+def a_tail_behind(patch: NDArray[np.float32], metres: float, count: int) -> NDArray[np.float32]:
+    """Background points on the rays through the patch, `metres` beyond it."""
+    camera = np.array([CAMERA.x, CAMERA.y, CAMERA.z], np.float64)
+    rays = patch[:count].astype(np.float64) - camera
+    beyond = rays * (1.0 + metres / np.linalg.norm(rays, axis=1, keepdims=True))
+    return (camera + beyond).astype(np.float32)
+
+
+def test_points_far_behind_the_object_along_the_view_ray_are_cut_away() -> None:
+    # Given a car's region whose mask edge also caught 100 background points 6 m behind it
+    surfaces = SurfaceMap()
+    car = a_patch(0.005)
+    region = np.concatenate([car, a_tail_behind(car, 6.0, 100)])
+
+    # When it is assigned with the camera that saw it
+    assignment = surfaces.assign(1, 7, "car", region, viewpoint=CAMERA)
+
+    # Then only the car's own 400 points make up the surface
+    assert assignment is not None
+    assert assignment.total_points == 400
+    depth = surfaces.surfaces()[0].points[:, 2]
+    assert float(depth.max()) == pytest.approx(1.005, abs=1e-4)
+
+
+def test_the_band_keeps_points_within_its_width_of_the_median_range() -> None:
+    # Given a 1.5 m band and background 1 m and 3 m behind a car
+    surfaces = SurfaceMap(depth_band_m=1.5)
+    car = a_patch(0.005)
+    region = np.concatenate([car, a_tail_behind(car, 1.0, 50), a_tail_behind(car, 3.0, 50)])
+
+    # When the region is assigned
+    assignment = surfaces.assign(1, 7, "car", region, viewpoint=CAMERA)
+
+    # Then the points 1 m behind are inside the band and those 3 m behind are not
+    assert assignment is not None and assignment.total_points == 450
+
+
+def test_object_points_is_the_band_the_surfaces_apply() -> None:
+    # Given a car region with a tail
+    car = a_patch(0.005)
+    region = np.concatenate([car, a_tail_behind(car, 6.0, 100)])
+
+    # When it is banded on its own
+    kept = object_points(region, CAMERA, band_m=1.5)
+
+    # Then exactly the car remains, and without a camera nothing is cut
+    np.testing.assert_array_equal(kept, car)
+    assert len(object_points(region, None, band_m=1.5)) == 500
+
+
+def test_a_region_with_too_few_points_starts_no_surface_yet() -> None:
+    # Given a far car's mask that recovered only 30 depth points
+    surfaces = SurfaceMap(min_points=50)
+
+    # When it is assigned
+    assignment = surfaces.assign(1, 7, "car", a_patch(0.005)[:30], viewpoint=CAMERA)
+
+    # Then it is no surface yet
+    assert assignment is None
+    assert surfaces.surfaces() == ()
+
+
+def test_the_same_object_becomes_a_surface_once_a_frame_has_enough_depth() -> None:
+    # Given a car first seen with 30 points
+    surfaces = SurfaceMap(min_points=50)
+    surfaces.assign(1, 7, "car", a_patch(0.005)[:30], viewpoint=CAMERA)
+
+    # When a later frame recovers its whole patch
+    assignment = surfaces.assign(2, 7, "car", a_patch(0.005), viewpoint=CAMERA)
+
+    # Then that frame starts surface 1
+    assert assignment is not None
+    assert (assignment.surface_id, assignment.continued, assignment.total_points) == (1, False, 400)
+
+
+def test_a_sparse_region_does_not_grow_an_existing_surface() -> None:
+    # Given surface 1 of 400 points
+    surfaces = SurfaceMap(min_points=50)
+    surfaces.assign(1, 7, "car", a_patch(0.005), viewpoint=CAMERA)
+
+    # When a frame sees only 30 points, just beyond its edge
+    assignment = surfaces.assign(2, 7, "car", a_patch(0.205)[-30:], viewpoint=CAMERA)
+
+    # Then nothing is added
+    assert assignment is None
+    assert surface_sizes(surfaces) == {1: 400}
+
+
+def test_the_minimum_counts_points_left_after_the_band() -> None:
+    # Given 40 car points and 15 background points far behind them
+    surfaces = SurfaceMap(min_points=50)
+    car = a_patch(0.005)[:40]
+    region = np.concatenate([car, a_tail_behind(a_patch(0.005), 6.0, 15)])
+
+    # When the region is assigned
+    assignment = surfaces.assign(1, 7, "car", region, viewpoint=CAMERA)
+
+    # Then the 40 left after the band are too few
+    assert assignment is None
