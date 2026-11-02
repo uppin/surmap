@@ -168,6 +168,23 @@ uv run python scripts/demo.py
   land on earlier points continue the same surface across SAM window
   resets. A surface that drifts 40 cm or more is drawn red as a moving
   object.
+  A region keeps only its points within 1.5 m of its median range from
+  the camera (the background a mask edge catches is cut away), and a
+  region needs 50 such points to start or grow a surface.
+- **3D pane** (server-rendered, every map point): **Follow** (checked by
+  default) frames it like a navigation app, from behind and above the
+  camera along its heading, with the camera low in view; tilt and zoom
+  adjust it, and an orbit or a pan takes over. Drag, Shift+drag,
+  wheel or pinch work during a run, after it and on a rewound moment.
+  Hovering a surface names it (`car #27 · 336 pts · static`) and
+  selects all its points; a click opens it in the object feed.
+- **Object feed**: one card per surface with its own client-side 3D
+  preview (drag, Shift+drag, wheel or pinch, or buttons).
+- **SAM pane**: each mask's own dense points, coloured near → far, and
+  a card per object next to it (cyan: in 3D, with its surface id; grey:
+  too few depth points yet, with SAM's track id). Hovering a mask or
+  its card selects the object in 3D and the feed, a click opens it in
+  the feed, and a surface hovered anywhere is outlined there in yellow.
 - **Run history**: every frame, detection, and cloud update is stored
   in `demo-history.db`; the timeline rewinds through it.
 - **Cached reruns by default, Rebuild to record**: opening a scene
