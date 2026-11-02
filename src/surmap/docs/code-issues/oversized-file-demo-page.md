@@ -14,6 +14,7 @@
 | 2026-10-31 | 526 → 525 | `feat/sam-region-points`: the region listener went into `cloud_script.py` (`listenForRegions`), so this PR did not grow the page |
 | 2026-10-31 | 523 → 525 | `feat/demo-sam-prompt`: the stream URL carries the SAM prompt box's value (+2); the prompt form itself is rendered by `demo/sam_prompt.py` |
 | 2026-11-02 | 595 → 614 | `feat/demo-object-feed`: the feed, picking, SAM depth/cards and view helpers went into their own modules (`object_feed.py`, `cloud_pick.py`, `sam_depth.py`, `view_math.py`); the +19 is their splice, the listeners and the Follow box |
+| 2026-11-02 | 614 → 621 | `feat/demo-run-export-import`: the Export / Import markup and script are `demo/run_archive_ui.py`; the +7 is their splice |
 
 ## What the tool found
 
