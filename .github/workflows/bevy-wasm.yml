@@ -49,6 +49,13 @@ jobs:
         with:
           tool: trunk
 
+      # Bevy's native build (winit/wgpu/audio) links system libraries
+      # that ubuntu-latest does not ship; the wasm32 build needs none.
+      - name: Install Bevy native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
       - name: Test (native, calibration)
         run: cargo test --locked
 
