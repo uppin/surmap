@@ -53,6 +53,9 @@ plays.
 6. **Picking in the 3D pane.** Hovering a surface's points shows its id and label and
    selects (highlights) all of that surface's points. Clicking it scrolls the feed to that
    object's card and highlights it. Hovering a card selects its surface in the pane.
+7. **The SAM view in the same selection.** Hovering a SAM mask selects its object's points
+   in 3D, and clicking it opens its feed card. Hovering an object in 3D (or its card)
+   outlines its masks in the SAM view.
 
 ### What's Staying the Same
 
@@ -88,7 +91,8 @@ See the changeset [2026-11-02-demo-object-feed.md](./2026-11-02-demo-object-feed
 6. The page carries the object feed, fed by `surface` events and snapshot surfaces.
 7. A `region` event carries, per region, the banded points' display pixels and range, sampled to at most 1500.
 9. Hovering a surface in the 3D pane shows `label #id` and highlights all its points; clicking it brings its feed card into view.
-10. On KITTI 0009 in a browser: car-sized surfaces, a feed card per surface whose preview
+10. Hovering a SAM mask lights up its surface in 3D, and clicking it brings its feed card into view. Hovering a surface in 3D outlines its SAM masks.
+11. On KITTI 0009 in a browser: car-sized surfaces, a feed card per surface whose preview
    orbits, depth-coloured dense points on each SAM mask, and a 3D pane that follows drags after the run ends.
 
 ## References

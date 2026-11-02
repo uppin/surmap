@@ -18,7 +18,7 @@
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ✅ 2026-11-02 `/green` Green — implement until every red test passes · 1218 passed / 28 skipped; ruff, format, mypy strict green
+- [wf 3] ⏳ `/green` Green — implement until every red test passes · milestones 1–7 @ `b830fc4`; milestone 8 added
   - [x] Milestone 1: `SurfaceMap` depth band and minimum points
   - [x] Milestone 2: the camera pose reaches `SurfaceMap` (`RegionResult.camera`, `region` event `viewpoint`, live backend from the dense line)
   - [x] Milestone 3: session-level `CloudViewer`; every `cloud_*` action works without a run and answers with `cloud_png`
@@ -27,6 +27,8 @@
   - [x] Milestone 6: region pixels (`project_to_display`), `region` event `pixels`, SAM pane depth-gradient overlay
   - [x] Milestone 7: hover picking — `cloud_ids_png` beside every `cloud_png`; hover shows the surface id and selects all its pixels; clicking it scrolls the feed to its card and highlights it (and hovering a card selects it in the pane)
   - [x] Acceptance: `tests/test_demo_cloud_pick.py` passes
+  - [ ] Milestone 8: SAM pane in the same selection — hovering a mask selects its surface (3D points light up), clicking it opens the feed card; hovering a surface in 3D (or its card) outlines its masks on the SAM frame shown
+  - [ ] Acceptance: `tests/test_demo_sam_pick.py` passes
   - [x] Acceptance: `tests/test_survey_surfaces.py`, `tests/test_demo_object_feed.py`, `tests/test_demo_cloud_ptz.py` pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
@@ -149,6 +151,17 @@ sidecar's SGBM settings.
     drag is still an orbit) scrolls the feed to its card and highlights it
     (`focusFeedItem`). Hovering a card selects its surface in the pane.
 
+- **SAM pane picking (milestone 8):**
+  - **Mapping.** The page keeps, per frame, which surface each SAM track was assigned to
+    (`noteSurfaces`, from `surface` events).
+  - **Hover and click.** Hovering a mask (`maskAt`: the smallest polygon containing the
+    cursor) selects that surface: its 3D points light up and its card is the hovered
+    one. A click on it scrolls the feed to that card.
+  - **Shared selection.** The selection is one value (`cloudSelected`), so hovering a
+    surface in 3D or its card outlines the surface's masks on the shown SAM frame in
+    yellow.
+  - **Limit.** A scrubbed moment has no surface events, so its masks don't link.
+
 ### Delta (What's Changing)
 
 #### surmap
@@ -164,6 +177,7 @@ sidecar's SGBM settings.
 | `demo/server.py` | uses the viewer; `/control` without a run |
 | `demo/cloud_script.py` | accumulated deltas, response image, pinch |
 | `demo/object_feed.py` | new: feed script and markup |
+| `demo/sam_depth.py` | track → surface per frame; SAM hover, click and highlight |
 | `demo/page.py` | splices the feed; SAM pane draws region pixels; passes `cloud_ids_png` |
 | `demo/surface_render.py` | `surface_pixels` shared by the colour and id images |
 | `demo/replay.py`, `demo/history.py` | id image rides with replays; render-only |
@@ -243,6 +257,7 @@ V4, in the in-app browser on KITTI 0009 (cached rerun of `38b8dc54`, then a Repl
 - `tests/test_slam_streaming_dense.py`: a live region answer carries the pose of the dense line before it.
 - `tests/test_demo_object_feed.py` (regions): a `region` event carries `viewpoint` and banded `pixels` with ranges, capped at 1500.
 - `tests/test_demo_object_feed.py`: the region event carries the viewpoint and the surface is banded; the page carries the feed and feeds it from surface events and snapshots.
+- `tests/test_demo_sam_pick.py`: `polygonContains` and `maskAt` in node; the SAM script maps a hovered mask to its frame's surface, outlines the selected surface's masks, and is wired to hover, click and the shared selection.
 - `tests/test_demo_cloud_pick.py`: the id image holds each surface's id on its pixels, nothing on map-only pixels or hidden surfaces, the moving surface on shared pixels; map events, replays, `/control` answers and snapshots carry it; `surfaceIdNear` and `selectionMask` in node; the page wires hover to the tooltip and the selection, and a click (`isClick`) to `focusFeedItem`.
 - `tests/test_demo_cloud_ptz.py`: `cloud_orbit` after the run answers 200 with a re-rendered `cloud_png`; the pose carries into the next run; the drag handler accumulates deltas.
 
