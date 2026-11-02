@@ -7,6 +7,13 @@ surface). `snapshot_at` joins them at one moment: the frame at that
 position plus the newest map snapshot at or before its frame and every
 surface point assigned by then — so rewinding shows the points and
 surfaces as they were then, not the final cloud.
+
+A run's *journal* is what a replay needs to run the segmentation again
+without RTAB-Map or SAM (`surmap.demo.replay`): every streamed event in
+order (render-only images stripped), the rig regions are answered with,
+and RTAB-Map's dense buffer — each SAM frame's disparity as the sidecar
+computed it (`surmap.slam.dense`). A replay is itself a run; its source
+names the run whose dense buffer it reads.
 """
 
 from __future__ import annotations
@@ -21,7 +28,32 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
+from surmap.slam.dense import DenseFrame
+from surmap.types import Pose, Vec3
+
 PointList = list[list[float]]
+
+# Server-rendered images a replay draws again; never journalled.
+RENDER_ONLY = ("cloud_png",)
+
+
+def _journalled(kind: str, data: dict[str, object]) -> dict[str, object]:
+    """What the journal keeps of an event: no render-only images, and a
+    region's points only as their count (the dense buffer reproduces them)."""
+    kept = {key: value for key, value in data.items() if key not in RENDER_ONLY}
+    regions = kept.get("regions")
+    if kind == "region" and isinstance(regions, list):
+        kept["regions"] = [
+            {
+                **{key: value for key, value in region.items() if key != "points"},
+                "point_count": len(region.get("points") or []),
+            }
+            for region in regions
+            if isinstance(region, dict)
+        ]
+    return kept
+
+
 ColourList = list[list[int]]
 
 _SCHEMA = """
@@ -73,6 +105,31 @@ CREATE TABLE IF NOT EXISTS surface_points (
     moving INTEGER NOT NULL,
     points TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS run_rigs (
+    run_id TEXT PRIMARY KEY,
+    rig TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS dense_frames (
+    run_id TEXT NOT NULL,
+    frame_id INTEGER NOT NULL,
+    channel INTEGER NOT NULL,
+    t_ns INTEGER NOT NULL,
+    to_map TEXT NOT NULL,
+    disparity_png BLOB NOT NULL,
+    PRIMARY KEY (run_id, frame_id, channel)
+);
+CREATE TABLE IF NOT EXISTS run_sources (
+    run_id TEXT PRIMARY KEY,
+    source_run_id TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS events_run ON events (run_id, id);
+CREATE INDEX IF NOT EXISTS frames_run_frame ON frames (run_id, frame_id);
 CREATE INDEX IF NOT EXISTS surface_points_run_frame ON surface_points (run_id, frame_id, id);
 CREATE INDEX IF NOT EXISTS maps_run_frame ON maps (run_id, frame_id, id);
 CREATE INDEX IF NOT EXISTS detections_run_frame ON detections (run_id, frame_id, id);
@@ -232,6 +289,112 @@ class RunHistoryStore:
             cast(PointList, surface["points"]).extend(json.loads(str(row["points"])))
         return [surfaces[surface_id] for surface_id in sorted(surfaces)]
 
+    def record_event(self, run_id: str, kind: str, data: dict[str, object]) -> None:
+        """Append one streamed event to the run's journal."""
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO events (run_id, kind, data) VALUES (?, ?, ?)",
+                (run_id, kind, json.dumps(_journalled(kind, data))),
+            )
+
+    def journal(self, run_id: str) -> list[tuple[str, dict[str, object]]]:
+        """The run's journalled events as (kind, data), in recorded order."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT kind, data FROM events WHERE run_id = ? ORDER BY id", (run_id,)
+            ).fetchall()
+        return [
+            (str(row["kind"]), cast(dict[str, object], json.loads(row["data"]))) for row in rows
+        ]
+
+    def frame_jpeg(self, run_id: str, frame_id: int) -> bytes | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT jpeg FROM frames WHERE run_id = ? AND frame_id = ? ORDER BY seq LIMIT 1",
+                (run_id, frame_id),
+            ).fetchone()
+        return bytes(row["jpeg"]) if row is not None else None
+
+    def record_rig(self, run_id: str, rig: dict[str, object]) -> None:
+        """How the run's regions were answered (rig message and display size)."""
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT OR REPLACE INTO run_rigs VALUES (?, ?)", (run_id, json.dumps(rig))
+            )
+
+    def rig(self, run_id: str) -> dict[str, object] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT rig FROM run_rigs WHERE run_id = ?", (run_id,)
+            ).fetchone()
+        return cast(dict[str, object], json.loads(row["rig"])) if row is not None else None
+
+    def record_dense(self, run_id: str, frame: DenseFrame) -> None:
+        """One frame's journalled dense buffer (RTAB-Map's disparity, as computed)."""
+        position = frame.to_map.position
+        to_map = [position.x, position.y, position.z, *frame.to_map.orientation_xyzw]
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT OR REPLACE INTO dense_frames VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    run_id,
+                    frame.frame_id,
+                    frame.channel,
+                    frame.t_ns,
+                    json.dumps(to_map),
+                    frame.disparity_png,
+                ),
+            )
+
+    def dense_frames(self, run_id: str) -> list[DenseFrame]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM dense_frames WHERE run_id = ? ORDER BY frame_id, channel",
+                (run_id,),
+            ).fetchall()
+        frames: list[DenseFrame] = []
+        for row in rows:
+            x, y, z, qx, qy, qz, qw = (float(v) for v in json.loads(row["to_map"]))
+            frames.append(
+                DenseFrame(
+                    int(row["frame_id"]),
+                    int(row["t_ns"]),
+                    int(row["channel"]),
+                    Pose(Vec3(x, y, z), (qx, qy, qz, qw)),
+                    bytes(row["disparity_png"]),
+                )
+            )
+        return frames
+
+    def record_source(self, run_id: str, source_run_id: str) -> None:
+        """`run_id` replays `source_run_id`'s journal."""
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT OR REPLACE INTO run_sources VALUES (?, ?)", (run_id, source_run_id)
+            )
+
+    def source_run(self, run_id: str) -> str | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT source_run_id FROM run_sources WHERE run_id = ?", (run_id,)
+            ).fetchone()
+        return str(row["source_run_id"]) if row is not None else None
+
+    def root_run(self, run_id: str) -> str:
+        """The recorded (non-replay) run at the end of `run_id`'s replay lineage."""
+        seen = {run_id}
+        while (source := self.source_run(run_id)) is not None and source not in seen:
+            seen.add(source)
+            run_id = source
+        return run_id
+
+    def _journalled(self, run_id: str) -> bool:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT 1 FROM events WHERE run_id = ? LIMIT 1", (run_id,)
+            ).fetchone()
+        return row is not None
+
     def finish_run(self, run_id: str, status: str = "completed") -> None:
         with self._lock, self._db:
             self._db.execute(
@@ -262,6 +425,8 @@ class RunHistoryStore:
             "created_at": float(row["created_at"]),
             "finished_at": (float(row["finished_at"]) if row["finished_at"] is not None else None),
             "frame_count": self._frame_count(run_id),
+            "replayable": self._journalled(run_id),
+            "replay_of": self.source_run(run_id),
         }
 
     def list_runs(self) -> list[dict[str, object]]:

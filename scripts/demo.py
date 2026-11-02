@@ -24,8 +24,12 @@ the SAM pane's prompt box restarts the run with another one. The model defaults 
 SAM 3.1 `.pt`, or an `.onnx` export (or set `$SURMAP_SAM_MODEL`).
 Without `--sam-device` no SAM runs. The real model needs the
 PyTorch stack in the project env (see `sam3_torch`); the `.onnx`
-path needs `onnxruntime-gpu` for a GPU device. Startup fails by
-name when a runtime, model or provider is missing.
+path needs `onnxruntime-gpu` for a GPU device. `--sam-device mps`
+runs SAM 3.1's image model on an Apple-silicon GPU instead, one frame
+at a time with ids kept by box overlap (the video model is CUDA-only);
+it takes about 2.4 s a frame, so pass a matching `--fps` (e.g. 0.35)
+to keep every SAM frame inside the sidecar's 10 s region buffer.
+Startup fails by name when a runtime, model or provider is missing.
 
 Add a dataset by adding one entry to `DATASETS` in
 `surmap.demo.datasets`; it then appears in the page's picker, in
@@ -96,8 +100,8 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         metavar="DEVICE",
         help="run SAM in continuous (video) mode on this GPU device, "
-        "e.g. cuda:0 or 0, and show its detections on the frame preview "
-        "(without it no SAM runs)",
+        "e.g. cuda:0 or 0 (mps: Apple GPU, per-frame image model), and show "
+        "its detections on the frame preview (without it no SAM runs)",
     )
     parser.add_argument(
         "--sam-model",

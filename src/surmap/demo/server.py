@@ -52,12 +52,22 @@ from surmap.demo.datasets import (
     load_calibration,
     scaled_sensor_yaml,
 )
+from surmap.demo.events import (
+    JOURNAL_ONLY,
+    RegionPlacer,
+    SurfaceAssigner,
+    dense_event,
+    dense_frame_of,
+    rig_event,
+    sam_event,
+    surface_layer,
+)
 from surmap.demo.events import DemoEvent as DemoEvent
-from surmap.demo.events import RegionPlacer, SurfaceAssigner, sam_event, surface_layer
 from surmap.demo.history import RunHistoryStore
 from surmap.demo.page import CM5_ASIDE, PAGE, RTAB_STAT
 from surmap.demo.remote import RemoteCm5Backend, RemoteDetectionSource, RemoteSamDetector
 from surmap.demo.remote import fetch_capabilities as _fetch_capabilities
+from surmap.demo.replay import JournalPlayer
 from surmap.demo.sam_prompt import SamPromptPolicy, sam_pane
 from surmap.demo.surface_render import MOVING_ALPHA as MOVING_ALPHA
 from surmap.demo.surface_render import MOVING_COLOUR as MOVING_COLOUR
@@ -70,6 +80,7 @@ from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
 from surmap.detection.source import CoralDetectionSource, DetectionSource
 from surmap.detection.tracker import TrackedDetection
 from surmap.slam.base import FrameResult
+from surmap.slam.dense import DenseJournalSource
 from surmap.slam.regions import RegionPointSource
 from surmap.slam.sidecar import SidecarRtabmapBackend
 from surmap.slam.stream_protocol import Keypoint, MapUpdate, OdomUpdate, Rectification
@@ -1140,6 +1151,7 @@ class DemoPlayer:
                 width=options.width,
                 height=options.height,
                 max_depth_m=options.max_depth_m,
+                dense_journal=True,  # every run is journalled for replay
             )
         return SidecarRtabmapBackend(
             cam0_yaml=options.cam0_yaml,
@@ -1184,15 +1196,28 @@ class DemoPlayer:
         display = _Display(
             len(timestamps), live, calibration, prepared.spec.depth_stops_m, self._size
         )
+        # Narrowed from `object`: mypy finds no overlap between the batch
+        # sidecar in `backend`'s union and the protocol.
+        found: object = backend
+        journal = found if isinstance(found, DenseJournalSource) else None
+
+        def released(*, final: bool = False) -> Iterator[DemoEvent]:
+            """Released display events, then any dense frames the regions journalled."""
+            yield from display.release(final=final)
+            for frame in journal.poll_dense() if journal is not None else ():
+                yield dense_event(frame)
+
         last_map_emit = 0.0
         try:
+            if journal is not None and journal.region_rig is not None:
+                yield rig_event(journal.region_rig, self._size)
             for index, t_ns in enumerate(timestamps):
                 # Paused: no pairs reach SLAM and no new frames are shown,
                 # but held frames keep resolving as their odometry lands.
                 while self._controls.paused and not self._controls.cancelled:
                     if isinstance(backend, LiveSlamBackend):
                         backend.poll_updates()
-                    yield from display.release()
+                    yield from released()
                     self._controls.wait_while_paused(0.05)
                 if self._controls.cancelled:
                     return
@@ -1234,7 +1259,7 @@ class DemoPlayer:
                     display.add_sam(stream_worker.poll())
                 if isinstance(backend, LiveSlamBackend):
                     backend.poll_updates()
-                yield from display.release()
+                yield from released()
                 if isinstance(backend, LiveSlamBackend):
                     now = time.monotonic()
                     version = (self._controls.cloud_version, display.surfaces.version)
@@ -1253,7 +1278,7 @@ class DemoPlayer:
                 display.add_sam(sam_worker.drain())
             if stream_worker is not None:
                 display.add_sam(stream_worker.drain())
-            yield from display.release()
+            yield from released()
             if backend is not None:
                 yield DemoEvent(
                     "status",
@@ -1266,7 +1291,7 @@ class DemoPlayer:
                     },
                 )
                 results = backend.flush()
-                yield from display.release(final=True)
+                yield from released(final=True)
                 trajectory = backend.trajectory()
                 cloud = results[-1].static_points if results else ()
                 travelled = 0.0
@@ -1335,7 +1360,7 @@ class DemoPlayer:
                         **plan,
                     },
                 )
-            yield from display.release(final=True)
+            yield from released(final=True)
         finally:
             if worker is not None:
                 worker.close()
@@ -1384,11 +1409,60 @@ class _DemoHttpServer(ThreadingHTTPServer):
     history_store: RunHistoryStore
 
     def start_run(self, prepared: PreparedDataset, sam_prompt: str | None) -> _RunEngine | None:
-        """Start a fresh server-side run, taking over from the current one.
+        """Start a fresh live server-side run, taking over from the current one.
 
         The previous run (if any) is cancelled and its subscribers
         ended; None when it does not stop in time.
         """
+        title = prepared.spec.title + (f" · SAM: {sam_prompt}" if sam_prompt else "")
+        options = self.player_options
+
+        def play(controls: PlaybackControls) -> Iterator[DemoEvent]:
+            player = DemoPlayer(
+                prepared,
+                controls=controls,
+                sam_prompt=sam_prompt,
+                **options,  # type: ignore[arg-type]
+            )
+            return player.events()
+
+        return self._take_over(lambda: _RunEngine(self, prepared.spec.dataset_id, title, play))
+
+    def start_replay(self, run_id: str, speed: float) -> _RunEngine | None:
+        """Replay `run_id` from its journal as a new run (see `start_run`).
+
+        `speed` multiplies the scene's frame rate; 0 plays as fast as possible.
+        """
+        source = self.history_store.get_run(run_id)
+        assert source is not None
+        dataset_id = str(source["dataset_id"])
+        spec = self.catalog.get(dataset_id)
+        fps = (spec.fps if spec is not None else 10.0) * speed
+        store = self.history_store
+
+        def play(controls: PlaybackControls) -> Iterator[DemoEvent]:
+            def render(
+                points: NDArray[np.float32],
+                colors: NDArray[np.uint8],
+                bounds: tuple[NDArray[np.float32], NDArray[np.float32]],
+                layer: SurfaceLayer,
+            ) -> str:
+                return render_cloud_view(
+                    points,
+                    colors,
+                    controls.cloud_pose(),
+                    bounds,
+                    surfaces=controls.shown_surfaces(layer),
+                )
+
+            return JournalPlayer(
+                store, run_id, controls=controls, fps=fps, render_cloud=render
+            ).events()
+
+        title = f"Replay of {source['title']}"
+        return self._take_over(lambda: _RunEngine(self, dataset_id, title, play, replay_of=run_id))
+
+    def _take_over(self, create: Callable[[], _RunEngine]) -> _RunEngine | None:
         with self.run_lock:
             with self.state_lock:
                 previous = self.run_engine
@@ -1396,7 +1470,7 @@ class _DemoHttpServer(ThreadingHTTPServer):
                 previous.stop()
                 if not previous.join(TAKEOVER_TIMEOUT_S):
                     return None
-            engine = _RunEngine(self, prepared, sam_prompt)
+            engine = create()
             engine.start()
             with self.state_lock:
                 self.run_engine = engine
@@ -1574,7 +1648,10 @@ def make_demo_server(
         # name at startup, not mid-stream. An `.onnx` model runs the
         # ONNX per-frame adapter; anything else (an HF id such as the
         # default facebook/sam3.1, a local .pt or its directory) runs
-        # the real SAM 3.1 whole-video streamer on that device.
+        # the real SAM 3.1 whole-video streamer on that device — except
+        # on Apple's GPU, where only the image model runs, per frame.
+        from surmap.survey import sam3_torch
+        from surmap.survey.sam3 import parse_sam_device
         from surmap.survey.sam3_torch import DEFAULT_SAM31_MODEL
 
         model_spec = str(sam_model) if sam_model is not None else DEFAULT_SAM31_MODEL
@@ -1584,6 +1661,10 @@ def make_demo_server(
             # The export's concept was fixed when it was exported.
             fixed_prompt = sam_label or "object"
             video_sam = sam3_video_detector(Path(model_spec), device=sam_device, label=fixed_prompt)
+        elif parse_sam_device(sam_device)[0] == "mps":
+            video_sam = sam3_torch.sam31_torch_video_detector(
+                model_spec, device=sam_device, prompt=sam_label or "object"
+            )
         else:
             from surmap.survey.sam3_torch import sam31_video_streamer
 
@@ -1673,12 +1754,19 @@ class _RunEngine:
     """
 
     def __init__(
-        self, server: _DemoHttpServer, prepared: PreparedDataset, sam_prompt: str | None
+        self,
+        server: _DemoHttpServer,
+        dataset_id: str,
+        title: str,
+        play: Callable[[PlaybackControls], Iterator[DemoEvent]],
+        *,
+        replay_of: str | None = None,
     ) -> None:
         self._server = server
-        self._prepared = prepared
-        self.dataset_id = prepared.spec.dataset_id
-        self.sam_prompt = sam_prompt
+        self.dataset_id = dataset_id
+        self._title = title
+        self._play_events = play
+        self.replay_of = replay_of
         self.controls = PlaybackControls()
         self.run_id = ""
         self.done = threading.Event()
@@ -1689,12 +1777,12 @@ class _RunEngine:
 
     def start(self) -> None:
         store = self._server.history_store
-        title = self._prepared.spec.title + (
-            f" · SAM: {self.sam_prompt}" if self.sam_prompt else ""
-        )
-        self.run_id = store.create_run(self.dataset_id, title)
+        self.run_id = store.create_run(self.dataset_id, self._title)
+        if self.replay_of is not None:
+            store.record_source(self.run_id, self.replay_of)
         self._latest["run"] = DemoEvent(
-            "run", {"run_id": self.run_id, "dataset_id": self.dataset_id}
+            "run",
+            {"run_id": self.run_id, "dataset_id": self.dataset_id, "replay_of": self.replay_of},
         )
         self._thread.start()
 
@@ -1762,13 +1850,13 @@ class _RunEngine:
         last_frame_id = 0
         last_map: dict[str, object] = {}
         try:
-            player = DemoPlayer(
-                self._prepared,
-                controls=self.controls,
-                sam_prompt=self.sam_prompt,
-                **server.player_options,  # type: ignore[arg-type]
-            )
-            for event in player.events():
+            for event in self._play_events(self.controls):
+                if event.kind == "rig":
+                    store.record_rig(self.run_id, event.data)
+                elif event.kind == "dense":
+                    store.record_dense(self.run_id, dense_frame_of(event))
+                else:
+                    store.record_event(self.run_id, event.kind, event.data)
                 if event.kind == "frame" and event.jpeg:
                     last_frame_id = int(str(event.data["frame_id"]))
                     overlay_raw = event.data["detections"]
@@ -1800,7 +1888,8 @@ class _RunEngine:
                     # The final cloud keeps the last map's keyframe/odom stats.
                     _record_map(store, self.run_id, {**last_map, **event.data}, last_frame_id)
                     completed = True
-                self._publish(event)
+                if event.kind not in JOURNAL_ONLY:
+                    self._publish(event)
             completed = True
         except Exception:
             completed = False
@@ -1884,6 +1973,9 @@ class _DemoHandler(BaseHTTPRequestHandler):
                     self._send_json(200, snapshot)
                 return
             self._send(404, "text/plain", b"not found")
+            return
+        if url.path == "/stream" and "replay" in query:
+            self._replay(query["replay"][0], query.get("speed", ["1"])[0])
             return
         if url.path in ("/", "/stream"):
             dataset_id = self._scene(query)
@@ -1992,6 +2084,21 @@ class _DemoHandler(BaseHTTPRequestHandler):
         engine = self.server.start_run(
             prepared, self.server.sam_prompt(dataset_id, requested_prompt)
         )
+        self._serve(engine)
+
+    def _replay(self, run_id: str, speed_raw: str) -> None:
+        run = self.server.history_store.get_run(run_id)
+        if run is None or not run["replayable"]:
+            self._send(404, "text/plain", b"no journalled run to replay")
+            return
+        try:
+            speed = max(0.0, float(speed_raw))
+        except ValueError:
+            speed = 1.0
+        self._serve(self.server.start_replay(run_id, speed))
+
+    def _serve(self, engine: _RunEngine | None) -> None:
+        """Stream a run's published events to this viewer as SSE."""
         if engine is None:
             self._send(409, "text/plain", b"the running demo stream did not stop")
             return

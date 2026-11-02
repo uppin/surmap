@@ -381,7 +381,10 @@ Layered — the layers are never merged into one undifferentiated cloud:
   it never reaches layer 1 or RTAB-Map's map. Known limit: an object
   that moves more than its own overlap per frame never continues a
   surface, so it leaves one static surface per frame. Surfaces are
-  persisted per demo run in SQLite (`surface_points`).
+  persisted per demo run in SQLite (`surface_points`). Each demo run
+  also journals its events in order and RTAB-Map's dense buffer, so a
+  replay (`surmap.demo.replay`) recomputes regions and surfaces with
+  neither RTAB-Map nor SAM running.
 - "Adding object points to RTAB-Map's output" means layers 2–3 are
   added to the output product (`augment_map` on-board, `surmap_map`
   on the base). Object points are never written back into RTAB-Map's
@@ -474,9 +477,16 @@ frame, never accumulated across frames or queries. It is served by the
 live RTAB-Map sidecar (`--slam-backend streaming`): the sidecar keeps a
 time-bounded ring (`--region-buffer-s`, default 10 s) of rectified pairs
 and odometry poses, maps the polygon onto the requested channel's
-rectified image, runs SGBM with that channel as the reference, and
-places the points with RTAB-Map's current map correction × the frame's
-odometry pose. A frame no longer in the ring is answered
+rectified image, and reads the points from that channel's full-frame
+SGBM disparity, computed once on the frame's first region query (with
+that channel as the reference) and reused by later queries on it. The
+points are placed with RTAB-Map's map correction × the frame's odometry
+pose, as of that first query. With the dense journal on (protocol v5,
+`dense_journal` in the hello), the sidecar emits each newly computed
+disparity once, with that transform, and announces the rig it answers
+with (`region_rig` on `ready`). That disparity is the source of truth
+for replays: `surmap.slam.dense` answers the same queries from it by
+repeating only the polygon geometry, never stereo. A frame no longer in the ring is answered
 `FRAME_EXPIRED`, a lost one `NO_POSE`, a malformed query
 `INVALID_QUERY` — never a guess. Region points are a read-only layer on
 RTAB-Map's output; nothing is written back into its map. The station
