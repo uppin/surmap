@@ -182,7 +182,10 @@ uv run python scripts/demo.py
   map and masks come from the journal; regions and surfaces are
   recomputed by the current code (`surmap.demo.replay.JournalPlayer`
   takes the `SurfaceMap` under tuning). Each replay is saved as a new
-  run naming its source, for comparison.
+  run naming its source, for comparison. A replay or a rewound moment
+  shows the run's recorded SAM masks even on a console started without
+  SAM, and a long journal starts at once (it is streamed, and map views
+  are drawn at the live 0.33 s cadence).
 
 Datasets are fetched on first use, SHA-256 verified, and cached in
 `~/.cache/surmap/demo-datasets` (`surmap.demo.datasets`, never
