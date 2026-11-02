@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """One-command civilian disaster mission.
 
-Offline (the default) uses the recorded SITL fixture and fakes. It does
-not launch Gazebo and it does not call Meta, Baseten, or Modal.
+Offline (the default) never calls Meta, Baseten, or Modal and does not
+launch Gazebo. When a recorded live run is committed under
+``demo/recordings/mission/`` (or named with ``--recording``), offline
+mode shows it and replays its real model responses through the
+clients. Otherwise it uses the recorded SITL fixture and fakes;
+``--fixtures`` forces that.
 
     uv run python scripts/mission_demo.py
     uv run python scripts/mission_demo.py --no-viewer
+    uv run python scripts/mission_demo.py --fixtures
 
 Live with ``SURMAP_LIVE_META=1`` and ``MODEL_API_KEY`` calls Meta SAM
 3.1, Muse Spark labels, and the Muse Spark scene note. Baseten and
@@ -20,6 +25,8 @@ directory. This process does not enable PX4 motors.
     uv run python scripts/mission_demo.py --live --capture ~/sitl-runs/disaster-01
     uv run python scripts/mission_demo.py --live --capture ~/sitl-runs/disaster-01 \\
         --max-depth-m 30 --min-disparity-px 2
+    uv run python scripts/mission_demo.py --live --capture ~/sitl-runs/disaster-01 \\
+        --record demo/recordings/mission
 
 The viewer listens on http://127.0.0.1:8770/ . See docs/mission-demo.md.
 """
@@ -33,9 +40,12 @@ from pathlib import Path
 
 from surmap.mission.demo import (
     MissionConfigError,
+    default_recording_dir,
     run_live_mission,
     run_offline_mission,
+    run_recorded_mission,
 )
+from surmap.mission.recording import RecordingError
 from surmap.mission.replay import MissionReplay
 from surmap.viewer.server import make_viewer_server
 
@@ -43,7 +53,24 @@ from surmap.viewer.server import make_viewer_server
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--live", action="store_true", help="use flagged live services")
-    parser.add_argument("--offline", action="store_true", help="recorded fixtures (the default)")
+    parser.add_argument(
+        "--offline", action="store_true", help="no live calls: a recording or fixtures (default)"
+    )
+    parser.add_argument(
+        "--fixtures", action="store_true", help="offline with fixtures even if a recording exists"
+    )
+    parser.add_argument(
+        "--recording",
+        type=Path,
+        default=None,
+        help="recorded live run to replay offline (default: demo/recordings/mission if present)",
+    )
+    parser.add_argument(
+        "--record",
+        type=Path,
+        default=None,
+        help="with --live: write requests (auth dropped) and responses here for replay",
+    )
     parser.add_argument("--capture", type=Path, default=None, help="SITL capture directory")
     parser.add_argument(
         "--sam-route",
@@ -70,8 +97,11 @@ def main(argv: list[str] | None = None) -> int:
         help="drop points below this disparity (default 2, or $SURMAP_MIN_DISPARITY_PX)",
     )
     args = parser.parse_args(argv)
-    if args.live and args.offline:
-        print("Pass only one of --live and --offline.", file=sys.stderr)
+    if args.live and (args.offline or args.fixtures):
+        print("Pass only one of --live and --offline/--fixtures.", file=sys.stderr)
+        return 2
+    if args.record is not None and not args.live:
+        print("--record needs --live.", file=sys.stderr)
         return 2
     try:
         if args.live:
@@ -87,10 +117,15 @@ def main(argv: list[str] | None = None) -> int:
                 max_depth_m=args.max_depth_m,
                 min_disparity_px=args.min_disparity_px,
                 sam_route=args.sam_route,
+                record_dir=args.record,
             )
         else:
-            result = run_offline_mission(args.output)
-    except MissionConfigError as exc:
+            recording = None if args.fixtures else (args.recording or default_recording_dir())
+            if recording is None:
+                result = run_offline_mission(args.output)
+            else:
+                result = run_recorded_mission(args.output, recording)
+    except (MissionConfigError, RecordingError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     if args.report is not None and args.report.resolve() != result.report_path.resolve():
@@ -107,7 +142,10 @@ def _print_summary(report_path: Path) -> None:
         print(f"Impact report: {report_path}")
         return
     basis = payload.get("basis")
-    label = "computed from fixtures" if basis == "fixtures" else basis
+    label = {
+        "fixtures": "computed from fixtures",
+        "recorded-live": f"recorded live run, {payload.get('recorded_at')}",
+    }.get(str(basis), basis)
     error_text = _number(payload.get("mean_position_error_m"), "m")
     first_text = _number(payload.get("time_to_first_detection_s"), "s")
     print(
@@ -116,6 +154,11 @@ def _print_summary(report_path: Path) -> None:
         f"time to first detection {first_text}."
     )
     print(f"Report: {report_path}")
+    calls = payload.get("model_calls")
+    if isinstance(calls, list):
+        for call in calls:
+            if isinstance(call, dict):
+                print(f"  {call.get('role')}: {call.get('source')}")
     answer = payload.get("ask_answer")
     if isinstance(answer, str):
         print(answer)

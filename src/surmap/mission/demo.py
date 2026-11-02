@@ -23,8 +23,16 @@ from typing import Protocol
 from PIL import Image
 
 from surmap.geometry import centroid, to_camera_frame
-from surmap.labelling.baseten_muse import BasetenMuseLabelClient, ObjectLabel
-from surmap.labelling.meta_muse import MetaMuseLabelClient, MetaMuseSceneClient
+from surmap.labelling.baseten_muse import (
+    BasetenMuseLabelClient,
+    ObjectLabel,
+    _UrllibChatTransport,
+)
+from surmap.labelling.meta_muse import (
+    MetaMuseLabelClient,
+    MetaMuseSceneClient,
+    UrllibMetaMuseTransport,
+)
 from surmap.map.snapshot import MetaCallRecord, build_snapshot, write_snapshot
 from surmap.mission.metrics import (
     ImpactMetrics,
@@ -33,6 +41,25 @@ from surmap.mission.metrics import (
     load_offline_perception,
     score_survivors,
 )
+from surmap.mission.recording import (
+    SNAPSHOT_FILE,
+    CallRecorder,
+    RecordedCall,
+    Recording,
+    RecordingChatTransport,
+    RecordingError,
+    RecordingMetaMuseTransport,
+    RecordingMetaResponsesTransport,
+    ReplayChatTransport,
+    ReplayMetaMuseTransport,
+    ReplayMetaResponsesTransport,
+    ReplayQueue,
+    has_recording,
+    load_recording,
+    recording_poster,
+    replay_poster,
+    write_recording,
+)
 from surmap.simulation.calibration import StereoCalibrationSpec, render_cam_sensor_yaml
 from surmap.simulation.disaster_world import DisasterGroundTruth, load_disaster_ground_truth
 from surmap.simulation.euroc_export import export_euroc_session
@@ -40,8 +67,8 @@ from surmap.simulation.sitl_capture import load_sitl_capture
 from surmap.slam.base import FrameResult
 from surmap.slam.streaming import DEFAULT_MAX_DEPTH_M, DEFAULT_MIN_DISPARITY_PX
 from surmap.survey.mask_cloud import points_in_mask
-from surmap.survey.meta_sam import MetaSamDetector
-from surmap.survey.modal_sam import ModalSamDetector
+from surmap.survey.meta_sam import MetaSamDetector, UrllibMetaTransport
+from surmap.survey.modal_sam import ModalSamDetector, post_json
 from surmap.survey.sam import RawFrame, SamDetection
 from surmap.survey.stereo import StereoRig
 from surmap.types import (
@@ -53,6 +80,7 @@ from surmap.types import (
     StereoFramePair,
     Vec3,
 )
+from surmap.usage import UsageLedger
 from surmap.viewer.ask import answer_map_question
 from surmap.viewer.snapshot import read_snapshot
 
@@ -79,6 +107,11 @@ _BASIS_NOTE = (
     "Each detection is a recorded camera point posed at a fixed offset "
     "from a person in the ground-truth JSON, then matched by distance."
 )
+_SOURCE_FIXTURE = "fixture"
+_SOURCE_LIVE = "live"
+_SOURCE_RECORDED = "recorded-live"
+_REPLAY_KEY = "recorded-replay-no-key"
+_MODAL_TIMEOUT_S = 300.0
 
 
 class MissionConfigError(RuntimeError):
@@ -365,6 +398,7 @@ def run_offline_mission(output_dir: Path) -> MissionResult:
         euroc_path=euroc_path,
         gazebo="not-used",
         meta_calls=(),
+        model_call_source=_SOURCE_FIXTURE,
     )
     return MissionResult(
         metrics=metrics,
@@ -384,8 +418,14 @@ def run_live_mission(
     max_depth_m: float | None = None,
     min_disparity_px: float | None = None,
     sam_route: str | None = None,
+    record_dir: Path | None = None,
 ) -> MissionResult:
-    """Real SAM, labels, and scene note. The cloud is the streaming RTAB-Map map."""
+    """Real SAM, labels, and scene note. The cloud is the streaming RTAB-Map map.
+
+    ``record_dir`` writes every model request (auth dropped, media
+    hashed) and response there, plus the snapshot and report, so
+    offline mode can replay the run.
+    """
     capture_dir = resolve_live_session(capture)
     try:
         frames, calibration, gps = load_sitl_capture(capture_dir)
@@ -402,13 +442,14 @@ def run_live_mission(
         max_depth_m=max_depth_m,
         min_disparity_px=min_disparity_px,
     )
-    segmenter = _live_segmenter(services.sam)
-    labeller: _FixtureLabeller | BasetenMuseLabelClient | MetaMuseLabelClient
-    if services.labels == "baseten":
-        labeller = BasetenMuseLabelClient()
-    else:
-        labeller = MetaMuseLabelClient()
-    note_client = MetaMuseSceneClient() if services.scene_note == "meta" else None
+    recorder = CallRecorder() if record_dir is not None else None
+    segmenter = _live_segmenter(services.sam, recorder=recorder)
+    labeller = _live_labeller(services.labels, recorder)
+    note_client = (
+        MetaMuseSceneClient(transport=_meta_muse_transport(recorder, "scene_note"))
+        if services.scene_note == "meta"
+        else None
+    )
     rig = StereoRig(
         calibration.fx,
         calibration.fy,
@@ -474,7 +515,7 @@ def run_live_mission(
                 claimed,
                 detection.label,
                 detection.box_xyxy,
-                meta_calls if services.labels == "meta" else None,
+                meta_calls,
             )
     if note_client is None:
         scene_note = "Scene note was not requested."
@@ -537,7 +578,21 @@ def run_live_mission(
         euroc_path=euroc_path,
         gazebo="capture",
         meta_calls=tuple(meta_calls),
+        model_call_source=_SOURCE_LIVE,
     )
+    if recorder is not None and record_dir is not None:
+        write_recording(
+            record_dir,
+            recorder,
+            snapshot_path=snapshot_path,
+            impact_path=report_path,
+            capture_name=capture_dir.name,
+            services={
+                "sam": services.sam,
+                "labels": services.labels,
+                "scene_note": services.scene_note,
+            },
+        )
     return MissionResult(
         metrics,
         snapshot_path,
@@ -573,16 +628,51 @@ def _stream_capture(
     return cloud, poses
 
 
-def _live_segmenter(kind: str) -> _LiveSegmenter:
+def _meta_muse_transport(
+    recorder: CallRecorder | None, role: str
+) -> UrllibMetaMuseTransport | RecordingMetaMuseTransport:
+    inner = UrllibMetaMuseTransport()
+    if recorder is None:
+        return inner
+    return RecordingMetaMuseTransport(inner, recorder, role=role)
+
+
+def _live_labeller(
+    kind: str, recorder: CallRecorder | None
+) -> BasetenMuseLabelClient | MetaMuseLabelClient:
+    if kind == "baseten":
+        if recorder is None:
+            return BasetenMuseLabelClient()
+        return BasetenMuseLabelClient(
+            transport=RecordingChatTransport(_UrllibChatTransport(120.0), recorder, role="label")
+        )
+    return MetaMuseLabelClient(transport=_meta_muse_transport(recorder, "label"))
+
+
+def _live_segmenter(kind: str, *, recorder: CallRecorder | None = None) -> _LiveSegmenter:
     prompt = live_sam_prompt()
     if kind == "meta":
-        detector = MetaSamDetector(prompt=prompt)
+        detector = MetaSamDetector(
+            prompt=prompt,
+            transport=(
+                None
+                if recorder is None
+                else RecordingMetaResponsesTransport(UrllibMetaTransport(), recorder, role="sam")
+            ),
+        )
 
         def segment_meta(frame: RawFrame) -> tuple[SamDetection, ...]:
             return asyncio.run(detector.detect(frame))
 
         return _LiveSegmenter(detector.model, segment_meta)
-    detector_modal = ModalSamDetector(prompt=prompt)
+    poster = None
+    if recorder is not None:
+
+        def send(url: str, body: bytes) -> bytes:
+            return post_json(url, body, timeout_s=_MODAL_TIMEOUT_S)
+
+        poster = recording_poster(send, recorder, role="sam", model="surmap-sam")
+    detector_modal = ModalSamDetector(prompt=prompt, poster=poster)
 
     def segment_modal(frame: RawFrame) -> tuple[SamDetection, ...]:
         return asyncio.run(detector_modal.detect(frame))
@@ -756,12 +846,13 @@ def _crop_source(frame: RawFrame) -> bytes:
     return out.getvalue()
 
 
-def _meta_call_json(call: MetaCallRecord) -> dict[str, object]:
+def _meta_call_json(call: MetaCallRecord, source: str) -> dict[str, object]:
     return {
         "role": call.role,
         "model_id": call.model_id,
         "elapsed_s": call.elapsed_s,
         "confidences": list(call.confidences),
+        "source": source,
     }
 
 
@@ -776,6 +867,7 @@ def _write_report(
     euroc_path: Path,
     gazebo: str,
     meta_calls: Sequence[MetaCallRecord],
+    model_call_source: str,
 ) -> None:
     body = {
         "schema": "surmap.mission_impact.v1",
@@ -797,7 +889,8 @@ def _write_report(
         ],
         "scene_note": scene_note,
         "map_backend": map_backend,
-        "meta_calls": [_meta_call_json(call) for call in meta_calls],
+        "model_call_source": model_call_source,
+        "meta_calls": [_meta_call_json(call, model_call_source) for call in meta_calls],
         "gazebo": gazebo,
         "euroc_session": str(euroc_path),
     }
@@ -815,3 +908,209 @@ def _as_jpeg(image: bytes) -> bytes:
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
+
+
+DEFAULT_RECORDING = Path("demo") / "recordings" / "mission"
+
+
+def default_recording_dir() -> Path | None:
+    """The committed recording replayed by default, or ``None`` when absent."""
+    root = _repo_root() / DEFAULT_RECORDING
+    return root if has_recording(root) else None
+
+
+@dataclass(frozen=True)
+class ReplayedCall:
+    """A recorded response after the production client parsed it again."""
+
+    call: RecordedCall
+    output: str
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "role": self.call.role,
+            "provider": self.call.provider,
+            "model_id": self.call.model,
+            "recorded_at": self.call.recorded_at,
+            "elapsed_s": self.call.elapsed_s,
+            "source": self.call.source,
+            "output": self.output,
+        }
+
+
+def replay_model_calls(recording: Recording) -> tuple[ReplayedCall, ...]:
+    """Feed every recorded response back through the client that made it.
+
+    Nothing is sent: each client gets a replay transport. A response the
+    client cannot parse raises ``RecordingError``.
+    """
+    queues: dict[tuple[str, str], ReplayQueue] = {}
+    for call in recording.calls:
+        key = (call.role, call.provider)
+        if key not in queues:
+            queues[key] = ReplayQueue(
+                [item for item in recording.calls if item.provider == call.provider],
+                call.role,
+            )
+    replayed: list[ReplayedCall] = []
+    consumed: set[int] = set()
+    for call in recording.calls:
+        if call.seq in consumed:
+            continue
+        queue = queues[(call.role, call.provider)]
+        before = len(queue.used)
+        try:
+            output = _replay_one(call, queue)
+        except RecordingError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - any client failure means a bad recording
+            raise RecordingError(
+                f"recorded call {call.seq} ({call.role}) did not parse: {exc}"
+            ) from exc
+        consumed.update(item.seq for item in queue.used[before:])
+        replayed.append(ReplayedCall(call, output))
+    return tuple(replayed)
+
+
+def _replay_one(call: RecordedCall, queue: ReplayQueue) -> str:
+    model = call.model or None
+    if call.provider == "meta" and call.role == "scene_note":
+        note = MetaMuseSceneClient(
+            transport=ReplayMetaMuseTransport(queue), api_key=_REPLAY_KEY, model=model
+        )
+        return note.note(["recorded"], _FIXTURE_JPEG)
+    if call.provider == "meta" and call.role == "label":
+        labeller = MetaMuseLabelClient(
+            transport=ReplayMetaMuseTransport(queue), api_key=_REPLAY_KEY, model=model
+        )
+        return labeller.label(_FIXTURE_JPEG, "object", _CAMERA_POINT).label
+    if call.provider == "baseten" and call.role == "label":
+        baseten = BasetenMuseLabelClient(
+            api_key=_REPLAY_KEY,
+            model_id=call.model or "meta-models/muse-spark-open-1026",
+            transport=ReplayChatTransport(queue),
+            ledger=UsageLedger(os.devnull),
+        )
+        return baseten.label(_FIXTURE_JPEG, "object", _CAMERA_POINT).label
+    if call.provider == "meta" and call.role == "sam":
+        concept = _recorded_prompt(call) or "object"
+        sam = MetaSamDetector(
+            api_key=_REPLAY_KEY,
+            model=call.model or "sam-3.1",
+            prompt=concept,
+            transport=ReplayMetaResponsesTransport(queue),
+        )
+        frame = RawFrame(0, 0, 0, _FRAME_WIDTH, _FRAME_HEIGHT, "mjpeg", _FIXTURE_JPEG)
+        found = asyncio.run(sam.detect(frame))
+        return f"{len(found)} mask(s) for {concept!r}"
+    if call.provider == "modal" and call.role == "sam":
+        modal = ModalSamDetector(
+            "https://recorded.invalid/sam",
+            prompt=_recorded_prompt(call) or "person",
+            poster=replay_poster(queue),
+        )
+        found_modal = modal.segment(_FIXTURE_JPEG)
+        return f"{len(found_modal)} mask(s) for {modal.prompt!r}"
+    queue.next()
+    return ""
+
+
+def _recorded_prompt(call: RecordedCall) -> str:
+    """The concept a SAM request asked for, read from the recorded body."""
+    body = call.request.get("body")
+    if not isinstance(body, dict):
+        return ""
+    prompt = body.get("prompt")
+    if isinstance(prompt, str):
+        return prompt
+    texts: list[str] = []
+    _collect_input_text(body.get("input"), texts)
+    return texts[0].strip() if texts else ""
+
+
+def _collect_input_text(value: object, out: list[str]) -> None:
+    if isinstance(value, list):
+        for item in value:
+            _collect_input_text(item, out)
+    elif isinstance(value, dict):
+        if value.get("type") == "input_text" and isinstance(value.get("text"), str):
+            out.append(str(value["text"]))
+        _collect_input_text(value.get("content"), out)
+
+
+def run_recorded_mission(output_dir: Path, recording_dir: Path) -> MissionResult:
+    """Show a recorded live run. Replays its model responses; sends nothing."""
+    recording = load_recording(recording_dir)
+    replayed = replay_model_calls(recording)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_path = output_dir / SNAPSHOT_FILE
+    shutil.copyfile(recording.snapshot_path, snapshot_path)
+    recorded = json.loads(recording.impact_path.read_text(encoding="utf-8"))
+    if not isinstance(recorded, dict):
+        raise RecordingError("recorded impact report is not a JSON object")
+    metrics = _recorded_metrics(recorded)
+    ask = _ask(snapshot_path)
+    notes = [item.output for item in replayed if item.call.role == "scene_note"]
+    scene_note = notes[-1] if notes else str(recorded.get("scene_note", ""))
+    capture = recording.manifest.get("capture", "a SITL capture")
+    body = dict(recorded)
+    body.update(
+        {
+            "basis": _SOURCE_RECORDED,
+            "basis_note": (
+                f"Recorded live run of {capture} at {recording.recorded_at}. The map and "
+                "metrics were computed during that run. Each model response below is "
+                "replayed from the recording through the production client; nothing is sent."
+            ),
+            "recorded_at": recording.recorded_at,
+            "recording": str(recording.root),
+            "question": ask.question,
+            "ask_answer": ask.answer,
+            "landmark_ids": list(ask.landmark_ids),
+            "highlight_points": [
+                {"x": point.x, "y": point.y, "z": point.z} for point in ask.highlight_points
+            ],
+            "scene_note": scene_note,
+            "model_call_source": _SOURCE_RECORDED,
+            "model_calls": [item.to_json() for item in replayed],
+        }
+    )
+    report_path = output_dir / "impact.json"
+    report_path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+    return MissionResult(
+        metrics=metrics,
+        snapshot_path=snapshot_path,
+        report_path=report_path,
+        euroc_path=recording.root,
+        ask=ask,
+        map_backend=str(recorded.get("map_backend", _MAP_BACKEND_LIVE)),
+        scene_note=scene_note,
+    )
+
+
+def _recorded_metrics(body: dict[str, object]) -> ImpactMetrics:
+    def number(name: str) -> float | None:
+        value = body.get(name)
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            return None
+        return float(value)
+
+    def count(name: str) -> int:
+        value = body.get(name)
+        return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+    def ids(name: str) -> tuple[str, ...]:
+        value = body.get(name)
+        return tuple(str(item) for item in value) if isinstance(value, list) else ()
+
+    radius = number("match_radius_m")
+    return ImpactMetrics(
+        found=count("found"),
+        total=count("total"),
+        mean_position_error_m=number("mean_position_error_m"),
+        time_to_first_detection_s=number("time_to_first_detection_s"),
+        basis=_SOURCE_RECORDED,
+        matched_ids=ids("matched_ids"),
+        missed_ids=ids("missed_ids"),
+        match_radius_m=radius if radius is not None else 3.0,
+    )

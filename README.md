@@ -38,7 +38,10 @@ uv run python scripts/mission_demo.py
 
 Outputs land in `mission-demo-out/`: the EuRoC export,
 `semantic_map_snapshot.json`, and `impact.json`. An offline report says
-`"basis": "fixtures"`.
+`"basis": "fixtures"`. When a recorded live run is committed under
+`demo/recordings/mission/`, offline mode replays those real model
+responses instead and labels each one with its model and recording
+time ([demo/recordings/README.md](demo/recordings/README.md)).
 
 ### Live run
 
@@ -63,9 +66,10 @@ Optional providers:
 |---|---|
 | `SURMAP_LIVE_BASETEN=1`, `BASETEN_API_KEY` | Per-object labels use open-weight Muse Spark Open on Baseten when `SURMAP_LIVE_META` is unset |
 | `SURMAP_LIVE_MODAL=1`, `MODAL_SAM_URL`, `--sam-route modal` | SAM 3.1 runs on the project's Modal GPU app instead of the Meta API |
+| `--record <dir>` | Writes every model request (auth dropped, images hashed) and response to `<dir>` for offline replay |
 
 Keys are read only by the clients and never written to reports or
-reports. Runbook: [docs/mission-demo.md](docs/mission-demo.md).
+recordings. Runbook: [docs/mission-demo.md](docs/mission-demo.md).
 Simulation: [docs/simulation/gazebo-disaster-world.md](docs/simulation/gazebo-disaster-world.md)
 and [docs/simulation/px4-sitl.md](docs/simulation/px4-sitl.md).
 

@@ -42,6 +42,18 @@ Outputs land in `mission-demo-out/` (gitignored):
 
 Keys stay in the environment (`MODEL_API_KEY`, `BASETEN_API_KEY`, `MODAL_SAM_URL`). The report does not contain them.
 
+## Recorded live runs
+
+`--live --record <dir>` writes every model request (auth headers
+dropped, images replaced by size and hash, key values scrubbed) and its
+response to `<dir>/calls.jsonl`, with the snapshot and report. When
+`demo/recordings/mission/` exists, offline mode replays it instead of
+the fixtures: each recorded response is parsed again by its client and
+labelled "recorded live response from `<model>` at `<UTC time>`" in
+`impact.json` (`"basis": "recorded-live"`) and in the viewer.
+`--recording <dir>` picks another recording; `--fixtures` forces the
+fixture path. Details: [../demo/recordings/README.md](../demo/recordings/README.md).
+
 ## WSL — offline
 
 From the SurMap repo in the WSL distro, Windows browser on the same URL:
