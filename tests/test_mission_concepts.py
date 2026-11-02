@@ -76,8 +76,8 @@ def mission(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[str]]:
             map_point=xyz,
         )
 
-    def note(self: object, labels: list[str], frame_jpeg: bytes) -> str:
-        del self, labels, frame_jpeg
+    def note(self: object, labels: list[str], frame_jpeg: bytes, **kwargs: object) -> str:
+        del self, labels, frame_jpeg, kwargs
         return "note"
 
     monkeypatch.setattr(demo, "open_live_map", lambda _calibration, **_kwargs: _Map())

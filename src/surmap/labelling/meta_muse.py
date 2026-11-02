@@ -47,6 +47,8 @@ _REASONING_EFFORTS = frozenset({"low", "medium", "high"})
 _REASONING_ENV = "SURMAP_META_REASONING_EFFORT"
 _MAX_OUTPUT_ENV = "SURMAP_META_MAX_OUTPUT_TOKENS"
 _MODEL_ENV = "SURMAP_META_MODEL"
+LABEL_REASONING_EFFORT = "low"
+_LABEL_REASONING_ENV = "SURMAP_META_LABEL_REASONING_EFFORT"
 
 BeforeCall = Callable[[str], None]
 OnUsage = Callable[[str, str, int, int, int | None], None]
@@ -151,9 +153,21 @@ class MetaMuseSceneClient:
     def model(self) -> str:
         return self._model
 
-    def note(self, labels: Sequence[str], frame_jpeg: bytes) -> str:
-        """Describe the mapped area. ``labels`` are on-board detector names."""
-        prompt = _prompt(labels)
+    def note(
+        self,
+        labels: Sequence[str],
+        frame_jpeg: bytes,
+        *,
+        object_summary: Sequence[str] = (),
+    ) -> str:
+        """Describe the mapped area. ``labels`` are on-board detector names.
+
+        ``object_summary`` is one line per mapped object after 3D
+        deduplication (for example ``"person, static, 2 frames"``). The
+        reply is plain text with three headed sections; see
+        ``SCENE_NOTE_SECTIONS``.
+        """
+        prompt = _prompt(labels, object_summary)
         if not frame_jpeg.startswith(b"\xff\xd8"):
             raise MetaMuseSceneError("scene note frame must be a JPEG")
         encoded = base64.b64encode(frame_jpeg).decode("ascii")
@@ -195,6 +209,10 @@ class MetaMuseLabelClient:
 
     Same Responses endpoint and bearer key as ``MetaMuseSceneClient``.
     The map point is not sent. Tests pass a transport and do not open a socket.
+
+    A crop label is a direct-answer task, so ``reasoning.effort`` defaults
+    to ``low`` (``SURMAP_META_LABEL_REASONING_EFFORT`` or the constructor
+    overrides it). The scene note and Ask the map keep ``high``.
     """
 
     def __init__(
@@ -207,8 +225,14 @@ class MetaMuseLabelClient:
         timeout_s: float = 60.0,
         before_call: BeforeCall | None = None,
         on_usage: OnUsage | None = None,
+        reasoning_effort: str | None = None,
     ) -> None:
         self._model = _resolve_model(model)
+        self._reasoning_effort = _check_effort(
+            reasoning_effort
+            if reasoning_effort is not None
+            else os.environ.get(_LABEL_REASONING_ENV, LABEL_REASONING_EFFORT)
+        )
         self._url = _responses_url(base_url)
         self._api_key = api_key
         self._before_call = before_call
@@ -221,6 +245,10 @@ class MetaMuseLabelClient:
     def model(self) -> str:
         return self._model
 
+    @property
+    def reasoning_effort(self) -> str:
+        return self._reasoning_effort
+
     def label(self, jpeg: bytes, coarse_label: str, xyz: Vec3) -> ObjectLabel:
         """Label one JPEG crop. ``xyz`` is attached after the reply."""
         if not jpeg.startswith(b"\xff\xd8"):
@@ -230,7 +258,7 @@ class MetaMuseLabelClient:
             model=self._model,
             prompt=_label_prompt(coarse_label),
             image_url=f"data:image/jpeg;base64,{encoded}",
-            reasoning_effort=DEFAULT_REASONING_EFFORT,
+            reasoning_effort=self._reasoning_effort,
             max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
         )
         headers = {
@@ -493,19 +521,33 @@ def _responses_url(base_url: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, f"{path}/responses", "", ""))
 
 
-def _prompt(labels: Sequence[str]) -> str:
+SCENE_NOTE_SECTIONS = ("Immediate hazards", "Survivor locations", "Access and debris blockages")
+
+
+def _prompt(labels: Sequence[str], object_summary: Sequence[str] = ()) -> str:
     if isinstance(labels, str):
         raise MetaMuseSceneError("scene-note labels must be a sequence of labels, not one string")
+    if isinstance(object_summary, str):
+        raise MetaMuseSceneError("object summary must be a sequence of lines, not one string")
     cleaned = [_one_label(label) for label in labels]
     if cleaned:
         context = "On-board labels: " + ", ".join(cleaned) + "."
     else:
         context = "No on-board labels were recorded."
+    summary = [" ".join(line.split()) for line in object_summary if line.strip()]
+    if summary:
+        context += " Mapped objects, one line each after 3D deduplication:\n" + "\n".join(
+            f"- {line}" for line in summary
+        )
+    sections = ", ".join(f'"{name}"' for name in SCENE_NOTE_SECTIONS)
     return (
         "Write one civilian search-and-rescue scene note for a disaster-response "
         "team looking at a mapped area. Describe landmarks, debris, and vehicles "
-        f"visible in the image. {context} Do not give flight advice, navigation, "
-        "or any instruction to an aircraft."
+        f"visible in the image. {context}\n"
+        f"Use three short sections with these headings, in order: {sections}. "
+        'Write "None seen" under a heading with nothing to report. Only report '
+        "what the image or the mapped objects support. Do not give flight advice, "
+        "navigation, or any instruction to an aircraft."
     )
 
 

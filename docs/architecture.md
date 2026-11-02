@@ -153,7 +153,9 @@ The live mission (`scripts/mission_demo.py --live` with
 `SURMAP_LIVE_META=1`) writes one note per run.
 
 **Per-object labels.** `MetaMuseLabelClient` (same module) labels one
-JPEG crop with `muse-spark-1.3`. `BasetenMuseLabelClient`
+JPEG crop with `muse-spark-1.3` at `reasoning.effort` `low`. The live
+mission calls it once per merged object (`surmap.mission.objects`), not
+once per frame. `BasetenMuseLabelClient`
 (`src/surmap/labelling/baseten_muse.py`) labels it with open-weight
 Muse Spark Open, `meta-models/muse-spark-open-1026`, on Baseten. The
 map point is attached after the reply and is not sent.

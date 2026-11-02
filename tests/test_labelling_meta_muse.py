@@ -22,10 +22,12 @@ import pytest
 from PIL import Image
 
 from surmap.labelling.meta_muse import (
+    MetaMuseLabelClient,
     MetaMuseSceneClient,
     MetaMuseSceneError,
     UrllibMetaMuseTransport,
 )
+from surmap.types import Vec3
 
 _API_KEY = "scene-note-test-key"
 
@@ -35,6 +37,7 @@ def _clear_scene_note_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SURMAP_META_REASONING_EFFORT", raising=False)
     monkeypatch.delenv("SURMAP_META_MAX_OUTPUT_TOKENS", raising=False)
     monkeypatch.delenv("SURMAP_META_MODEL", raising=False)
+    monkeypatch.delenv("SURMAP_META_LABEL_REASONING_EFFORT", raising=False)
 
 
 def a_jpeg() -> bytes:
@@ -774,3 +777,64 @@ def _stop(server: ThreadingHTTPServer, thread: threading.Thread) -> None:
     server.shutdown()
     server.server_close()
     thread.join(timeout=2)
+
+
+def test_crop_labels_default_to_low_effort_while_the_scene_note_stays_high(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given the scene-note effort is not overridden
+    transport = RecordingTransport(a_message("collapsed roof"))
+    client = MetaMuseLabelClient(api_key=_API_KEY, transport=transport)
+
+    # When one crop is labelled
+    labelled = client.label(a_jpeg(), "debris", Vec3(0.0, 0.0, 0.0))
+
+    # Then the crop request asks for low effort
+    assert labelled.label == "collapsed roof"
+    assert posted(transport)[2]["reasoning"] == {"effort": "low"}
+    assert client.reasoning_effort == "low"
+
+
+def test_crop_label_effort_comes_from_its_own_environment_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SURMAP_META_REASONING_EFFORT", "high")
+    monkeypatch.setenv("SURMAP_META_LABEL_REASONING_EFFORT", "medium")
+    transport = RecordingTransport(a_message("car"))
+    MetaMuseLabelClient(api_key=_API_KEY, transport=transport).label(
+        a_jpeg(), "car", Vec3(0.0, 0.0, 0.0)
+    )
+    assert posted(transport)[2]["reasoning"] == {"effort": "medium"}
+
+
+def test_a_bad_crop_label_effort_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SURMAP_META_LABEL_REASONING_EFFORT", "none")
+    with pytest.raises(MetaMuseSceneError, match="reasoning effort"):
+        MetaMuseLabelClient(api_key=_API_KEY, transport=UnusedTransport())
+
+
+def test_scene_note_asks_for_three_sections_and_carries_the_object_summary() -> None:
+    # Given a deduplicated object summary
+    transport = RecordingTransport(a_message("Immediate hazards\nNone seen"))
+    client = MetaMuseSceneClient(api_key=_API_KEY, transport=transport)
+
+    # When the note is requested with it
+    client.note(
+        ("person", "car"),
+        a_jpeg(),
+        object_summary=("person, static, 3 frames", "car, moving, 4 frames"),
+    )
+
+    # Then the prompt lists each object once and names the three sections
+    text = prompt_text(posted(transport)[2])
+    assert "- person, static, 3 frames" in text
+    assert "- car, moving, 4 frames" in text
+    for heading in ("Immediate hazards", "Survivor locations", "Access and debris blockages"):
+        assert heading in text
+    assert "Do not give flight advice" in text
+
+
+def test_scene_note_refuses_a_summary_passed_as_one_string() -> None:
+    client = MetaMuseSceneClient(api_key=_API_KEY, transport=UnusedTransport())
+    with pytest.raises(MetaMuseSceneError, match="object summary"):
+        client.note(("person",), a_jpeg(), object_summary="person, static")

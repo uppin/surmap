@@ -725,8 +725,10 @@ def test_live_meta_mission_calls_meta_sam_meta_labels_and_records_them(
             map_point=xyz,
         )
 
-    def note(self: MetaMuseSceneClient, labels: list[str], frame_jpeg: bytes) -> str:
-        del labels, frame_jpeg
+    def note(
+        self: MetaMuseSceneClient, labels: list[str], frame_jpeg: bytes, **kwargs: object
+    ) -> str:
+        del labels, frame_jpeg, kwargs
         seen["scene_model"] = self._model
         return "Scene note from the test double."
 
@@ -981,8 +983,8 @@ def _remembering_label(
     return label
 
 
-def _scene_note(self: object, labels: list[str], frame_jpeg: bytes) -> str:
-    del self, labels, frame_jpeg
+def _scene_note(self: object, labels: list[str], frame_jpeg: bytes, **kwargs: object) -> str:
+    del self, labels, frame_jpeg, kwargs
     return "Scene note from the test double. Not a provider call."
 
 
@@ -1044,3 +1046,45 @@ def _remembering_jpeg(
         )
 
     return label
+
+
+def test_the_same_object_in_two_frames_is_one_track_and_one_label_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given Meta only and a person mask on the same map point in both capture frames
+    _allow_live_flags(monkeypatch)
+    _block_network(monkeypatch)
+    labelled: list[Vec3] = []
+    summaries: list[tuple[list[str], object]] = []
+
+    def note(self: object, labels: list[str], frame_jpeg: bytes, **kwargs: object) -> str:
+        del self, frame_jpeg
+        summaries.append((labels, kwargs.get("object_summary")))
+        return "Survivor locations\nOne person."
+
+    monkeypatch.setattr(
+        "surmap.mission.demo.open_live_map",
+        lambda _calibration, **_kwargs: _RecordingMap(snapshot=(_MAP_POINT,)),
+    )
+    monkeypatch.setattr(MetaSamDetector, "detect", _detect_person)
+    monkeypatch.setattr(MetaMuseLabelClient, "label", _remembering_label(labelled))
+    monkeypatch.setattr(MetaMuseSceneClient, "note", note)
+
+    # When the live mission runs
+    result = run_live_mission(tmp_path, _CAPTURE)
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+    snapshot = json.loads(result.snapshot_path.read_text(encoding="utf-8"))
+
+    # Then SAM ran on both frames, but the object was labelled once and mapped once
+    roles = [call["role"] for call in report["meta_calls"]]
+    assert roles.count("sam") == 2
+    assert roles.count("label") == 1
+    assert len(labelled) == 1
+    tracks = snapshot["landmarks"] + snapshot["dynamic"]
+    assert len(tracks) == 1
+    # And the scene note got the object once, with both sightings
+    labels, summary = summaries[0]
+    assert labels == ["survivor"]
+    assert isinstance(summary, tuple) and len(summary) == 1
+    assert "seen in 2 frame(s)" in summary[0]

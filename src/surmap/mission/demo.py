@@ -43,6 +43,7 @@ from surmap.mission.metrics import (
     load_offline_perception,
     score_survivors,
 )
+from surmap.mission.objects import ObjectMerger, Sighting, object_summary
 from surmap.mission.recording import (
     SNAPSHOT_FILE,
     CallRecorder,
@@ -514,6 +515,7 @@ def run_live_mission(
     model_ids: dict[int, str] = {}
     labels: list[str] = []
     meta_calls: list[MetaCallRecord] = []
+    merger = ObjectMerger()
     first_jpeg = _FIXTURE_JPEG
     for frame in frames:
         image = Path(frame.left_ref).read_bytes()
@@ -556,27 +558,49 @@ def run_live_mission(
                 calibration.height,
                 pose,
             )
-            if not claimed:
+            sighting = merger.observe(raw.frame_id, detection.label, claimed)
+            if sighting is None:
                 continue
-            _append_track(
-                tracks,
-                detections,
-                clouds,
-                descriptions,
-                model_ids,
-                labels,
-                labeller,
-                raw,
-                claimed,
-                detection.label,
-                detection.box_xyxy,
-                meta_calls,
-            )
+            if sighting.track_id is None:
+                track_id = _append_track(
+                    tracks,
+                    detections,
+                    clouds,
+                    descriptions,
+                    model_ids,
+                    labels,
+                    labeller,
+                    raw,
+                    claimed,
+                    detection.label,
+                    detection.box_xyxy,
+                    meta_calls,
+                )
+                merger.bind(sighting, track_id)
+                continue
+            _extend_track(tracks, clouds, sighting, raw, claimed)
+            if sighting.turned_moving:
+                _relabel(
+                    tracks,
+                    detections,
+                    descriptions,
+                    model_ids,
+                    labeller,
+                    raw,
+                    sighting,
+                    detection.box_xyxy,
+                    meta_calls,
+                )
+    labels = [track.label for track in tracks]
     if note_client is None:
         scene_note = "Scene note was not requested."
     else:
         started = time.perf_counter()
-        scene_note = note_client.note(labels or ["none"], _as_jpeg(first_jpeg))
+        scene_note = note_client.note(
+            labels or ["none"],
+            _as_jpeg(first_jpeg),
+            object_summary=object_summary(tracks),
+        )
         meta_calls.append(
             MetaCallRecord(
                 "scene_note",
@@ -868,7 +892,7 @@ def _append_track(
     coarse_label: str,
     box: tuple[float, float, float, float] | None = None,
     meta_calls: list[MetaCallRecord] | None = None,
-) -> None:
+) -> int:
     centre = centroid(claimed)
     jpeg = raw.data if box is None else detection_crop_jpeg(_crop_source(raw), box)
     started = time.perf_counter()
@@ -897,6 +921,60 @@ def _append_track(
     descriptions[track_id] = labelled.description
     model_ids[track_id] = labelled.model_id
     labels.append(labelled.label)
+    return track_id
+
+
+_MAX_TRACK_POINTS = 4000
+
+
+def _extend_track(
+    tracks: list[ObjectTrack3D],
+    clouds: dict[int, tuple[Vec3, ...]],
+    sighting: Sighting,
+    raw: RawFrame,
+    claimed: tuple[Vec3, ...],
+) -> None:
+    """A later sighting of a known object: one more observation, no model call."""
+    assert sighting.track_id is not None
+    track = tracks[sighting.track_id - 1]
+    track.observations.append(
+        ObjectPoints(
+            track_id=track.track_id,
+            frame_id=raw.frame_id,
+            t_ns=raw.t_ns,
+            points=claimed,
+            centroid=centroid(claimed),
+        )
+    )
+    track.motion = Motion.MOVING if sighting.moving else Motion.STATIC
+    merged = tuple(dict.fromkeys(clouds.get(track.track_id, ()) + claimed))
+    clouds[track.track_id] = merged[-_MAX_TRACK_POINTS:]
+
+
+def _relabel(
+    tracks: list[ObjectTrack3D],
+    detections: list[SurvivorDetection],
+    descriptions: dict[int, str],
+    model_ids: dict[int, str],
+    labeller: _FixtureLabeller | BasetenMuseLabelClient | MetaMuseLabelClient,
+    raw: RawFrame,
+    sighting: Sighting,
+    box: tuple[float, float, float, float] | None,
+    meta_calls: list[MetaCallRecord],
+) -> None:
+    """Label an object again when its surface turns moving (one call per object)."""
+    assert sighting.track_id is not None
+    track = tracks[sighting.track_id - 1]
+    centre = track.observations[-1].centroid
+    jpeg = raw.data if box is None else detection_crop_jpeg(_crop_source(raw), box)
+    started = time.perf_counter()
+    labelled = labeller.label(jpeg, sighting.label, centre)
+    meta_calls.append(MetaCallRecord("label", labelled.model_id, time.perf_counter() - started))
+    track.label = labelled.label
+    descriptions[track.track_id] = labelled.description
+    model_ids[track.track_id] = labelled.model_id
+    first = detections[track.track_id - 1]
+    detections[track.track_id - 1] = SurvivorDetection(first.xyz, first.t_ns, labelled.label)
 
 
 def _ask(snapshot_path: Path) -> MissionAsk:

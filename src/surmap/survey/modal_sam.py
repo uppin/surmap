@@ -69,6 +69,25 @@ class _CreditUse:
     t_unix: float
 
 
+def cache_fingerprint(root: str | os.PathLike[str]) -> frozenset[tuple[str, int]]:
+    """Relative path and size of every file under ``root``; empty when it is missing.
+
+    The Modal app compares this before and after ``download_ckpt_from_hf``
+    and commits the volume only when the download wrote something, so a
+    warm cache does not pay for a commit on every cold start.
+    """
+    from pathlib import Path
+
+    base = Path(root)
+    if not base.is_dir():
+        return frozenset()
+    return frozenset(
+        (str(path.relative_to(base)), path.stat().st_size)
+        for path in base.rglob("*")
+        if path.is_file()
+    )
+
+
 def resolve_modal_url(url: str | None) -> str:
     """Return a non-blank URL, or raise before any network call."""
     chosen = os.environ.get("MODAL_SAM_URL") if url is None else url

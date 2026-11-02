@@ -24,7 +24,7 @@ from typing import Any
 
 import modal
 
-from surmap.survey.modal_sam import pack_detections
+from surmap.survey.modal_sam import cache_fingerprint, pack_detections
 
 APP_NAME = "surmap-sam"
 DEFAULT_GPU = "L4"
@@ -99,7 +99,12 @@ def _numpy(value: Any) -> Any:
 
 
 def _load_sam() -> tuple[Any, Any]:
-    """Download ``facebook/sam3.1`` into the volume, then build the image model."""
+    """Download ``facebook/sam3.1`` into the volume, then build the image model.
+
+    Runs once per container (the globals keep the model for later
+    requests). The volume is committed only when this start wrote new
+    files into the cache, not on every cold start.
+    """
     global _MODEL, _PROCESSOR
     if _PROCESSOR is not None and _MODEL is not None:
         return _MODEL, _PROCESSOR
@@ -108,15 +113,20 @@ def _load_sam() -> tuple[Any, Any]:
     from sam3.model.sam3_image_processor import Sam3Processor
     from sam3.model_builder import build_sam3_image_model, download_ckpt_from_hf
 
+    cache = f"{MODEL_MOUNT}/hf"
+    before = cache_fingerprint(cache)
     checkpoint = download_ckpt_from_hf(version="sam3.1")
-    volume.commit()  # keep the checkpoint even if model build fails later
+    downloaded = cache_fingerprint(cache)
+    if downloaded != before:
+        volume.commit()  # a fresh download; keep it even if model build fails later
     _MODEL = build_sam3_image_model(
         checkpoint_path=checkpoint,
         load_from_HF=False,
         device="cuda",
     )
     _PROCESSOR = Sam3Processor(_MODEL, device="cuda", confidence_threshold=0.5)
-    volume.commit()
+    if cache_fingerprint(cache) != downloaded:
+        volume.commit()
     return _MODEL, _PROCESSOR
 
 
