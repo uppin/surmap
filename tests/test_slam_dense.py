@@ -16,6 +16,7 @@ from surmap.slam.dense import (
     dense_region_points,
     encode_disparity,
     fill_poly,
+    project_to_display,
     round_half_away,
     undistort_points,
 )
@@ -264,3 +265,68 @@ def test_the_dense_buffer_decodes_each_frames_disparity_once(
     # Then its disparity was decoded once, and every answer is the same
     assert len(decodes) == 1
     assert all(answer.points == answers[0].points for answer in answers)
+
+
+def test_a_region_answer_names_the_camera_its_points_were_placed_from() -> None:
+    # Given a frame placed 1 m right, 2 m up, 3 m on in the map
+    to_map = Pose(Vec3(1.0, 2.0, 3.0))
+
+    # When the square is asked on each channel
+    left = dense_region_points(a_query(), a_rig(), a_dense_frame(a_wall(2.5), to_map=to_map))
+    right = dense_region_points(
+        a_query(channel=1), a_rig(), a_dense_frame(a_wall(2.5), channel=1, to_map=to_map)
+    )
+
+    # Then the left answer carries the frame's camera, the right one sits a baseline along x
+    assert left.camera == to_map
+    assert right.camera is not None
+    assert right.camera.position == Vec3(1.0 + BASELINE_M, 2.0, 3.0)
+
+
+def test_a_region_answer_that_placed_nothing_names_no_camera() -> None:
+    # When a frame the buffer does not hold is asked
+    result = dense_region_points(a_query(), a_rig(), None)
+
+    # Then there is no camera to name
+    assert result.status is RegionStatus.FRAME_EXPIRED and result.camera is None
+
+
+def test_region_points_project_back_onto_the_pixels_they_came_from() -> None:
+    # Given the square's points on a wall 2 m away, placed from a moved camera
+    to_map = Pose(Vec3(1.0, 2.0, 3.0))
+    result = dense_region_points(a_query(), a_rig(), a_dense_frame(a_wall(2.5), to_map=to_map))
+
+    # When they are projected onto an image twice the rig's size
+    pixels = project_to_display(xyz(result), to_map, a_rig(), 0, (2 * WIDTH, 2 * HEIGHT))
+
+    # Then they land on the square, doubled
+    assert pixels.shape == (21 * 21, 2)
+    np.testing.assert_allclose(pixels.min(axis=0), [40.0, 40.0], atol=1e-6)
+    np.testing.assert_allclose(pixels.max(axis=0), [80.0, 80.0], atol=1e-6)
+
+
+def test_projection_redistorts_onto_the_raw_image_the_mask_was_drawn_on() -> None:
+    # Given a barrel-distorted lens and a raw pixel 30 px off the centre
+    rig = a_rig(distortion=(-0.28, 0.07, 0.0002, 0.00002))
+    raw = np.array([[80.0, 70.0]])
+    rectified = undistort_points(raw, rig.channels[0])
+    u, v = rectified[0]
+    point = np.array([[(u - CX) * 2.0 / FX, (v - CY) * 2.0 / FX, 2.0]])
+
+    # When the point it back-projects to is projected
+    pixels = project_to_display(point, ORIGIN, rig, 0, (WIDTH, HEIGHT))
+
+    # Then it lands back on the raw pixel
+    np.testing.assert_allclose(pixels, raw, atol=0.05)
+
+
+def test_points_behind_the_camera_do_not_project() -> None:
+    # Given a point behind the camera and one in front of it
+    points = np.array([[0.0, 0.0, -2.0], [0.0, 0.0, 2.0]])
+
+    # When both are projected
+    pixels = project_to_display(points, ORIGIN, a_rig(), 0, (WIDTH, HEIGHT))
+
+    # Then only the one in front has a pixel, at the image centre
+    assert np.isnan(pixels[0]).all()
+    np.testing.assert_allclose(pixels[1], [CX, CY])

@@ -386,7 +386,17 @@ Layered — the layers are never merged into one undifferentiated cloud:
   persisted per demo run in SQLite (`surface_points`). Each demo run
   also journals its events in order and RTAB-Map's dense buffer, so a
   replay (`surmap.demo.replay`) recomputes regions and surfaces with
-  neither RTAB-Map nor SAM running.
+  neither RTAB-Map nor SAM running. A rewound moment of a journalled
+  run is recomputed the same way (`surmap.demo.surface_timeline`, once
+  per run), so it shows today's surface logic, not the logic the run
+  was recorded with.
+- A region carries a tail along the viewing ray: mask-edge pixels match
+  the background, and far away one disparity pixel is metres. Given the
+  camera that placed it (`RegionResult.camera`), a region keeps only the
+  points within 1.5 m of its median range from that camera
+  (`surfaces.object_points`). A dense demo region left with fewer than
+  50 points has no depth yet, and neither starts nor continues a
+  surface. The mission's sparse projections keep a minimum of one point.
 - "Adding object points to RTAB-Map's output" means layers 2–3 are
   added to the output product (`augment_map` on-board, `surmap_map`
   on the base). Object points are never written back into RTAB-Map's

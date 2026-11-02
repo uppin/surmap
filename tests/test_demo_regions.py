@@ -9,6 +9,7 @@ from pathlib import Path
 from surmap.demo.datasets import DISPLAY_HEIGHT, DISPLAY_WIDTH
 from surmap.demo.server import DemoEvent, DemoPlayer, make_demo_server
 from surmap.slam.regions import RegionQuery, RegionResult, RegionStatus
+from surmap.slam.stream_protocol import OdomUpdate
 from surmap.survey.sam import InMemoryVideoSamDetector, SamDetection
 from surmap.types import Vec3
 from tests.test_demo import FakeLiveBackend, _prepared_tiny
@@ -19,16 +20,18 @@ MASK = ((10.0, 10.0), (60.0, 10.0), (60.0, 50.0), (10.0, 50.0))
 class FakeRegionBackend(FakeLiveBackend):
     """Live backend double that also answers region queries with fixed points."""
 
-    def __init__(self, status: RegionStatus = RegionStatus.OK) -> None:
-        super().__init__()
+    def __init__(
+        self, status: RegionStatus = RegionStatus.OK, odometry: dict[int, OdomUpdate] | None = None
+    ) -> None:
+        super().__init__(odometry=odometry)
         self._status = status
         self.region_queries: list[RegionQuery] = []
+        # Where every mask is placed (a test may give the car more points).
+        self.points: tuple[Vec3, ...] = (Vec3(1.0, 2.0, 3.0), Vec3(1.5, 2.0, 3.0))
 
     def region_points(self, query: RegionQuery, timeout: float = 5.0) -> RegionResult:
         self.region_queries.append(query)
-        points = (
-            (Vec3(1.0, 2.0, 3.0), Vec3(1.5, 2.0, 3.0)) if self._status is RegionStatus.OK else ()
-        )
+        points = self.points if self._status is RegionStatus.OK else ()
         return RegionResult(query.query_id, query.frame_id, query.channel, self._status, points)
 
 
@@ -75,6 +78,9 @@ def test_a_region_event_carries_each_masks_map_frame_points(tmp_path: Path) -> N
             "label": "car",
             "status": "ok",
             "points": [[1.0, 2.0, 3.0], [1.5, 2.0, 3.0]],
+            # (the fake backend names no camera, so nothing is drawn on the SAM pane)
+            "viewpoint": None,
+            "pixels": [],
         }
     ]
 
@@ -105,7 +111,14 @@ def test_a_region_that_could_not_be_placed_keeps_its_reason_and_no_points(
 
     # Then the region is reported expired, with nothing drawn
     assert region.data["regions"] == [
-        {"track_id": 1, "label": "car", "status": "expired", "points": []}
+        {
+            "track_id": 1,
+            "label": "car",
+            "status": "expired",
+            "points": [],
+            "viewpoint": None,
+            "pixels": [],
+        }
     ]
 
 

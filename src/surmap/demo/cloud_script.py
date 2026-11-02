@@ -5,12 +5,18 @@ renders *every* map point into a PNG (`render_cloud_view` in
 server.py, the orbit sibling of `render_floor_plan`) and this
 script only displays the image. The only difference from the
 floor plan is the PTZ pose, which lives server-side in
-`PlaybackControls`: buttons, drag and wheel post pose deltas to
-`/control`, and the player re-renders with the next map event
-(and immediately when the pose version changes). No sampling,
+the session's `CloudViewer` (`cloud_view.py`): buttons, drag and wheel
+post pose deltas to `/control`, which answers with the last scene drawn
+from the new pose (`cloud_png`) — during a run, after it and on a
+scrubbed moment alike. Deltas made while a post waits are merged
+(`mergeCloudBody`), so a drag sends its whole movement. No sampling,
 no client-side geometry — nothing can flicker or go sparse. The SAM
 surface layer is drawn into the same image server-side; the
 Surfaces button only shows or hides it (`cloud_surfaces`).
+
+The Follow box (checked by default) asks the server to frame the view
+behind and above the shown frame's camera (`CloudViewer.follow`); an
+orbit or a pan takes over, and every answer re-syncs the box.
 
 Kept separate from page.py so both files stay under the 500-line
 gate; page.py splices CLOUD_SCRIPT into PAGE before the server
@@ -23,6 +29,10 @@ CLOUD_SCRIPT = """// --- 3D point cloud: server-rendered image, PTZ pose on the 
 const cloudCanvas = $('cloud');
 const cloudCtx = cloudCanvas ? cloudCanvas.getContext('2d') : null;
 let cloudImage = null;
+// Created with the pane's other controls below; declared here so postCloud sees it.
+let surfacesButton = null;
+// Follow the camera like a navigation app; an orbit or a pan on the server turns it off.
+const followBox = $('cloud-follow');
 async function postCloud(body) {{
   try {{
     const response = await fetch('/control', {{
@@ -31,15 +41,25 @@ async function postCloud(body) {{
     }});
     if (!response.ok) return;
     const pose = await response.json();
-    surfacesButton.textContent = pose.surfaces_visible ? 'Hide surfaces' : 'Show surfaces';
-    $('ptz-readout').textContent =
-      `az ${{Math.round(pose.azimuth * 57.3)}}° · el ${{Math.round(pose.elevation * 57.3)}}° `
-      + `· zoom ${{pose.zoom.toFixed(2)}}× — re-rendered with the next map update`;
-  }} catch (error) {{ /* stream not live; pose applies to the next run */ }}
+    // The server answers with the last scene drawn from the new pose; a
+    // moment scrubbed during a live run is drawn again from its snapshot.
+    if (mode === 'scrub' && source) showSnapshot(scrubSeq);
+    else if (pose.cloud_png) setCloud(pose.cloud_png, pose.cloud_ids_png);
+    if (followBox) followBox.checked = pose.follow;
+    if (surfacesButton) {{
+      surfacesButton.textContent = pose.surfaces_visible ? 'Hide surfaces' : 'Show surfaces';
+    }}
+    // While following, the azimuth is the camera's heading, not the free pose's.
+    $('ptz-readout').textContent = (pose.follow ? 'following the camera · '
+      : `az ${{Math.round(pose.azimuth * 57.3)}}° · `)
+      + `el ${{Math.round(pose.elevation * 57.3)}}° · zoom ${{pose.zoom.toFixed(2)}}×`;
+  }} catch (error) {{ /* server unreachable; the next post carries the movement */ }}
 }}
 let cloudPostTimer = null, cloudPending = null;
 function postCloudDebounced(body) {{
-  cloudPending = body;
+  // Moves made while a post waits add up (mergeCloudBody), so a drag
+  // sends its whole movement, not the last pointer event's.
+  cloudPending = mergeCloudBody(cloudPending, body);
   if (cloudPostTimer) return;
   cloudPostTimer = setTimeout(() => {{
     cloudPostTimer = null;
@@ -47,7 +67,8 @@ function postCloudDebounced(body) {{
     cloudPending = null;
   }}, 120);
 }}
-function setCloud(cloudPng) {{
+function setCloud(cloudPng, idsPng) {{
+  setCloudIds(cloudPng ? idsPng : null);  // which surface each pixel shows (cloud_pick.py)
   if (!cloudPng) {{ cloudImage = null; drawCloud(); return; }}
   const image = new Image();
   image.onload = () => {{ cloudImage = image; drawCloud(); }};
@@ -59,6 +80,7 @@ function drawCloud() {{
   cloudCtx.fillStyle = '#0a0c0e';
   cloudCtx.fillRect(0, 0, w, h);
   if (cloudImage) cloudCtx.drawImage(cloudImage, 0, 0, w, h);
+  drawCloudSelection(cloudCtx, w, h);
 }}
 function resizeCloud() {{
   if (!cloudCanvas) return;
@@ -84,6 +106,12 @@ document.querySelectorAll('[data-ptz]').forEach((button) => {{
 }});
 if (cloudCanvas) {{
 $('cloud-reset').addEventListener('click', () => postCloud({{action: 'cloud_reset'}}));
+if (followBox) {{
+  followBox.addEventListener('change',
+    () => postCloud({{action: 'cloud_follow', follow: followBox.checked}}));
+  // The box starts checked: the page opens following the camera.
+  postCloud({{action: 'cloud_follow', follow: followBox.checked}});
+}}
 $('cloud-fullscreen').addEventListener('click', () => {{
   const pane = $('cloud-pane');
   if (document.fullscreenElement) document.exitFullscreen();
@@ -93,11 +121,12 @@ document.addEventListener('fullscreenchange', () => setTimeout(resizeCloud, 60))
 new ResizeObserver(resizeCloud).observe($('cloud-wrap'));
 let cloudDrag = null;
 cloudCanvas.addEventListener('pointerdown', (event) => {{
-  cloudDrag = {{x: event.clientX, y: event.clientY, pan: event.shiftKey || event.button === 2}};
+  cloudDrag = {{x: event.clientX, y: event.clientY, pan: event.shiftKey || event.button === 2,
+    down: {{x: event.clientX, y: event.clientY}}}};
   cloudCanvas.setPointerCapture(event.pointerId);
 }});
 cloudCanvas.addEventListener('pointermove', (event) => {{
-  if (!cloudDrag) return;
+  if (!cloudDrag) {{ setCloudSelection(pickAt(event), event); return; }}  // hover: name, select
   const dx = event.clientX - cloudDrag.x, dy = event.clientY - cloudDrag.y;
   cloudDrag.x = event.clientX; cloudDrag.y = event.clientY;
   if (cloudDrag.pan) {{
@@ -106,15 +135,28 @@ cloudCanvas.addEventListener('pointermove', (event) => {{
     postCloudDebounced({{action: 'cloud_orbit', d_azimuth: dx * 0.008, d_elevation: dy * 0.008}});
   }}
 }});
-cloudCanvas.addEventListener('pointerup', () => {{ cloudDrag = null; }});
+const endCloudDrag = () => {{ cloudDrag = null; }};
+cloudCanvas.addEventListener('pointerup', (event) => {{
+  // A click on a surface (not a drag) opens it in the object feed.
+  const clicked = cloudDrag && isClick(cloudDrag.down, {{x: event.clientX, y: event.clientY}});
+  cloudDrag = null;
+  const surfaceId = clicked ? pickAt(event) : 0;
+  if (surfaceId) focusFeedItem(surfaceId);
+}});
+cloudCanvas.addEventListener('pointerleave', () => {{
+  if (!cloudDrag) setCloudSelection(0, null);
+}});
+cloudCanvas.addEventListener('pointercancel', endCloudDrag);
+cloudCanvas.addEventListener('lostpointercapture', endCloudDrag);
 cloudCanvas.addEventListener('wheel', (event) => {{
   event.preventDefault();
-  postCloudDebounced({{action: 'cloud_zoom', factor: Math.exp(event.deltaY * 0.001)}});
+  const rate = event.ctrlKey ? 0.01 : 0.001;  // ctrl+wheel is a trackpad pinch
+  postCloudDebounced({{action: 'cloud_zoom', factor: Math.exp(event.deltaY * rate)}});
 }}, {{passive: false}});
 cloudCanvas.addEventListener('contextmenu', (event) => event.preventDefault());
 // SAM surfaces: the server draws the station's surface layer into the
 // cloud image; this button only toggles it.
-const surfacesButton = document.createElement('button');
+surfacesButton = document.createElement('button');
 surfacesButton.className = 'btn';
 surfacesButton.type = 'button';
 surfacesButton.textContent = 'Hide surfaces';

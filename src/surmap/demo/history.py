@@ -34,7 +34,7 @@ from surmap.types import Pose, Vec3
 PointList = list[list[float]]
 
 # Server-rendered images a replay draws again; never journalled.
-RENDER_ONLY = ("cloud_png",)
+RENDER_ONLY = ("cloud_png", "cloud_ids_png")
 
 # Journal rows read per query while streaming a replay.
 JOURNAL_PAGE = 64

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Protocol, runtime_checkable
 
-from surmap.types import Vec3
+from surmap.types import Pose, Vec3
 
 
 class RegionStatus(Enum):
@@ -40,13 +40,18 @@ class RegionQuery:
 
 @dataclass(frozen=True)
 class RegionResult:
-    """The answer to one query; `points` are map-frame and empty unless `OK`."""
+    """The answer to one query; `points` are map-frame and empty unless `OK`.
+
+    `camera`, when the answerer knows it, is the camera-to-map pose of the
+    channel's rectified camera the points were placed from.
+    """
 
     query_id: int
     frame_id: int
     channel: int
     status: RegionStatus
     points: tuple[Vec3, ...] = ()
+    camera: Pose | None = None
 
 
 def invalid_reason(query: RegionQuery) -> str | None:
