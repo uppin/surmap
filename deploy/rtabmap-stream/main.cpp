@@ -303,8 +303,15 @@ cv::Mat fullFrameDisparity(const RingFrame& frame, int channel, const RegionRig&
   auto sgbm = cv::StereoSGBM::create(0, numDisparities, block, 8 * block * block,
                                      32 * block * block, 1, 31, 10, 100, 2,
                                      cv::StereoSGBM::MODE_SGBM);
-  cv::Mat disparity;
-  sgbm->compute(ref, other, disparity);  // CV_16S, x16
+  // SGBM leaves the reference's first numDisparities columns unmatched, as
+  // their full search would leave the other image. Padded on the left by that
+  // much, those columns match the disparity the scene has there; the
+  // left-right check (disp12MaxDiff) rejects a match into the black padding.
+  cv::Mat paddedRef, paddedOther, padded;
+  cv::copyMakeBorder(ref, paddedRef, 0, 0, numDisparities, 0, cv::BORDER_CONSTANT, 0);
+  cv::copyMakeBorder(other, paddedOther, 0, 0, numDisparities, 0, cv::BORDER_CONSTANT, 0);
+  sgbm->compute(paddedRef, paddedOther, padded);  // CV_16S, x16
+  cv::Mat disparity = padded.colRange(numDisparities, padded.cols).clone();
   if (channel == 1) cv::flip(disparity, disparity, 1);
   return disparity;
 }
