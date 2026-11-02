@@ -12,10 +12,11 @@ clients. Otherwise it uses the recorded SITL fixture and fakes;
     uv run python scripts/mission_demo.py --no-viewer
     uv run python scripts/mission_demo.py --fixtures
 
-Live with ``SURMAP_LIVE_META=1`` and ``MODEL_API_KEY`` calls Meta SAM
-3.1, Muse Spark labels, and the Muse Spark scene note. Baseten and
-Modal are optional fallbacks when that Meta flag is unset
-(``SURMAP_LIVE_BASETEN``, ``SURMAP_LIVE_MODAL``). Keys are read only
+Live with ``SURMAP_LIVE_META=1`` and ``MODEL_API_KEY`` calls Muse
+Spark to pick SAM concepts, Meta SAM 3.1, Muse Spark labels, and the
+Muse Spark scene note. ``SURMAP_LIVE_BASETEN=1`` moves labels to
+open-weight Muse Spark Open on Baseten, also when Meta is on. Modal SAM
+(``SURMAP_LIVE_MODAL``) is used when the Meta flag is unset. Keys are read only
 inside those clients. ``--sam-route modal`` (with ``SURMAP_LIVE_MODAL=1``)
 moves only SAM to Modal; Meta SAM stays the default. Pass a capture
 directory. This process does not enable PX4 motors.

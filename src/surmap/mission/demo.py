@@ -334,10 +334,12 @@ def detection_crop_jpeg(
 def build_live_services(*, sam_route: str | None = None) -> LiveServices:
     """Check the live flags and keys. Does not send a request or log a key.
 
-    ``SURMAP_LIVE_META=1`` selects Meta SAM, Muse Spark labels, and the
-    Muse Spark scene note. Baseten labels and Modal SAM are used only
-    when that Meta flag is unset and their own flags are set. The Meta
-    scene note is then ``none``.
+    ``SURMAP_LIVE_META=1`` selects Meta SAM, Muse Spark concepts and
+    labels, and the Muse Spark scene note. ``SURMAP_LIVE_BASETEN=1``
+    moves per-object labels to open-weight Muse Spark Open on Baseten,
+    with or without the Meta flag. Modal SAM is used when the Meta flag
+    is unset and ``SURMAP_LIVE_MODAL=1``; the Meta scene note is then
+    ``none``.
 
     ``sam_route`` (``meta`` or ``modal``) pins only the SAM adapter, for
     example to benchmark Modal SAM while Meta still labels and writes
@@ -348,7 +350,7 @@ def build_live_services(*, sam_route: str | None = None) -> LiveServices:
     baseten = os.environ.get("SURMAP_LIVE_BASETEN") == "1"
     modal = os.environ.get("SURMAP_LIVE_MODAL") == "1"
     if meta:
-        sam, labels, scene = "meta", "meta", "meta"
+        sam, labels, scene = "meta", ("baseten" if baseten else "meta"), "meta"
     else:
         sam = "modal" if modal else ""
         labels = "baseten" if baseten else ""

@@ -200,6 +200,78 @@ def test_meta_alone_selects_meta_sam_labels_and_scene_note(
     assert services.scene_note == "meta"
 
 
+def test_the_baseten_flag_moves_labels_to_muse_spark_open_even_with_meta_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given the Meta and Baseten flags and both keys
+    monkeypatch.setenv("SURMAP_LIVE_META", "1")
+    monkeypatch.setenv("MODEL_API_KEY", "secret-model-key")
+    monkeypatch.setenv("SURMAP_LIVE_BASETEN", "1")
+    monkeypatch.setenv("BASETEN_API_KEY", "secret-baseten-key")
+    monkeypatch.delenv("SURMAP_LIVE_MODAL", raising=False)
+
+    # When live services are resolved
+    services = build_live_services()
+
+    # Then labels are Baseten while SAM and the scene note stay on Meta
+    assert services.sam == "meta"
+    assert services.labels == "baseten"
+    assert services.scene_note == "meta"
+
+
+def test_baseten_labels_with_meta_on_still_need_the_baseten_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SURMAP_LIVE_META", "1")
+    monkeypatch.setenv("MODEL_API_KEY", "secret-model-key")
+    monkeypatch.setenv("SURMAP_LIVE_BASETEN", "1")
+    monkeypatch.delenv("BASETEN_API_KEY", raising=False)
+    with pytest.raises(MissionConfigError, match="BASETEN_API_KEY"):
+        build_live_services()
+
+
+def test_a_live_mission_with_both_flags_labels_with_baseten(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given both flags and a Baseten labeller double
+    _allow_live_flags(monkeypatch)
+    monkeypatch.setenv("SURMAP_LIVE_BASETEN", "1")
+    monkeypatch.setenv("BASETEN_API_KEY", "secret-baseten-key")
+    _block_network(monkeypatch)
+    seen: list[str] = []
+
+    def baseten_label(self: object, jpeg: bytes, coarse_label: str, xyz: Vec3) -> ObjectLabel:
+        del self, jpeg, coarse_label
+        seen.append("baseten")
+        return ObjectLabel(
+            label="survivor",
+            description="person in the crop",
+            confidence=0.7,
+            model_id="meta-models/muse-spark-open-1026",
+            raw_text="{}",
+            map_point=xyz,
+        )
+
+    monkeypatch.setattr(
+        "surmap.mission.demo.open_live_map",
+        lambda _calibration, **_kwargs: _RecordingMap(snapshot=(_MAP_POINT,)),
+    )
+    monkeypatch.setattr(MetaSamDetector, "detect", _detect_person)
+    monkeypatch.setattr("surmap.mission.demo.BasetenMuseLabelClient.label", baseten_label)
+    monkeypatch.setattr(MetaMuseSceneClient, "note", _scene_note)
+
+    # When the live mission runs
+    result = run_live_mission(tmp_path, _CAPTURE)
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+
+    # Then Baseten labelled the objects and the report names the open-weight model
+    assert seen
+    label_calls = [call for call in report["meta_calls"] if call["role"] == "label"]
+    assert label_calls[0]["model_id"] == "meta-models/muse-spark-open-1026"
+    assert "secret-baseten-key" not in result.report_path.read_text(encoding="utf-8")
+
+
 def test_baseten_and_modal_remain_fallbacks_when_meta_is_off(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -381,7 +453,7 @@ def test_meta_stays_the_default_sam_route_when_modal_is_also_flagged(
 def test_an_explicit_modal_sam_route_keeps_labels_and_the_scene_note_on_meta(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Given both live flags, so Meta is available for the scene note
+    # Given the Meta flag, so Meta is available for the scene note
     _allow_live_flags(monkeypatch)
     monkeypatch.setenv("SURMAP_LIVE_MODAL", "1")
     monkeypatch.setenv("MODAL_SAM_URL", "http://modal.test/sam")
@@ -870,7 +942,7 @@ class _RecordingMap:
 
 def _allow_live_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SURMAP_LIVE_META", "1")
-    monkeypatch.setenv("SURMAP_LIVE_BASETEN", "1")
+    monkeypatch.delenv("SURMAP_LIVE_BASETEN", raising=False)
     monkeypatch.delenv("SURMAP_LIVE_MODAL", raising=False)
     monkeypatch.setenv("MODEL_API_KEY", "secret-model-key")
     monkeypatch.setenv("BASETEN_API_KEY", "secret-baseten-key")

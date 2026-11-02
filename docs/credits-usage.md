@@ -30,9 +30,10 @@ these credits.
 | Model | `meta-models/muse-spark-open-1026` |
 | Key | `BASETEN_API_KEY`, sent only as `Authorization: Bearer`. A missing or blank key raises `BasetenApiKeyMissing` before any socket |
 | Input | JPEG crop as an `image_url` data URL, plus the detector's coarse label. The map-frame point is not sent; it is attached to `ObjectLabel.map_point` after the reply |
+| Tool | `record_label(label, description, confidence)` is offered with `tool_choice` `auto`. A valid tool call is the label; otherwise the text lines below are parsed. `SURMAP_BASETEN_TOOL_LABELS=0` turns the tool off |
 | Output | `ObjectLabel`: `label`, `description`, `confidence` (`None` when the assistant text has no number), `model_id`, `raw_text` |
 | Prompt | Humanitarian search-and-rescue inventory for emergency responders after a natural disaster. Asks only for a short object label, one description sentence, and a confidence |
-| Reasoning | `reasoning_effort` defaults to `low` because labels are per object and frequent. Allowed values are `low`, `medium`, and `high`. The client does not send a flag that claims reasoning is off, and it does not use JSON mode. `choices[0].message.reasoning_content` is kept on `reasoning_text` and is not copied into `raw_text` or used as the label |
+| Reasoning | `reasoning_effort` is always sent, `low` by default (Baseten's default for Muse Spark Open is `xhigh`), because labels are per object and frequent. Allowed values are `low`, `medium`, and `high`. The client does not send a flag that claims reasoning is off, and it does not use JSON mode. `choices[0].message.reasoning_content` is kept on `reasoning_text` and is not copied into `raw_text` or used as the label |
 | Cap | `max_tokens` defaults to `4096`. A value below `2048` is rejected: a trivial prompt can spend about 2200 reasoning tokens before any label text. If `finish_reason` is `length` and the answer text is empty, the client retries once at double the cap, then raises `EmptyLabelError` with `finish_reason` and token counts. An empty label is never returned |
 
 A constructor argument wins. When the argument is omitted, the client

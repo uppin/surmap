@@ -68,7 +68,7 @@ Optional providers:
 
 | Flags | Effect |
 |---|---|
-| `SURMAP_LIVE_BASETEN=1`, `BASETEN_API_KEY` | Per-object labels use open-weight Muse Spark Open on Baseten when `SURMAP_LIVE_META` is unset |
+| `SURMAP_LIVE_BASETEN=1`, `BASETEN_API_KEY` | Per-object labels move to open-weight Muse Spark Open on Baseten, also when Meta is on (`reasoning_effort` `low`, fields from a `record_label` tool call) |
 | `SURMAP_LIVE_MODAL=1`, `MODAL_SAM_URL`, `--sam-route modal` | SAM 3.1 runs on the project's Modal GPU app instead of the Meta API |
 | `--record <dir>` | Writes every model request (auth dropped, images hashed) and response to `<dir>` for offline replay |
 

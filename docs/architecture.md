@@ -158,7 +158,10 @@ JPEG crop with `muse-spark-1.3`. `BasetenMuseLabelClient`
 Muse Spark Open, `meta-models/muse-spark-open-1026`, on Baseten. The
 map point is attached after the reply and is not sent.
 `build_live_services` in `src/surmap/mission/demo.py` picks the
-provider from the `SURMAP_LIVE_*` flags. The offline mission uses a
+provider: Baseten whenever `SURMAP_LIVE_BASETEN=1`, otherwise Meta
+under `SURMAP_LIVE_META=1`. The Baseten request sends
+`reasoning_effort` `low` and offers a `record_label` tool for the
+structured fields, because Baseten has no JSON mode for this model. The offline mission uses a
 fixture label and does not construct these clients.
 
 **Ask the map.** `surmap.mapqa` calls `muse-wonder-1.0` for questions
