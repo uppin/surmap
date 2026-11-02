@@ -194,6 +194,14 @@ uv run python scripts/demo.py
   **Rebuild**, the only action that runs RTAB-Map (and SAM) and records
   a new run; applying a new SAM prompt rebuilds too. A run cut short by
   another viewer's takeover is recorded as interrupted, never cached.
+- **Export / Import**: Export downloads the selected run (and any run it
+  replays) as one `.surmaprun` file: a gzipped SQLite database in the run
+  history's schema, with frames, journal, map, SAM masks, surfaces, rig and
+  dense buffer. Import adds a file's runs to this console under their own
+  ids, skipping runs already present, and they replay and rewind like runs
+  recorded there. Headless: `python -m surmap.demo.run_archive export
+  RUN_ID FILE` and `import FILE` (`--history-db` to pick the store). The
+  447-frame KITTI 0009 SAM run is about 200 MB exported.
 - **Replay run** (speed 1×, 4× or max; `GET /stream?replay=<run_id>&speed=N`):
   every run keeps a journal of its events and RTAB-Map's dense buffer
   (the disparity computed for each SAM frame, with its pose), so a
