@@ -9,7 +9,9 @@ buttons. Unlike the server-rendered 3D pane, a card needs no round trip,
 so every card moves on its own. Points are coloured by height, red when
 the surface is moving, and capped per card (evenly thinned).
 
-It fills from `surface` events on every stream (live, replay, cached
+A click on a surface in the 3D pane scrolls the feed to its card and
+highlights it (`focusFeedItem`); hovering a card selects its surface in
+the pane (`cloud_pick.py`). It fills from `surface` events on every stream (live, replay, cached
 rerun), is rebuilt from a scrubbed moment's `snap.surfaces`, and is
 cleared when a new run starts. The script is spliced into the page before
 the server formats it, so its braces stay doubled for str.format; the
@@ -34,6 +36,7 @@ OBJECT_FEED_MARKUP = """    <div class="feed-pane">
         .feed-card canvas { width: 100%; height: 150px; display: block; background: #0a0c0e;
           touch-action: none; cursor: grab; }
         .feed-card .ptz { margin-top: 4px; }
+        .feed-card.selected { border-color: #ffd23c; box-shadow: 0 0 0 1px #ffd23c; }
       </style>
       <h2>Objects <span class="stat" id="feed-count">— none yet</span></h2>
       <div class="object-feed" id="object-feed"></div>
@@ -84,7 +87,20 @@ function feedItem(surfaceId, label) {{
     view: {{azimuth: 0, elevation: 0.35, zoom: 1, panX: 0, panY: 0}}}};
   feedItems.set(surfaceId, item);
   wireFeedCard(item);
+  // Hovering a card selects its surface in the 3D pane (cloud_pick.py).
+  card.addEventListener('mouseenter', () => setCloudSelection(surfaceId, null));
+  card.addEventListener('mouseleave', () => setCloudSelection(0, null));
   return item;
+}}
+function focusFeedItem(surfaceId) {{
+  const item = feedItems.get(surfaceId);
+  if (!item) return;
+  for (const other of feedItems.values()) other.card.classList.remove('selected');
+  item.card.classList.add('selected');
+  // Scroll the feed itself to the card, then bring the feed into the page's view.
+  const feedTop = objectFeed.getBoundingClientRect().top;
+  objectFeed.scrollTop += item.card.getBoundingClientRect().top - feedTop - 8;
+  objectFeed.scrollIntoView({{block: 'nearest'}});
 }}
 function wireFeedCard(item) {{
   const {{canvas, view}} = item;

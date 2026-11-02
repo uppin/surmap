@@ -1,4 +1,4 @@
-"""Demo: hovering a surface in the 3D pane names it, selects it and brings its feed card up."""
+"""Demo: hovering a surface in the 3D pane names and selects it; clicking it opens its feed card."""
 
 import base64
 import io
@@ -165,7 +165,7 @@ def test_the_selection_covers_every_pixel_of_the_hovered_surface_only() -> None:
     selected = run_view_helpers(
         f"(() => {{ const mask = selectionMask({IDS_JS}, 300);"
         " const on = []; for (let i = 0; i < mask.length; i += 4) if (mask[i + 3]) on.push(i / 4);"
-        " return on; }})()"
+        " return on; })()"
     )
     assert selected == [1 * 6 + 1]
 
@@ -176,3 +176,24 @@ def test_the_page_wires_hover_to_the_tooltip_the_selection_and_the_feed(tmp_path
         assert "surfaceIdNear(" in page and "selectionMask(" in page
         assert "focusFeedItem(" in page
         assert "cloud_ids_png" in page
+
+
+@needs_node
+def test_a_press_and_release_in_place_is_a_click_that_navigates_the_feed() -> None:
+    # A release within 4 px of the press is a click; further is an orbit drag
+    clicks = run_view_helpers(
+        "[isClick({x: 10, y: 10}, {x: 10, y: 10}), isClick({x: 10, y: 10}, {x: 13, y: 12}),"
+        " isClick({x: 10, y: 10}, {x: 30, y: 10})]"
+    )
+    assert clicks == [True, True, False]
+
+
+def test_the_page_navigates_the_feed_on_a_click_not_on_hover(tmp_path: Path) -> None:
+    with a_console_page(tmp_path) as page:
+        script = page.split("<script>", 1)[1]
+        # Each handler's body runs to its closing line, "});" at the start of a line
+        up = script.split("cloudCanvas.addEventListener('pointerup'", 1)[1].split("\n});", 1)[0]
+        move = script.split("cloudCanvas.addEventListener('pointermove'", 1)[1].split("\n});", 1)[0]
+    # The release of a click focuses the feed card; moving the pointer never does
+    assert "isClick(" in up and "focusFeedItem(" in up
+    assert "focusFeedItem(" not in move

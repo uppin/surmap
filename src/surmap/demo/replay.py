@@ -26,7 +26,10 @@ from surmap.survey.surfaces import SurfaceMap
 
 Bounds = tuple[NDArray[np.float32], NDArray[np.float32]]
 # Draws the 3D view of (points, colours, bounds, surface layer) as PNG base64.
-CloudRenderer = Callable[[NDArray[np.float32], NDArray[np.uint8], Bounds, SurfaceLayer], str]
+# Draws a map view: its images by name (`cloud_png`, `cloud_ids_png`).
+CloudRenderer = Callable[
+    [NDArray[np.float32], NDArray[np.uint8], Bounds, SurfaceLayer], dict[str, str]
+]
 
 # A replay draws the map view at most this often, as the live player does;
 # a slow recording journals one map update per frame.
@@ -113,8 +116,8 @@ class JournalPlayer:
         if self._bounds is not None:
             lo, hi = np.minimum(self._bounds[0], lo), np.maximum(self._bounds[1], hi)
         self._bounds = (lo, hi)
-        png = self._render_cloud(points, colors, self._bounds, self._assigner.layer())
-        return {**data, "cloud_png": png}
+        view = self._render_cloud(points, colors, self._bounds, self._assigner.layer())
+        return {**data, **view}
 
     def _pace(self, last_frame: float) -> float:
         if self._fps > 0:

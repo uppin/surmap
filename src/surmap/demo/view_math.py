@@ -11,6 +11,11 @@ No DOM here, so the functions run in node on their own
 - `orbitProject(points, view, width, height)` projects an object's points
   into a preview canvas with its own orbit camera, centred on the
   object's bounding box and fitted to the canvas at zoom 1.
+- `surfaceIdNear(ids, width, height, x, y, radius)` reads the 3D pane's id
+  image (`cloud_ids_png`: R + 256 * G where alpha is set): the surface
+  nearest pixel (x, y) within `radius`, or 0.
+- `selectionMask(ids, id)` is an RGBA overlay of every pixel of surface `id`.
+- `isClick(down, up)` tells a click (released within 4 px) from a drag.
 
 Spliced into the page before the server formats it, so its braces stay
 doubled for str.format.
@@ -35,6 +40,33 @@ function depthColour(t) {{
   const i = Math.min(DEPTH_STOPS.length - 2, Math.floor(scaled));
   const f = scaled - i;
   return DEPTH_STOPS[i].map((c, k) => Math.round(c + (DEPTH_STOPS[i + 1][k] - c) * f));
+}}
+function surfaceIdNear(ids, width, height, x, y, radius) {{
+  let best = 0, bestDistance = Infinity;
+  const cx = Math.round(x), cy = Math.round(y);
+  for (let v = Math.max(0, cy - radius); v <= Math.min(height - 1, cy + radius); v++) {{
+    for (let u = Math.max(0, cx - radius); u <= Math.min(width - 1, cx + radius); u++) {{
+      const i = (v * width + u) * 4;
+      if (!ids[i + 3]) continue;
+      const distance = (u - x) ** 2 + (v - y) ** 2;
+      if (distance < bestDistance) {{ best = ids[i] + 256 * ids[i + 1]; bestDistance = distance; }}
+    }}
+  }}
+  return best;
+}}
+function selectionMask(ids, id) {{
+  const mask = new Uint8ClampedArray(ids.length);
+  const low = id & 255, high = (id >> 8) & 255;
+  for (let i = 0; i < ids.length; i += 4) {{
+    if (ids[i + 3] && ids[i] === low && ids[i + 1] === high) {{
+      mask[i] = 255; mask[i + 1] = 255; mask[i + 2] = 255; mask[i + 3] = 230;
+    }}
+  }}
+  return mask;
+}}
+const CLICK_SLOP_PX = 4;
+function isClick(down, up) {{
+  return Math.hypot(up.x - down.x, up.y - down.y) <= CLICK_SLOP_PX;
 }}
 function orbitProject(points, view, width, height) {{
   if (!points.length) return [];

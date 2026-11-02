@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from surmap.demo.cloud_pick import CLOUD_PICK_MARKUP, CLOUD_PICK_SCRIPT
 from surmap.demo.cloud_script import CLOUD_SCRIPT
 from surmap.demo.object_feed import OBJECT_FEED_MARKUP, OBJECT_FEED_SCRIPT
 from surmap.demo.sam_depth import SAM_DEPTH_SCRIPT
@@ -306,7 +307,7 @@ async function showSnapshot(seq) {{
     if (snap.sam) drawSamPane(snap.sam);
     feedSnapshot(snap.surfaces, snap.frame_id);
     if (snap.cloud) {{
-      setCloud(snap.cloud.cloud_png);
+      setCloud(snap.cloud.cloud_png, snap.cloud.cloud_ids_png);
       lastMap = {{image: null, extent: snap.cloud.extent, trajectory: snap.cloud.trajectory_xy,
         points: snap.cloud.points}};
       drawMap(lastMap, snap.camera);
@@ -418,7 +419,7 @@ function attachListeners() {{
         + `<b>${{data.cloud_points}}</b> pts<br>Odometry <b>${{data.odom_state}}</b> `
         + `· RTAB-Map <b>${{data.rtab_fps ?? 0}}</b> fps `
         + `· lag <b>${{data.lag_frames}}</b> · dropped <b>${{data.dropped_frames}}</b>`;
-      setCloud(data.cloud_png);
+      setCloud(data.cloud_png, data.cloud_ids_png);
       showMap(data);
     }}
   }});
@@ -431,7 +432,7 @@ function attachListeners() {{
       rtab.innerHTML = `Optimized poses <b>${{data.poses}}</b><br>`
         + `Trajectory travelled <b>${{data.travelled_m}} m</b><br>`
         + `Assembled cloud <b>${{data.cloud_points}} points</b>`;
-      setCloud(data.cloud_png);
+      setCloud(data.cloud_png, data.cloud_ids_png);
       showMap(data);
     }}
     pauseButton.disabled = true;
@@ -568,7 +569,8 @@ updateHistoryLabel();
 
 # Spliced in before the server formats PAGE, so its braces stay doubled.
 PAGE = PAGE.replace(
-    "__CLOUD_SCRIPT__", VIEW_HELPERS + CLOUD_SCRIPT + SAM_DEPTH_SCRIPT + OBJECT_FEED_SCRIPT
+    "__CLOUD_SCRIPT__",
+    VIEW_HELPERS + CLOUD_SCRIPT + CLOUD_PICK_SCRIPT + SAM_DEPTH_SCRIPT + OBJECT_FEED_SCRIPT,
 )
 
 RTAB_STAT = """    <h2>RTAB-Map</h2>
@@ -583,6 +585,7 @@ CM5_ASIDE = """  <aside>
       </div>
       <div class="cloud-wrap" id="cloud-wrap">
         <canvas id="cloud" width="640" height="340"></canvas>
+__CLOUD_PICK__
       </div>
       <div class="ptz" id="ptz">
         <span>Pan</span>
@@ -605,4 +608,6 @@ __OBJECT_FEED__
     <p class="legend">Top-down floor plan: every map point in its camera intensity,
     amber = camera trajectory, yellow wedge = the camera at the shown moment.</p>
   </aside>"""
-CM5_ASIDE = CM5_ASIDE.replace("__OBJECT_FEED__", OBJECT_FEED_MARKUP)
+CM5_ASIDE = CM5_ASIDE.replace("__OBJECT_FEED__", OBJECT_FEED_MARKUP).replace(
+    "__CLOUD_PICK__", CLOUD_PICK_MARKUP
+)

@@ -38,7 +38,7 @@ async function postCloud(body) {{
     // The server answers with the last scene drawn from the new pose; a
     // moment scrubbed during a live run is drawn again from its snapshot.
     if (mode === 'scrub' && source) showSnapshot(scrubSeq);
-    else if (pose.cloud_png) setCloud(pose.cloud_png);
+    else if (pose.cloud_png) setCloud(pose.cloud_png, pose.cloud_ids_png);
     if (surfacesButton) {{
       surfacesButton.textContent = pose.surfaces_visible ? 'Hide surfaces' : 'Show surfaces';
     }}
@@ -59,7 +59,8 @@ function postCloudDebounced(body) {{
     cloudPending = null;
   }}, 120);
 }}
-function setCloud(cloudPng) {{
+function setCloud(cloudPng, idsPng) {{
+  setCloudIds(cloudPng ? idsPng : null);  // which surface each pixel shows (cloud_pick.py)
   if (!cloudPng) {{ cloudImage = null; drawCloud(); return; }}
   const image = new Image();
   image.onload = () => {{ cloudImage = image; drawCloud(); }};
@@ -71,6 +72,7 @@ function drawCloud() {{
   cloudCtx.fillStyle = '#0a0c0e';
   cloudCtx.fillRect(0, 0, w, h);
   if (cloudImage) cloudCtx.drawImage(cloudImage, 0, 0, w, h);
+  drawCloudSelection(cloudCtx, w, h);
 }}
 function resizeCloud() {{
   if (!cloudCanvas) return;
@@ -105,11 +107,12 @@ document.addEventListener('fullscreenchange', () => setTimeout(resizeCloud, 60))
 new ResizeObserver(resizeCloud).observe($('cloud-wrap'));
 let cloudDrag = null;
 cloudCanvas.addEventListener('pointerdown', (event) => {{
-  cloudDrag = {{x: event.clientX, y: event.clientY, pan: event.shiftKey || event.button === 2}};
+  cloudDrag = {{x: event.clientX, y: event.clientY, pan: event.shiftKey || event.button === 2,
+    down: {{x: event.clientX, y: event.clientY}}}};
   cloudCanvas.setPointerCapture(event.pointerId);
 }});
 cloudCanvas.addEventListener('pointermove', (event) => {{
-  if (!cloudDrag) return;
+  if (!cloudDrag) {{ setCloudSelection(pickAt(event), event); return; }}  // hover: name, select
   const dx = event.clientX - cloudDrag.x, dy = event.clientY - cloudDrag.y;
   cloudDrag.x = event.clientX; cloudDrag.y = event.clientY;
   if (cloudDrag.pan) {{
@@ -119,7 +122,16 @@ cloudCanvas.addEventListener('pointermove', (event) => {{
   }}
 }});
 const endCloudDrag = () => {{ cloudDrag = null; }};
-cloudCanvas.addEventListener('pointerup', endCloudDrag);
+cloudCanvas.addEventListener('pointerup', (event) => {{
+  // A click on a surface (not a drag) opens it in the object feed.
+  const clicked = cloudDrag && isClick(cloudDrag.down, {{x: event.clientX, y: event.clientY}});
+  cloudDrag = null;
+  const surfaceId = clicked ? pickAt(event) : 0;
+  if (surfaceId) focusFeedItem(surfaceId);
+}});
+cloudCanvas.addEventListener('pointerleave', () => {{
+  if (!cloudDrag) setCloudSelection(0, null);
+}});
 cloudCanvas.addEventListener('pointercancel', endCloudDrag);
 cloudCanvas.addEventListener('lostpointercapture', endCloudDrag);
 cloudCanvas.addEventListener('wheel', (event) => {{

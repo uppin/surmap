@@ -61,9 +61,9 @@ def a_render() -> tuple[list[int], CloudRenderer]:
         colors: NDArray[np.uint8],
         bounds: Bounds,
         layer: SurfaceLayer,
-    ) -> str:
+    ) -> dict[str, str]:
         calls.append(len(points))
-        return "png"
+        return {"cloud_png": "png", "cloud_ids_png": "ids"}
 
     return calls, render
 

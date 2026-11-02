@@ -980,9 +980,7 @@ class DemoPlayer:
                 "frame_id": frame_id,
                 "points": points,
                 "point_colors": colors,
-                "cloud_png": self._controls.viewer.render(
-                    cloud.points, cloud.colors, bounds, surfaces
-                ),
+                **self._controls.viewer.render_view(cloud.points, cloud.colors, bounds, surfaces),
                 **self._floor_plan(
                     cloud.points[:, [0, 2]], cloud.colors[:, 0], _floor_plane_trajectory(trajectory)
                 ),
@@ -1175,7 +1173,7 @@ class DemoPlayer:
                         )
                         for pose in trajectory
                     )
-                cloud_png = ""
+                view: dict[str, str] = {"cloud_png": ""}
                 if isinstance(backend, LiveSlamBackend):
                     live_cloud = backend.map_cloud()
                     final_points, final_colors = cloud_points(live_cloud)
@@ -1191,7 +1189,7 @@ class DemoPlayer:
                                 np.maximum(self._cloud_bounds[1], hi),
                             )
                         )
-                        cloud_png = self._controls.viewer.render(
+                        view = self._controls.viewer.render_view(
                             live_cloud.points, live_cloud.colors, bounds, display.surfaces.layer()
                         )
                     plan = self._floor_plan(
@@ -1223,7 +1221,7 @@ class DemoPlayer:
                         "cloud_points": final_count,
                         "points": final_points,
                         "point_colors": final_colors,
-                        "cloud_png": cloud_png,
+                        **view,
                         **plan,
                     },
                 )
@@ -1316,8 +1314,8 @@ class _DemoHttpServer(ThreadingHTTPServer):
                 colors: NDArray[np.uint8],
                 bounds: tuple[NDArray[np.float32], NDArray[np.float32]],
                 layer: SurfaceLayer,
-            ) -> str:
-                return controls.viewer.render(points, colors, bounds, layer)
+            ) -> dict[str, str]:
+                return controls.viewer.render_view(points, colors, bounds, layer)
 
             return JournalPlayer(
                 store, run_id, controls=controls, fps=fps, render_cloud=render
@@ -1852,11 +1850,13 @@ class _DemoHandler(BaseHTTPRequestHandler):
                         snap_points = np.array(cloud["points"], dtype=np.float32).reshape(-1, 3)
                         snap_colors = np.array(cloud.get("colors") or [], dtype=np.uint8)
                         if len(snap_points) and len(snap_colors) == len(snap_points):
-                            cloud["cloud_png"] = self.server.cloud_viewer.render(
-                                snap_points,
-                                snap_colors.reshape(-1, 3),
-                                (snap_points.min(axis=0), snap_points.max(axis=0)),
-                                surface_layer(snapshot.get("surfaces")),
+                            cloud.update(
+                                self.server.cloud_viewer.render_view(
+                                    snap_points,
+                                    snap_colors.reshape(-1, 3),
+                                    (snap_points.min(axis=0), snap_points.max(axis=0)),
+                                    surface_layer(snapshot.get("surfaces")),
+                                )
                             )
                     self._send_json(200, snapshot)
                 return
@@ -1961,7 +1961,7 @@ class _DemoHandler(BaseHTTPRequestHandler):
                         "pan_x": pose.pan_x,
                         "pan_z": pose.pan_z,
                         "surfaces_visible": viewer.surfaces_visible,
-                        "cloud_png": viewer.rerender(),
+                        **(viewer.rerender_view() or {"cloud_png": None, "cloud_ids_png": None}),
                     },
                 )
             return

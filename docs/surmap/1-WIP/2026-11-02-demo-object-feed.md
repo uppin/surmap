@@ -18,15 +18,15 @@
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⏳ `/green` Green — implement until every red test passes · milestones 1–6 @ `1890268`; milestone 7 added
+- [wf 3] ✅ 2026-11-02 `/green` Green — implement until every red test passes · 1218 passed / 28 skipped; ruff, format, mypy strict green
   - [x] Milestone 1: `SurfaceMap` depth band and minimum points
   - [x] Milestone 2: the camera pose reaches `SurfaceMap` (`RegionResult.camera`, `region` event `viewpoint`, live backend from the dense line)
   - [x] Milestone 3: session-level `CloudViewer`; every `cloud_*` action works without a run and answers with `cloud_png`
   - [x] Milestone 4: page — drags send their whole movement; the response image is shown
   - [x] Milestone 5: object feed module (`demo/object_feed.py`) spliced into the page
   - [x] Milestone 6: region pixels (`project_to_display`), `region` event `pixels`, SAM pane depth-gradient overlay
-  - [ ] Milestone 7: hover picking — `cloud_ids_png` beside every `cloud_png`; hover shows the surface id, selects all its pixels, and the feed scrolls to and highlights its card (and hovering a card selects it in the pane)
-  - [ ] Acceptance: `tests/test_demo_cloud_pick.py` passes
+  - [x] Milestone 7: hover picking — `cloud_ids_png` beside every `cloud_png`; hover shows the surface id and selects all its pixels; clicking it scrolls the feed to its card and highlights it (and hovering a card selects it in the pane)
+  - [x] Acceptance: `tests/test_demo_cloud_pick.py` passes
   - [x] Acceptance: `tests/test_survey_surfaces.py`, `tests/test_demo_object_feed.py`, `tests/test_demo_cloud_ptz.py` pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
@@ -145,8 +145,9 @@ sidecar's SGBM settings.
     answer and snapshots. It is render-only, so it is never journalled.
   - The page decodes it. Hover picks the nearest surface pixel within 4 px
     (`surfaceIdNear`), shows `label #id · points` in a tooltip, tints every pixel of
-    that surface (`selectionMask`), and scrolls the feed to its card and highlights it.
-    Hovering a card selects its surface in the pane.
+    that surface (`selectionMask`). A click on it (press and release within 4 px, so a
+    drag is still an orbit) scrolls the feed to its card and highlights it
+    (`focusFeedItem`). Hovering a card selects its surface in the pane.
 
 ### Delta (What's Changing)
 
@@ -215,6 +216,20 @@ V4, in the in-app browser on KITTI 0009 (cached rerun of `38b8dc54`, then a Repl
   (a 200 ms wall-clock budget) failed 1 of 4 full runs while the console and browser
   loaded the machine. It passed 5 of 5 alone, and `src/surmap/moving` is untouched since
   `b2de4bf`. Not proven on an untouched checkout.
+- **Milestone 7 (picking):**
+  - **Tests:** 15 new tests, red @ the milestone-7 test commit, now green. The fake
+    renderer in `test_demo_replay_sam.py` now returns `{cloud_png, cloud_ids_png}`,
+    because `CloudRenderer` returns the named images.
+  - **V4, real CDP mouse events on the finished KITTI run:**
+    - **Hover:** hovering car #27 shows `car #27 · 336 pts · static — click to open in
+      the feed`, selects all 112 of its pixels and sets a pointer cursor. Hovering
+      alone does not navigate.
+    - **Click:** a click highlights card #27 and scrolls it into the feed's view.
+    - **Drag:** a 60 px drag from the same point does not navigate.
+    - **Card hover:** hovering card #2 selects surface 2 in the pane.
+  - **Found in the V4 run:** nested smooth `scrollIntoView` did not scroll the feed in
+    the webview. The feed's `scrollTop` is now set from the card's offset. The tooltip
+    also flips left at the pane's right edge.
 - **Observed, out of scope:** near-left KITTI cars get points only on their rear. The
   sidecar's SGBM (`numDisparities` 128 at 620 px) cannot match the image's leftmost 128
   columns. That is also why some masks get no depth.
@@ -228,7 +243,7 @@ V4, in the in-app browser on KITTI 0009 (cached rerun of `38b8dc54`, then a Repl
 - `tests/test_slam_streaming_dense.py`: a live region answer carries the pose of the dense line before it.
 - `tests/test_demo_object_feed.py` (regions): a `region` event carries `viewpoint` and banded `pixels` with ranges, capped at 1500.
 - `tests/test_demo_object_feed.py`: the region event carries the viewpoint and the surface is banded; the page carries the feed and feeds it from surface events and snapshots.
-- `tests/test_demo_cloud_pick.py`: the id image holds each surface's id on its pixels, nothing on map-only pixels or hidden surfaces, the moving surface on shared pixels; map events, replays, `/control` answers and snapshots carry it; `surfaceIdNear` and `selectionMask` in node; the page wires hover to the tooltip, the selection and `focusFeedItem`.
+- `tests/test_demo_cloud_pick.py`: the id image holds each surface's id on its pixels, nothing on map-only pixels or hidden surfaces, the moving surface on shared pixels; map events, replays, `/control` answers and snapshots carry it; `surfaceIdNear` and `selectionMask` in node; the page wires hover to the tooltip and the selection, and a click (`isClick`) to `focusFeedItem`.
 - `tests/test_demo_cloud_ptz.py`: `cloud_orbit` after the run answers 200 with a re-rendered `cloud_png`; the pose carries into the next run; the drag handler accumulates deltas.
 
 ## Decisions & Trade-offs
@@ -259,5 +274,9 @@ V4, in the in-app browser on KITTI 0009 (cached rerun of `38b8dc54`, then a Repl
   journal region pixels, so a scrubbed moment shows masks only.
 - **The depth gradient is per object.** Near → far over each object's own range shows
   its shape. One global scale would paint a whole car the same colour.
+- **Feed navigation is on click, not hover** (the user's follow-up). Hover only names
+  and selects, so moving across the pane never scrolls the feed under the reader.
+- **Picking uses a server-rendered id image**, so the page needs no geometry and the
+  pick matches exactly what is drawn, including occlusion by a moving surface.
 - **The PTZ pose is per session, not per viewer.** The console already has one run
   shared by all viewers.

@@ -10,7 +10,8 @@ on every change, and the last scene it drew. Every run's
 run (or with nothing playing) is the pose of the next. A PTZ action
 answers with `rerender()`: the last scene drawn again from the new pose,
 so the pane moves after a run has finished or on a scrubbed moment, not
-only with the next map update.
+only with the next map update. `render_view` adds the scene's id image
+(`render_cloud_ids`): which surface each pixel shows, for hover picking.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
-from surmap.demo.surface_render import SurfaceLayer, draw_surfaces
+from surmap.demo.surface_render import SurfaceLayer, draw_surface_ids, draw_surfaces
 
 Bounds = tuple[NDArray[np.float32], NDArray[np.float32]]
 
@@ -81,6 +82,39 @@ def _project_points(
     return ui[on], vi[on], depth[inside][on], indices[on]
 
 
+def _framing(bounds: Bounds, pose: CloudPose) -> tuple[NDArray[np.float64], float]:
+    """The orbit centre (panned) and span a view of `bounds` is drawn with."""
+    lo, hi = (np.asarray(bound, dtype=np.float64) for bound in bounds)
+    centre = (lo + hi) / 2.0
+    centre[0] += pose.pan_x
+    centre[2] += pose.pan_z
+    return centre, max(float(np.max(hi - lo)), 0.5)
+
+
+def render_cloud_ids(
+    pose: CloudPose,
+    bounds: Bounds,
+    size: tuple[int, int] = CLOUD_VIEW_PX,
+    surfaces: SurfaceLayer = (),
+) -> str:
+    """The id image of `render_cloud_view`'s surface layer, as base64 PNG.
+
+    Same size and projection; each surface pixel holds its id as R + 256 * G
+    with alpha 255, every other pixel is transparent.
+    """
+    width, height = size
+    rgba = np.zeros((height, width, 4), np.uint8)
+    if surfaces:
+        centre, span = _framing(bounds, pose)
+        draw_surface_ids(
+            rgba.reshape(-1, 4),
+            size,
+            surfaces,
+            lambda part: _project_points(part, pose, centre, span, size)[:2],
+        )
+    return png_base64(rgba)
+
+
 def render_cloud_view(
     points: NDArray[np.float32],
     colors: NDArray[np.uint8],
@@ -101,11 +135,7 @@ def render_cloud_view(
     rgba = np.zeros((height, width, 4), np.uint8)
     rgba[:, :] = (10, 12, 14, 255)
     if len(points) or surfaces:
-        lo, hi = (np.asarray(bound, dtype=np.float64) for bound in bounds)
-        centre = (lo + hi) / 2.0
-        centre[0] += pose.pan_x
-        centre[2] += pose.pan_z
-        span = max(float(np.max(hi - lo)), 0.5)
+        centre, span = _framing(bounds, pose)
         flat = rgba.reshape(-1, 4)
         if len(points):
             ui, vi, depth, indices = _project_points(points, pose, centre, span, size)
@@ -196,11 +226,35 @@ class CloudViewer:
             self._scene = _Scene(points, colors, bounds, layer)
         return self._draw(self._scene)
 
+    def render_view(
+        self,
+        points: NDArray[np.float32],
+        colors: NDArray[np.uint8],
+        bounds: Bounds,
+        layer: SurfaceLayer,
+    ) -> dict[str, str]:
+        """`render`, plus its id image: `cloud_png` and `cloud_ids_png`."""
+        cloud_png = self.render(points, colors, bounds, layer)
+        return {"cloud_png": cloud_png, "cloud_ids_png": self._ids(bounds, layer)}
+
     def rerender(self) -> str | None:
         """The last scene drawn again from the current pose; None before any."""
+        view = self.rerender_view()
+        return None if view is None else view["cloud_png"]
+
+    def rerender_view(self) -> dict[str, str] | None:
+        """`rerender`, plus its id image; None before any scene."""
         with self._lock:
             scene = self._scene
-        return None if scene is None else self._draw(scene)
+        if scene is None:
+            return None
+        return {
+            "cloud_png": self._draw(scene),
+            "cloud_ids_png": self._ids(scene.bounds, scene.layer),
+        }
+
+    def _ids(self, bounds: Bounds, layer: SurfaceLayer) -> str:
+        return render_cloud_ids(self.pose(), bounds, surfaces=self.shown_surfaces(layer))
 
     def _draw(self, scene: _Scene) -> str:
         return render_cloud_view(
