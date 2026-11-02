@@ -94,7 +94,7 @@ def test_a_card_with_room_sits_centred_over_its_object() -> None:
 def test_each_card_leads_to_its_object() -> None:
     for card in laid_out(BUNCHED):
         # The leader runs from the card's bottom edge to the object's anchor
-        assert card.end == (300 + 4 * card.key, 120)
+        assert card.end == (300.0 + 4 * card.key, 120.0)
         assert card.start[1] == card.y + card.height
         assert card.x <= card.start[0] <= card.x + card.width
 
