@@ -2111,6 +2111,13 @@ class _DemoHandler(BaseHTTPRequestHandler):
             while True:
                 event = subscriber.get()
                 if event is None:
+                    # Said explicitly: a stream that just closes makes the
+                    # browser's EventSource reconnect, starting a new run
+                    # that takes this one back from whoever took it over.
+                    reason = "taken over" if engine.controls.cancelled else "finished"
+                    ended = json.dumps({"reason": reason})
+                    self.wfile.write(f"event: ended\ndata: {ended}\n\n".encode())
+                    self.wfile.flush()
                     break
                 payload = dict(event.data)
                 if event.kind in ("frame", "sam") and event.jpeg:

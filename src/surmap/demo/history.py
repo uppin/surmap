@@ -24,7 +24,7 @@ import sqlite3
 import threading
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import cast
 
@@ -35,6 +35,9 @@ PointList = list[list[float]]
 
 # Server-rendered images a replay draws again; never journalled.
 RENDER_ONLY = ("cloud_png",)
+
+# Journal rows read per query while streaming a replay.
+JOURNAL_PAGE = 64
 
 
 def _journalled(kind: str, data: dict[str, object]) -> dict[str, object]:
@@ -299,13 +302,42 @@ class RunHistoryStore:
 
     def journal(self, run_id: str) -> list[tuple[str, dict[str, object]]]:
         """The run's journalled events as (kind, data), in recorded order."""
+        return list(self.journal_events(run_id))
+
+    def journal_events(self, run_id: str) -> Iterator[tuple[str, dict[str, object]]]:
+        """The run's journal, streamed in recorded order, a page of rows at a time.
+
+        A long run's journal is hundreds of MB of map clouds: a replay
+        starts on its first rows instead of decoding all of them first,
+        and the store stays free for writes between pages.
+        """
+        after = 0
+        while True:
+            with self._lock:
+                rows = self._db.execute(
+                    "SELECT id, kind, data FROM events WHERE run_id = ? AND id > ?"
+                    " ORDER BY id LIMIT ?",
+                    (run_id, after, JOURNAL_PAGE),
+                ).fetchall()
+            if not rows:
+                return
+            for row in rows:
+                yield str(row["kind"]), cast(dict[str, object], json.loads(row["data"]))
+            after = int(rows[-1]["id"])
+
+    def sam_at(self, run_id: str, frame_id: int) -> dict[str, object] | None:
+        """The newest journalled SAM result at or before `frame_id`, with its frame's image."""
         with self._lock:
-            rows = self._db.execute(
-                "SELECT kind, data FROM events WHERE run_id = ? ORDER BY id", (run_id,)
-            ).fetchall()
-        return [
-            (str(row["kind"]), cast(dict[str, object], json.loads(row["data"]))) for row in rows
-        ]
+            row = self._db.execute(
+                "SELECT data FROM events WHERE run_id = ? AND kind = 'sam'"
+                " AND json_extract(data, '$.frame_id') <= ? ORDER BY id DESC LIMIT 1",
+                (run_id, frame_id),
+            ).fetchone()
+        if row is None:
+            return None
+        sam = cast(dict[str, object], json.loads(row["data"]))
+        jpeg = self.frame_jpeg(run_id, int(str(sam["frame_id"])))
+        return {**sam, "image_b64": base64.b64encode(jpeg).decode() if jpeg else ""}
 
     def frame_jpeg(self, run_id: str, frame_id: int) -> bytes | None:
         with self._lock:
@@ -501,5 +533,6 @@ class RunHistoryStore:
             "objects": (json.loads(str(det_row["objects"])) if det_row is not None else []),
             "cloud": cloud,
             "surfaces": self.surfaces_at(run_id, frame_id),
+            "sam": self.sam_at(run_id, frame_id),
             "frame_count": self._frame_count(run_id),
         }
