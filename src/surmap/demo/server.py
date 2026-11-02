@@ -1648,7 +1648,10 @@ def make_demo_server(
         # name at startup, not mid-stream. An `.onnx` model runs the
         # ONNX per-frame adapter; anything else (an HF id such as the
         # default facebook/sam3.1, a local .pt or its directory) runs
-        # the real SAM 3.1 whole-video streamer on that device.
+        # the real SAM 3.1 whole-video streamer on that device — except
+        # on Apple's GPU, where only the image model runs, per frame.
+        from surmap.survey import sam3_torch
+        from surmap.survey.sam3 import parse_sam_device
         from surmap.survey.sam3_torch import DEFAULT_SAM31_MODEL
 
         model_spec = str(sam_model) if sam_model is not None else DEFAULT_SAM31_MODEL
@@ -1658,6 +1661,10 @@ def make_demo_server(
             # The export's concept was fixed when it was exported.
             fixed_prompt = sam_label or "object"
             video_sam = sam3_video_detector(Path(model_spec), device=sam_device, label=fixed_prompt)
+        elif parse_sam_device(sam_device)[0] == "mps":
+            video_sam = sam3_torch.sam31_torch_video_detector(
+                model_spec, device=sam_device, prompt=sam_label or "object"
+            )
         else:
             from surmap.survey.sam3_torch import sam31_video_streamer
 

@@ -36,7 +36,8 @@ from numpy.typing import NDArray
 
 from surmap.detection.detector import decode_rgb
 from surmap.survey.sam import RawFrame, SamDetection
-from surmap.survey.sam3 import Sam3Unavailable, _mask_outline, parse_sam_device
+from surmap.survey.sam3 import BoxTracks, Sam3Unavailable, _mask_outline, parse_sam_device
+from surmap.survey.sam3_mps import prepare_sam3_for_mps
 from surmap.survey.stereo import FrameImage
 
 DEFAULT_SAM31_MODEL = "facebook/sam3.1"
@@ -144,6 +145,39 @@ class Sam31TorchDetector:
     async def detect(self, frame: RawFrame) -> tuple[SamDetection, ...]:
         """Segment one frame (inference runs off the event loop)."""
         return await asyncio.to_thread(self._segment, frame)
+
+
+class Sam31TorchVideoDetector:
+    """`VideoSamDetector` over SAM 3.1's image model: per frame, ids by box overlap.
+
+    Where the multiplex video model cannot run (Apple's GPU), each frame
+    is segmented on its own and `BoxTracks` gives a visible object one
+    persistent id, as `Sam3VideoDetector` does for the ONNX export.
+    `reset(prompt)` starts a new video looking for `prompt`.
+    """
+
+    def __init__(self, detector: Sam31TorchDetector) -> None:
+        self._detector = detector
+        self._tracks = BoxTracks()
+
+    @property
+    def provider(self) -> str:
+        return self._detector.provider
+
+    @property
+    def device(self) -> str:
+        return self._detector.device
+
+    def reset(self, prompt: str | None = None) -> None:
+        if prompt is not None:
+            self._detector.set_prompt(prompt)
+        self._tracks.reset()
+
+    def track(self, frame: RawFrame) -> tuple[SamDetection, ...]:
+        return self._tracks.assign(frame.frame_id, self._detector.segment(frame))
+
+    def close(self) -> None:
+        self._tracks.reset()
 
 
 class Sam31Model(Protocol):
@@ -387,16 +421,27 @@ def sam31_torch_detector(
     device: str = "cuda:0",
     prompt: str = "object",
     _importer: Callable[[str], Any] = importlib.import_module,
+    _prepare_mps: Callable[[Any], None] = prepare_sam3_for_mps,
 ) -> Sam31TorchDetector:
     """A real SAM 3.1 `SamDetector` (PyTorch image model) for the station.
 
     Builds Meta's image model on the named GPU device and prompts it
     with `prompt` per frame; the checkpoint resolves exactly as the
-    video streamer's (HF id, local `.pt`, or local directory).
+    video streamer's (HF id, local `.pt`, or local directory). On
+    `mps` (Apple's GPU) the vendor package is prepared first
+    (`surmap.survey.sam3_mps`), the weights load on CPU and move over.
     """
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    kind, device_id = parse_sam_device(device)
     try:
         torch = _importer("torch")
+        if kind == "mps":
+            if not bool(torch.backends.mps.is_available()):
+                raise Sam3Unavailable(
+                    "torch reports no MPS device (Apple GPU); this needs an Apple "
+                    "silicon Mac and a torch build with MPS"
+                )
+            _prepare_mps(torch)
         model_builder = _importer("sam3.model_builder")
         processor_module = _importer("sam3.model.sam3_image_processor")
     except ImportError as exc:
@@ -407,7 +452,6 @@ def sam31_torch_detector(
             "git+https://github.com/facebookresearch/sam3.git), accept the "
             "facebook/sam3.1 licence, and put HF_TOKEN in the project .env"
         ) from exc
-    kind, device_id = parse_sam_device(device)
     if kind == "cuda" and not bool(torch.cuda.is_available()):
         raise Sam3Unavailable(
             f"torch reports no CUDA device for {device}; check the NVIDIA "
@@ -416,15 +460,26 @@ def sam31_torch_detector(
     if kind == "cuda":
         torch.cuda.set_device(device_id or 0)
     checkpoint = _resolve_checkpoint(model, _importer)
-    torch_device = f"cuda:{device_id or 0}" if kind == "cuda" else "cpu"
+    torch_device = {"cuda": f"cuda:{device_id or 0}", "mps": "mps"}.get(kind, "cpu")
     # The builder moves the weights only for the exact "cuda" string;
     # the index is already selected via torch.cuda.set_device above.
     builder_device = "cuda" if kind == "cuda" else "cpu"
     image_model = model_builder.build_sam3_image_model(
         checkpoint_path=str(checkpoint), device=builder_device, load_from_HF=False
     )
-    processor = processor_module.Sam3Processor(image_model, device=builder_device)
+    if kind == "mps":
+        image_model = image_model.to("mps")
+    processor = processor_module.Sam3Processor(
+        image_model, device="mps" if kind == "mps" else builder_device
+    )
     autocast: Callable[[], AbstractContextManager[Any]] | None = None
-    if kind == "cuda":
-        autocast = lambda: torch.autocast(device_type="cuda", dtype=torch.bfloat16)  # noqa: E731
+    if kind in ("cuda", "mps"):
+        autocast = lambda: torch.autocast(device_type=kind, dtype=torch.bfloat16)  # noqa: E731
     return Sam31TorchDetector(processor, prompt=prompt, device=torch_device, autocast=autocast)
+
+
+def sam31_torch_video_detector(
+    model: str = DEFAULT_SAM31_MODEL, *, device: str = "mps", prompt: str = "object"
+) -> Sam31TorchVideoDetector:
+    """SAM 3.1's image model as a `VideoSamDetector` (for Apple's GPU)."""
+    return Sam31TorchVideoDetector(sam31_torch_detector(model, device=device, prompt=prompt))
