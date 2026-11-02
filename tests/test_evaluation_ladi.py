@@ -394,3 +394,18 @@ def test_meta_classifier_follows_surmap_meta_model(
 
     assert classifier.model == "muse-spark-1.3"
     assert classifier.request_body(_jpeg())["model"] == "muse-spark-1.3"
+
+
+def test_default_classifier_passes_reasoning_effort_to_both_providers() -> None:
+    from surmap.evaluation.cli import build_parser, default_classifier
+
+    meta = default_classifier("meta", "high")
+    baseten = default_classifier("baseten", "high")
+
+    assert isinstance(meta, MetaLadiClassifier)
+    assert isinstance(baseten, BasetenLadiClassifier)
+    assert meta.request_body(_jpeg())["reasoning"] == {"effort": "high"}
+    body = baseten.request_body(_jpeg())
+    assert body["reasoning_effort"] == "high"
+    assert body["max_tokens"] == 8192
+    assert build_parser().parse_args([]).reasoning_effort == "low"

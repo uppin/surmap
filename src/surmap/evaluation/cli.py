@@ -68,11 +68,13 @@ def check_live(providers: Sequence[str], limit: int) -> None:
             raise EvalConfigError(f"{provider} needs {_KEYS[provider]}")
 
 
-def default_classifier(provider: str) -> LadiClassifier:
+def default_classifier(provider: str, reasoning_effort: str = "low") -> LadiClassifier:
+    """Live classifier; ``medium`` and ``high`` effort get a bigger Baseten budget."""
     if provider == "meta":
-        return MetaLadiClassifier()
+        return MetaLadiClassifier(reasoning_effort=reasoning_effort)
     if provider == "baseten":
-        return BasetenLadiClassifier()
+        max_tokens = 4096 if reasoning_effort == "low" else 8192
+        return BasetenLadiClassifier(reasoning_effort=reasoning_effort, max_tokens=max_tokens)
     raise EvalConfigError(f"unknown provider {provider!r}")
 
 
@@ -89,6 +91,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--cache-dir", type=Path, default=None)
     parser.add_argument("--out", type=Path, default=None, help="write the JSON report here")
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=("low", "medium", "high"),
+        default="low",
+        help="model reasoning effort for both providers (default low)",
+    )
     parser.add_argument(
         "--download-only", action="store_true", help="fetch and cache images; no model call"
     )
@@ -115,7 +123,10 @@ def main(
         return 0
     reports: list[dict[str, object]] = []
     for provider in providers:
-        classifier = classifier_factory(provider)
+        if classifier_factory is default_classifier:
+            classifier = default_classifier(provider, args.reasoning_effort)
+        else:
+            classifier = classifier_factory(provider)
 
         def on_error(sample: LadiSample, exc: Exception) -> None:
             print(f"  image {sample.index}: {type(exc).__name__}: {exc}", file=sys.stderr)
@@ -125,6 +136,7 @@ def main(
         report = report_json(scores, provider=provider, model=classifier.model)
         report["split"] = args.split
         report["offset"] = args.offset
+        report["reasoning_effort"] = args.reasoning_effort
         report["rows"] = rows
         reports.append(report)
     if args.out is not None:
