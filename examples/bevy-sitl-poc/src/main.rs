@@ -7,6 +7,7 @@
 //! is encoded, uploaded, or sent to a backend.
 
 mod calibration;
+mod ui;
 
 use bevy_rapier3d::prelude::*;
 use bevy::camera::RenderTarget;
@@ -16,6 +17,7 @@ use bevy_feronia::asset::backend::mesh_material_backend::MeshMaterialAssetBacken
 use bevy_feronia::extension;
 use bevy_feronia::prelude::*;
 use calibration::StereoCalibration;
+use ui::{setup_button, setup_ui, takeoff_button, update_status};
 
 const RIG_FORWARD_M: f32 = 0.30;
 const RIG_UP_M: f32 = 0.10;
@@ -34,12 +36,6 @@ struct RightEye;
 
 #[derive(Component)]
 struct ChaseCam;
-
-#[derive(Component)]
-struct StatusText;
-
-#[derive(Component)]
-struct TakeoffButton;
 
 #[derive(Resource, Default)]
 struct Flight {
@@ -377,134 +373,6 @@ struct StereoFeeds {
     right: Handle<Image>,
 }
 
-fn setup_ui(mut commands: Commands, feeds: Res<StereoFeeds>, rig: Res<StereoCalibration>) {
-    // Stereo feeds + the calibration this rig produces, drawn by Bevy.
-    commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                right: Val::Px(12.0),
-                top: Val::Px(12.0),
-                width: Val::Px(324.0),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(6.0),
-                padding: UiRect::all(Val::Px(8.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.05, 0.07, 0.09, 0.88)),
-        ))
-        .with_children(|panel| {
-            for (label, handle) in [("LEFT", feeds.left.clone()), ("RIGHT", feeds.right.clone())] {
-                panel.spawn((
-                    Text::new(label),
-                    TextFont {
-                        font_size: 11.0,
-                        ..default()
-                    },
-                    TextColor(Color::srgb(0.65, 0.75, 0.85)),
-                ));
-                panel.spawn((
-                    ImageNode::new(handle),
-                    Node {
-                        width: Val::Px(308.0),
-                        height: Val::Px(231.0),
-                        ..default()
-                    },
-                ));
-            }
-            panel.spawn((
-                Text::new(format!(
-                    "STEREO CALIBRATION (from this Bevy rig)\n{}x{}  fx={} fy={}  cx={} cy={}\nbaseline={} m  left={:?}\nright={:?}\nvertical FOV={:.4} rad\nframes stay in this page — not sent anywhere",
-                    rig.width,
-                    rig.height,
-                    rig.fx,
-                    rig.fy,
-                    rig.cx,
-                    rig.cy,
-                    rig.baseline_m,
-                    rig.left_translation_m,
-                    rig.right_translation_m,
-                    rig.vertical_fov_rad(),
-                )),
-                TextFont {
-                    font_size: 11.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.80, 0.87, 0.94)),
-            ));
-        });
-    commands.spawn((
-        StatusText,
-        Text::new("landed — Space: take off"),
-        TextFont {
-            font_size: 14.0,
-            ..default()
-        },
-        TextColor(Color::WHITE),
-        Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(12.0),
-            top: Val::Px(12.0),
-            ..default()
-        },
-    ));
-}
-
-fn setup_button(mut commands: Commands) {
-    commands
-        .spawn((
-            TakeoffButton,
-            Button,
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(12.0),
-                bottom: Val::Px(12.0),
-                padding: UiRect::axes(Val::Px(18.0), Val::Px(10.0)),
-                ..default()
-            },
-            BackgroundColor(Color::srgb(0.13, 0.42, 0.24)),
-        ))
-        .with_children(|button| {
-            button.spawn((
-                Text::new("Take off"),
-                TextFont {
-                    font_size: 16.0,
-                    ..default()
-                },
-                TextColor(Color::WHITE),
-            ));
-        });
-}
-
-fn takeoff_button(
-    mut flight: ResMut<Flight>,
-    mut buttons: Query<(&Interaction, &mut BackgroundColor, &Children), With<TakeoffButton>>,
-    mut labels: Query<&mut Text>,
-    mut was_pressed: Local<bool>,
-) {
-    for (interaction, mut background, children) in &mut buttons {
-        let pressed = *interaction == Interaction::Pressed;
-        if pressed && !*was_pressed {
-            flight.engaged = !flight.engaged;
-        }
-        *was_pressed = pressed;
-        background.0 = if flight.engaged {
-            Color::srgb(0.45, 0.20, 0.16)
-        } else {
-            Color::srgb(0.13, 0.42, 0.24)
-        };
-        if let Some(child) = children.first() {
-            if let Ok(mut label) = labels.get_mut(*child) {
-                label.0 = if flight.engaged {
-                    "Land".into()
-                } else {
-                    "Take off".into()
-                };
-            }
-        }
-    }
-}
-
 fn read_controls(
     keys: Res<ButtonInput<KeyCode>>,
     mut flight: ResMut<Flight>,
@@ -626,20 +494,3 @@ fn scatter_once(
     }
 }
 
-fn update_status(
-    flight: Res<Flight>,
-    drone: Query<(&Transform, &Velocity), With<Drone>>,
-    mut status: Query<&mut Text, With<StatusText>>,
-) {
-    let (Ok((body, velocity)), Ok(mut text)) = (drone.single(), status.single_mut()) else {
-        return;
-    };
-    text.0 = format!(
-        "{}  alt {:.1} m  speed {:.1} m/s  yaw {:.0}°\nWASD move · Q/E yaw · R/F up/down · Space {}",
-        if flight.engaged { "FLYING" } else { "LANDED" },
-        body.translation.y,
-        velocity.linvel.length(),
-        flight.yaw_deg,
-        if flight.engaged { "land" } else { "take off" },
-    );
-}
