@@ -23,6 +23,7 @@ from numpy.typing import NDArray
 from PIL import Image
 
 from surmap.slam.base import FrameResult
+from surmap.slam.dense import DenseFrame, RegionRig
 from surmap.slam.regions import RegionQuery, RegionResult
 from surmap.slam.sidecar import SHARED_CONTAINER_ENV, SidecarError, _subprocess_runner
 from surmap.slam.stream_outbox import RegionReplies, SidecarOutbox
@@ -210,6 +211,7 @@ class StreamingRtabmapBackend:
         min_disparity_px: float = DEFAULT_MIN_DISPARITY_PX,
         fx: float = 0.0,
         baseline_m: float = 0.0,
+        dense_journal: bool = False,
     ) -> None:
         if os.environ.get(SHARED_CONTAINER_ENV, "").strip():
             raise SidecarError(
@@ -255,6 +257,9 @@ class StreamingRtabmapBackend:
         self._regions = RegionReplies()
         self._error: str | None = None
         self._rectification: Rectification | None = None
+        self._region_rig: RegionRig | None = None
+        # Dense frames the sidecar journalled, until `poll_dense` drains them.
+        self._dense: queue.Queue[DenseFrame] = queue.Queue()
         # Newest odometry per frame, keypoints included, for the display.
         self._frame_odometry: dict[int, OdomUpdate] = {}
         self._final = threading.Event()
@@ -291,6 +296,7 @@ class StreamingRtabmapBackend:
                     max_depth_m,
                     region_buffer_s,
                     min_disparity_px,
+                    dense_journal,
                 )
             )
         except Exception as exc:
@@ -404,8 +410,12 @@ class StreamingRtabmapBackend:
             if isinstance(message, RegionResult):
                 self._regions.deliver(message)
                 continue
+            if isinstance(message, DenseFrame):
+                self._dense.put(message)
+                continue
             if isinstance(message, Ready):
                 self._rectification = message.rectification
+                self._region_rig = message.region_rig
                 self._ready.set()
             elif isinstance(message, ErrorUpdate):
                 self._error = message.message
@@ -457,6 +467,20 @@ class StreamingRtabmapBackend:
         if result is None:
             raise SidecarError(f"region query {query.query_id} got no answer within {timeout:g} s")
         return result
+
+    @property
+    def region_rig(self) -> RegionRig | None:
+        """How the sidecar answers regions, once it is ready (None before v5)."""
+        return self._region_rig
+
+    def poll_dense(self) -> list[DenseFrame]:
+        """Dense frames journalled since the last call, in the order they came."""
+        drained: list[DenseFrame] = []
+        while True:
+            try:
+                drained.append(self._dense.get_nowait())
+            except queue.Empty:
+                return drained
 
     def poll_updates(self) -> list[MapUpdate]:
         drained: list[MapUpdate] = []

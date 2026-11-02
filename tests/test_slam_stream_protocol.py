@@ -95,20 +95,20 @@ def test_decode_rejects_malformed_and_version_mismatch() -> None:
         decode_server_line('{"type":"odom","frame_id":1}')
 
 
-def test_a_current_sidecar_is_accepted_and_a_pre_region_one_is_not() -> None:
-    # Given / When a v4 sidecar announces itself without a rectification
-    ready = decode_server_line('{"type":"ready","version":4}')
+def test_a_current_sidecar_is_accepted_and_a_pre_journal_one_is_not() -> None:
+    # Given / When a v5 sidecar announces itself without a rectification
+    ready = decode_server_line('{"type":"ready","version":5}')
 
-    # Then it is accepted, and a v3 sidecar (no region requests) is a mismatch
-    assert ready == Ready(4)
+    # Then it is accepted, and a v4 sidecar (no dense journal) is a mismatch
+    assert ready == Ready(5)
     with pytest.raises(ProtocolError, match="version mismatch"):
-        decode_server_line('{"type":"ready","version":3}')
+        decode_server_line('{"type":"ready","version":4}')
 
 
 def test_ready_carries_the_left_camera_rectification() -> None:
     # Given a ready line with the left camera's rectification
     line = (
-        '{"type":"ready","version":4,"rectification":{'
+        '{"type":"ready","version":5,"rectification":{'
         '"rotation":[1,0,0,0,1,0,0,0,1],"rectified":[200,200,100,80],'
         '"raw":[210,209,101,79],"distortion":[-0.28,0.07,0.0002,0.00002]}}'
     )
@@ -118,7 +118,7 @@ def test_ready_carries_the_left_camera_rectification() -> None:
 
     # Then the rectification is kept, value for value
     assert ready == Ready(
-        4,
+        5,
         Rectification(
             rotation=(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
             rectified=(200.0, 200.0, 100.0, 80.0),

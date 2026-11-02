@@ -303,7 +303,7 @@ def test_an_unstarted_run_engine_joins_cleanly(tmp_path: Path) -> None:
     # takeover can land in exactly that window)
     prepared = _prepared_tiny(tmp_path)
     server = make_demo_server(prepared, host="127.0.0.1", port=0, with_rtabmap=False)
-    engine = _RunEngine(server, prepared, None)  # type: ignore[arg-type]
+    engine = _RunEngine(server, "tiny-test", "Tiny", lambda _: iter(()))  # type: ignore[arg-type]
 
     # When a takeover joins it
     # Then it reports stopped instead of raising
