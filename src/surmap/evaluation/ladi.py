@@ -12,8 +12,9 @@ drops the EXIF block and its GPS tags. No data is committed.
 
 Two classifiers are compared:
 
-* ``MetaLadiClassifier``: hosted ``muse-spark-1.3`` on the Meta Model API,
-  with structured output (``text.format`` JSON schema, strict).
+* ``MetaLadiClassifier``: hosted ``muse-spark-1.3`` on the Meta Model API
+  (``SURMAP_META_MODEL=muse-wonder-1.0`` selects Muse Wonder), with
+  structured output (``text.format`` JSON schema, strict).
 * ``BasetenLadiClassifier``: open-weight ``meta-models/muse-spark-open-1026``
   on Baseten, with a ``record_classes`` tool call (Baseten has no JSON
   mode for this model) and ``reasoning_effort`` ``low``.
@@ -44,10 +45,10 @@ from surmap.labelling.baseten_muse import (
     ChatTransport,
 )
 from surmap.labelling.meta_muse import (
-    HOSTED_MUSE_SPARK_MODEL,
     META_MODEL_API_BASE_URL,
     MetaMuseTransport,
     UrllibMetaMuseTransport,
+    _resolve_model,
 )
 from surmap.usage import UsageLedger, UsageRecord
 
@@ -290,14 +291,16 @@ class MetaLadiClassifier:
         *,
         transport: MetaMuseTransport | None = None,
         api_key: str | None = None,
-        model: str = HOSTED_MUSE_SPARK_MODEL,
+        model: str | None = None,
         ledger: UsageLedger | None = None,
         reasoning_effort: str = "low",
         max_output_tokens: int = 2048,
     ) -> None:
         self._transport = transport if transport is not None else UrllibMetaMuseTransport()
         self._api_key = api_key
-        self._model = model
+        # Same rule as the mission clients: argument, then SURMAP_META_MODEL,
+        # then hosted Muse Spark. Wonder Full and Baseten slugs are refused.
+        self._model = _resolve_model(model)
         self._ledger = ledger if ledger is not None else UsageLedger()
         self._effort = reasoning_effort
         self._max_output_tokens = max_output_tokens

@@ -381,3 +381,13 @@ def test_baseten_reads_json_from_list_content(tmp_path: Path) -> None:
     )
 
     assert classifier.classify(_jpeg()) == frozenset({"roads_any"})
+
+
+def test_meta_classifier_follows_surmap_meta_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SURMAP_META_MODEL", "muse-wonder-1.0")
+    classifier = MetaLadiClassifier(api_key="m", ledger=UsageLedger(tmp_path / "u.jsonl"))
+
+    assert classifier.model == "muse-wonder-1.0"
+    assert classifier.request_body(_jpeg())["model"] == "muse-wonder-1.0"
