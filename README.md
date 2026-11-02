@@ -195,7 +195,10 @@ so the box is read-only there. `--sam-model` can name another HF id, a
 local `.pt`, or an `.onnx` export instead. SAM propagates in
 16-frame windows so a long video fits a 16 GB card (ids restart per
 window). The PyTorch stack is an optional install in `.venv` (see
-`scripts/demo.py --help`). With the live map, each SAM result's masks
+`scripts/demo.py --help`). On an Apple-silicon Mac, `--sam-device mps`
+runs SAM 3.1's image model on the GPU (Metal) per frame, about 2.4 s
+a frame, with ids kept by box overlap; play at SAM's pace
+(`--fps 0.35`) so regions stay within the sidecar's 10 s buffer. With the live map, each SAM result's masks
 are also placed in 3D: the sidecar's dense stereo under each mask on
 that frame, and the station assigns every one of those points to a
 persistent object *surface* (`surmap.survey.surfaces`). A mask whose

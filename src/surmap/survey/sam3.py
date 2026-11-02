@@ -44,9 +44,10 @@ class Sam3Unavailable(RuntimeError):
 
 def parse_sam_device(device: str) -> tuple[str, int | None]:
     """A SAM device string as (kind, CUDA index): `cuda:2`, `cuda`, `2`,
-    `gpu:1`, `cpu` or `auto`. Anything else is a `ValueError`."""
+    `gpu:1`, `cpu`, `auto`, or `mps` (Apple's GPU). Anything else is a
+    `ValueError`."""
     spec = device.strip().lower()
-    if spec in ("cpu", "auto"):
+    if spec in ("cpu", "auto", "mps"):
         return spec, None
     if spec.isdigit():
         return "cuda", int(spec)
@@ -55,7 +56,7 @@ def parse_sam_device(device: str) -> tuple[str, int | None]:
             return "cuda", 0
         if spec.startswith(f"{prefix}:") and spec[len(prefix) + 1 :].isdigit():
             return "cuda", int(spec[len(prefix) + 1 :])
-    raise ValueError(f"unknown SAM device: {device!r} (use cpu, auto, cuda or cuda:<index>)")
+    raise ValueError(f"unknown SAM device: {device!r} (use cpu, auto, mps, cuda or cuda:<index>)")
 
 
 class Sam3Session(Protocol):
@@ -254,6 +255,62 @@ def _box_iou(a: tuple[float, float, float, float], b: tuple[float, float, float,
     return intersection / union if union > 0 else 0.0
 
 
+class BoxTracks:
+    """Persistent track ids for per-frame detections, by box overlap.
+
+    Each frame's detections are matched to the live tracks (same label,
+    best IoU pair first, at least `iou_threshold`); a match keeps its
+    track's id, anything else gets a new, never-reused one. Tracks
+    unseen for more than `max_missed` frames expire.
+    """
+
+    def __init__(self, *, iou_threshold: float = 0.3, max_missed: int = 5) -> None:
+        self._iou_threshold = iou_threshold
+        self._max_missed = max_missed
+        self._tracks: dict[int, tuple[str, tuple[float, float, float, float], int]] = {}
+        self._next_id = 1
+
+    def reset(self) -> None:
+        self._tracks = {}
+        self._next_id = 1
+
+    def assign(
+        self, frame_id: int, detections: tuple[SamDetection, ...]
+    ) -> tuple[SamDetection, ...]:
+        candidates = sorted(
+            (
+                (_box_iou(box, detection.box_xyxy), track_id, index)
+                for track_id, (label, box, _seen) in self._tracks.items()
+                for index, detection in enumerate(detections)
+                if detection.label == label
+            ),
+            reverse=True,
+        )
+        matched: dict[int, int] = {}
+        used: set[int] = set()
+        for iou, track_id, index in candidates:
+            if iou < self._iou_threshold:
+                break
+            if track_id in used or index in matched:
+                continue
+            used.add(track_id)
+            matched[index] = track_id
+        tracked: list[SamDetection] = []
+        for index, detection in enumerate(detections):
+            assigned = matched.get(index)
+            track_id = assigned if assigned is not None else self._next_id
+            if assigned is None:
+                self._next_id += 1
+            self._tracks[track_id] = (detection.label, detection.box_xyxy, frame_id)
+            tracked.append(replace(detection, track_id=track_id))
+        self._tracks = {
+            track_id: state
+            for track_id, state in self._tracks.items()
+            if frame_id - state[2] <= self._max_missed
+        }
+        return tuple(tracked)
+
+
 class Sam3VideoDetector:
     """`VideoSamDetector` adapter: SAM 3.1 in continuous (video) mode.
 
@@ -279,10 +336,7 @@ class Sam3VideoDetector:
         self._session = session
         self._label = label
         self._detector = Sam3Detector(session, label=label)
-        self._iou_threshold = iou_threshold
-        self._max_missed = max_missed
-        self._tracks: dict[int, tuple[str, tuple[float, float, float, float], int]] = {}
-        self._next_id = 1
+        self._tracks = BoxTracks(iou_threshold=iou_threshold, max_missed=max_missed)
 
     @property
     def provider(self) -> str:
@@ -298,43 +352,10 @@ class Sam3VideoDetector:
                 f"the ONNX export's concept is fixed ({self._label!r}); "
                 f"it cannot look for {prompt!r}"
             )
-        self._tracks = {}
-        self._next_id = 1
+        self._tracks.reset()
 
     def track(self, frame: RawFrame) -> tuple[SamDetection, ...]:
-        detections = self._detector.segment(frame)
-        candidates = sorted(
-            (
-                (_box_iou(box, detection.box_xyxy), track_id, index)
-                for track_id, (label, box, _seen) in self._tracks.items()
-                for index, detection in enumerate(detections)
-                if detection.label == label
-            ),
-            reverse=True,
-        )
-        matched: dict[int, int] = {}
-        used: set[int] = set()
-        for iou, track_id, index in candidates:
-            if iou < self._iou_threshold:
-                break
-            if track_id in used or index in matched:
-                continue
-            used.add(track_id)
-            matched[index] = track_id
-        tracked: list[SamDetection] = []
-        for index, detection in enumerate(detections):
-            assigned = matched.get(index)
-            track_id = assigned if assigned is not None else self._next_id
-            if assigned is None:
-                self._next_id += 1
-            self._tracks[track_id] = (detection.label, detection.box_xyxy, frame.frame_id)
-            tracked.append(replace(detection, track_id=track_id))
-        self._tracks = {
-            track_id: state
-            for track_id, state in self._tracks.items()
-            if frame.frame_id - state[2] <= self._max_missed
-        }
-        return tuple(tracked)
+        return self._tracks.assign(frame.frame_id, self._detector.segment(frame))
 
     def close(self) -> None:
         self.reset()
