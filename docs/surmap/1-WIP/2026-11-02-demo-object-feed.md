@@ -18,13 +18,15 @@
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ✅ 2026-11-02 `/green` Green — implement until every red test passes · 1203 passed / 28 skipped; ruff, format, mypy strict green
+- [wf 3] ⏳ `/green` Green — implement until every red test passes · milestones 1–6 @ `1890268`; milestone 7 added
   - [x] Milestone 1: `SurfaceMap` depth band and minimum points
   - [x] Milestone 2: the camera pose reaches `SurfaceMap` (`RegionResult.camera`, `region` event `viewpoint`, live backend from the dense line)
   - [x] Milestone 3: session-level `CloudViewer`; every `cloud_*` action works without a run and answers with `cloud_png`
   - [x] Milestone 4: page — drags send their whole movement; the response image is shown
   - [x] Milestone 5: object feed module (`demo/object_feed.py`) spliced into the page
   - [x] Milestone 6: region pixels (`project_to_display`), `region` event `pixels`, SAM pane depth-gradient overlay
+  - [ ] Milestone 7: hover picking — `cloud_ids_png` beside every `cloud_png`; hover shows the surface id, selects all its pixels, and the feed scrolls to and highlights its card (and hovering a card selects it in the pane)
+  - [ ] Acceptance: `tests/test_demo_cloud_pick.py` passes
   - [x] Acceptance: `tests/test_survey_surfaces.py`, `tests/test_demo_object_feed.py`, `tests/test_demo_cloud_ptz.py` pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
@@ -134,6 +136,18 @@ sidecar's SGBM settings.
   - **Sources.** It is fed by `surface` events on every stream and rebuilt from
     `snap.surfaces` when a moment is scrubbed. It is cleared on a new `run` event.
 
+- **Hover picking (milestone 7):**
+  - Every rendered cloud comes with `cloud_ids_png` (`CloudViewer.render_view`): same
+    size and projection, each surface pixel holding its id as R + 256·G with alpha 255,
+    and transparent elsewhere. Hidden surfaces give an empty id image, and a moving
+    surface drawn over a static one owns the shared pixels, as in the visible image.
+  - It rides with every `cloud_png`: map and final events, replays, the `/control`
+    answer and snapshots. It is render-only, so it is never journalled.
+  - The page decodes it. Hover picks the nearest surface pixel within 4 px
+    (`surfaceIdNear`), shows `label #id · points` in a tooltip, tints every pixel of
+    that surface (`selectionMask`), and scrolls the feed to its card and highlights it.
+    Hovering a card selects its surface in the pane.
+
 ### Delta (What's Changing)
 
 #### surmap
@@ -149,7 +163,9 @@ sidecar's SGBM settings.
 | `demo/server.py` | uses the viewer; `/control` without a run |
 | `demo/cloud_script.py` | accumulated deltas, response image, pinch |
 | `demo/object_feed.py` | new: feed script and markup |
-| `demo/page.py` | splices the feed; SAM pane draws region pixels |
+| `demo/page.py` | splices the feed; SAM pane draws region pixels; passes `cloud_ids_png` |
+| `demo/surface_render.py` | `surface_pixels` shared by the colour and id images |
+| `demo/replay.py`, `demo/history.py` | id image rides with replays; render-only |
 
 ## Verification
 
@@ -212,6 +228,7 @@ V4, in the in-app browser on KITTI 0009 (cached rerun of `38b8dc54`, then a Repl
 - `tests/test_slam_streaming_dense.py`: a live region answer carries the pose of the dense line before it.
 - `tests/test_demo_object_feed.py` (regions): a `region` event carries `viewpoint` and banded `pixels` with ranges, capped at 1500.
 - `tests/test_demo_object_feed.py`: the region event carries the viewpoint and the surface is banded; the page carries the feed and feeds it from surface events and snapshots.
+- `tests/test_demo_cloud_pick.py`: the id image holds each surface's id on its pixels, nothing on map-only pixels or hidden surfaces, the moving surface on shared pixels; map events, replays, `/control` answers and snapshots carry it; `surfaceIdNear` and `selectionMask` in node; the page wires hover to the tooltip, the selection and `focusFeedItem`.
 - `tests/test_demo_cloud_ptz.py`: `cloud_orbit` after the run answers 200 with a re-rendered `cloud_png`; the pose carries into the next run; the drag handler accumulates deltas.
 
 ## Decisions & Trade-offs

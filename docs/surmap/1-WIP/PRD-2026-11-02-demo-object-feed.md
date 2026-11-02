@@ -50,6 +50,10 @@ plays.
    object's label shows the range (for example `car #8 · 4.1–6.3 m`). Live runs and
    replays have it. A scrubbed moment shows masks only.
 
+6. **Hover picking in the 3D pane.** Hovering a surface's points shows its id and label,
+   selects (highlights) all of that surface's points, and scrolls the feed to that object's
+   card and highlights it. Hovering a card selects its surface in the pane.
+
 ### What's Staying the Same
 
 - The main 3D pane stays server-rendered from every map point.
@@ -83,7 +87,8 @@ See the changeset [2026-11-02-demo-object-feed.md](./2026-11-02-demo-object-feed
 5. A pose set in one run is the pose of the next.
 6. The page carries the object feed, fed by `surface` events and snapshot surfaces.
 7. A `region` event carries, per region, the banded points' display pixels and range, sampled to at most 1500.
-8. On KITTI 0009 in a browser: car-sized surfaces, a feed card per surface whose preview
+9. Hovering a surface in the 3D pane shows `label #id`, highlights all its points and brings its feed card into view.
+10. On KITTI 0009 in a browser: car-sized surfaces, a feed card per surface whose preview
    orbits, depth-coloured dense points on each SAM mask, and a 3D pane that follows drags after the run ends.
 
 ## References
