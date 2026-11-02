@@ -24,3 +24,4 @@ tmp/meta-sam-last-response.json
 mission-demo-out/
 .worktrees
 
+*.bundle
