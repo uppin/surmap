@@ -61,6 +61,9 @@ plays.
    with the camera low in the view and some of the scene behind it. A marker shows the
    camera. Tilt and zoom adjust the follow view; orbiting or panning takes over and
    unchecks Follow.
+9. **Object cards on the SAM view.** Every object's id (and depth range) sits on its own
+   card. Cards never overlap, and a leader with filled circle ends joins each card to its
+   object. Hovering a card selects the object, like hovering its mask.
 
 ### What's Staying the Same
 
@@ -98,7 +101,8 @@ See the changeset [2026-11-02-demo-object-feed.md](./2026-11-02-demo-object-feed
 9. Hovering a surface in the 3D pane shows `label #id` and highlights all its points; clicking it brings its feed card into view.
 10. Hovering a SAM mask lights up its surface in 3D, and clicking it brings its feed card into view. Hovering a surface in 3D outlines its SAM masks.
 11. With Follow on, the 3D pane re-centres on the camera at every map update, facing its heading, with the camera at 3/4 of the view's height.
-12. On KITTI 0009 in a browser: car-sized surfaces, a feed card per surface whose preview
+12. The SAM view's object cards never overlap, each joined to its object; hovering one selects that object in 3D.
+13. On KITTI 0009 in a browser: car-sized surfaces, a feed card per surface whose preview
    orbits, depth-coloured dense points on each SAM mask, and a 3D pane that follows drags after the run ends.
 
 ## References
