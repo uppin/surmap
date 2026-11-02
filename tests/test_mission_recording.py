@@ -61,6 +61,13 @@ class _FakeMuse:
         del url
         assert headers["Authorization"] == f"Bearer {_KEY}"
         prompt = json.dumps(body)
+        if "segmentation model should outline" in prompt:
+            assert "response_format" not in body
+            text = body["text"]
+            assert isinstance(text, dict)
+            assert text["format"]["type"] == "json_schema"
+            concepts = ["collapsed building", "person", "no people", "car on the left"]
+            return _responses_body(json.dumps({"concepts": concepts}))
         if "segmenter noun" in prompt:
             return _responses_body("collapsed wall survivor")
         return _responses_body(f"Scene note quoting the key {_KEY} by mistake.")
@@ -187,7 +194,10 @@ def test_replay_parses_each_recorded_response_through_its_client(
 
     # Then every response parsed: masks counted, labels and the note read back
     outputs = {item.call.role: item.output for item in replayed}
-    assert outputs["sam"] == "1 mask(s) for 'person'"
+    sam_outputs = [item.output for item in replayed if item.call.role == "sam"]
+    assert outputs["concepts"] == "person, collapsed building"
+    assert "1 mask(s) for 'person'" in sam_outputs
+    assert "1 mask(s) for 'collapsed building'" in sam_outputs
     assert outputs["label"] == "collapsed wall survivor"
     assert outputs["scene_note"].startswith("Scene note quoting the key <redacted>")
 

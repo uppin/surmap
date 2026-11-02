@@ -29,8 +29,10 @@ from surmap.labelling.baseten_muse import (
     _UrllibChatTransport,
 )
 from surmap.labelling.meta_muse import (
+    MetaMuseConceptClient,
     MetaMuseLabelClient,
     MetaMuseSceneClient,
+    MetaMuseSceneError,
     UrllibMetaMuseTransport,
 )
 from surmap.map.snapshot import MetaCallRecord, build_snapshot, write_snapshot
@@ -91,11 +93,16 @@ _RIG = StereoRig(fx=100.0, fy=100.0, cx=50.0, cy=40.0, baseline_m=0.12)
 _POLYGON = ((20.0, 10.0), (80.0, 10.0), (80.0, 70.0), (20.0, 70.0))
 _FRAME_WIDTH = 120
 _FRAME_HEIGHT = 80
-_Segmenter = Callable[[RawFrame], tuple[SamDetection, ...]]
+_Segmenter = Callable[[RawFrame, str], tuple[SamDetection, ...]]
+DEFAULT_MAX_CONCEPTS = 4
+_MAX_CONCEPTS_LIMIT = 8
+DEFAULT_CONCEPT_EVERY = 10
 
 
 @dataclass(frozen=True)
 class _LiveSegmenter:
+    """SAM for one frame and one concept. Detectors are cached per concept."""
+
     model_id: str
     detect: _Segmenter
 
@@ -258,6 +265,35 @@ def live_sam_prompt() -> str:
     """Noun sent to SAM. ``SURMAP_SAM_PROMPT`` overrides the default ``person``."""
     chosen = os.environ.get("SURMAP_SAM_PROMPT", "").strip()
     return chosen or "person"
+
+
+def pinned_sam_prompt() -> str | None:
+    """``SURMAP_SAM_PROMPT`` when set. It wins over Muse Spark's concept list."""
+    chosen = os.environ.get("SURMAP_SAM_PROMPT", "").strip()
+    return chosen or None
+
+
+def live_max_concepts() -> int:
+    """Concepts per keyframe (``SURMAP_SAM_MAX_CONCEPTS``, 1 to 8, default 4)."""
+    return _env_int("SURMAP_SAM_MAX_CONCEPTS", DEFAULT_MAX_CONCEPTS, 1, _MAX_CONCEPTS_LIMIT)
+
+
+def live_concept_every() -> int:
+    """Ask Muse Spark for new concepts every N posed frames (``SURMAP_CONCEPT_EVERY``)."""
+    return _env_int("SURMAP_CONCEPT_EVERY", DEFAULT_CONCEPT_EVERY, 1, 10_000)
+
+
+def _env_int(name: str, default: int, low: int, high: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise MissionConfigError(f"{name} must be an integer") from exc
+    if not low <= value <= high:
+        raise MissionConfigError(f"{name} must be between {low} and {high}")
+    return value
 
 
 def live_raw_frame(frame_id: int, t_ns: int, width: int, height: int, image: bytes) -> RawFrame:
@@ -450,6 +486,18 @@ def run_live_mission(
         if services.scene_note == "meta"
         else None
     )
+    pinned = pinned_sam_prompt()
+    concept_client = (
+        MetaMuseConceptClient(
+            transport=_meta_muse_transport(recorder, "concepts"),
+            max_concepts=live_max_concepts(),
+        )
+        if services.scene_note == "meta" and pinned is None
+        else None
+    )
+    concept_every = live_concept_every()
+    concepts: tuple[str, ...] = (pinned or live_sam_prompt(),)
+    posed = 0
     rig = StereoRig(
         calibration.fx,
         calibration.fy,
@@ -480,18 +528,23 @@ def run_live_mission(
             image,
         )
         camera_cloud = tuple(to_camera_frame(point, pose) for point in map_cloud)
-        started = time.perf_counter()
-        found = segmenter.detect(raw)
-        elapsed = time.perf_counter() - started
-        if services.sam == "meta":
+        if concept_client is not None and posed % concept_every == 0:
+            concepts = _propose_concepts(concept_client, _as_jpeg(image), concepts, meta_calls)
+        posed += 1
+        found: list[SamDetection] = []
+        for concept in concepts:
+            started = time.perf_counter()
+            batch = segmenter.detect(raw, concept)
+            elapsed = time.perf_counter() - started
             meta_calls.append(
                 MetaCallRecord(
                     "sam",
                     segmenter.model_id,
                     elapsed,
-                    tuple(detection.score for detection in found),
+                    tuple(detection.score for detection in batch),
                 )
             )
+            found.extend(batch)
         for detection in found:
             claimed = points_in_mask(
                 camera_cloud,
@@ -649,22 +702,39 @@ def _live_labeller(
     return MetaMuseLabelClient(transport=_meta_muse_transport(recorder, "label"))
 
 
-def _live_segmenter(kind: str, *, recorder: CallRecorder | None = None) -> _LiveSegmenter:
-    prompt = live_sam_prompt()
-    if kind == "meta":
-        detector = MetaSamDetector(
-            prompt=prompt,
-            transport=(
-                None
-                if recorder is None
-                else RecordingMetaResponsesTransport(UrllibMetaTransport(), recorder, role="sam")
-            ),
-        )
+def _propose_concepts(
+    client: MetaMuseConceptClient,
+    frame_jpeg: bytes,
+    previous: tuple[str, ...],
+    meta_calls: list[MetaCallRecord],
+) -> tuple[str, ...]:
+    """Muse Spark's concepts for this keyframe; the previous list if the reply is unusable."""
+    started = time.perf_counter()
+    try:
+        chosen = client.propose(frame_jpeg)
+    except MetaMuseSceneError:
+        chosen = previous
+    meta_calls.append(MetaCallRecord("concepts", client.model, time.perf_counter() - started))
+    return chosen
 
-        def segment_meta(frame: RawFrame) -> tuple[SamDetection, ...]:
+
+def _live_segmenter(kind: str, *, recorder: CallRecorder | None = None) -> _LiveSegmenter:
+    if kind == "meta":
+        transport = (
+            None
+            if recorder is None
+            else RecordingMetaResponsesTransport(UrllibMetaTransport(), recorder, role="sam")
+        )
+        meta_detectors: dict[str, MetaSamDetector] = {}
+
+        def segment_meta(frame: RawFrame, concept: str) -> tuple[SamDetection, ...]:
+            detector = meta_detectors.get(concept)
+            if detector is None:
+                detector = MetaSamDetector(prompt=concept, transport=transport)
+                meta_detectors[concept] = detector
             return asyncio.run(detector.detect(frame))
 
-        return _LiveSegmenter(detector.model, segment_meta)
+        return _LiveSegmenter(MetaSamDetector(prompt=live_sam_prompt()).model, segment_meta)
     poster = None
     if recorder is not None:
 
@@ -672,12 +742,17 @@ def _live_segmenter(kind: str, *, recorder: CallRecorder | None = None) -> _Live
             return post_json(url, body, timeout_s=_MODAL_TIMEOUT_S)
 
         poster = recording_poster(send, recorder, role="sam", model="surmap-sam")
-    detector_modal = ModalSamDetector(prompt=prompt, poster=poster)
+    modal_detectors: dict[str, ModalSamDetector] = {}
 
-    def segment_modal(frame: RawFrame) -> tuple[SamDetection, ...]:
-        return asyncio.run(detector_modal.detect(frame))
+    def segment_modal(frame: RawFrame, concept: str) -> tuple[SamDetection, ...]:
+        detector = modal_detectors.get(concept)
+        if detector is None:
+            detector = ModalSamDetector(prompt=concept, poster=poster)
+            modal_detectors[concept] = detector
+        return asyncio.run(detector.detect(frame))
 
-    return _LiveSegmenter(detector_modal._model, segment_modal)
+    probe = ModalSamDetector(prompt=live_sam_prompt(), poster=poster)
+    return _LiveSegmenter(probe._model, segment_modal)
 
 
 def _export_recorded_session(destination: Path) -> Path:
@@ -979,6 +1054,11 @@ def _replay_one(call: RecordedCall, queue: ReplayQueue) -> str:
             transport=ReplayMetaMuseTransport(queue), api_key=_REPLAY_KEY, model=model
         )
         return note.note(["recorded"], _FIXTURE_JPEG)
+    if call.provider == "meta" and call.role == "concepts":
+        proposer = MetaMuseConceptClient(
+            transport=ReplayMetaMuseTransport(queue), api_key=_REPLAY_KEY, model=model
+        )
+        return ", ".join(proposer.propose(_FIXTURE_JPEG))
     if call.provider == "meta" and call.role == "label":
         labeller = MetaMuseLabelClient(
             transport=ReplayMetaMuseTransport(queue), api_key=_REPLAY_KEY, model=model

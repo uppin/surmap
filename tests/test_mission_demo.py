@@ -15,7 +15,11 @@ import pytest
 from PIL import Image
 
 from surmap.labelling.baseten_muse import ObjectLabel
-from surmap.labelling.meta_muse import MetaMuseLabelClient, MetaMuseSceneClient
+from surmap.labelling.meta_muse import (
+    MetaMuseConceptClient,
+    MetaMuseLabelClient,
+    MetaMuseSceneClient,
+)
 from surmap.mission.demo import (
     MissionConfigError,
     _live_segmenter,
@@ -42,6 +46,17 @@ _CAPTURE = Path(__file__).parent / "fixtures" / "sitl_capture_tiny"
 _MAP_POINT = Vec3(0.0, 0.0, 2.0)
 
 _QUESTION = "Where are the survivors?"
+
+
+@pytest.fixture(autouse=True)
+def _no_live_concepts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Muse Spark concept proposals answer ``person`` without a socket."""
+
+    def propose(self: MetaMuseConceptClient, frame_jpeg: bytes) -> tuple[str, ...]:
+        del self, frame_jpeg
+        return ("person",)
+
+    monkeypatch.setattr(MetaMuseConceptClient, "propose", propose)
 
 
 def test_offline_mission_projects_fixture_masks_and_scores_them_against_ground_truth(
@@ -665,7 +680,7 @@ def test_live_meta_mission_calls_meta_sam_meta_labels_and_records_them(
     assert "No pull request merged" not in result.report_path.read_text(encoding="utf-8")
     calls = report["meta_calls"]
     roles = {call["role"] for call in calls}
-    assert roles == {"sam", "label", "scene_note"}
+    assert roles == {"concepts", "sam", "label", "scene_note"}
     sam_calls = [call for call in calls if call["role"] == "sam"]
     assert sam_calls[0]["model_id"] == "sam-3.1"
     assert sam_calls[0]["confidences"] == [None]
@@ -675,7 +690,8 @@ def test_live_meta_mission_calls_meta_sam_meta_labels_and_records_them(
     scene_call = next(call for call in calls if call["role"] == "scene_note")
     assert scene_call["model_id"] == "muse-spark-1.3"
     assert snapshot["landmarks"][0]["model_id"] == "muse-spark-1.3"
-    assert snapshot["meta_calls"][0]["model_id"] == "sam-3.1"
+    snapshot_sam = [call for call in snapshot["meta_calls"] if call["role"] == "sam"]
+    assert snapshot_sam[0]["model_id"] == "sam-3.1"
     assert "secret-model-key" not in result.report_path.read_text(encoding="utf-8")
 
 

@@ -56,9 +56,13 @@ export MODEL_API_KEY='your-meta-key'      # single quotes: the key contains '|'
 uv run python scripts/mission_demo.py --live --capture ~/sitl-runs/disaster-01
 ```
 
-With `SURMAP_LIVE_META=1`, SAM 3.1 on the Meta Model API segments each
-keyframe for the concept in `SURMAP_SAM_PROMPT` (default `person`), and
-Muse Spark labels the objects and writes the scene note.
+With `SURMAP_LIVE_META=1`, Muse Spark chooses what to look for in each
+keyframe (structured output: up to `SURMAP_SAM_MAX_CONCEPTS` short noun
+phrases, default 4, `person` always first, refreshed every
+`SURMAP_CONCEPT_EVERY` posed frames, default 10) and SAM 3.1 on the
+Meta Model API segments each one. `SURMAP_SAM_PROMPT=<noun>` pins a
+single concept instead. Muse Spark also labels the objects and writes
+the scene note.
 
 Optional providers:
 
@@ -104,7 +108,7 @@ ON-BOARD (Raspberry Pi CM5 + Coral Edge TPU)
         ▼  ConnectRPC streams / recorded session (no flight commands)
 BASE STATION (NVIDIA RTX 5060 Ti)
   stereo ─► depth ─► point cloud (pixel ↔ 3D point ↔ frame)
-  SAM 3.1 masks (Meta API, local GPU, or Modal)
+  Muse Spark picks concepts ─► SAM 3.1 masks (Meta API, local GPU, or Modal)
         │   masks ─► 3D points (points_in_mask, StreamRegionPoints)
         ▼
   objects and persistent surfaces anchored to GPS (SemanticMapSnapshot)
@@ -125,6 +129,7 @@ where no Meta model compiles to the Edge TPU
 | Stage | Host | Model id in code | Meta? |
 |---|---|---|---|
 | Segmentation | Meta Model API / station GPU (PyTorch or ONNX) / Modal GPU | `sam-3.1` / `facebook/sam3.1` | Yes |
+| Concepts to segment | Meta Model API (structured output) | `muse-spark-1.3` | Yes |
 | Scene note | Meta Model API | `muse-spark-1.3` | Yes |
 | Per-object labels | Meta Model API, or Baseten (open weights) | `muse-spark-1.3` / `meta-models/muse-spark-open-1026` | Yes |
 | Map Q&A and report | Meta Model API | `muse-wonder-1.0` | Yes |

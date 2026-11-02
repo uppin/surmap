@@ -32,7 +32,7 @@ Outputs land in `mission-demo-out/` (gitignored):
 ## What the command chains
 
 1. **Session.** Offline exports `tests/fixtures/sitl_capture_tiny/` to EuRoC. That fixture is not a flight of the disaster block. Perception uses a second recorded fixture: one camera point per person in the ground-truth JSON, posed at the offset in `src/surmap/mission/fixtures/offline_perception.json`. If `gz` is missing, that is expected for this mode.
-2. **SAM 3.1 masks.** Offline uses a recorded polygon. Live uses Meta when `SURMAP_LIVE_META=1`, otherwise Modal when `SURMAP_LIVE_MODAL=1`.
+2. **SAM 3.1 masks.** Offline uses a recorded polygon. Live uses Meta when `SURMAP_LIVE_META=1`, otherwise Modal when `SURMAP_LIVE_MODAL=1`. With `SURMAP_LIVE_META=1`, Muse Spark (`MetaMuseConceptClient`) picks the concepts: a Responses API call with `text.format` set to a JSON schema returns up to `SURMAP_SAM_MAX_CONCEPTS` noun phrases (1–8, default 4), re-checked locally (at most four words, no lists, negation, or positions), with `person` always first. It is asked again every `SURMAP_CONCEPT_EVERY` posed frames (default 10); an unusable reply keeps the previous list. Each concept is one SAM request. `SURMAP_SAM_PROMPT` pins one concept and skips the proposal call.
 3. **Mask to cloud.** `points_in_mask` projects the points. Nothing is written back into RTAB-Map.
 4. **Labels and a scene note.** Offline labels each object `survivor` and writes a fixture scene note. With `SURMAP_LIVE_META=1`, live labels use Muse Spark `muse-spark-1.3` on the Meta Model API and the scene note uses the same API. Baseten labels are used only when that Meta flag is unset and `SURMAP_LIVE_BASETEN=1`.
 5. **Snapshot.** `build_snapshot` anchors the tracks to the disaster-block GPS origin.
