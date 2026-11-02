@@ -10,6 +10,8 @@ import json
 import urllib.request
 from pathlib import Path
 
+import pytest
+
 from surmap.demo.history import RunHistoryStore
 from surmap.demo.surface_timeline import SurfaceTimeline
 from tests.test_demo_replay import MASK_PIXELS, Console, a_console, a_recorded_run
@@ -22,6 +24,12 @@ def snapshot(console: Console, run_id: str, seq: int) -> dict[str, object]:
     ) as r:
         loaded: dict[str, object] = json.loads(r.read())
     return loaded
+
+
+def surface_count(moment: dict[str, object]) -> int:
+    surfaces = moment["surfaces"]
+    assert isinstance(surfaces, list)
+    return len(surfaces)
 
 
 def test_a_rewound_moment_shows_the_current_logics_surfaces_not_the_recorded_ones(
@@ -53,12 +61,17 @@ def test_a_rewound_moment_says_which_surface_each_sam_track_became(tmp_path: Pat
 
 
 def test_a_later_moment_holds_everything_assigned_up_to_it(tmp_path: Path) -> None:
+    # Given a recorded run's first two moments
     with a_console(tmp_path) as console:
         run_id = a_recorded_run(console)
         first, second = snapshot(console, run_id, 0), snapshot(console, run_id, 1)
+
+    # Then every point the car's surface had on the first is still on it on the second
     one, two = first["surfaces"], second["surfaces"]
     assert isinstance(one, list) and isinstance(two, list)
-    assert len(two[0]["points"]) >= len(one[0]["points"])
+    held_then = {tuple(point) for point in one[0]["points"]}
+    held_later = {tuple(point) for point in two[0]["points"]}
+    assert held_then and held_then <= held_later
 
 
 def test_a_run_without_a_journal_keeps_its_recorded_surfaces(tmp_path: Path) -> None:
@@ -85,20 +98,56 @@ def test_a_run_without_a_journal_keeps_its_recorded_surfaces(tmp_path: Path) -> 
     ]
 
 
-def test_the_timeline_is_computed_once_per_run(tmp_path: Path) -> None:
+def test_the_timeline_is_computed_once_per_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given a recorded run, and a count of timeline computations
+    computed: list[str] = []
+    compute = SurfaceTimeline.of
+
+    def counting(store: RunHistoryStore, run_id: str) -> SurfaceTimeline | None:
+        computed.append(run_id)
+        return compute(store, run_id)
+
+    monkeypatch.setattr(SurfaceTimeline, "of", staticmethod(counting))
     with a_console(tmp_path) as console:
         run_id = a_recorded_run(console)
-        sam_before = console.sam.tracked
-        for seq in (0, 1, 0, 1):
-            snapshot(console, run_id, seq)
-        # (rewinding never runs SAM: the journal holds its masks)
-        assert console.sam.tracked == sam_before
+
+        # When four moments of it are rewound to
+        moments = [snapshot(console, run_id, seq) for seq in (0, 1, 0, 1)]
+
+    # Then its timeline was computed once and served all four
+    assert computed == [run_id]
+    assert [surface_count(moment) for moment in moments] == [1, 1, 1, 1]
+
+
+def test_rewinding_never_runs_sam(tmp_path: Path) -> None:
+    # Given a recorded run
+    with a_console(tmp_path) as console:
+        run_id = a_recorded_run(console)
+        tracked = console.sam.tracked
+
+        # When its moments are rewound to
+        snapshot(console, run_id, 0)
+        snapshot(console, run_id, 1)
+
+        # Then SAM tracked nothing more: the journal holds its masks
+        assert console.sam.tracked == tracked
+
+
+def test_a_timeline_gives_each_moments_surfaces_and_sam_links(tmp_path: Path) -> None:
+    # Given a recorded run's timeline
+    with a_console(tmp_path) as console:
+        run_id = a_recorded_run(console)
     timeline = SurfaceTimeline.of(console.store, run_id)
     assert timeline is not None
+
+    # When its first frame is read
     surfaces, tracks = timeline.at(1)
-    assert [s["surface_id"] for s in surfaces] == [1] and tracks == [
-        {"track_id": 1, "surface_id": 1}
-    ]
+
+    # Then it holds the car's surface, and SAM's track 1 became it
+    assert [surface["surface_id"] for surface in surfaces] == [1]
+    assert tracks == [{"track_id": 1, "surface_id": 1}]
 
 
 def test_the_page_links_a_rewound_moments_sam_cards(tmp_path: Path) -> None:

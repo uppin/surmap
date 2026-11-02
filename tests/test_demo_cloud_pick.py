@@ -13,7 +13,7 @@ from numpy.typing import NDArray
 from PIL import Image
 
 from surmap.demo.cloud_view import CloudPose, CloudViewer
-from surmap.demo.history import RENDER_ONLY
+from surmap.demo.history import RunHistoryStore
 from surmap.demo.view_math import VIEW_HELPERS
 from tests.test_demo_cloud_ptz import play_to_the_end, post
 from tests.test_demo_object_feed import NODE, a_console_page, needs_node
@@ -96,8 +96,16 @@ def test_a_moving_surface_owns_the_pixels_it_is_drawn_over() -> None:
     assert set(np.unique(ids_of(view["cloud_ids_png"])).tolist()) == {0, 9}
 
 
-def test_the_id_image_is_never_journalled() -> None:
-    assert "cloud_ids_png" in RENDER_ONLY
+def test_the_id_image_is_never_journalled(tmp_path: Path) -> None:
+    # Given a run played on a console that records it
+    with a_running_console(tmp_path, a_map_around_the_region()) as base:
+        play_to_the_end(base)
+
+    # Then its journalled map views keep no id image (a replay draws it again)
+    store = RunHistoryStore(tmp_path / "history.db")
+    run_id = str(store.list_runs()[0]["run_id"])
+    views = [data for kind, data in store.journal(run_id) if kind in ("map", "final")]
+    assert views and [data for data in views if "cloud_ids_png" in data] == []
 
 
 def test_live_map_updates_carry_the_id_image(tmp_path: Path) -> None:

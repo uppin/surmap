@@ -6,6 +6,7 @@ import urllib.request
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from surmap.demo.cloud_view import CloudPose, CloudViewer
 from surmap.demo.server import PlaybackControls
@@ -62,7 +63,7 @@ def test_every_runs_controls_share_the_sessions_view() -> None:
     first_run.cloud_orbit(0.5, 0.0)
 
     # Then the second run sees the same pose
-    assert second_run.cloud_pose().azimuth == START + 0.5
+    assert second_run.cloud_pose().azimuth == pytest.approx(START + 0.5)
 
 
 def test_the_3d_pane_moves_after_the_run_has_finished(tmp_path: Path) -> None:
@@ -75,19 +76,35 @@ def test_the_3d_pane_moves_after_the_run_has_finished(tmp_path: Path) -> None:
 
         # Then it is accepted and answered with the cloud drawn from the new pose
         assert status == 200
-        assert answer["azimuth"] == START + 0.4
+        assert answer["azimuth"] == pytest.approx(START + 0.4)
         assert isinstance(answer["cloud_png"], str) and answer["cloud_png"]
 
 
-def test_zoom_and_pan_answer_with_a_new_image_too(tmp_path: Path) -> None:
+def a_finished_view(base: str) -> str:
+    """The 3D image as a finished run left it (a zoom by 1 redraws it unchanged)."""
+    play_to_the_end(base)
+    still = post(f"{base}/control", {"action": "cloud_zoom", "factor": 1.0})[1]["cloud_png"]
+    assert isinstance(still, str) and still
+    return still
+
+
+@pytest.mark.parametrize(
+    "body",
+    [{"action": "cloud_zoom", "factor": 0.5}, {"action": "cloud_pan", "dx": 0.5, "dz": 0.0}],
+    ids=["zoom", "pan"],
+)
+def test_zooming_or_panning_after_the_run_answers_with_a_new_image(
+    tmp_path: Path, body: dict[str, object]
+) -> None:
     with a_running_console(tmp_path, a_map_around_the_region(FakeRegionBackend())) as base:
-        play_to_the_end(base)
+        # Given the view a finished run left
+        before = a_finished_view(base)
 
-        zoomed = post(f"{base}/control", {"action": "cloud_zoom", "factor": 0.5})[1]
-        panned = post(f"{base}/control", {"action": "cloud_pan", "dx": 0.5, "dz": 0.0})[1]
+        # When the viewer zooms or pans it
+        answer = post(f"{base}/control", body)[1]
 
-        assert zoomed["cloud_png"] and panned["cloud_png"]
-        assert zoomed["cloud_png"] != panned["cloud_png"]
+    # Then the answer is the scene drawn again from the new pose
+    assert isinstance(answer["cloud_png"], str) and answer["cloud_png"] != before
 
 
 def test_before_anything_was_drawn_the_pose_still_moves(tmp_path: Path) -> None:
@@ -97,7 +114,8 @@ def test_before_anything_was_drawn_the_pose_still_moves(tmp_path: Path) -> None:
         status, answer = post(f"{base}/control", {"action": "cloud_orbit", "d_azimuth": 0.3})
 
         # Then the pose moves, with no image to show yet
-        assert (status, answer["azimuth"], answer["cloud_png"]) == (200, START + 0.3, None)
+        assert (status, answer["cloud_png"]) == (200, None)
+        assert answer["azimuth"] == pytest.approx(START + 0.3)
 
 
 def test_the_view_carries_into_the_next_run(tmp_path: Path) -> None:
@@ -110,7 +128,7 @@ def test_the_view_carries_into_the_next_run(tmp_path: Path) -> None:
         answer = post(f"{base}/control", {"action": "cloud_orbit", "d_azimuth": 0.25})[1]
 
         # Then the two orbits add up: the run did not reset the view
-        assert answer["azimuth"] == START + 0.5 + 0.25
+        assert answer["azimuth"] == pytest.approx(START + 0.5 + 0.25)
 
 
 def test_pause_still_needs_a_run(tmp_path: Path) -> None:

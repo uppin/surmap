@@ -49,7 +49,7 @@ def only_region(event: DemoEvent) -> dict[str, object]:
     return region
 
 
-def test_a_region_names_the_camera_that_saw_it(tmp_path: Path) -> None:
+def test_a_region_names_the_camera_that_saw_it() -> None:
     # Given a replay's dense buffer for frame 7
     placer = RegionPlacer(a_journalled_frame(), DISPLAY)
 
@@ -257,6 +257,7 @@ def test_a_preview_centres_the_object_and_fits_it_in_its_canvas() -> None:
     ys = [p[1] for p in projected]
     assert all(0 <= x <= 200 for x in xs) and all(0 <= y <= 100 for y in ys)
     assert (min(xs) + max(xs)) / 2 == pytest.approx(100, abs=1)
+    assert (min(ys) + max(ys)) / 2 == pytest.approx(50, abs=1)
 
 
 @needs_node
@@ -284,7 +285,9 @@ def test_the_rendered_page_script_parses(tmp_path: Path) -> None:
 
     # Then node accepts it
     assert NODE is not None
-    checked = subprocess.run([NODE, "--check", str(path)], capture_output=True, text=True)
+    checked = subprocess.run(
+        [NODE, "--check", str(path)], capture_output=True, text=True, timeout=30
+    )
     assert checked.returncode == 0, checked.stderr
 
 

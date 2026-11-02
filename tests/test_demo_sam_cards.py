@@ -1,5 +1,6 @@
 """Demo: each SAM object's id sits on its own card, joined to the object, never overlapping."""
 
+import itertools
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,6 +57,11 @@ class Card:
     start: tuple[float, float]
     end: tuple[float, float]
 
+    def nearest_edge_point(self, point: tuple[float, float]) -> tuple[float, float]:
+        """The point of this card nearest `point` (on its edge when `point` is outside)."""
+        x, y = point
+        return (min(max(x, self.x), self.x + self.width), min(max(y, self.y), self.y + self.height))
+
 
 def overlap(a: Card, b: Card) -> bool:
     return (
@@ -85,18 +91,28 @@ def laid_out(items: str) -> list[Card]:
     ]
 
 
+def on_image(card: Card) -> bool:
+    return (
+        0 <= card.x
+        and card.x + card.width <= WIDTH
+        and 0 <= card.y
+        and card.y + card.height <= HEIGHT
+    )
+
+
 @needs_node
 def test_cards_for_bunched_objects_never_overlap() -> None:
+    # When five bunched objects' cards are laid out
     cards = laid_out(BUNCHED)
-    assert len(cards) == 5
-    for i, a in enumerate(cards):
-        for b in cards[i + 1 :]:
-            assert not overlap(a, b), (a, b)
+
+    # Then all five are placed, and no two overlap
+    assert [card.key for card in cards] == [0, 1, 2, 3, 4]
+    assert [(a.key, b.key) for a, b in itertools.combinations(cards, 2) if overlap(a, b)] == []
 
 
 @needs_node
 def test_cards_stay_on_the_image() -> None:
-    # Objects at both edges and the bottom corner
+    # Given objects at both top corners and the bottom corner
     edges = json.dumps(
         [
             {"key": 1, "anchor": [2, 5], "width": 90, "height": 30},
@@ -104,9 +120,12 @@ def test_cards_stay_on_the_image() -> None:
             {"key": 3, "anchor": [618, 186], "width": 90, "height": 30},
         ]
     )
-    for card in laid_out(edges):
-        assert 0 <= card.x and card.x + card.width <= WIDTH
-        assert 0 <= card.y and card.y + card.height <= HEIGHT
+
+    # When their cards are laid out
+    cards = laid_out(edges)
+
+    # Then none runs off the image
+    assert [card.key for card in cards if not on_image(card)] == []
 
 
 @needs_node
@@ -129,35 +148,39 @@ def test_with_no_room_above_a_card_goes_beside_or_below_its_object_not_far_off()
     # Given a car at the top edge of the image
     item = {"key": 1, "anchor": [300, 20], "box": [260, 2, 340, 40], "width": 90, "height": 30}
 
-    # Then its card still touches the car's box, without covering it
+    # When its card is laid out
     (card,) = laid_out(json.dumps([item]))
+
+    # Then it is not above the car, still touches its box, and does not cover it
+    assert card.y >= 2
     assert gap(card, (260, 2, 340, 40)) <= 4
     assert not covers(card, (260, 2, 340, 40))
 
 
 @needs_node
 def test_bunched_objects_cards_stay_near_their_own_objects() -> None:
-    # Given five small far cars side by side
+    # When five small far cars' cards are laid out side by side
     cards = laid_out(BUNCHED)
 
     # Then every card is placed near its own car, the nearest ones touching distance away
     gaps = sorted(gap(card, (294 + 14 * card.key, 116, 306 + 14 * card.key, 124)) for card in cards)
     assert gaps[0] <= 4
-    assert all(g <= 80 for g in gaps), gaps
+    assert [g for g in gaps if g > 80] == []
 
 
 @needs_node
 def test_each_card_leads_to_its_object_from_its_nearest_edge() -> None:
-    for card in laid_out(BUNCHED):
-        # The leader ends on the object's anchor and starts on the card's edge, at the
-        # point of the card nearest that anchor
-        ax, ay = 300.0 + 14 * card.key, 120.0
-        assert card.end == (ax, ay)
-        nearest = (
-            min(max(ax, card.x), card.x + card.width),
-            min(max(ay, card.y), card.y + card.height),
-        )
-        assert card.start == pytest.approx(nearest)
+    # When five bunched objects' cards are laid out
+    cards = laid_out(BUNCHED)
+
+    # Then each leader ends on its object's anchor and starts at the card's edge point
+    # nearest that anchor
+    anchors = [(300.0 + 14 * card.key, 120.0) for card in cards]
+    assert [card.end for card in cards] == anchors
+    assert [card.start for card in cards] == [
+        pytest.approx(card.nearest_edge_point(anchor))
+        for card, anchor in zip(cards, anchors, strict=True)
+    ]
 
 
 @needs_node

@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 
 from surmap.demo.cloud_view import CAMERA_MARKER, CloudPose, CloudViewer, FollowCamera
 from surmap.demo.history import RunHistoryStore
-from surmap.demo.replay import Bounds, JournalPlayer
+from surmap.demo.replay import Bounds, CloudRenderer, JournalPlayer
 from surmap.demo.server import DemoPlayer, PlaybackControls
 from surmap.demo.surface_render import SurfaceLayer
 from surmap.types import Pose, Vec3
@@ -130,34 +130,64 @@ def gap(ids: NDArray[np.int64]) -> float:
     return where(ids, 1)[1] - where(ids, 2)[1]
 
 
-def test_tilting_and_zooming_keep_following_with_the_camera_low_in_view() -> None:
-    camera = a_camera(0.0, 0.0, 0.0, 1.0)
-    layer: SurfaceLayer = ((1, a_probe(0.0, 0.0), False), (2, a_probe(0.0, 6.0), False))
-    viewer = CloudViewer()
-    before = probes_seen(viewer, camera, layer)
+AHEAD_OF_CAMERA: SurfaceLayer = ((1, a_probe(0.0, 0.0), False), (2, a_probe(0.0, 6.0), False))
+CAMERA_ALONG_Z = a_camera(0.0, 0.0, 0.0, 1.0)
 
-    # When the viewer tilts up, then zooms in
+
+def camera_row(ids: NDArray[np.int64]) -> float:
+    """How far down the view the camera's probe (1) sits, as a fraction of its height."""
+    return where(ids, 1)[1] / HEIGHT
+
+
+def test_tilting_keeps_following_with_the_camera_low_in_view() -> None:
+    # Given a view following a camera along +z
+    viewer = CloudViewer()
+    before = probes_seen(viewer, CAMERA_ALONG_Z, AHEAD_OF_CAMERA)
+
+    # When the viewer tilts up
     viewer.orbit(0.0, 0.3)
-    tilted = probes_seen(viewer, camera, layer)
-    viewer.zoom(0.6)
-    zoomed = probes_seen(viewer, camera, layer)
+    tilted = probes_seen(viewer, CAMERA_ALONG_Z, AHEAD_OF_CAMERA)
 
-    # Then it still follows with the camera low in view; tilting changed the view,
-    # and zooming in spread the camera and what is ahead of it further apart
+    # Then it still follows, the camera still at 3/4 of the view, and the view changed
     assert viewer.follow is True
-    for ids in (tilted, zoomed):
-        assert 0.70 * HEIGHT <= where(ids, 1)[1] <= 0.80 * HEIGHT
+    assert camera_row(tilted) == pytest.approx(0.75, abs=0.05)
     assert gap(tilted) != pytest.approx(gap(before), abs=1.0)
-    assert gap(zoomed) > gap(tilted)
 
 
-def test_orbiting_or_panning_takes_over_from_follow() -> None:
+def test_zooming_in_keeps_following_and_brings_what_is_ahead_closer() -> None:
+    # Given a view following a camera along +z
     viewer = CloudViewer()
+    before = probes_seen(viewer, CAMERA_ALONG_Z, AHEAD_OF_CAMERA)
+
+    # When the viewer zooms in
+    viewer.zoom(0.6)
+    zoomed = probes_seen(viewer, CAMERA_ALONG_Z, AHEAD_OF_CAMERA)
+
+    # Then it still follows with the camera low in view, and the probe ahead is drawn further up
+    assert viewer.follow is True
+    assert camera_row(zoomed) == pytest.approx(0.75, abs=0.05)
+    assert gap(zoomed) > gap(before)
+
+
+def test_orbiting_takes_over_from_follow() -> None:
+    # Given a following view
+    viewer = CloudViewer()
+
+    # When the viewer orbits it
     viewer.orbit(0.2, 0.0)
+
+    # Then the view no longer follows
     assert viewer.follow is False
 
+
+def test_panning_takes_over_from_follow() -> None:
+    # Given a following view
     viewer = CloudViewer()
+
+    # When the viewer pans it
     viewer.pan(1.0, 0.0)
+
+    # Then the view no longer follows
     assert viewer.follow is False
 
 
@@ -172,36 +202,54 @@ def test_taking_over_starts_from_the_follow_view_without_a_jump() -> None:
     viewer.pan(0.0, 0.0)
     taken = probes_seen(viewer, camera, layer)
 
-    # Then the free view starts exactly where the follow view was
+    # Then the free view draws both probes exactly where the follow view did
     assert viewer.follow is False
-    for probe in (1, 2):
-        assert where(taken, probe) == pytest.approx(where(following, probe), abs=2.0)
+    assert [*where(taken, 1), *where(taken, 2)] == pytest.approx(
+        [*where(following, 1), *where(following, 2)], abs=2.0
+    )
 
 
-def test_the_camera_is_marked_in_the_view() -> None:
-    def marked(png: str) -> bool:
-        rgb = decode(png)[..., :3]
-        return bool(np.any(np.all(rgb == np.array(CAMERA_MARKER), axis=2)))
-
-    viewer = CloudViewer()
-    assert marked(viewer.render_view(GROUND, GREY, BOUNDS, (), a_camera(0, 0, 0, 1))["cloud_png"])
-    assert not marked(viewer.render_view(GROUND, GREY, BOUNDS, (), None)["cloud_png"])
+def marked(png: str) -> bool:
+    """Whether the image shows the camera marker's colour anywhere."""
+    rgb = decode(png)[..., :3]
+    return bool(np.any(np.all(rgb == np.array(CAMERA_MARKER), axis=2)))
 
 
-def test_a_ptz_answer_says_whether_the_view_follows(tmp_path: Path) -> None:
+def test_the_camera_is_marked_in_a_view_drawn_for_it() -> None:
+    # When a view is drawn for a camera
+    view = CloudViewer().render_view(GROUND, GREY, BOUNDS, (), a_camera(0, 0, 0, 1))
+
+    # Then the camera is marked in it
+    assert marked(view["cloud_png"])
+
+
+def test_a_view_without_a_camera_has_no_marker() -> None:
+    # When a view is drawn with no camera
+    view = CloudViewer().render_view(GROUND, GREY, BOUNDS, (), None)
+
+    # Then nothing is marked
+    assert not marked(view["cloud_png"])
+
+
+@pytest.mark.parametrize(
+    ("body", "follows"),
+    [
+        ({"action": "cloud_zoom", "factor": 0.9}, True),
+        ({"action": "cloud_follow", "follow": False}, False),
+        ({"action": "cloud_follow", "follow": True}, True),
+        ({"action": "cloud_orbit", "d_azimuth": 0.3}, False),
+    ],
+)
+def test_a_ptz_answer_says_whether_the_view_follows(
+    tmp_path: Path, body: dict[str, object], follows: bool
+) -> None:
+    # Given a console's view, following by default
     with a_running_console(tmp_path, a_map_around_the_region(FakeRegionBackend())) as base:
-        assert post(f"{base}/control", {"action": "cloud_zoom", "factor": 0.9})[1]["follow"] is True
-        assert (
-            post(f"{base}/control", {"action": "cloud_follow", "follow": False})[1]["follow"]
-            is False
-        )
-        assert (
-            post(f"{base}/control", {"action": "cloud_follow", "follow": True})[1]["follow"] is True
-        )
-        assert (
-            post(f"{base}/control", {"action": "cloud_orbit", "d_azimuth": 0.3})[1]["follow"]
-            is False
-        )
+        # When one PTZ action is posted
+        answer = post(f"{base}/control", body)[1]
+
+    # Then the answer says whether the view follows now
+    assert answer["follow"] is follows
 
 
 def a_driving_map() -> FakeRegionBackend:
@@ -227,29 +275,29 @@ def test_the_live_view_is_drawn_for_the_shown_frames_camera(tmp_path: Path) -> N
     assert controls.viewer.camera == frames[-1].data["camera"]
 
 
-def test_a_replay_draws_each_view_for_the_camera_of_the_frame_before_it(tmp_path: Path) -> None:
-    # Given a recorded run whose camera moves 1 m along z per frame
-    store = RunHistoryStore(tmp_path / "history.db")
+def a_recorded_drive(store: RunHistoryStore, frames: int = 3) -> str:
+    """A recorded run whose camera moves 1 m along +z per frame, one map update per frame."""
     run_id = store.create_run("tiny-test", "Tiny")
-    for index in range(3):
-        camera = a_camera(0.0, float(index), 0.0, 1.0)
+    cameras = [a_camera(0.0, float(index), 0.0, 1.0) for index in range(frames)]
+    for index, camera in enumerate(cameras):
+        frame_id = index + 1
         store.record_frame(
-            run_id,
-            index=index,
-            frame_id=index + 1,
-            t_ns=index,
-            jpeg=JPEG,
-            overlay=[],
-            camera=camera,
+            run_id, index=index, frame_id=frame_id, t_ns=index, jpeg=JPEG, overlay=[], camera=camera
         )
         store.record_event(
-            run_id, "frame", {"index": index, "frame_id": index + 1, "camera": camera}
+            run_id, "frame", {"index": index, "frame_id": frame_id, "camera": camera}
         )
-        store.record_event(
-            run_id,
-            "map",
-            {"frame_id": index + 1, "points": [[0.0, 0.0, 1.0]], "point_colors": [[9, 9, 9]]},
-        )
+        map_update = {
+            "frame_id": frame_id,
+            "points": [[0.0, 0.0, 1.0]],
+            "point_colors": [[9, 9, 9]],
+        }
+        store.record_event(run_id, "map", map_update)
+    return run_id
+
+
+def a_recording_renderer() -> tuple[list[FollowCamera | None], CloudRenderer]:
+    """A renderer that records which camera each view was drawn for."""
     drawn_for: list[FollowCamera | None] = []
 
     def render(
@@ -261,6 +309,15 @@ def test_a_replay_draws_each_view_for_the_camera_of_the_frame_before_it(tmp_path
     ) -> dict[str, str]:
         drawn_for.append(camera)
         return {"cloud_png": "png", "cloud_ids_png": "ids"}
+
+    return drawn_for, render
+
+
+def test_a_replay_draws_each_view_for_the_camera_of_the_frame_before_it(tmp_path: Path) -> None:
+    # Given a recorded drive of three frames
+    store = RunHistoryStore(tmp_path / "history.db")
+    run_id = a_recorded_drive(store)
+    drawn_for, render = a_recording_renderer()
 
     # When it replays with every map drawn (the clock runs fast)
     ticks = iter(range(0, 1000, 10))
