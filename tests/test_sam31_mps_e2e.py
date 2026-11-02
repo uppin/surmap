@@ -1,5 +1,6 @@
 """Real SAM 3.1 on this Mac's GPU (MPS); skipped without torch, sam3, Metal or the weights."""
 
+import importlib
 import importlib.util
 import io
 from pathlib import Path
@@ -16,8 +17,7 @@ CHECKPOINTS = Path.home() / ".cache/huggingface/hub/models--facebook--sam3.1/sna
 def _checkpoint() -> Path:
     if importlib.util.find_spec("torch") is None or importlib.util.find_spec("sam3") is None:
         pytest.skip("the optional torch + sam3 stack is not installed")
-    import torch
-
+    torch = importlib.import_module("torch")  # optional: not a typed dependency
     if not torch.backends.mps.is_available():
         pytest.skip("no Apple GPU (MPS) here")
     found = sorted(CHECKPOINTS.glob("*/sam3.1_multiplex.pt"))
