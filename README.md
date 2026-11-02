@@ -168,6 +168,13 @@ uv run python scripts/demo.py
   object.
 - **Run history**: every frame, detection, and cloud update is stored
   in `demo-history.db`; the timeline rewinds through it.
+- **Cached reruns by default, Rebuild to record**: opening a scene
+  reruns its newest complete recording from the journal, with neither
+  RTAB-Map nor SAM, and does not persist it again (the timeline scrubs
+  the recording itself). A scene with no recording waits for
+  **Rebuild**, the only action that runs RTAB-Map (and SAM) and records
+  a new run; applying a new SAM prompt rebuilds too. A run cut short by
+  another viewer's takeover is recorded as interrupted, never cached.
 - **Replay run** (speed 1×, 4× or max; `GET /stream?replay=<run_id>&speed=N`):
   every run keeps a journal of its events and RTAB-Map's dense buffer
   (the disparity computed for each SAM frame, with its pose), so a

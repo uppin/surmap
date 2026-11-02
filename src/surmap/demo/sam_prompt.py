@@ -65,6 +65,8 @@ def sam_pane(
         '<div class="sam-pane" id="sam-pane"><h2>SAM 3.1 (video) — own rate</h2>'
         '<form class="controls" method="get" action="/">'
         f'<input type="hidden" name="dataset" value="{html.escape(dataset_id)}">'
+        # A new concept needs fresh SAM results: applying it rebuilds.
+        '<input type="hidden" name="rebuild" value="1">'
         '<label for="sam-prompt">SAM prompt</label>'
         f'<input id="sam-prompt" name="prompt" maxlength="{MAX_SAM_PROMPT_CHARS}" '
         f'value="{html.escape(prompt)}" {editable}</form>'

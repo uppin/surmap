@@ -80,7 +80,8 @@ PAGE = """<!DOCTYPE html>
     <label for="scene">Scene</label>
     <select id="scene"></select>
     <button id="pause" disabled>Pause</button>
-    <button id="restart">Restart</button>
+    <button id="rebuild" title="Run RTAB-Map (and SAM) on this scene again and record
+      a new run; otherwise the page reruns the scene's cached recording">Rebuild</button>
   </div>
   <div class="controls">
     <label for="run-select">Persisted run</label>
@@ -376,7 +377,9 @@ function attachListeners() {{
   source.addEventListener('run', (event) => {{
     const data = JSON.parse(event.data);
     currentRunId = data.run_id; frames = 0; maxSeq = -1; started = performance.now();
-    runInfo.innerHTML = `Run: <b>${{currentRunId.slice(0, 12)}}…</b> · persisting to SQLite…`;
+    runInfo.innerHTML = data.replay_of === data.run_id
+      ? `Run: <b>${{currentRunId.slice(0, 12)}}…</b> · cached rerun (not persisted again)`
+      : `Run: <b>${{currentRunId.slice(0, 12)}}…</b> · persisting to SQLite…`;
     refreshRuns(currentRunId);
   }});
   source.addEventListener('detections', (event) => {{
@@ -516,8 +519,36 @@ pauseButton.addEventListener('click', async () => {{
   const state = (await response.json()).state;
   pauseButton.textContent = state === 'paused' ? 'Resume' : 'Pause';
 }});
-$('restart').addEventListener('click', () => location.reload());
-fillScenes().then(prepareThenPlay);
+// --- Default: rerun the scene's cached recording; only Rebuild records ---
+const REBUILD = new URLSearchParams(location.search).get('rebuild') === '1';
+function playCached(runId) {{
+  if (source) {{ source.close(); source = null; }}
+  setMode('live');
+  playback.textContent = 'Rerunning the cached recording from its journal (no RTAB-Map, '
+    + 'no SAM). Rebuild records a new one.';
+  source = new EventSource('/stream?replay=' + encodeURIComponent(runId) + '&speed=1&record=0');
+  attachListeners();
+  pauseButton.disabled = false;
+}}
+function rebuild() {{
+  if (source) {{ source.close(); source = null; }}
+  prepareThenPlay();
+}}
+async function startDefault() {{
+  if (REBUILD) {{
+    // Rebuild once: a reload of this page reruns the new recording.
+    const params = new URLSearchParams(location.search);
+    params.delete('rebuild');
+    history.replaceState(null, '', location.pathname + '?' + params);
+    return prepareThenPlay();
+  }}
+  const scene = await sceneState();
+  if (scene && scene.cached_run) return playCached(scene.cached_run);
+  playback.textContent = 'No recording of this scene yet. Press Rebuild to record one '
+    + '(runs RTAB-Map' + (document.getElementById('sam-prompt') ? ' and SAM' : '') + ').';
+}}
+$('rebuild').addEventListener('click', rebuild);
+fillScenes().then(startDefault);
 refreshRuns();
 resizeCloud();
 updateHistoryLabel();
