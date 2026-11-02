@@ -1,45 +1,47 @@
 name: Bevy WASM PoC tests
 
-# Runs the PoC's native tests (src/calibration.rs) AFTER the bundle
-# build succeeds: workflow_run waits for "Bevy WASM PoC build", then
-# restores the cargo cache that run saved (shared-key below), so the
-# dependency binaries are already built and this workflow only
-# compiles the crate's own test code. The command is the one the PoC
-# README documents for local runs.
+# Runs the PoC's native tests (src/calibration.rs) concurrently with
+# the bundle build — same triggers, separate workflow. Both use the
+# same rust-cache shared-key, so whichever runs second (or any later
+# run) restores pre-built dependency binaries instead of recompiling
+# them from scratch. The command is the one the PoC README documents
+# for local runs.
 
 on:
-  workflow_run:
-    workflows: ["Bevy WASM PoC build"]
-    types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - "examples/bevy-sitl-poc/**"
+      - ".github/workflows/bevy-wasm-test.yml"
+  pull_request:
+    paths:
+      - "examples/bevy-sitl-poc/**"
+      - ".github/workflows/bevy-wasm-test.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: bevy-wasm-test-${{ github.event.workflow_run.head_sha || github.sha }}
+  group: bevy-wasm-test-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   cargo-test:
     name: cargo test
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: examples/bevy-sitl-poc
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
-      # Same shared-key as the build workflow: restores the registry
-      # and target/ cache the build run saved instead of recompiling
-      # every dependency from scratch.
-      - name: Restore cargo cache from the build run
+      # shared-key with the build workflow: restores the registry and
+      # target/ cache a previous run saved (pre-built dependencies).
+      - name: Cache cargo registry and build
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: examples/bevy-sitl-poc
