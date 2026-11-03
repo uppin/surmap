@@ -1,4 +1,4 @@
-# Changeset: agent tools for disaster scenarios — asset search/download, weather and animated wildfire
+# Changeset: agent tools for disaster scenarios — asset search/download, weather, animated wildfire, behaviour trees
 
 **Date**: 2026-11-03
 **Status**: 🚧 In Progress
@@ -31,6 +31,7 @@ PRD: `PRD-2026-11-03-sim-scenario-agent-tools.md` · Discovery:
   - [ ] Scenario manifest (PoC, runtime-loaded, no WASM rebuild): `weather` (rain, fog visibility, wind), `fires` (ignition, start, spread rate, wind-driven ellipse, max radius, smoke), `?scenario=<id>` loads `assets/scenarios/<id>.json`; `credits` rendered in the page
   - [ ] Animated fire, smoke, embers and rain with `bevy_hanabi` 0.18 (planned dependency), exactly per the scenario visual spec; burnt ground behind the front
   - [ ] Ground truth: the fire perimeter at each frame's `t_ns` in the capture (`fire_perimeter.jsonl`)
+  - [ ] Behaviour trees (developer request 2026-11-03): per-object declarative trees in the scenario JSON (`behaviours`: `sequence`, `selector`, `parallel`, `repeat`, `condition` — `near_fire`, `near_object`, `time_after`, `reached` — and actions `move_to`, `follow_path`, `wander`, `flee_from_fire`, `idle`, `play_animation`), interpreted each tick in the PoC (no WASM rebuild); agent tools `set_behaviour`, `update_behaviour_node`, `get_behaviour`; trees validated on the station before publish; moving objects' poses recorded as ground truth (`object_tracks.jsonl`)
   - [ ] Scenario presets the agent can start from: `earthquake-block` (#89's scene), `wildfire-edge`, `flood-street`
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (agent session log + screenshots of a wildfire scenario built only through tools)
@@ -82,6 +83,7 @@ station's SQLite database behind the RPC backend.
 - **`SimulationTools`** (agent tools, station RPC, SQLite-backed) as listed under Green.
 - **Scenario JSON** = #89's manifest + `weather`, `fires`, `credits`; the agent publishes it to the
   served `assets/scenarios/`; the page loads it with `?scenario=` — no WASM rebuild.
+- **Behaviour trees**: objects (survivors, vehicles, props) carry a declarative tree the agent writes and edits through tools; the sim interprets it at runtime, so changing behaviour never rebuilds the WASM. Moving objects stay out of the static map (architecture §1) and their tracks are ground truth.
 - **Wildfire**: fire fronts spread over time (wind-driven ellipse), flames + embers + smoke plumes
   as `bevy_hanabi` GPU particles, burnt ground behind the front, fire perimeter as ground truth.
 
