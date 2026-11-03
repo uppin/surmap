@@ -30,3 +30,5 @@ mission-demo-out/
 web/agent-chat/node_modules
 web/agent-chat/dist
 web/agent-chat/yarn.lock.local-install-backup
+web/agent-chat/test-results
+web/agent-chat/playwright-report

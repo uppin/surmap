@@ -46,7 +46,7 @@ Adds `three` and `react-markdown` to `web/agent-chat`.
 
 ### User Impact
 
-`npm run dev` in `web/agent-chat` plus `python -m surmap.agent` gives a working chat.
+`yarn dev` in `web/agent-chat` plus `python -m surmap.agent` gives a working chat.
 
 ## Implementation Plan
 

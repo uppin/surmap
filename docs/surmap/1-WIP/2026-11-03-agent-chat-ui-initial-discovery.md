@@ -196,3 +196,22 @@ Patterns taken from prior LangGraph agent work the developer pointed at (not nam
   for cancellation tests); everything else (graph, tool node, stores) runs for real.
 - Chat UI: React + Vite + Tailwind + connect-es v2 / protobuf-es; transcript as a discriminated
   union of roles; tool calls as collapsible steps with a status icon; job progress components.
+
+## Exploration 4 (pass 2, red step) — stub server and dependencies
+
+- **`@connectrpc/connect-node` cannot be used**: every 2.x pins `@connectrpc/connect` to its own exact
+  version, and 2.2.0 (the one matching n6's `@connectrpc/connect` 2.2.0) declares `node >=22`; the dev
+  machine runs 20.19. `@connectrpc/connect/protocol` exports `createFetchHandler(universalHandler)`,
+  and `createConnectRouter().handlers` gives each rpc's `requestPath` + handler, so the stub serves
+  Connect on `node:http` by converting to and from fetch `Request` / `Response` (node 20 globals).
+- **Private registry versions** (node 20 compatible, all served): `three` 0.186.1, `@types/three`
+  0.186.0, `react-markdown` 10.1.0, `@playwright/test` 1.64.1 (`node >=20`),
+  `@testing-library/user-event` 14.6.8. `yarn resolve-local-lock` changed nothing (664 packages).
+- **Playwright Chromium downloads here** (`yarn playwright install chromium`, build 1248); the suite
+  runs locally. `scripts/e2e.mjs` still skips with a message when the browser is missing, and fails
+  instead under `E2E_REQUIRE_BROWSER=1`.
+- **Playwright honours `e2e/tsconfig.json` `paths`**, so the specs reuse `src/test-support/turn-events.ts`
+  (`@/gen/...` imports) to script the stub's turns.
+- **Result JSON field names**: n8's binding (`src/surmap/agent/server/binding.py`) writes a tool's
+  response with `json_format.MessageToDict` using proto field names, so the UI reads
+  `geometry_uri` (snake_case) from a `get_object_geometry` result.
