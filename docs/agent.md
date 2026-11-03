@@ -64,6 +64,39 @@ contract builder rather than declared in each request message:
 invalid value is a `ValueError`. The runtime strips `execution` before
 decoding the request.
 
+## Tools (`surmap.agent.tools`)
+
+`survey_tool_handlers(workspace)` maps every `SurveyTools` rpc to a handler over a
+`SurveyWorkspace` port (`tools/port.py`). `DemoWorkspace` (`tools/workspace.py`) is the default
+adapter: it drives the demo's `DemoRunHost` headlessly, reads its run history (so agent runs show
+in the console) and publishes GLB through a `GeometryStore` (`tools/geometry.py`). Read/run only.
+
+| Tool | Arguments | Result | Default execution |
+|---|---|---|---|
+| `list_demos` | — | every scene: `id`, `title`, `default_prompt`, `prepared`, `cached_run_id` | SYNC · 10 s · FAIL |
+| `run_demo` | `dataset`; `prompt` (scene default); `max_frames` (whole scene); `fps` (native, > 0) | the ended run: `run_id`, frames, objects, `status` | SYNC · 30 s · DETACH |
+| `get_run` | `run_id` | `RunInfo`: dataset, prompt, frames, objects, status | SYNC · 10 s · FAIL |
+| `prompt_sam` | `run_id`, `concept`; `frame_ids` or `max_frames` (≤ 8) | per frame: `frame_id`, `t_ns`, detections with ids, label, score, box, mask polygon | SYNC · 60 s · DETACH |
+| `find_objects` | `run_id`; `label`, `near` + `radius_m`, `moving`, `limit` | object summaries, nearest first with `near`, else largest first; no neighbours | SYNC · 15 s · FAIL |
+| `get_object` | `run_id`, `object_id` | one summary with its nearest neighbours (5 m, 5 nearest) | SYNC · 10 s · FAIL |
+| `get_object_geometry` | `run_id`, `object_id`; `max_points` (500), `voxel_m` | `surmap-obj v1` text and the GLB `geometry_uri` | SYNC · 15 s · FAIL |
+| `get_frame` | `run_id`; `frame_index` / `frame_id` / `t_ns` (first frame); `crop_box` / `crop_object_id`; `pad_px`; `max_side` | one JPEG as image content, its size and `source` (`FULL` / `DISPLAY`) | SYNC · 15 s · FAIL |
+
+- **Objects.** An object's id is `obj_<surface_id>` of the run history's surface; its points are
+  every point the run assigned to it, in frame `map`, up axis `-y`. `status` maps the history:
+  `running` → `RUNNING`, `completed` → `FINISHED`, `interrupted` → `CANCELLED`, else `FAILED`.
+- **Geometry URIs.** `surmap-glb://<run_id>/<object_id>.glb`, written once per object; both parts
+  must match `[A-Za-z0-9_-]+`, so a URI never names a path outside the store.
+- **Frames and crops.** `get_frame` reads the full-resolution scene frame when cached, else the
+  run's display JPEG; `prompt_sam` runs on the same image, so its boxes and crops share one pixel
+  space. `crop_object_id` crops to the object's recorded SAM mask box, scaled to the image and
+  padded 16 px unless `pad_px` is given; with no frame chosen it takes the object's first frame
+  with a box. Crops are clamped to the frame, then downscaled to `max_side`.
+- **Cancel.** Cancelling `run_demo` stops the run it started, including one still starting.
+- **Errors.** `NOT_FOUND` — unknown scene, run, frame or object, or an object with no mask box on
+  the frame; `INVALID_ARGUMENT` — `near` without `radius_m`, non-positive `fps`, `max_frames` 0,
+  a crop outside the image; `UNAVAILABLE` — the previous run did not stop in time.
+
 ## Regenerating the bindings
 
 ```bash
