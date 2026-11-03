@@ -17,12 +17,12 @@
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · 46/46 green (`uv run pytest -q tests/test_objects3d.py`) — commit 3; gates: ruff format and check pass, mypy fails only at `tests/test_objects3d.py:177` (red-step test, not edited)
   - [x] Milestone 1: `summarize` — centroid, AABB, PCA OBB, height, footprint, shape class
   - [x] Milestone 2: `neighbours` — distance and relation between summaries
   - [x] Milestone 3: `encode_obj_text` / `decode_obj_text` with voxel downsampling and cap
-  - [ ] Milestone 4: `write_glb` for points and triangles
-  - [ ] Acceptance: `tests/test_objects3d.py` passes
+  - [x] Milestone 4: `write_glb` for points and triangles
+  - [x] Acceptance: `tests/test_objects3d.py` passes
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/agent.md` — add "Object 3D contract" section (summary fields, `surmap-obj v1` grammar with an example, GLB layout); create the file if n1 has not landed yet
