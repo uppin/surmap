@@ -206,3 +206,10 @@ def xyz(vector: pb.Vec3) -> tuple[float, float, float]:
     """A proto vector as an `(x, y, z)` tuple."""
     return (vector.x, vector.y, vector.z)
 
+
+async def the_run_started_by_the_host(rig: ToolRig) -> str:
+    """The run id of the host's most recent run, once it has one."""
+    await eventually(lambda: rig.host.run_engine is not None and bool(rig.host.run_engine.run_id))
+    engine = rig.host.run_engine
+    assert engine is not None
+    return engine.run_id

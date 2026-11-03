@@ -25,6 +25,7 @@ from tests.agent_tool_fakes import (
     eventually,
     settled,
     the_run_started_by,
+    the_run_started_by_the_host,
 )
 
 SURVEY_TOOLS = pb.DESCRIPTOR.services_by_name["SurveyTools"]
@@ -156,6 +157,24 @@ async def test_cancelling_run_demo_stops_the_run_it_started(tmp_path: Path) -> N
         await settled(call)
 
         # Then the run is stopped and its history says it was cut short
+        await eventually(lambda: rig.history_status(run_id) == "interrupted")
+
+
+async def test_cancelling_run_demo_while_its_run_is_starting_stops_that_run(
+    tmp_path: Path,
+) -> None:
+    # Given a slow run whose start is held up behind the host's run lock
+    with a_tool_rig(tmp_path) as rig:
+        with rig.host.run_lock:
+            call = asyncio.create_task(run_demo(a_tiny_run(fps=0.5), rig.workspace))
+            await asyncio.sleep(0.3)
+
+            # When the agent's call is cancelled before the run has started
+            call.cancel()
+
+        # Then the run that starts once the lock frees is stopped, and its history says so
+        await settled(call)
+        run_id = await the_run_started_by_the_host(rig)
         await eventually(lambda: rig.history_status(run_id) == "interrupted")
 
 

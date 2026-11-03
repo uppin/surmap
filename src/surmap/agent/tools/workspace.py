@@ -147,7 +147,17 @@ class DemoWorkspace:
         spec = self._host.catalog[dataset]
         prepared = await asyncio.to_thread(self._prepared, spec)
         sam_prompt = self._host.sam_prompt(dataset, prompt)
-        engine = await asyncio.to_thread(self._start, prepared, sam_prompt, max_frames, fps)
+        starting = asyncio.ensure_future(
+            asyncio.to_thread(self._start, prepared, sam_prompt, max_frames, fps)
+        )
+        try:
+            engine = await asyncio.shield(starting)
+        except asyncio.CancelledError:
+            # The start runs on in its thread; a run it starts after the cancel is stopped too.
+            started = await starting
+            if started is not None:
+                started.stop()
+            raise
         if engine is None:
             raise RunBusy("the previous run did not stop in time, so no new run started")
         try:
