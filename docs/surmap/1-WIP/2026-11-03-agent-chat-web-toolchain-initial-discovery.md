@@ -5,7 +5,13 @@ Exploration 1 below is the whole-work pass for the stack, copied verbatim.
 ## Combined Conclusions (this node)
 
 - No `package.json` anywhere; demo UI is inline HTML/JS in Python (`demo/page.py`).
-- Local: node v20.19.5 with npm; pnpm not installed.
+- Local: node v20.19.5, yarn 1.22.22; no pnpm, no bun. Public npm (`registry.npmjs.org`,
+  `registry.yarnpkg.com`) is unreachable from the dev machine; the private registry
+  `https://npm.dev.wixpress.com` answers and serves the CVE-protected versions (developer
+  requirement 2026-11-03 — see the changeset Decisions).
+- Local-install pattern ported (behaviour only) from a sibling bun-based repo: a zero-dependency
+  lock resolver against the private registry plus an install wrapper that swaps the lock and
+  restores it on EXIT.
 - Precedent for a separate path-scoped workflow: `.github/workflows/bevy-wasm-*.yml`.
 
 ## Exploration 1 (whole work) — combined conclusions
