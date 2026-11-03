@@ -23,6 +23,7 @@ from surmap.agent.server.app import (
     DEFAULT_HOST,
     DEFAULT_MODEL_ID,
     DEFAULT_PORT,
+    SKILLS_DIR_ENV,
     AgentServerConfig,
     build_agent_description,
     build_demo_workspace,
@@ -60,6 +61,7 @@ def config_from_args(
         if raw_origins is None
         else tuple(origin.strip() for origin in raw_origins.split(",") if origin.strip())
     )
+    raw_skills_dir = env.get(SKILLS_DIR_ENV)
     return AgentServerConfig(
         host=args.host,
         port=args.port,
@@ -68,6 +70,7 @@ def config_from_args(
         model_id=args.model,
         sam_fake=args.sam_fake,
         cors_origins=cors_origins,
+        skills_dir=Path(raw_skills_dir) if raw_skills_dir else None,
     )
 
 

@@ -130,6 +130,34 @@ and `overture-buildings`; `load_map_layer` / `unload_map_layer` flip the
 rest. The chat pane renders the scene with MapLibre GL: OSM base, 3D
 buildings, loaded theme layers, route lines, and object markers.
 
+## Skills (`surmap.agent.skills`)
+
+Reviewed instructions the model discovers and reads on demand, instead of a longer
+`SYSTEM_PROMPT`. A skill is a directory holding a `SKILL.md` whose front matter carries
+a `name` and a one-line `description`. Two tools, bound in every conversation like the
+proto tools (SYNC · 10 s · FAIL):
+
+| Tool | Arguments | Result |
+|---|---|---|
+| `list_skills` | — | every skill's `name` and `description`, sorted by name; no bodies |
+| `load_skill` | `name` | `{"name", "body"}`: the skill's full instructions as a tool result |
+
+Listing costs almost no context; a body costs context only when the model chooses it,
+and it arrives as an ordinary tool result — never appended to the shared system prompt,
+so loading a skill is not sticky across conversations. The shipped catalogue lives in
+`src/surmap/agent/skills/`; a deployment overlays its own with
+`AgentServerConfig.skills_dir` / `$SURMAP_AGENT_SKILLS_DIR` (a directory of
+`<name>/SKILL.md`), and an overlay skill wins over a shipped one of the same name. A
+skill whose front matter lacks a name or description is refused at listing; a body over
+64 KiB is refused whole, never truncated; a name that escapes the skills directory
+(`../`, an absolute path) is refused before any file is read.
+
+Shipped skills:
+
+| Skill | What it teaches |
+|---|---|
+| `using-the-map` | The map tools: placing and moving GLB objects, navigating the camera, drawing routes (drawn paths, never flight plans), loading layers, scenes and revisions |
+
 ## Regenerating the bindings
 
 ```bash

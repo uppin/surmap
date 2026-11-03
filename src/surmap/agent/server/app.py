@@ -44,6 +44,7 @@ from surmap.agent.services import (
     map_tools_module,
     survey_tools_module,
 )
+from surmap.agent.skills import SkillCatalogue, skill_tools
 from surmap.agent.tools.geometry import GeometryStore
 from surmap.agent.tools.handlers import survey_tool_handlers
 from surmap.agent.tools.map_handlers import MapSceneStore, map_tool_handlers
@@ -66,6 +67,7 @@ __all__ = [
     "DEFAULT_HOST",
     "DEFAULT_MODEL_ID",
     "DEFAULT_PORT",
+    "SKILLS_DIR_ENV",
     "SYSTEM_PROMPT",
     "AgentServerConfig",
     "build_agent_description",
@@ -81,6 +83,8 @@ CORS_ORIGINS_ENV = "SURMAP_AGENT_CORS_ORIGINS"
 """Comma-separated origins allowed to call the server from a browser."""
 DEFAULT_CORS_ORIGINS = ("http://localhost:5173",)
 """The Vite dev server of the chat UI."""
+SKILLS_DIR_ENV = "SURMAP_AGENT_SKILLS_DIR"
+"""A directory of extra skills (`<name>/SKILL.md`) overlaid on the shipped ones."""
 
 SYSTEM_PROMPT = """\
 You are SurMap's survey assistant. You run the survey demos and inspect their results with \
@@ -96,6 +100,10 @@ wait_for_jobs with its id; otherwise answer and let the job report back when it 
 
 When the person steers you mid-turn, the calls that were blocking keep running as jobs; act on \
 the new guidance first, and cancel_job a job they no longer want.
+
+You also have skills: reviewed instructions for kinds of work. Call list_skills to see \
+them, and load_skill to read the one that fits the task before you start it — in \
+particular, load the map skill before placing, moving or drawing anything on the map.
 """
 
 
@@ -114,6 +122,9 @@ class AgentServerConfig:
     sam_fake: bool = False
     """Use the fake centred-box SAM instead of a real detector."""
     cors_origins: tuple[str, ...] = DEFAULT_CORS_ORIGINS
+    skills_dir: Path | None = None
+    """Extra skills overlaid on the shipped ones; the command line fills it from
+    `$SURMAP_AGENT_SKILLS_DIR` (see `surmap.agent.__main__`)."""
     timeout_scale: float = 1.0
     """Seconds one execution-policy `timeout_s` unit lasts; 1.0 outside tests."""
     model_factory: ModelFactory | None = None
@@ -187,9 +198,13 @@ def build_agent_description(
         *tool_contracts(_MAP_TOOLS),
         *tool_contracts(_AGENT_JOBS),
     )
+    catalogue = SkillCatalogue.shipped(config.skills_dir)
     hub = ChatHub(
         model_factory=model_factory,
-        tools=lambda runner: agent_tools(contracts, rpc_handlers, runner),
+        tools=lambda runner: (
+            *agent_tools(contracts, rpc_handlers, runner),
+            *skill_tools(catalogue, runner),
+        ),
         models=models.available,
         default_model_id=config.model_id,
         system_prompt=SYSTEM_PROMPT,
