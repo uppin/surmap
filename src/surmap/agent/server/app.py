@@ -10,9 +10,10 @@
 - the hub as a closeable, so stopping the host cancels every turn and ends every watch stream.
 
 Each conversation's tools are `agent_tools` over the `SurveyTools` and `AgentJobs` contracts.
-Models come from `config.model_factory`, or else from the registry: a `meta:` model gets the
-process's `UsageLedger.check` as its `before_call`, so a spent budget refuses the request before
-it is sent. Binds loopback by default; there is no auth (docs/agent.md).
+Models come from `config.model_factory`, or else from the registry: a `meta:` or `fireworks:`
+model gets the process's `UsageLedger.check` as its `before_call` (so a spent budget refuses the
+request before it is sent) and the ledger as its `usage_sink`. Binds loopback by default; there
+is no auth (docs/agent.md).
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from connectrpc.request import RequestContext
 from langchain_core.language_models import BaseChatModel
 
 from surmap.agent.contracts import tool_contracts
+from surmap.agent.llm.fireworks import FireworksChatModel
 from surmap.agent.llm.meta import DEFAULT_AGENT_META_MODEL, META_PROVIDER, MetaResponsesChatModel
 from surmap.agent.llm.registry import ChatModelRegistry
 from surmap.agent.proto import jobs_pb2, survey_tools_pb2
@@ -114,11 +116,12 @@ class AgentServerConfig:
 
 
 def default_model_factory(registry: ChatModelRegistry, ledger: UsageLedger) -> ModelFactory:
-    """Models from `registry`; a `meta:` model checks `ledger` before every request."""
+    """Models from `registry`; a `meta:` or `fireworks:` model checks `ledger` before every
+    request and records its usage there."""
 
     def build(model_id: str) -> BaseChatModel:
         model = registry.build(model_id)
-        if isinstance(model, MetaResponsesChatModel):
+        if isinstance(model, MetaResponsesChatModel | FireworksChatModel):
             return model.model_copy(update={"before_call": ledger.check, "usage_sink": ledger})
         return model
 

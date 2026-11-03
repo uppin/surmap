@@ -22,7 +22,7 @@ moves only SAM to Modal; Meta SAM stays the default. Pass a capture
 directory. This process does not enable PX4 motors.
 
     export SURMAP_LIVE_META=1
-    export MODEL_API_KEY='your-key'
+    export MODEL_API_KEY='your-key'   # or MODEL_API_KEY=... in the project .env
     uv run python scripts/mission_demo.py --live --capture ~/sitl-runs/disaster-01
     uv run python scripts/mission_demo.py --live --capture ~/sitl-runs/disaster-01 \\
         --max-depth-m 30 --min-disparity-px 2
@@ -39,6 +39,7 @@ import json
 import sys
 from pathlib import Path
 
+from surmap.env import load_env
 from surmap.mission.demo import (
     MissionConfigError,
     default_recording_dir,
@@ -52,6 +53,7 @@ from surmap.viewer.server import make_viewer_server
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_env()  # project .env fills gaps (MODEL_API_KEY, BASETEN_API_KEY, ...); the shell wins
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--live", action="store_true", help="use flagged live services")
     parser.add_argument(

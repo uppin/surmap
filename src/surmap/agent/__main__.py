@@ -5,7 +5,8 @@
 Serves `ChatService`, `AgentJobs` and `SurveyTools` over Connect plus the geometry, frame and
 health routes on hypercorn, on 127.0.0.1:8780 unless `--host` / `--port` say otherwise. Browser
 origins allowed by CORS come from `SURMAP_AGENT_CORS_ORIGINS` (comma-separated; default the
-chat UI's Vite dev server, `http://localhost:5173`).
+chat UI's Vite dev server, `http://localhost:5173`). Provider keys (`MODEL_API_KEY`,
+`FIREWORKS_API_KEY`) may live in the project `.env`; `main` loads it first and a shell export wins.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from surmap.agent.server.app import (
     build_agent_description,
     build_demo_workspace,
 )
+from surmap.env import load_env
 from surmap.rpc.hosts.hypercorn import HypercornHost
 
 __all__ = ["build_parser", "config_from_args", "main", "serve"]
@@ -84,7 +86,9 @@ async def serve(config: AgentServerConfig) -> None:
 
 def main(argv: Sequence[str] | None = None) -> None:
     """Parse the command line and serve until signalled; Ctrl-C stops it cleanly — `serve`
-    has already stopped the host when `asyncio.run` re-raises the interrupt."""
+    has already stopped the host when `asyncio.run` re-raises the interrupt. The project `.env`
+    fills environment gaps first (keys only; a shell export wins)."""
+    load_env()
     config = config_from_args(argv)
     try:
         asyncio.run(serve(config))

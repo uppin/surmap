@@ -227,6 +227,18 @@ async def test_a_500_names_its_status_and_not_the_key() -> None:
     assert raised.value.__cause__ is None
 
 
+def test_a_refused_call_keeps_no_client_exception_behind_its_error() -> None:
+    # Given the fake refusing the key
+    script = FakeFireworksScript(status=401)
+    with serving(script) as base:
+        # When one turn runs, then it fails
+        with pytest.raises(FireworksError) as raised:
+            a_fireworks_model(base).invoke(QUESTION)
+
+    # And the client's exception, whose request holds the key, is neither cause nor context
+    assert (raised.value.__cause__, raised.value.__context__) == (None, None)
+
+
 def test_a_missing_key_is_refused_before_any_request() -> None:
     # Given a Fireworks model without a key
     script = FakeFireworksScript(rounds=[answering("ok")])

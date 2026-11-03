@@ -19,13 +19,13 @@
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Milestone 1: `FireworksChatModel` — request, tool calls (whole and streamed), usage, budget gate, redacted errors
-  - [ ] Milestone 2: registry — `fireworks:` listing (override → `GET /models` → built-in list) and `build`
-  - [ ] Milestone 3: server — `default_model_factory` wires the ledger; whole agent turn on the fake
-  - [ ] Milestone 4: `load_env()` in `python -m surmap.agent`, `python -m surmap.mapqa`, `scripts/mission_demo.py` and the gated live tests
-  - [ ] Milestone 5: live `echo` round trip (`SURMAP_LIVE_FIREWORKS=1` + `FIREWORKS_API_KEY`) — run it, or record why it was not run
-  - [ ] Acceptance: `tests/test_agent_llm_fireworks.py`, `tests/test_agent_llm_registry.py`, `tests/test_agent_server_app.py`, `tests/test_mapqa_cli.py` pass
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · 25/25 red green unedited + 1 added; full suite 1657 passed, 33 skipped, 0 failed; ruff format/check and mypy strict clean; live Fireworks not run (no key)
+  - [x] Milestone 1: `FireworksChatModel` — request, tool calls (whole and streamed), usage, budget gate, redacted errors
+  - [x] Milestone 2: registry — `fireworks:` listing (override → `GET /models` → built-in list) and `build`
+  - [x] Milestone 3: server — `default_model_factory` wires the ledger; whole agent turn on the fake
+  - [x] Milestone 4: `load_env()` in `python -m surmap.agent`, `python -m surmap.mapqa`, `scripts/mission_demo.py` and the gated live tests
+  - [x] Milestone 5: live `echo` round trip (`SURMAP_LIVE_FIREWORKS=1` + `FIREWORKS_API_KEY`) — not run: no `FIREWORKS_API_KEY` in the shell and no `.env` on this host
+  - [x] Acceptance: `tests/test_agent_llm_fireworks.py`, `tests/test_agent_llm_registry.py`, `tests/test_agent_server_app.py`, `tests/test_mapqa_cli.py` pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (offline suite; the live Fireworks result or why it was not run)
   - [ ] `docs/agent.md` — Models: the `fireworks:` row, its env vars, errors, usage; Running: `--model fireworks:<id>`, keys from `.env`
@@ -210,4 +210,13 @@ failing.
   call, not only tool-capable ones, so `SURMAP_FIREWORKS_MODELS` is the way to narrow it.
 - **`.env` is loaded in `main()`, never in `config_from_args`** (developer requirement): parsing
   stays pure; the shell wins over the file (`load_env`'s contract).
+- **Errors are raised outside the `except` block** (`/green`): `from None` alone still leaves the
+  client exception on `__context__`; building the `FireworksError` in the handler and raising it
+  after keeps neither. Pinned by one test added in green
+  (`test_a_refused_call_keeps_no_client_exception_behind_its_error`); the red tests are unedited.
+- **`fireworks_models(base_url=None)`** (`/green`): the red signature took `str`; the registry passes
+  the optional `SURMAP_FIREWORKS_URL`, and an invalid URL falls back to the built-in list rather
+  than failing `ListModels`.
+- **`openai` reads `OPENAI_ORG_ID` / `OPENAI_PROJECT_ID`** from the environment and would send them
+  as headers to Fireworks; documented in `docs/agent.md`, not overridden.
 - **`langchain-openai` added** (developer request names the OpenAI interface; brief plans it).
