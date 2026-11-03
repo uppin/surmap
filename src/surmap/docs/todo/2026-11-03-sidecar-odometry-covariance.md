@@ -5,7 +5,15 @@
 **Packages:** deploy/rtabmap-stream, surmap.slam
 **Consent:** Developer, 2026-11-03: "let's wrap the PR with TODO and we'll address the correctness in next PRs".
 **Priority:** 1
-**Status:** Open
+**Status:** Fixed in code (2026-11-03, PR #103):
+`deploy/rtabmap-stream/main.cpp` now passes the odometry covariance
+to `Rtabmap::process`, prepared as RTAB-Map's `RtabmapThread` does
+(`odom_covariance.h`: sanity check, largest value carried across
+dropped nodes, cleared on odometry reset), unit-tested by
+`odom_covariance_test.cpp` in the image build and pinned by
+`tests/test_rtabmap_stream_covariance.py`. What remains is the end-to-end proof in
+`2026-11-03-bevy-loop-closure-acceptance.md` (map-corrected end
+error ≤ odometry's over the full loop), which needs the loop capture.
 
 ## What is wrong
 

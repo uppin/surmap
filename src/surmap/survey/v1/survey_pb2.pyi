@@ -37,6 +37,35 @@ class RegionStatus(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     REGION_STATUS_FRAME_EXPIRED: _ClassVar[RegionStatus]
     REGION_STATUS_NO_POSE: _ClassVar[RegionStatus]
     REGION_STATUS_INVALID_QUERY: _ClassVar[RegionStatus]
+
+class CalibrationTargetType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    CALIBRATION_TARGET_UNSPECIFIED: _ClassVar[CalibrationTargetType]
+    CALIBRATION_TARGET_CHECKERBOARD: _ClassVar[CalibrationTargetType]
+
+class CalibrationLensModel(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    CALIBRATION_LENS_UNSPECIFIED: _ClassVar[CalibrationLensModel]
+    CALIBRATION_LENS_PINHOLE_RADTAN: _ClassVar[CalibrationLensModel]
+    CALIBRATION_LENS_PINHOLE_RATIONAL: _ClassVar[CalibrationLensModel]
+    CALIBRATION_LENS_FISHEYE: _ClassVar[CalibrationLensModel]
+
+class CalibrationTilt(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    CALIBRATION_TILT_UNSPECIFIED: _ClassVar[CalibrationTilt]
+    CALIBRATION_TILT_NONE: _ClassVar[CalibrationTilt]
+    CALIBRATION_TILT_TOP_LEFT_AWAY: _ClassVar[CalibrationTilt]
+    CALIBRATION_TILT_TOP_RIGHT_AWAY: _ClassVar[CalibrationTilt]
+    CALIBRATION_TILT_BOTTOM_LEFT_AWAY: _ClassVar[CalibrationTilt]
+    CALIBRATION_TILT_BOTTOM_RIGHT_AWAY: _ClassVar[CalibrationTilt]
+
+class CalibrationViewStatus(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    CALIBRATION_VIEW_UNSPECIFIED: _ClassVar[CalibrationViewStatus]
+    CALIBRATION_VIEW_ACCEPTED: _ClassVar[CalibrationViewStatus]
+    CALIBRATION_VIEW_BOARD_NOT_FOUND: _ClassVar[CalibrationViewStatus]
+    CALIBRATION_VIEW_TOO_SIMILAR: _ClassVar[CalibrationViewStatus]
+    CALIBRATION_VIEW_FRAME_UNREADABLE: _ClassVar[CalibrationViewStatus]
 FRAME_ENCODING_UNSPECIFIED: FrameEncoding
 FRAME_ENCODING_MJPEG: FrameEncoding
 FRAME_ENCODING_RAW_RGB: FrameEncoding
@@ -53,6 +82,23 @@ REGION_STATUS_OK: RegionStatus
 REGION_STATUS_FRAME_EXPIRED: RegionStatus
 REGION_STATUS_NO_POSE: RegionStatus
 REGION_STATUS_INVALID_QUERY: RegionStatus
+CALIBRATION_TARGET_UNSPECIFIED: CalibrationTargetType
+CALIBRATION_TARGET_CHECKERBOARD: CalibrationTargetType
+CALIBRATION_LENS_UNSPECIFIED: CalibrationLensModel
+CALIBRATION_LENS_PINHOLE_RADTAN: CalibrationLensModel
+CALIBRATION_LENS_PINHOLE_RATIONAL: CalibrationLensModel
+CALIBRATION_LENS_FISHEYE: CalibrationLensModel
+CALIBRATION_TILT_UNSPECIFIED: CalibrationTilt
+CALIBRATION_TILT_NONE: CalibrationTilt
+CALIBRATION_TILT_TOP_LEFT_AWAY: CalibrationTilt
+CALIBRATION_TILT_TOP_RIGHT_AWAY: CalibrationTilt
+CALIBRATION_TILT_BOTTOM_LEFT_AWAY: CalibrationTilt
+CALIBRATION_TILT_BOTTOM_RIGHT_AWAY: CalibrationTilt
+CALIBRATION_VIEW_UNSPECIFIED: CalibrationViewStatus
+CALIBRATION_VIEW_ACCEPTED: CalibrationViewStatus
+CALIBRATION_VIEW_BOARD_NOT_FOUND: CalibrationViewStatus
+CALIBRATION_VIEW_TOO_SIMILAR: CalibrationViewStatus
+CALIBRATION_VIEW_FRAME_UNREADABLE: CalibrationViewStatus
 
 class Point3(_message.Message):
     __slots__ = ("x", "y", "z")
@@ -403,3 +449,199 @@ class Capabilities(_message.Message):
     device: str
     slam: str
     def __init__(self, service: _Optional[str] = ..., detections: bool = ..., object_points: bool = ..., moving_areas: bool = ..., region_points: bool = ..., sam_analysis: bool = ..., provider: _Optional[str] = ..., device: _Optional[str] = ..., slam: _Optional[str] = ...) -> None: ...
+
+class CheckerboardSpec(_message.Message):
+    __slots__ = ("cols", "rows", "square_size_m")
+    COLS_FIELD_NUMBER: _ClassVar[int]
+    ROWS_FIELD_NUMBER: _ClassVar[int]
+    SQUARE_SIZE_M_FIELD_NUMBER: _ClassVar[int]
+    cols: int
+    rows: int
+    square_size_m: float
+    def __init__(self, cols: _Optional[int] = ..., rows: _Optional[int] = ..., square_size_m: _Optional[float] = ...) -> None: ...
+
+class CalibrationConfig(_message.Message):
+    __slots__ = ("target_type", "checkerboard", "min_views", "width", "height", "lens_model", "max_detection_scale", "expected_baseline_m")
+    TARGET_TYPE_FIELD_NUMBER: _ClassVar[int]
+    CHECKERBOARD_FIELD_NUMBER: _ClassVar[int]
+    MIN_VIEWS_FIELD_NUMBER: _ClassVar[int]
+    WIDTH_FIELD_NUMBER: _ClassVar[int]
+    HEIGHT_FIELD_NUMBER: _ClassVar[int]
+    LENS_MODEL_FIELD_NUMBER: _ClassVar[int]
+    MAX_DETECTION_SCALE_FIELD_NUMBER: _ClassVar[int]
+    EXPECTED_BASELINE_M_FIELD_NUMBER: _ClassVar[int]
+    target_type: CalibrationTargetType
+    checkerboard: CheckerboardSpec
+    min_views: int
+    width: int
+    height: int
+    lens_model: CalibrationLensModel
+    max_detection_scale: int
+    expected_baseline_m: float
+    def __init__(self, target_type: _Optional[_Union[CalibrationTargetType, str]] = ..., checkerboard: _Optional[_Union[CheckerboardSpec, _Mapping[str, _Any]]] = ..., min_views: _Optional[int] = ..., width: _Optional[int] = ..., height: _Optional[int] = ..., lens_model: _Optional[_Union[CalibrationLensModel, str]] = ..., max_detection_scale: _Optional[int] = ..., expected_baseline_m: _Optional[float] = ...) -> None: ...
+
+class CalibrationStereoFrame(_message.Message):
+    __slots__ = ("left", "right")
+    LEFT_FIELD_NUMBER: _ClassVar[int]
+    RIGHT_FIELD_NUMBER: _ClassVar[int]
+    left: RawVideoFrame
+    right: RawVideoFrame
+    def __init__(self, left: _Optional[_Union[RawVideoFrame, _Mapping[str, _Any]]] = ..., right: _Optional[_Union[RawVideoFrame, _Mapping[str, _Any]]] = ...) -> None: ...
+
+class CalibrationRequest(_message.Message):
+    __slots__ = ("config", "frame", "finish")
+    CONFIG_FIELD_NUMBER: _ClassVar[int]
+    FRAME_FIELD_NUMBER: _ClassVar[int]
+    FINISH_FIELD_NUMBER: _ClassVar[int]
+    config: CalibrationConfig
+    frame: CalibrationStereoFrame
+    finish: bool
+    def __init__(self, config: _Optional[_Union[CalibrationConfig, _Mapping[str, _Any]]] = ..., frame: _Optional[_Union[CalibrationStereoFrame, _Mapping[str, _Any]]] = ..., finish: bool = ...) -> None: ...
+
+class MoveSuggestion(_message.Message):
+    __slots__ = ("target_cell", "move_x_m", "move_y_m", "move_z_m", "target_distance_m", "instruction", "viewpoint_index")
+    TARGET_CELL_FIELD_NUMBER: _ClassVar[int]
+    MOVE_X_M_FIELD_NUMBER: _ClassVar[int]
+    MOVE_Y_M_FIELD_NUMBER: _ClassVar[int]
+    MOVE_Z_M_FIELD_NUMBER: _ClassVar[int]
+    TARGET_DISTANCE_M_FIELD_NUMBER: _ClassVar[int]
+    INSTRUCTION_FIELD_NUMBER: _ClassVar[int]
+    VIEWPOINT_INDEX_FIELD_NUMBER: _ClassVar[int]
+    target_cell: str
+    move_x_m: float
+    move_y_m: float
+    move_z_m: float
+    target_distance_m: float
+    instruction: str
+    viewpoint_index: int
+    def __init__(self, target_cell: _Optional[str] = ..., move_x_m: _Optional[float] = ..., move_y_m: _Optional[float] = ..., move_z_m: _Optional[float] = ..., target_distance_m: _Optional[float] = ..., instruction: _Optional[str] = ..., viewpoint_index: _Optional[int] = ...) -> None: ...
+
+class CalibrationViewpoint(_message.Message):
+    __slots__ = ("index", "target_cell", "center_x", "center_y", "board_size", "tilt", "tilt_deg", "distance_m", "instruction")
+    INDEX_FIELD_NUMBER: _ClassVar[int]
+    TARGET_CELL_FIELD_NUMBER: _ClassVar[int]
+    CENTER_X_FIELD_NUMBER: _ClassVar[int]
+    CENTER_Y_FIELD_NUMBER: _ClassVar[int]
+    BOARD_SIZE_FIELD_NUMBER: _ClassVar[int]
+    TILT_FIELD_NUMBER: _ClassVar[int]
+    TILT_DEG_FIELD_NUMBER: _ClassVar[int]
+    DISTANCE_M_FIELD_NUMBER: _ClassVar[int]
+    INSTRUCTION_FIELD_NUMBER: _ClassVar[int]
+    index: int
+    target_cell: str
+    center_x: float
+    center_y: float
+    board_size: float
+    tilt: CalibrationTilt
+    tilt_deg: float
+    distance_m: float
+    instruction: str
+    def __init__(self, index: _Optional[int] = ..., target_cell: _Optional[str] = ..., center_x: _Optional[float] = ..., center_y: _Optional[float] = ..., board_size: _Optional[float] = ..., tilt: _Optional[_Union[CalibrationTilt, str]] = ..., tilt_deg: _Optional[float] = ..., distance_m: _Optional[float] = ..., instruction: _Optional[str] = ...) -> None: ...
+
+class CalibrationPlan(_message.Message):
+    __slots__ = ("viewpoints",)
+    VIEWPOINTS_FIELD_NUMBER: _ClassVar[int]
+    viewpoints: _containers.RepeatedCompositeFieldContainer[CalibrationViewpoint]
+    def __init__(self, viewpoints: _Optional[_Iterable[_Union[CalibrationViewpoint, _Mapping[str, _Any]]]] = ...) -> None: ...
+
+class CalibrationFeedback(_message.Message):
+    __slots__ = ("frame_id", "status", "left_found", "right_found", "corners_left", "corners_right", "board_center_x", "board_center_y", "board_fraction", "accepted_views", "required_views", "coverage_fraction", "ready", "suggestion", "message", "board_size", "board_skew", "x_spread", "y_spread", "size_spread", "skew_spread", "matched_viewpoint", "remaining_viewpoints")
+    FRAME_ID_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    LEFT_FOUND_FIELD_NUMBER: _ClassVar[int]
+    RIGHT_FOUND_FIELD_NUMBER: _ClassVar[int]
+    CORNERS_LEFT_FIELD_NUMBER: _ClassVar[int]
+    CORNERS_RIGHT_FIELD_NUMBER: _ClassVar[int]
+    BOARD_CENTER_X_FIELD_NUMBER: _ClassVar[int]
+    BOARD_CENTER_Y_FIELD_NUMBER: _ClassVar[int]
+    BOARD_FRACTION_FIELD_NUMBER: _ClassVar[int]
+    ACCEPTED_VIEWS_FIELD_NUMBER: _ClassVar[int]
+    REQUIRED_VIEWS_FIELD_NUMBER: _ClassVar[int]
+    COVERAGE_FRACTION_FIELD_NUMBER: _ClassVar[int]
+    READY_FIELD_NUMBER: _ClassVar[int]
+    SUGGESTION_FIELD_NUMBER: _ClassVar[int]
+    MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    BOARD_SIZE_FIELD_NUMBER: _ClassVar[int]
+    BOARD_SKEW_FIELD_NUMBER: _ClassVar[int]
+    X_SPREAD_FIELD_NUMBER: _ClassVar[int]
+    Y_SPREAD_FIELD_NUMBER: _ClassVar[int]
+    SIZE_SPREAD_FIELD_NUMBER: _ClassVar[int]
+    SKEW_SPREAD_FIELD_NUMBER: _ClassVar[int]
+    MATCHED_VIEWPOINT_FIELD_NUMBER: _ClassVar[int]
+    REMAINING_VIEWPOINTS_FIELD_NUMBER: _ClassVar[int]
+    frame_id: int
+    status: CalibrationViewStatus
+    left_found: bool
+    right_found: bool
+    corners_left: int
+    corners_right: int
+    board_center_x: float
+    board_center_y: float
+    board_fraction: float
+    accepted_views: int
+    required_views: int
+    coverage_fraction: float
+    ready: bool
+    suggestion: MoveSuggestion
+    message: str
+    board_size: float
+    board_skew: float
+    x_spread: float
+    y_spread: float
+    size_spread: float
+    skew_spread: float
+    matched_viewpoint: int
+    remaining_viewpoints: _containers.RepeatedScalarFieldContainer[int]
+    def __init__(self, frame_id: _Optional[int] = ..., status: _Optional[_Union[CalibrationViewStatus, str]] = ..., left_found: bool = ..., right_found: bool = ..., corners_left: _Optional[int] = ..., corners_right: _Optional[int] = ..., board_center_x: _Optional[float] = ..., board_center_y: _Optional[float] = ..., board_fraction: _Optional[float] = ..., accepted_views: _Optional[int] = ..., required_views: _Optional[int] = ..., coverage_fraction: _Optional[float] = ..., ready: bool = ..., suggestion: _Optional[_Union[MoveSuggestion, _Mapping[str, _Any]]] = ..., message: _Optional[str] = ..., board_size: _Optional[float] = ..., board_skew: _Optional[float] = ..., x_spread: _Optional[float] = ..., y_spread: _Optional[float] = ..., size_spread: _Optional[float] = ..., skew_spread: _Optional[float] = ..., matched_viewpoint: _Optional[int] = ..., remaining_viewpoints: _Optional[_Iterable[int]] = ...) -> None: ...
+
+class EstimatedStereoCalibration(_message.Message):
+    __slots__ = ("calibration", "left_fx", "left_fy", "right_fx", "right_fy", "baseline_m", "rms_left", "rms_right", "rms_stereo", "views_used", "distortion_left", "distortion_right", "rotation", "translation_m", "lens_model", "baseline_scale", "implied_square_size_m", "solved_baseline_m")
+    CALIBRATION_FIELD_NUMBER: _ClassVar[int]
+    LEFT_FX_FIELD_NUMBER: _ClassVar[int]
+    LEFT_FY_FIELD_NUMBER: _ClassVar[int]
+    RIGHT_FX_FIELD_NUMBER: _ClassVar[int]
+    RIGHT_FY_FIELD_NUMBER: _ClassVar[int]
+    BASELINE_M_FIELD_NUMBER: _ClassVar[int]
+    RMS_LEFT_FIELD_NUMBER: _ClassVar[int]
+    RMS_RIGHT_FIELD_NUMBER: _ClassVar[int]
+    RMS_STEREO_FIELD_NUMBER: _ClassVar[int]
+    VIEWS_USED_FIELD_NUMBER: _ClassVar[int]
+    DISTORTION_LEFT_FIELD_NUMBER: _ClassVar[int]
+    DISTORTION_RIGHT_FIELD_NUMBER: _ClassVar[int]
+    ROTATION_FIELD_NUMBER: _ClassVar[int]
+    TRANSLATION_M_FIELD_NUMBER: _ClassVar[int]
+    LENS_MODEL_FIELD_NUMBER: _ClassVar[int]
+    BASELINE_SCALE_FIELD_NUMBER: _ClassVar[int]
+    IMPLIED_SQUARE_SIZE_M_FIELD_NUMBER: _ClassVar[int]
+    SOLVED_BASELINE_M_FIELD_NUMBER: _ClassVar[int]
+    calibration: StereoCalibration
+    left_fx: float
+    left_fy: float
+    right_fx: float
+    right_fy: float
+    baseline_m: float
+    rms_left: float
+    rms_right: float
+    rms_stereo: float
+    views_used: int
+    distortion_left: _containers.RepeatedScalarFieldContainer[float]
+    distortion_right: _containers.RepeatedScalarFieldContainer[float]
+    rotation: _containers.RepeatedScalarFieldContainer[float]
+    translation_m: _containers.RepeatedScalarFieldContainer[float]
+    lens_model: CalibrationLensModel
+    baseline_scale: float
+    implied_square_size_m: float
+    solved_baseline_m: float
+    def __init__(self, calibration: _Optional[_Union[StereoCalibration, _Mapping[str, _Any]]] = ..., left_fx: _Optional[float] = ..., left_fy: _Optional[float] = ..., right_fx: _Optional[float] = ..., right_fy: _Optional[float] = ..., baseline_m: _Optional[float] = ..., rms_left: _Optional[float] = ..., rms_right: _Optional[float] = ..., rms_stereo: _Optional[float] = ..., views_used: _Optional[int] = ..., distortion_left: _Optional[_Iterable[float]] = ..., distortion_right: _Optional[_Iterable[float]] = ..., rotation: _Optional[_Iterable[float]] = ..., translation_m: _Optional[_Iterable[float]] = ..., lens_model: _Optional[_Union[CalibrationLensModel, str]] = ..., baseline_scale: _Optional[float] = ..., implied_square_size_m: _Optional[float] = ..., solved_baseline_m: _Optional[float] = ...) -> None: ...
+
+class CalibrationResponse(_message.Message):
+    __slots__ = ("feedback", "result", "not_ready", "plan")
+    FEEDBACK_FIELD_NUMBER: _ClassVar[int]
+    RESULT_FIELD_NUMBER: _ClassVar[int]
+    NOT_READY_FIELD_NUMBER: _ClassVar[int]
+    PLAN_FIELD_NUMBER: _ClassVar[int]
+    feedback: CalibrationFeedback
+    result: EstimatedStereoCalibration
+    not_ready: CalibrationFeedback
+    plan: CalibrationPlan
+    def __init__(self, feedback: _Optional[_Union[CalibrationFeedback, _Mapping[str, _Any]]] = ..., result: _Optional[_Union[EstimatedStereoCalibration, _Mapping[str, _Any]]] = ..., not_ready: _Optional[_Union[CalibrationFeedback, _Mapping[str, _Any]]] = ..., plan: _Optional[_Union[CalibrationPlan, _Mapping[str, _Any]]] = ...) -> None: ...

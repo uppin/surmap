@@ -105,8 +105,12 @@ Mode choice is a bench result, not a listing decision.
 3. Left/right sync test: flashing LED / fast moving edge; confirm both
    halves show the same instant.
 4. Measure the lens baseline physically; run stereo calibration
-   (fisheye model); report reprojection error and rectified epipolar
-   alignment.
+   (`CameraCalibrationService` with `CALIBRATION_LENS_FISHEYE` and the
+   measured baseline as `expected_baseline_m` — see
+   [camera-calibration.md](camera-calibration.md)); report reprojection
+   error and rectified epipolar alignment. A fisheye result cannot yet be
+   exported to the streaming sidecar, which rectifies radial-tangential
+   calibrations only.
 5. Depth accuracy check against tape-measured distances at roughly
    1 / 3 / 5 / 10 / 20 m; state the distance where error becomes
    unacceptable for survey use. This sets the survey altitude envelope.

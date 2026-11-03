@@ -384,3 +384,221 @@ service StationSamService {
   rpc GetCapabilities(CapabilitiesRequest) returns (Capabilities);
   rpc StreamAnalysis(stream StationRequest) returns (stream StationResponse);
 }
+
+// The calibration target a CameraCalibrationService stream collects
+// views of. Explicit by design: a stream must name its target, and
+// only a checkerboard is supported today.
+enum CalibrationTargetType {
+  CALIBRATION_TARGET_UNSPECIFIED = 0;
+  CALIBRATION_TARGET_CHECKERBOARD = 1;
+}
+
+// The camera model a calibration solves (RTAB-Map's three).
+enum CalibrationLensModel {
+  // Treated as CALIBRATION_LENS_PINHOLE_RADTAN.
+  CALIBRATION_LENS_UNSPECIFIED = 0;
+  // Plumb bob: k1, k2, p1, p2 (k3 held at 0). The only model the
+  // EuRoC export and the streaming sidecar take today.
+  CALIBRATION_LENS_PINHOLE_RADTAN = 1;
+  // OpenCV rational: k1, k2, p1, p2, k3, k4, k5, k6.
+  CALIBRATION_LENS_PINHOLE_RATIONAL = 2;
+  // Equidistant fisheye (cv::fisheye): k1, k2, k3, k4.
+  CALIBRATION_LENS_FISHEYE = 3;
+}
+
+// Which corner of the board a planned viewpoint turns away from the camera.
+enum CalibrationTilt {
+  CALIBRATION_TILT_UNSPECIFIED = 0;
+  // Board facing the camera.
+  CALIBRATION_TILT_NONE = 1;
+  CALIBRATION_TILT_TOP_LEFT_AWAY = 2;
+  CALIBRATION_TILT_TOP_RIGHT_AWAY = 3;
+  CALIBRATION_TILT_BOTTOM_LEFT_AWAY = 4;
+  CALIBRATION_TILT_BOTTOM_RIGHT_AWAY = 5;
+}
+
+// Outcome of one stereo view in a calibration stream.
+enum CalibrationViewStatus {
+  CALIBRATION_VIEW_UNSPECIFIED = 0;
+  // Board found in both eyes and the view was kept.
+  CALIBRATION_VIEW_ACCEPTED = 1;
+  // Board not found in at least one eye.
+  CALIBRATION_VIEW_BOARD_NOT_FOUND = 2;
+  // Board found but too close in position/scale to a kept view.
+  CALIBRATION_VIEW_TOO_SIMILAR = 3;
+  // The frame bytes could not be decoded; the stream continues.
+  CALIBRATION_VIEW_FRAME_UNREADABLE = 4;
+}
+
+// A checkerboard's inner-corner grid and square size.
+message CheckerboardSpec {
+  // Inner corners across (columns) and down (rows).
+  uint32 cols = 1;
+  uint32 rows = 2;
+  double square_size_m = 3;
+}
+
+// First calibration client message: the target and how many views.
+message CalibrationConfig {
+  CalibrationTargetType target_type = 1;
+  // Set when target_type is CALIBRATION_TARGET_CHECKERBOARD.
+  CheckerboardSpec checkerboard = 2;
+  // Diverse accepted views required before finish can solve.
+  uint32 min_views = 3;
+  // Frame size; 0 takes it from the first frame. Every frame must match.
+  uint32 width = 4;
+  uint32 height = 5;
+  CalibrationLensModel lens_model = 6;
+  // Also try detection on the frame upscaled up to this factor (1..3,
+  // 0 = 1), for boards too small at native resolution (RTAB-Map's
+  // "max scale").
+  uint32 max_detection_scale = 7;
+  // When > 0, the solved translation is scaled to this baseline
+  // (metres) and the result reports the scale and implied square size.
+  double expected_baseline_m = 8;
+}
+
+// One stereo pair for calibration: both eyes of one instant.
+message CalibrationStereoFrame {
+  RawVideoFrame left = 1;
+  RawVideoFrame right = 2;
+}
+
+// One client message on the calibration stream: config, frames, finish.
+message CalibrationRequest {
+  oneof kind {
+    CalibrationConfig config = 1;
+    CalibrationStereoFrame frame = 2;
+    // True asks the server to solve from the accepted views.
+    bool finish = 3;
+  }
+}
+
+// Where to move the camera (or board) for the next calibration view.
+message MoveSuggestion {
+  // Image cell the board centre should occupy next, e.g. "centre",
+  // "upper_left": a 3x3 grid over the image plus "near"/"far" in the
+  // instruction when a different distance is wanted.
+  string target_cell = 1;
+  // Move the camera by this vector (metres, camera frame: x right,
+  // y down, z forward) to centre the board on the target cell at the
+  // board's current distance. Zero when the board was not found.
+  double move_x_m = 2;
+  double move_y_m = 3;
+  double move_z_m = 4;
+  // Suggested board distance (m) for the next view; 0 = keep distance.
+  double target_distance_m = 5;
+  string instruction = 6;
+  // The CalibrationPlan viewpoint this suggests, or -1.
+  int32 viewpoint_index = 7;
+}
+
+// One view the calibration needs, in image terms (no intrinsics needed).
+message CalibrationViewpoint {
+  uint32 index = 1;
+  // 3x3 image cell of the board centre, e.g. "centre", "upper_left".
+  string target_cell = 2;
+  // Board centre, normalized to [0,1] over the image.
+  double center_x = 3;
+  double center_y = 4;
+  // RTAB-Map size: sqrt(board quad area / image area).
+  double board_size = 5;
+  CalibrationTilt tilt = 6;
+  double tilt_deg = 7;
+  // Board distance for board_size at a nominal focal of one image width.
+  double distance_m = 8;
+  string instruction = 9;
+}
+
+// Every viewpoint that, filled, clears RTAB-Map's readiness bar.
+message CalibrationPlan {
+  repeated CalibrationViewpoint viewpoints = 1;
+}
+
+// Per-view calibration feedback for one stereo pair.
+message CalibrationFeedback {
+  int64 frame_id = 1;
+  CalibrationViewStatus status = 2;
+  bool left_found = 3;
+  bool right_found = 4;
+  uint32 corners_left = 5;
+  uint32 corners_right = 6;
+  // Board centre, normalized to [0,1] over the left image (0 when lost).
+  double board_center_x = 7;
+  double board_center_y = 8;
+  // Board bounding-box area as a fraction of the left image.
+  double board_fraction = 9;
+  uint32 accepted_views = 10;
+  uint32 required_views = 11;
+  // Fraction of the 3x3 position cells covered by accepted views.
+  double coverage_fraction = 12;
+  bool ready = 13;
+  MoveSuggestion suggestion = 14;
+  string message = 15;
+  // This view in RTAB-Map's terms, each in [0,1]: size is
+  // sqrt(board quad area / image area), skew is 2·|90° − corner angle|.
+  double board_size = 16;
+  double board_skew = 17;
+  // Max − min over accepted views of x, y, size and skew. Ready needs
+  // x, y > 0.5, size > 0.4 and skew > 0.5 (RTAB-Map's thresholds).
+  double x_spread = 18;
+  double y_spread = 19;
+  double size_spread = 20;
+  double skew_spread = 21;
+  // The CalibrationPlan viewpoint this view filled, or -1.
+  int32 matched_viewpoint = 22;
+  // Plan viewpoints still to fill.
+  repeated uint32 remaining_viewpoints = 23 [packed = true];
+}
+
+// The solved stereo calibration from a finished stream.
+message EstimatedStereoCalibration {
+  StereoCalibration calibration = 1;
+  double left_fx = 2;
+  double left_fy = 3;
+  double right_fx = 4;
+  double right_fy = 5;
+  double baseline_m = 6;
+  // Reprojection RMS (px) per eye and for the stereo solve.
+  double rms_left = 7;
+  double rms_right = 8;
+  double rms_stereo = 9;
+  uint32 views_used = 10;
+  // In lens_model's order (see CalibrationLensModel).
+  repeated double distortion_left = 11 [packed = true];
+  repeated double distortion_right = 12 [packed = true];
+  // Left camera to right camera (x_right = R·x_left + T), as
+  // cv::stereoCalibrate returns it: row-major 3x3, then metres.
+  repeated double rotation = 13 [packed = true];
+  repeated double translation_m = 14 [packed = true];
+  CalibrationLensModel lens_model = 15;
+  // translation_m / solved translation: 1 unless expected_baseline_m
+  // rescaled it; square_size_m · baseline_scale is the square size
+  // the solve implied.
+  double baseline_scale = 16;
+  double implied_square_size_m = 17;
+  double solved_baseline_m = 18;
+}
+
+// One server message on the calibration stream.
+message CalibrationResponse {
+  oneof kind {
+    CalibrationFeedback feedback = 1;
+    EstimatedStereoCalibration result = 2;
+    // Answer to a finish that came before the views were diverse
+    // enough: current progress and what is missing. The stream stays open.
+    CalibrationFeedback not_ready = 3;
+    // First response: sent once the image size is known (right after
+    // the config, or with the first frame when the config leaves it 0).
+    CalibrationPlan plan = 4;
+  }
+}
+
+// Camera calibration: stereo frames in, feedback and a next-pose
+// suggestion out per view, and the solved calibration on finish.
+// Detection and solving run in an OpenCV sidecar; this service owns
+// the session (coverage, diversity, guidance) only.
+service CameraCalibrationService {
+  rpc StreamCalibration(stream CalibrationRequest)
+      returns (stream CalibrationResponse);
+}

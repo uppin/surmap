@@ -10,3 +10,6 @@ find_package(RTABMap REQUIRED)
 find_package(OpenCV REQUIRED)
 add_executable(surmap-rtabmap-stream main.cpp)
 target_link_libraries(surmap-rtabmap-stream rtabmap::core ${OpenCV_LIBRARIES})
+# Header-only policy test (OpenCV only); the image build runs it.
+add_executable(odom-covariance-test odom_covariance_test.cpp)
+target_link_libraries(odom-covariance-test ${OpenCV_LIBRARIES})

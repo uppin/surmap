@@ -31,9 +31,16 @@ dependencies = [
     "websockets>=14.0",
 ]
 
+[project.optional-dependencies]
+# OpenCV for the calibration sidecar only (`cm5_main --calibration`); the
+# survey path imports no cv2. `uv sync --extra calibration` on the host.
+calibration = ["opencv-python-headless>=4.10"]
+
 [dependency-groups]
 dev = [
     "mypy>=1.11",
+    # The calibration tests run the real OpenCV sidecar.
+    "opencv-python-headless>=4.10",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "ruff>=0.6",

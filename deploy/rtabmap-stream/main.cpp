@@ -16,6 +16,8 @@
 #include <rtabmap/core/util3d.h>
 #include <rtabmap/core/util3d_transforms.h>
 
+#include "odom_covariance.h"
+
 #include <opencv2/calib3d.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -477,6 +479,7 @@ int main(int argc, char** argv) {
               << std::endl;
 
     int lastNodeId = 0;
+    OdomCovariance odomCovariance;
     size_t lastGraphSize = 0;
     int lastGraphMaxId = 0;
     while (true) {
@@ -523,7 +526,14 @@ int main(int argc, char** argv) {
       while (!ring.empty() && tNs - ring.front().tNs > regionBufferNs) ring.pop_front();
       // Feed SLAM only when tracking; a null pose must never be guessed.
       bool added = false;
-      if (!lost) added = slam.process(data, odomPose);
+      // Pass the odometry's own covariance: the default identity
+      // (1 m / 1 rad per link) makes the graph distrust odometry, so
+      // weak loop/proximity links drag the map metres off a good track.
+      // OdomCovariance sanitizes it and carries the largest one across
+      // nodes RTAB-Map drops for too little motion (see its header).
+      if (!lost)
+        added = slam.process(data, odomPose,
+                             odomCovariance.next(info.reg.covariance, odomPose.isIdentity()));
       double ms = std::chrono::duration<double, std::milli>(
                       std::chrono::steady_clock::now() - start)
                       .count();
@@ -561,6 +571,7 @@ int main(int argc, char** argv) {
       bool kept = graphNow.find(nodeId) != graphNow.end();
       if (!lost && added && kept && nodeId > 0 && nodeId != lastNodeId) {
         lastNodeId = nodeId;
+        odomCovariance.nodeKept();
         auto cloud = rtabmap::util3d::cloudFromStereoImages(leftRect, rightRect, stereoModel);
         // Voxel-downsample (~5 cm): keep the first finite point per voxel.
         // x, y, z (camera frame) + grey sampled from the left rectified image.
