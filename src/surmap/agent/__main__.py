@@ -23,10 +23,13 @@ from surmap.agent.server.app import (
     DEFAULT_HOST,
     DEFAULT_MODEL_ID,
     DEFAULT_PORT,
+    DEFAULT_SIM_ASSETS,
+    SKETCHFAB_TOKEN_ENV,
     SKILLS_DIR_ENV,
     AgentServerConfig,
     build_agent_description,
     build_demo_workspace,
+    build_simulation_rig,
 )
 from surmap.env import load_env
 from surmap.rpc.hosts.hypercorn import HypercornHost
@@ -45,6 +48,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--model", default=DEFAULT_MODEL_ID, help="default model id, e.g. ollama:llama3.2"
     )
     parser.add_argument("--sam-fake", action="store_true", help="fake centred-box SAM")
+    parser.add_argument(
+        "--sim-dir",
+        type=Path,
+        default=None,
+        help="simulation store: simulation.sqlite + library/ (default <cache>/simulation)",
+    )
+    parser.add_argument(
+        "--sim-assets",
+        type=Path,
+        default=DEFAULT_SIM_ASSETS,
+        help="the Bevy simulation's assets/ (scene, camera profiles, pinned textures)",
+    )
+    parser.add_argument(
+        "--sim-dist", type=Path, default=None, help="a `trunk build` output served at /sim/"
+    )
     return parser
 
 
@@ -71,13 +89,22 @@ def config_from_args(
         sam_fake=args.sam_fake,
         cors_origins=cors_origins,
         skills_dir=Path(raw_skills_dir) if raw_skills_dir else None,
+        sim_dir=args.sim_dir,
+        sim_assets=args.sim_assets,
+        sim_dist=args.sim_dist,
+        sketchfab_token=env.get(SKETCHFAB_TOKEN_ENV) or None,
     )
 
 
 async def serve(config: AgentServerConfig) -> None:
     """Serve the agent on `config.host:config.port` until cancelled; always stop the host."""
     workspace = build_demo_workspace(config)
-    description = build_agent_description(config, workspace=workspace, geometry=workspace.geometry)
+    description = build_agent_description(
+        config,
+        workspace=workspace,
+        geometry=workspace.geometry,
+        simulation=build_simulation_rig(config),
+    )
     host = HypercornHost(description, None, host=config.host, port=config.port)
     ports = await host.start()
     print(f"survey agent on http://{config.host}:{ports.public}", flush=True)

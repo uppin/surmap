@@ -33,7 +33,8 @@ IMAGE_KEY = "image"
 _SURVEY_SERVICE = "surmap.agent.v1.SurveyTools"
 _MAP_SERVICE = "surmap.agent.v1.MapTools"
 _JOBS_SERVICE = "surmap.agent.v1.AgentJobs"
-_HANDLER_SERVICES = (_SURVEY_SERVICE, _MAP_SERVICE)
+_SIMULATION_SERVICE = "surmap.agent.v1.SimulationTools"
+_HANDLER_SERVICES = (_SURVEY_SERVICE, _MAP_SERVICE, _SIMULATION_SERVICE)
 
 
 @dataclass(frozen=True)
@@ -58,9 +59,10 @@ def agent_tools(
 ) -> tuple[BoundTool, ...]:
     """Every contract as a tool over `runner`.
 
-    `SurveyTools` contracts are bound to `handlers` by rpc name; `AgentJobs` contracts become
-    the four job tools (`surmap.agent.runtime.tools.job_tools`). Raises `ValueError` for a
-    `SurveyTools` contract no handler serves.
+    `SurveyTools`, `MapTools` and `SimulationTools` contracts are bound to `handlers` by rpc
+    name; `AgentJobs` contracts become the four job tools
+    (`surmap.agent.runtime.tools.job_tools`). Raises `ValueError` for a contract no handler
+    serves.
     """
     bound: list[BoundTool] = []
     for contract in contracts:

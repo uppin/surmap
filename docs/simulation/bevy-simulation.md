@@ -46,6 +46,17 @@ matte and desaturated, survivors' high-vis coats the only saturated colour.
   eyes must match). TAA and bloom on the chase view only; the eyes use MSAA (no TAA jitter
   between left and right). No SSAO — unsupported on WebGPU in Bevy 0.18.
 
+## Scenarios built by the agent, served by the station
+
+The survey agent composes scenarios with its simulation tools ([docs/agent.md](../agent.md),
+*Simulation tools*): it searches Poly Haven, ambientCG and Sketchfab, downloads CC0 / CC BY assets
+into the station's library (SHA-256 recorded), and edits versioned scenarios — each one a
+`scene.json` manifest — in the station's SQLite store. The agent server serves them on one
+origin: `/sim/assets/scenarios/<id>.json`, the library under `/sim/assets/library/`, the PoC's
+own assets under `/sim/assets/`, and the built page at `/sim/` (`--sim-dist`). The page opens a
+scenario with `?scenario=<id>`; natively, `--scenario <id>` loads `scenarios/<id>.json` from
+the asset root (ids are letters, digits and dashes).
+
 ## The stereo rig: one camera profile
 
 `cameras/elp-stereo-pinhole.camera.json` (the SurMap ELP rig): 640×480, fx = fy = 381.36,

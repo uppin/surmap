@@ -54,6 +54,15 @@ leading comment, and argument descriptions are the field comments.
 | `list_map_layers` | `MapTools.ListMapLayers` | SYNC · 10 s · FAIL |
 | `load_map_layer` | `MapTools.LoadMapLayer` | SYNC · 10 s · FAIL |
 | `unload_map_layer` | `MapTools.UnloadMapLayer` | SYNC · 10 s · FAIL |
+| `search_assets` | `SimulationTools.SearchAssets` | SYNC · 20 s · FAIL |
+| `download_asset` | `SimulationTools.DownloadAsset` | SYNC · 60 s · DETACH |
+| `list_assets` | `SimulationTools.ListAssets` | SYNC · 10 s · FAIL |
+| `create_scenario` | `SimulationTools.CreateScenario` | SYNC · 10 s · FAIL |
+| `add_model` | `SimulationTools.AddModel` | SYNC · 10 s · FAIL |
+| `add_element` | `SimulationTools.AddElement` | SYNC · 10 s · FAIL |
+| `remove_element` | `SimulationTools.RemoveElement` | SYNC · 10 s · FAIL |
+| `get_scenario` | `SimulationTools.GetScenario` | SYNC · 10 s · FAIL |
+| `list_scenarios` | `SimulationTools.ListScenarios` | SYNC · 10 s · FAIL |
 
 Every tool rpc must declare `option (default_execution)`;
 `tool_contracts` refuses a service with an rpc that does not.
@@ -157,6 +166,30 @@ the test adapter. A fresh scene loads the defaults — `osm` (OpenStreetMap)
 and `overture-buildings`; `load_map_layer` / `unload_map_layer` flip the
 rest. The chat pane renders the scene with MapLibre GL: OSM base, 3D
 buildings, loaded theme layers, route lines, and object markers.
+
+## Simulation tools (`surmap.agent.tools.simulation_handlers`, `surmap.simulation`)
+
+The agent builds disaster scenarios for the Bevy simulation
+([docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md)) and the station keeps and
+serves them. Mounted when the simulation's assets are found (`--sim-assets`, default
+`examples/bevy-sitl-poc/assets`).
+
+- **Sources** (`surmap.simulation.asset_sources`): Poly Haven (models, textures, HDRIs), ambientCG
+  (materials, zip members extracted) and Sketchfab (searched only among downloadable CC0 / CC BY
+  models). Search is anonymous; a Sketchfab download needs `SKETCHFAB_API_TOKEN`
+  (`FAILED_PRECONDITION` naming the variable without it).
+- **Licence gate** (`surmap.simulation.licences`): CC0 and CC BY 3.0/4.0 only; NC, ND, SA and
+  non-open licences are refused with the clause. Every search hit carries its verdict; a refused
+  hit is never fetched.
+- **Store** (`surmap.simulation.scenario_store`, `<sim-dir>/simulation.sqlite` + `library/`):
+  assets with every file's SHA-256 under `library/<source>/<id>/`; scenarios with every edit as a
+  new version; credits derived from the CC BY assets a scenario uses.
+- **Scenarios** are the simulation's own `scene.json` manifests (`surmap.simulation.scenario_manifest`
+  validates them by the renderer's rules). Presets: `earthquake-block` (the shipped scene) and
+  `empty-lot`.
+- **Serving** (`surmap.agent.server.sim_routes`): `/sim/assets/scenarios/<id>.json` (latest
+  version), `/sim/assets/library/…`, `/sim/assets/…` (the PoC's assets) and, with `--sim-dist`,
+  the built page at `/sim/`; the page opens `?scenario=<id>`. One origin, no CORS.
 
 ## Skills (`surmap.agent.skills`)
 
@@ -525,6 +558,9 @@ uv run python -m surmap.agent --sam-fake \
 | `--history-db` | demo default | demo run history DB |
 | `--cache-dir` | demo default | demo scene cache; object GLBs go to `<cache-dir>/agent-geometry` |
 | `--sam-fake` | off | fake centred-box SAM — **required for now** |
+| `--sim-dir` | `<cache>/simulation` | simulation store: `simulation.sqlite` and the asset `library/` |
+| `--sim-assets` | `examples/bevy-sitl-poc/assets` | the simulation's own assets; simulation tools are off when absent |
+| `--sim-dist` | none | a `trunk build` output served at `/sim/` |
 
 Environment: `SURMAP_AGENT_CORS_ORIGINS` — comma-separated browser
 origins allowed by CORS (default `http://localhost:5173`, the chat UI's

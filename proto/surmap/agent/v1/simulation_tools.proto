@@ -1,0 +1,261 @@
+syntax = "proto3";
+
+package surmap.agent.v1;
+
+import "surmap/agent/v1/execution.proto";
+
+/*
+The survey agent's simulation tools: find licence-compatible 3D assets, keep them in the
+station's library, and compose disaster scenarios the Bevy simulation loads at runtime. Every
+rpc here is a model-facing tool: its snake_case name is the tool name, its leading comment the
+tool description, and its request message the tool's argument schema.
+
+Positions are ENU metres (east, north, up) on the simulated block, at an object's base. These
+tools build a simulated world only; nothing here commands a vehicle (docs/architecture.md §1).
+*/
+
+service SimulationTools {
+  // Searches Poly Haven, ambientCG and Sketchfab for 3D models, textures or HDRI skies. Every
+  // hit says whether its licence is accepted (CC0 or CC BY) and, if not, why; only accepted
+  // hits can be downloaded. Use the hit's ref with download_asset.
+  rpc SearchAssets(SearchAssetsRequest) returns (SearchAssetsResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 20 on_timeout: FAIL};
+  }
+
+  // Downloads an accepted search hit into the station's asset library and returns it with
+  // the entry path scenarios reference. Refuses a licence that is not CC0 or CC BY.
+  rpc DownloadAsset(DownloadAssetRequest) returns (AssetResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 60 on_timeout: DETACH};
+  }
+
+  // Lists the assets already in the station's library.
+  rpc ListAssets(ListAssetsRequest) returns (ListAssetsResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Creates a scenario from a preset ("earthquake-block": the collapsed city block;
+  // "empty-lot": camera, sky and bare ground) and returns it at version 1.
+  rpc CreateScenario(CreateScenarioRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Places a library model in a scenario at an ENU position, with a yaw, scale and
+  // collider; give ground_truth_kind (e.g. "car") to score it as a ground-truth object.
+  rpc AddModel(AddModelRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Adds one built element to a scenario: a box (ground, road, water, pad), an intact
+  // building with windows, a collapsed building, or a person.
+  rpc AddElement(AddElementRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Removes an element or a placed model from a scenario by its id.
+  rpc RemoveElement(RemoveElementRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Returns a scenario's latest version: its manifest, credits, and the URL the simulation
+  // page opens it at.
+  rpc GetScenario(GetScenarioRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Lists the station's scenarios with their latest version.
+  rpc ListScenarios(ListScenariosRequest) returns (ListScenariosResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+}
+
+enum AssetKind {
+  ASSET_KIND_UNSPECIFIED = 0;
+  // A glTF/GLB model.
+  ASSET_KIND_MODEL = 1;
+  // A PBR material's texture maps.
+  ASSET_KIND_TEXTURE = 2;
+  // An equirectangular HDR sky.
+  ASSET_KIND_HDRI = 3;
+}
+
+enum Collider {
+  COLLIDER_UNSPECIFIED = 0;
+  // No physics collider.
+  COLLIDER_NONE = 1;
+  // A box around the model's bounds.
+  COLLIDER_BOX = 2;
+  // The model's own triangles.
+  COLLIDER_TRIMESH = 3;
+}
+
+// A point in ENU metres on the simulated block.
+message EnuPoint {
+  double east = 1;
+  double north = 2;
+  double up = 3;
+}
+
+message SearchAssetsRequest {
+  // What to look for, e.g. "burnt car" or "rubble".
+  string query = 1;
+  AssetKind kind = 2;
+  // Sources to ask ("polyhaven", "ambientcg", "sketchfab"); all of them when empty.
+  repeated string sources = 3;
+  // Hits per source; 5 when absent.
+  optional int32 limit = 4;
+}
+
+message AssetHitInfo {
+  // "<source>:<asset id>" — what download_asset takes.
+  string ref = 1;
+  string source = 2;
+  AssetKind kind = 3;
+  string title = 4;
+  string author = 5;
+  // The source's own licence label.
+  string licence = 6;
+  // Whether the licence lets the asset into a scenario.
+  bool accepted = 7;
+  // Why a refused licence is refused; empty when accepted.
+  string licence_reason = 8;
+  string page_url = 9;
+  string preview_url = 10;
+}
+
+message SearchAssetsResponse {
+  repeated AssetHitInfo hits = 1;
+}
+
+message DownloadAssetRequest {
+  // A ref from search_assets, e.g. "polyhaven:covered_car".
+  string ref = 1;
+}
+
+message StoredAssetInfo {
+  string ref = 1;
+  AssetKind kind = 2;
+  string title = 3;
+  string author = 4;
+  string licence = 5;
+  // The path scenarios use, e.g. "library/polyhaven/covered_car/covered_car_2k.gltf".
+  string entry_path = 6;
+  // Every file of the asset, relative to the simulation's assets.
+  repeated string files = 7;
+}
+
+message AssetResponse {
+  StoredAssetInfo asset = 1;
+}
+
+message ListAssetsRequest {}
+
+message ListAssetsResponse {
+  repeated StoredAssetInfo assets = 1;
+}
+
+message CreateScenarioRequest {
+  // A human name; the scenario id is derived from it.
+  string name = 1;
+  // "earthquake-block" or "empty-lot".
+  string preset = 2;
+}
+
+message AddModelRequest {
+  string scenario_id = 1;
+  // A library asset's ref (download it first).
+  string asset_ref = 2;
+  // Where the model's base sits.
+  EnuPoint position = 3;
+  // Counter-clockwise from east, degrees; 0 when absent.
+  optional double yaw_deg = 4;
+  // Uniform scale; 1 when absent.
+  optional double scale = 5;
+  Collider collider = 6;
+  // Score this instance as a ground-truth object of this kind (e.g. "car").
+  optional string ground_truth_kind = 7;
+  // The id other tools use; derived from the asset when absent.
+  optional string element_id = 8;
+}
+
+message BoxElement {
+  string id = 1;
+  // A material the scenario declares, e.g. "asphalt", "ground", "water".
+  string material = 2;
+  // Size in metres: east, north, up.
+  EnuPoint size = 3;
+  EnuPoint position = 4;
+  optional double yaw_deg = 5;
+  bool collider = 6;
+  optional string ground_truth_kind = 7;
+}
+
+message BuildingElement {
+  string id = 1;
+  string material = 2;
+  EnuPoint size = 3;
+  EnuPoint position = 4;
+  optional double yaw_deg = 5;
+  // Draw a window grid on every face.
+  bool windows = 6;
+}
+
+message CollapsedBuildingElement {
+  string id = 1;
+  string material = 2;
+  double footprint_east_m = 3;
+  double footprint_north_m = 4;
+  EnuPoint position = 5;
+  optional double yaw_deg = 6;
+  // Lays out the slabs and rubble; the same seed gives the same ruin.
+  int64 seed = 7;
+}
+
+message PersonElement {
+  string id = 1;
+  EnuPoint position = 2;
+  // A coat material the scenario declares, e.g. "coat_orange".
+  string coat = 3;
+}
+
+message AddElementRequest {
+  string scenario_id = 1;
+  oneof element {
+    BoxElement box = 2;
+    BuildingElement building = 3;
+    CollapsedBuildingElement collapsed_building = 4;
+    PersonElement person = 5;
+  }
+}
+
+message RemoveElementRequest {
+  string scenario_id = 1;
+  string element_id = 2;
+}
+
+message GetScenarioRequest {
+  string scenario_id = 1;
+}
+
+message ScenarioInfo {
+  string id = 1;
+  string name = 2;
+  int32 version = 3;
+  // The scenario's manifest (the simulation's scene.json), as JSON.
+  string manifest_json = 4;
+  // "<title> by <author> (<licence>), <page>" for every CC BY asset it uses.
+  repeated string credits = 5;
+  // Where the simulation page opens it, on the station.
+  string url = 6;
+  string updated_at = 7;
+}
+
+message ScenarioResponse {
+  ScenarioInfo scenario = 1;
+}
+
+message ListScenariosRequest {}
+
+message ListScenariosResponse {
+  // Latest versions, without their manifests.
+  repeated ScenarioInfo scenarios = 1;
+}
