@@ -76,6 +76,95 @@ descriptions). The script fixes the `.pyi` stubs for mypy strict: typed
 `Mapping` arguments, module-level extension field numbers, and the
 `default_execution` extension typed as the handle `HasExtension` takes.
 
+## Runtime (`surmap.agent.runtime`)
+
+The agent loop: a LangGraph `StateGraph` compiled per turn, with every tool call run as a job by
+a `JobRunner`. "Sync" only means the tool node waits for the job, so timeouts, detaching, async
+calls, steering and job notices are one mechanism.
+
+| Module | What |
+|---|---|
+| `jobs.py` | `JobRunner` (`call`, `detach_blocking`, `wait`, `get`, `jobs`, `cancel`, `cancel_all`, `notices`), `Job`, `JobState`, `JobNotice`, `JobWait`, `ToolOutcome` (`Completed \| Detached \| Failed`) |
+| `graph.py` | `build_turn_graph(model, tools, pending, caps)`, `TurnCaps` (`from_env`), `TurnState`, `turn_input` |
+| `session.py` | `AgentSession` (`run_turn`, `steer`, `cancel`, `idle_events`), `ConversationStore`, `InMemoryConversationStore` |
+| `events.py` | `TextDelta`, `ToolCallStarted`, `ToolCallFinished`, `JobUpdate`, `SteerApplied`, `TurnFinished`, `TurnError` |
+| `tools.py` | `BoundTool`, `bind_contract_tool(contract, handler, runner)`, `job_tools(runner, contracts)` |
+
+### Graph
+
+```text
+          ┌──────── pending (job notices, then steers) drained here
+START ─► model ──(tool calls)──► tools ──► model … ──(no calls)──► done ──► END
+            └─(round cap | repeated identical failures)──► cut_off ──► END
+```
+
+- `model` drains the pending messages, appends them to the state, and streams one model call
+  (text arrives as `TextDelta`s).
+- `tools` runs the calls of one model reply one at a time through their `BoundTool`; an unknown
+  tool, invalid arguments or a failing handler becomes a failed tool result, never a turn error.
+- `cut_off` answers every unanswered call with a "Not run" tool result and ends the turn with
+  `round_cap` or `repeated_failure`.
+- There is no checkpointer: the session seeds the graph with the stored history and appends what
+  each round adds, so one copy of history exists and a stopped turn keeps its completed rounds.
+- `TurnFinished(reason)` is always the last event; `reason` is `stop`, `round_cap`,
+  `repeated_failure`, `cancelled` or `error` (an `error` follows a `TurnError`). When a turn stops
+  with calls still unanswered, each gets a "Not run" tool result so the history stays valid.
+
+### Execution policy
+
+Each call's policy is the rpc's `default_execution` with the model's `execution` argument applied
+(`resolve_execution`); the handler never sees `execution`. `JobRunner(timeout_scale=…)` sets how
+many seconds one `timeout_s` unit lasts (1.0 in production).
+
+| Mode | `on_timeout` | Finishes within `timeout_s` | Still running at `timeout_s` |
+|---|---|---|---|
+| `SYNC` | `FAIL` | result inline | job cancelled; failed result `timed out after <n>s` |
+| `SYNC` | `DETACH` | result inline | job handle (`detached after the <n>s timeout`); the job keeps running |
+| `ASYNC` | either | job handle at once (`async`) | — |
+
+### Jobs and notices
+
+- Every call is a job with id `j-1`, `j-2`, … in start order, a state (`RUNNING`, `SUCCEEDED`,
+  `FAILED`, `CANCELLED`), its result or error, a `detail` and start/finish times.
+- A detached call's tool result tells the model the job id and points it at `wait_for_jobs`,
+  `get_job` and `cancel_job` (bound by `job_tools` over the `AgentJobs` contracts; `list_jobs`
+  lists every job newest first). `wait_for_jobs` takes mode `ALL` or `ANY` and a timeout (default
+  300 s).
+- When a detached or async job ends (other than by cancel), a `JobNotice` — e.g.
+  `Job j-3 run_demo succeeded: {...}` — is queued on `JobRunner.notices`. During a turn it is read
+  before the next model call and reported as a `JobUpdate`; while no turn runs it comes out of
+  `AgentSession.idle_events()`, for the chat server to start a `job_event` turn.
+
+### Steering
+
+- `AgentSession.steer(text)` during a turn queues the text as a pending human message and detaches
+  every waiting `SYNC` call (`detail="detached by steer"`); it returns `SteerQueued(detached=n)`.
+  The model reads the steer on its next call, after any queued notices, so the steer is the last
+  human message it sees; the turn emits `SteerApplied` with the detached call ids.
+- **A steer detaches, never cancels**: the person may still want the result, and the model can
+  `cancel_job` it.
+- On an idle session `steer` starts a normal turn and returns `TurnStarted(events)`.
+- Steers and notices are human messages tagged in `additional_kwargs["surmap_kind"]` (`steer`,
+  `job_notice`); the repeated-failure count restarts only at an untagged human message.
+- Steering does not use LangGraph `interrupt`, which pauses for input; a steer adds input and the
+  turn keeps running.
+
+### Caps
+
+| Cap | Default | Set by |
+|---|---|---|
+| Tool rounds per turn | 30 | `SURMAP_AGENT_MAX_ROUNDS` (positive integer; anything else is a `ValueError`), read by `TurnCaps.from_env` |
+| Identical failing calls (same tool, same arguments) per turn | 3 | `TurnCaps(max_identical_failures=…)` |
+
+### Cancel
+
+- `AgentSession.cancel()` cancels every running job and the turn, which ends
+  `TurnFinished("cancelled")`; completed rounds stay in the conversation. It waits up to 1 s for
+  the jobs to end — a handler that ignores cancellation outlives it.
+- A turn cancelled any other way (its event reader goes away) cancels the `SYNC` call it was
+  waiting on with it; detached and async jobs keep running and report as notices.
+- One turn runs per session at a time; `run_turn` on a busy session raises `RuntimeError`.
+
 ## Object 3D contract (`surmap.objects3d`)
 
 How an agent sees a detected object's 3D reconstruction. A pure numpy library (no new
