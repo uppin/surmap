@@ -14,18 +14,18 @@
   - [x] Create/update PRD documentation — None — Infra, no user-visible behaviour delta
   - [x] Create changeset
   - [x] Before-output re-recorded on the branch tip (commit 2)
-- [wf 2] ⬜ `/green` Implement — the recorded command produces the planned after-output ·
-  - [ ] `web/agent-chat/` scaffold (yarn 1.22.22, `"packageManager": "yarn@1.22.22"`, `yarn.lock`, no `package-lock.json`): Vite 8, React 19, TypeScript 5.9 strict, Tailwind 4, ESLint 10, Vitest 4 — versions pinned to what the private registry serves (table below)
-  - [ ] `scripts/resolve-local-lock.mjs` (node ESM, zero deps): resolves every `yarn.lock` entry against `$LOCAL_REGISTRY_URL`, rewrites `version`/`integrity`/`resolved` (public `registry.yarnpkg.com` URL), widens/pins `package.json` ranges, `--check` mode
-  - [ ] `scripts/local-install.sh`: temp lock with private-host `resolved`, `yarn install --frozen-lockfile --registry "$LOCAL_REGISTRY_URL"`, restore on EXIT, fail if the restored lock differs
-  - [ ] `scripts/resolve-local-lock.test.mjs` (vitest, fake registry on a local HTTP server): exact kept, missing version downgraded to highest ≤ locked, resolved host rewritten to public, scoped names, `--check` fails on a private-host URL
-  - [ ] `package.json` scripts `local-install`, `resolve-local-lock`, `gen`, `lint`, `typecheck`, `test`, `build`
-  - [ ] shadcn/ui initialised (`components.json`, `src/components/ui/{button,card,textarea,scroll-area,badge,separator}.tsx`, `src/lib/utils.ts`)
-  - [ ] `buf.gen.yaml` + `yarn gen` → `src/gen/surmap/agent/v1/*_pb.ts` via `@bufbuild/protoc-gen-es` v2 from `proto/surmap/agent/v1`
-  - [ ] Placeholder page renders the shadcn `Card` with the list of `SurveyTools` rpcs from the generated descriptor
-  - [ ] `.github/workflows/agent-chat.yml` (public runners): `yarn install --frozen-lockfile` from the public registry, `yarn gen` + `git diff --exit-code src/gen`, `lint`, `typecheck`, `test`, `build`, `node scripts/resolve-local-lock.mjs --check`
-  - [ ] root `.gitignore`: `web/agent-chat/node_modules`, `web/agent-chat/dist`, `web/agent-chat/yarn.lock.local-install-backup`
-  - [ ] The V3 command produces the After output below
+- [wf 2] ✅ 2026-11-03 `/green` Implement — the recorded command produces the planned after-output · V3 After output recorded in `## Verification` (clean `node_modules`, empty yarn cache, every step exit 0); vitest 14/14 (App 2, resolver 12); Python gates green (ruff format, ruff check, mypy, pytest 1481 passed / 32 skipped, no Python change)
+  - [x] `web/agent-chat/` scaffold (yarn 1.22.22, `"packageManager": "yarn@1.22.22"`, `yarn.lock`, no `package-lock.json`): Vite 8, React 19, TypeScript 5.9 strict, Tailwind 4, ESLint 10, Vitest 4 — versions pinned to what the private registry serves (table below; protobuf-es at 2.13.0, see Decisions)
+  - [x] `scripts/resolve-local-lock.mjs` (node ESM, zero deps): resolves every `yarn.lock` entry against `$LOCAL_REGISTRY_URL`, rewrites `version`/`integrity`/`resolved` (public `registry.yarnpkg.com` URL), widens/pins `package.json` ranges, `--check` mode
+  - [x] `scripts/local-install.sh`: temp lock with private-host `resolved`, `yarn install --frozen-lockfile --registry "$LOCAL_REGISTRY_URL"`, restore on EXIT, fail if the restored lock differs
+  - [x] `scripts/resolve-local-lock.test.mjs` (vitest, fake registry on a local HTTP server): exact kept, missing version downgraded to highest ≤ locked, resolved host rewritten to public, scoped names, `--check` fails on a private-host URL
+  - [x] `package.json` scripts `local-install`, `resolve-local-lock`, `gen`, `lint`, `typecheck`, `test`, `build`
+  - [x] shadcn/ui initialised (`components.json`, `src/components/ui/{button,card,textarea,scroll-area,badge,separator}.tsx`, `src/lib/utils.ts`; sources copied from the registry JSON, not `shadcn add` — see Decisions)
+  - [x] `buf.gen.yaml` + `yarn gen` → `src/gen/surmap/agent/v1/*_pb.ts` via `@bufbuild/protoc-gen-es` v2 from `proto/surmap/agent/v1`
+  - [x] Placeholder page renders the shadcn `Card` with the list of `SurveyTools` rpcs from the generated descriptor (`src/App.test.tsx`)
+  - [x] `.github/workflows/agent-chat.yml` (public runners): `yarn install --frozen-lockfile` from the public registry, a guard that every `resolved` URL is on `registry.yarnpkg.com`, `yarn gen` + `git diff --exit-code src/gen`, `lint`, `typecheck`, `test`, `build` (`--check` runs on the dev machine only — see Decisions)
+  - [x] root `.gitignore`: `web/agent-chat/node_modules`, `web/agent-chat/dist`, `web/agent-chat/yarn.lock.local-install-backup`
+  - [x] The V3 command produces the After output below
 - [wf 3] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `web/agent-chat/README.md` — dev, gen, test and build commands; the add-a-dependency loop (`yarn add <pkg> --registry $LOCAL_REGISTRY_URL` → `yarn resolve-local-lock` → `yarn local-install`)
@@ -189,7 +189,7 @@ compatible — `engines` checked):
 | `@testing-library/dom` | 10.4.2 | latest |
 | `@testing-library/jest-dom` | 6.9.1 | 6.10+ needs node ≥ 22 |
 | `@types/node` | 20.19.43 | matches node 20 |
-| `@bufbuild/protobuf`, `@bufbuild/protoc-gen-es` | 2.16.0 | latest v2 |
+| `@bufbuild/protobuf`, `@bufbuild/protoc-gen-es` | 2.13.0 | newest v2 whose `engines` allow node 20 — 2.14+ declare node ≥ 22 |
 | `@bufbuild/buf` | 1.74.0 | latest |
 | `@connectrpc/connect`, `@connectrpc/connect-web` | 2.2.0 | latest v2 |
 | `@radix-ui/react-slot` | 1.5.0 | latest |
@@ -216,7 +216,7 @@ Transitive versions are whatever `yarn.lock` resolves, normalised by `yarn resol
 - `agent-chat.yml` (new): path-filtered on `web/agent-chat/**` and `proto/surmap/agent/**`; public
   runner, `actions/setup-node` node 20.19, `corepack enable` (honours `packageManager`),
   `yarn install --frozen-lockfile` against the public registry, then gen + drift check, lint,
-  typecheck, test, build, `node scripts/resolve-local-lock.mjs --check`
+  typecheck, test, build, and a guard that every `resolved` URL is on `registry.yarnpkg.com`. `resolve-local-lock.mjs --check` is not in CI (it asks the private registry)
 
 #### repo root
 
@@ -236,14 +236,80 @@ zsh:cd:1: no such file or directory: web/agent-chat
 exit=1
 ```
 
-**After:** every step exits 0 — `yarn local-install` installs from the private registry and
-leaves `yarn.lock` byte-identical; `yarn gen` leaves `src/gen` and `yarn.lock` with no diff;
-`yarn test --run` reports the placeholder test passing (it lists the `SurveyTools` rpcs from the
-generated descriptor) and the resolver tests passing (exact kept, downgrade to highest ≤, public
-host rewrite, scoped names, `--check` failing on a private-host URL); `yarn build` writes
-`dist/index.html` and `dist/assets/*.js`; `resolve-local-lock.mjs --check` exits 0 (every
-`resolved` host is `registry.yarnpkg.com`, every version served by the private registry). The
-`agent-chat` workflow is green on the PR.
+**After** (2026-11-03, `pr-6-survey-agent` after the rebase onto `pr-5-survey-agent` 00edf65; node v20.19.5, yarn 1.22.22; `web/agent-chat/node_modules` and `dist` removed and `YARN_CACHE_FOLDER` pointed at an empty folder, so `yarn local-install` fetched all 574 tarballs from `https://npm.dev.wixpress.com`; every step exits 0):
+
+```text
+$ cd web/agent-chat && yarn local-install && yarn gen && git diff --exit-code src/gen yarn.lock && yarn lint && yarn typecheck && yarn test --run && yarn build && node scripts/resolve-local-lock.mjs --check
+yarn run v1.22.22
+$ sh scripts/local-install.sh
+local-install: installing from https://npm.dev.wixpress.com with a frozen lockfile
+[1/5] Validating package.json...
+[2/5] Resolving packages...
+[3/5] Fetching packages...
+info There appears to be trouble with your network connection. Retrying...
+info There appears to be trouble with your network connection. Retrying...
+[4/5] Linking dependencies...
+warning Workspaces can only be enabled in private projects.
+warning Workspaces can only be enabled in private projects.
+warning Workspaces can only be enabled in private projects.
+warning Workspaces can only be enabled in private projects.
+warning Workspaces can only be enabled in private projects.
+warning Workspaces can only be enabled in private projects.
+warning Workspaces can only be enabled in private projects.
+warning Workspaces can only be enabled in private projects.
+warning Workspaces can only be enabled in private projects.
+warning Workspaces can only be enabled in private projects.
+[5/5] Building fresh packages...
+local-install: yarn.lock restored to its committed, public-URL form.
+Done in 261.41s.
+yarn run v1.22.22
+$ buf generate ../../proto --path ../../proto/surmap/agent/v1 --template buf.gen.yaml
+Done in 1.39s.
+yarn run v1.22.22
+$ eslint .
+
+/Users/mantasi/Code/yolo-survey-agent-n6/web/agent-chat/src/components/ui/badge.tsx
+  47:17  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+/Users/mantasi/Code/yolo-survey-agent-n6/web/agent-chat/src/components/ui/button.tsx
+  63:18  warning  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components  react-refresh/only-export-components
+
+✖ 2 problems (0 errors, 2 warnings)
+
+Done in 1.35s.
+yarn run v1.22.22
+$ tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit
+Done in 1.71s.
+yarn run v1.22.22
+$ vitest --run
+
+ RUN  v4.1.12 /Users/mantasi/Code/yolo-survey-agent-n6/web/agent-chat
+
+
+ Test Files  2 passed (2)
+      Tests  14 passed (14)
+   Start at  13:37:20
+   Duration  1.43s (transform 54ms, setup 210ms, import 81ms, tests 1.31s, environment 373ms)
+
+Done in 3.89s.
+yarn run v1.22.22
+$ tsc -p tsconfig.app.json --noEmit && vite build
+vite v8.3.4 building client environment for production...
+transforming...
+✓ 81 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.40 kB │ gzip:  0.27 kB
+dist/assets/index-B5xhTUr-.css   21.31 kB │ gzip:  4.58 kB
+dist/assets/index-CmW02kE-.js   322.20 kB │ gzip: 98.97 kB
+
+✓ built in 497ms
+Done in 2.05s.
+resolve-local-lock: yarn.lock OK, 574 package(s) on https://registry.yarnpkg.com and served by https://npm.dev.wixpress.com
+exit=0
+```
+
+`yarn local-install` leaves `yarn.lock` byte-identical (the step restores it); `yarn gen` leaves `src/gen` and `yarn.lock` with no diff; `resolve-local-lock.mjs --check` passes on all 574 packages. The `agent-chat` workflow runs on the PR; its green run is the PR-green gate, not part of this row.
 
 ## Decisions & Trade-offs
 
@@ -265,3 +331,8 @@ host rewrite, scoped names, `--check` failing on a private-host URL); `yarn buil
 - **connect-es over the Connect protocol** (`@connectrpc/connect-web`), which supports unary and
   server-streaming over `fetch` — no NDJSON/REST transcoding layer.
 - **Generated TS is checked in** and CI fails on drift, matching how the Python `_pb2` files are kept.
+- **protobuf-es pinned at 2.13.0, not 2.16.0** — `@bufbuild/protoc-gen-es` 2.14 and later declare `engines.node >=22`; yarn refuses the install on node 20.19.5 (`The engine "node" is incompatible`). 2.13.0 is the newest line that allows node 20, and `@bufbuild/protobuf` moves with it so generated imports and runtime match.
+- **shadcn components copied from the registry JSON, not `shadcn add`** — `shadcn@4.22.1 add` tried `yarn add cn radix-ui`: the `cn` npm package needs node ≥ 22 and the monolithic `radix-ui` is not in the pinned table, so the CLI aborted with no files written. The six component files come from `https://ui.shadcn.com/r/styles/new-york-v4/<name>.json` with three import rewrites: `cn` → `@/lib/utils`, `radix-ui` → the pinned `@radix-ui/react-*` packages, and `Slot.Root` → `Slot` (the standalone package exports the component itself).
+- **CI skips `--check` and runs an offline guard instead** — `--check` asks the private registry whether each locked version exists and matches, which public GitHub runners cannot reach. CI proves the committed lock installs from public npm (`yarn install --frozen-lockfile`) and fails on any `resolved` URL outside `registry.yarnpkg.com`. The V3 command runs `--check` on the dev machine.
+- **The resolver is all-or-nothing** — a registry error for any package fails the run before `yarn.lock` is written (the tddy-coder reference kept such entries). A locked version the private registry does not serve resolves to the highest version at or below it, else `dist-tags.latest`, unless a local cache from the same host holds it, in which case it is kept. `--check` also compares integrity and shasum with the private registry and flags `package.json` ranges that have no lock key.
+- **Two `react-refresh/only-export-components` warnings stay** — shadcn's `buttonVariants` and `badgeVariants` are exported beside their components upstream. `yarn lint` exits 0 with two warnings; no disable comment was added.
