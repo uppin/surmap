@@ -171,6 +171,7 @@ row, it takes `[G]`'s.
 - **`[F]` continues `[W]`'s agent**, so it keeps `[W]`'s model and effort. A fresh `[F]` (the original
   is gone — context exhausted, restart, or a reopened layer) uses `[W]`'s row for the node.
 - **Composer mode (`#composer-subagent`, `#coder`) driver:** Sonnet · low, passed explicitly. Muse: Composer, effort `n/a`.
+- **Muse mode (`#muse`) driver:** Sonnet · low, passed explicitly. Muse Code: `MUSE_MODEL`, effort by the complexity score (§ *Muse mode*).
 
 ### Announce the choice — every time a subagent starts
 
@@ -471,6 +472,37 @@ The stream lives on the host (`~/.composer-runs/<name>/stream.jsonl`), so after 
 `composer-agent.sh summary <host> <name>` re-derives a stage's state. A `🔴 stopped` node keeps its
 worktree, local or remote.
 
+### Muse mode (`#muse`)
+
+When the user asks for it — `#muse`, or in words ("let Muse do it", "offload to Muse Code") — every
+implementation stage is done by **Muse Code run headless through its programmatic CLI**
+(`muse exec --json`, one session per stage name continued with `--session-id`), driven by a
+Claude Code subagent, through the **`muse-subagent` skill** (`.agents/skills/muse-subagent/SKILL.md`).
+Read it first. It is Composer mode with another executor: everything § *Composer mode* above says
+for host `local` holds — what is offloaded (`[G]`, `[W]`, `[F]` only), planning staying here, row
+consent, dispatch, ledger, halts, `[F]` continuing `[W]`'s session (same name
+`yolo-<slug>-n<k>-W`, same Muse session) — with these differences:
+
+| | `#composer-subagent` | `#muse` |
+|---|---|---|
+| Host | `local`, or a Coder workspace with `#coder` | `local` only — `#muse` does not combine with `#coder` |
+| Script | `composer-agent.sh` | `muse-agent.sh` (same commands and exit codes; the driver brief is reused with `$CA` pointed at it) |
+| Readiness | `composer-agent.sh ensure local` | `muse-agent.sh ensure local` — a probe turn proves the login; guide `! muse login` on exit 10 |
+| Model doing the work | `COMPOSER_MODEL`, every stage | `MUSE_MODEL` from `ensure` (or the one the user named), every stage, every node |
+| Effort | `n/a` | from the changeset's complexity score: **1** `low` · **2–3** `medium` · **4** `high` · **5** `xhigh`; `[W]` takes its raised score (§ *Sizing*); `[F]` inherits `[W]`'s. Passed as `--effort`, announced and recorded |
+| Stream | `~/.composer-runs/<name>/stream.jsonl` | `~/.muse-runs/<name>/stream.jsonl`; after a context reset `muse-agent.sh summary local <name>` |
+
+The orchestrator runs `ensure` once before the first dispatch and names `MUSE_MODEL` in the
+decomposition question next to the concurrency cap. Announce each start as usual:
+
+```
+▶ n3 #2402 [G] row 3 /green → Muse Code (muse-wonder-1.0 · high) via muse exec, driven by sonnet · low — complexity 4/5; #muse
+```
+
+Record per row in the ledger: the run name, the Muse `SESSION_ID`, `MUSE_MODEL` and the effort.
+`#muse` and `#composer-subagent` are alternatives; given both, the orchestrator asks which in the
+opening interview.
+
 ### 3 — Green: remove the worktree
 
 The node is done when stage F ends with the green condition above and its Approve observed `APPROVED`. Then, from the **orchestrator**:
@@ -700,12 +732,14 @@ pipeline is "mostly done".
   Haiku (low → xhigh) up to Sonnet · medium, `[W]` Sonnet · low up to Opus · medium, `[F]` inherits
   `[W]`'s agent; on Muse every stage uses Composer; in **Composer mode** (`#composer-subagent`,
   or `#coder` for a Coder workspace) every stage's work runs on the Muse agent's Composer, driven
-  by a Sonnet · low subagent. **Announce one line to the user at each subagent start** (node, stage,
+  by a Sonnet · low subagent; in **Muse mode** (`#muse`) it runs on Muse Code through `muse exec`,
+  effort by the complexity score, driven the same way. **Announce one line to the user at each subagent start** (node, stage,
   model · effort, why) and record it in the ledger.
 - **Resume reads the rows, then the evidence.** A stack that is partly done restarts each node at its first
   unfinished row; nothing done is redone, nothing unseen is trusted, and the status table shows the
   evidence behind every row.
-- **Composer mode only on request** — the user's words, `#composer-subagent` or `#coder`. The
+- **Composer and Muse mode only on request** — the user's words, `#composer-subagent`, `#coder` or
+  `#muse`. The
   orchestrator owns the host (Muse agent install and login guidance, warm-up, restarts); drivers
   never start, stop or provision it.
 - **Bind by prompt, verify by git.** A subagent confirms its toplevel and branch before writing, and
@@ -732,5 +766,5 @@ pipeline is "mostly done".
 (the single-branch runner whose loop, halts and Approve this reuses), `/next`, `/green`,
 `/code-restructuring`, `/pr-wrap`, `/fix-pr`, `/pr-stack-rebase`, `/add-to-pr-stack`, `/analyze-code-issues`, `/abandon-worktree`, `/fix-pr-stack`, `/merge-pr-stack`
 **References**: `.agents/skills/pr-lifecycle/SKILL.md` (the `[wf]` rows, presets, step contract, halts, summary)
-**Skills**: `behaviour-modifiers` (`#yolo`, `#ask`, the relay), `composer-subagent` (Composer mode), `coder-remote` (its Coder host), `deferred-work` (record formats, the bar for deferring), `pr-stack` (`.agents/skills/pr-stack/SKILL.md`) — § *Delete a temporary worktree as soon as
+**Skills**: `behaviour-modifiers` (`#yolo`, `#ask`, the relay), `composer-subagent` (Composer mode), `muse-subagent` (Muse mode), `coder-remote` (its Coder host), `deferred-work` (record formats, the bar for deferring), `pr-stack` (`.agents/skills/pr-stack/SKILL.md`) — § *Delete a temporary worktree as soon as
 its branch is pushed*, § *Green waves*
