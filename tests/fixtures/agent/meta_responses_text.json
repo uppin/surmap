@@ -1,0 +1,34 @@
+{
+  "id": "resp_text_01",
+  "object": "response",
+  "status": "completed",
+  "model": "muse-wonder-1.0",
+  "output": [
+    {
+      "type": "reasoning",
+      "id": "rs_text_01",
+      "summary": []
+    },
+    {
+      "type": "message",
+      "id": "msg_text_01",
+      "role": "assistant",
+      "status": "completed",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "Two people are on the roof of the collapsed block.",
+          "annotations": []
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 812,
+    "output_tokens": 64,
+    "output_tokens_details": {
+      "reasoning_tokens": 40
+    },
+    "total_tokens": 876
+  }
+}

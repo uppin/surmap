@@ -8,12 +8,15 @@
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-03 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file + discovery (commit 1)
+- [wf 1] ✅ 2026-11-03 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file + discovery (commit 1 `d50a197`)
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
+- [wf 2] ✅ 2026-11-03 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 39 failing — commit 2
+  - [x] Create failing acceptance tests
+  - [x] Run acceptance tests (verify they fail)
+  - [x] TDD Red — write failing unit/integration tests
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Milestone 1: `MetaResponsesChatModel` request mapping (instructions, text, images, function_call, function_call_output, tools)
   - [ ] Milestone 2: response mapping (text, tool calls, usage, ledger)
@@ -34,7 +37,7 @@ Full codebase exploration that grounded this plan:
 
 ## Stack Context
 
-**Stack**: survey agent · slug **`#survey-agent`** — this PR is **5 of 9** · #pending
+**Stack**: survey agent · slug **`#survey-agent`** — this PR is **5 of 9** · [#81](https://github.com/uppin/surmap/pull/81)
 **Branch**: `pr-5-survey-agent` · **Base**: `pr-4-survey-agent`
 **Successor**: `pr-6-survey-agent`
 **Kind**: Feature · behaviour-adds
@@ -46,9 +49,19 @@ runtime, tools or UI.
 
 ### Owned API surface
 
-- `surmap.agent.llm.meta`: `MetaResponsesChatModel`, `responses_request(...)`, `parse_responses(...)`
-- `surmap.agent.llm.ollama`: `ollama_chat_model`, `ollama_models(transport)`
-- `surmap.agent.llm.registry`: `ChatModelRegistry`, `ModelInfo`
+- `surmap.agent.llm.meta`: `MetaResponsesChatModel` (`model`, `reasoning_effort`,
+  `max_output_tokens`, `base_url`, `api_key`, `transport: MetaMuseTransport`, `usage_sink:
+  UsageSink`; `bind_tools`, `_generate`, `_agenerate`), `responses_request(...)`,
+  `parse_responses(...)`, `MetaResponsesError`, `ReasoningEffort`, `META_PROVIDER`,
+  `DEFAULT_AGENT_META_MODEL`, `AGENT_META_MODEL_ENV`
+- `surmap.agent.llm.ollama`: `ollama_chat_model(name, *, base_url)`, `ollama_models(transport, *,
+  base_url)`, `ollama_base_url`, `OllamaTagsTransport` (`get_json`) + `UrllibOllamaTagsTransport`
+- `surmap.agent.llm.registry`: `ChatModelRegistry(*, environ, ollama_transport, meta_transport,
+  usage_sink)` (`available → tuple[ModelInfo, ...]`, `build(id) → BaseChatModel`),
+  `ModelInfo(id, provider, model)`, `UnknownModelProvider`
+- `tests/agent_llm_fakes.py` (test infrastructure, implemented in the red commit):
+  `RecordingMetaTransport`, `FakeOllamaTags`, `a_muse_model`, `a_recorded_reply`, `a_reply`, the
+  `echo` tool in three shapes, `round_trip` (live driver)
 
 ### Green wave
 
@@ -136,7 +149,8 @@ def parse_responses(body: Mapping[str, object], *, requested_model: str) -> AIMe
 #### surmap
 
 - `src/surmap/agent/llm/{__init__,meta,ollama,registry}.py` (new)
-- `tests/fixtures/agent/meta_responses_*.json` (recorded/hand-built bodies)
+- `tests/fixtures/agent/meta_responses_{text,one_call,two_calls,empty}.json` (hand-built bodies)
+- `tests/agent_llm_fakes.py`, `tests/test_agent_llm_meta.py`, `tests/test_agent_llm_registry.py`
 - `pyproject.toml`, `uv.lock` — `langchain-ollama>=1.1,<2`
 
 ## Verification
@@ -170,7 +184,58 @@ def parse_responses(body: Mapping[str, object], *, requested_model: str) -> AIMe
   - `build("ollama:<m>")` returns a tool-bindable `ChatOllama`
   - (live) an Ollama turn calls `echo`
 
+### Red step (commit 2)
+
+39 tests, all failing with `NotImplementedError` raised by this node's own stubs (`meta.py`
+`bind_tools` / `_generate` / `_agenerate` / `responses_request` / `parse_responses`, `ollama.py`,
+`registry.py`); no test reaches a predecessor's stub — `tests/agent_llm_fakes.py` imports nothing
+from n4. Two live tests are skipped unless their variables are set; neither was run here.
+
+- `tests/test_agent_llm_meta.py` — 25 offline + 1 live
+  - request mapping: whole conversation → one body (`:73`), shared `call_id` (`:116`), AI text
+    before its calls (`:133`), standard image block → `input_image` (`:150`), OpenAI `image_url`
+    part (`:169`), no system → no `instructions` (`:183`), no tools → no `tools` (`:194`)
+  - tool binding: `BaseTool` (`:208`) and the runtime's portable dict (`:220`) → Responses
+    function tool
+  - reply mapping: text (`:235`), one `function_call` → dict args (`:249`), two calls in order
+    (`:260`), bad JSON → `invalid_tool_calls` (`:275`), usage → `usage_metadata` (`:291`),
+    requested model named (`:307`), no `output` list refused (`:318`)
+  - the model over a fake transport: endpoint (`:330`), model/effort/cap (`:341`), key only in the
+    bearer header (`:360`), missing key refused before a request (`:372`), tool call reaches the
+    caller (`:386`), usage in the ledger (`:397`), empty reply retried once (`:409`), two empty
+    replies raise (`:423`), `ainvoke` (`:433`)
+  - live (`SURMAP_LIVE_META=1`): Muse calls `echo` and answers with its result (`:451`)
+- `tests/test_agent_llm_registry.py` — 14 offline + 1 live
+  - `available`: keyed → Muse Wonder (`:48`), unkeyed → no Muse (`:59`), `SURMAP_AGENT_META_MODEL`
+    (`:70`), Muse before Ollama models in server order (`:83`), stopped server → none (`:97`),
+    `SURMAP_OLLAMA_URL` asked (`:108`)
+  - `build`: `ollama:llama3.2:3b` → `ChatOllama` (`:123`), binds `echo` (`:135`), configured server
+    (`:146`), `meta:` → Muse (`:158`) through the registry transport and key (`:170`), unknown
+    provider refused (`:182`)
+  - `ollama_chat_model` loopback default (`:194`), `ollama_models` order (`:205`)
+  - live (`SURMAP_LIVE_OLLAMA=1` + `SURMAP_OLLAMA_MODEL`): an Ollama turn calls `echo` (`:223`)
+
+Baseline before: 1422 passed, 7 skipped, 42 inherited known-red (n4); after: the same plus these
+39, and 2 more skipped (the live tests).
+
 ## Decisions & Trade-offs
+
+- **The `function_call` shape is assumed** (red step): the fixtures follow the OpenAI-style
+  Responses API — `output: [{type: "message", content: [{type: "output_text", text}]},
+  {type: "function_call", call_id, name, arguments}]`, `usage.output_tokens_details` — and the
+  request sends `{type: "function", name, description, parameters, strict: false}`,
+  `function_call` and `function_call_output` items. Meta has not confirmed any of it; Milestone 4's
+  live check does, and a mismatch means fixing the fixtures to what Meta returns before green.
+- **`responses_request` takes Responses-shaped tools** (red step): `bind_tools` does the
+  conversion (from `BaseTool` or the runtime's `{"type": "function", "function": {…}}` dict) and
+  stores the flat tools, so the pure function needs no LangChain tool types.
+- **Tool-call `arguments` are sent as `json.dumps(args)`** (red step) and pinned by the
+  whole-conversation test; unparseable reply arguments become `invalid_tool_calls`, not an error.
+- **The tag listing has its own GET seam** (red step): `labelling.ollama.OllamaTransport` is
+  POST-only and `/api/tags` is a GET, so `OllamaTagsTransport.get_json` sits beside it, reusing
+  `OllamaError` and the `SURMAP_OLLAMA_URL` default; an unreachable server lists nothing.
+- **The registry takes an injected `environ`** (red step), defaulting to `os.environ`, and hands
+  its `MODEL_API_KEY` to the Muse models it builds; `build` does not consult `available`.
 
 - **Custom `BaseChatModel`, not `ChatOpenAI(use_responses_api=True)`**: Meta's Responses dialect is
   not guaranteed to match OpenAI's, and SurMap already owns a typed transport and usage ledger for it.

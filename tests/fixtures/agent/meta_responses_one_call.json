@@ -1,0 +1,29 @@
+{
+  "id": "resp_one_call_01",
+  "object": "response",
+  "status": "completed",
+  "model": "muse-wonder-1.0",
+  "output": [
+    {
+      "type": "reasoning",
+      "id": "rs_one_call_01",
+      "summary": []
+    },
+    {
+      "type": "function_call",
+      "id": "fc_one_call_01",
+      "call_id": "call_echo_1",
+      "name": "echo",
+      "arguments": "{\"text\": \"surmap-ping\"}",
+      "status": "completed"
+    }
+  ],
+  "usage": {
+    "input_tokens": 950,
+    "output_tokens": 31,
+    "output_tokens_details": {
+      "reasoning_tokens": 12
+    },
+    "total_tokens": 981
+  }
+}
