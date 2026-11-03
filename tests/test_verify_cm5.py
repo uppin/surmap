@@ -159,7 +159,7 @@ async def test_verify_passes_against_a_server_running_the_real_detector() -> Non
     from surmap.detection.source import CoralDetectionSource, CoralObjectPointSource
     from surmap.survey.cm5_main import build_description
     from surmap.survey.stereo import StereoReconstructor
-    from tests.test_survey_server_e2e import running_server
+    from tests.test_survey_server_e2e import running_ws_server
 
     # Given a real CM5 server whose detector is the real Coral network on CPU
     detector = CoralDetector(
@@ -170,7 +170,7 @@ async def test_verify_passes_against_a_server_running_the_real_detector() -> Non
     description = build_description(objects=objects, detections=source)
 
     # When the demo stream is fed to it by the verification script
-    async with running_server(description) as address:
+    async with running_ws_server(description) as address:
         report = await asyncio.to_thread(verify_cm5.verify, address, EUROC)  # type: ignore[attr-defined]
 
     # Then every check passes, and a frame rate is measured per stream
@@ -183,10 +183,10 @@ async def test_verify_passes_against_a_server_running_the_real_detector() -> Non
 async def test_verify_fails_against_a_server_without_a_detector() -> None:
     _require_prepared()
     from surmap.survey.cm5_main import build_description
-    from tests.test_survey_server_e2e import running_server
+    from tests.test_survey_server_e2e import running_ws_server
 
     # Given a CM5 server with the default no-detector configuration
-    async with running_server(build_description()) as address:
+    async with running_ws_server(build_description()) as address:
         # When the demo stream is fed to it by the verification script
         report = await asyncio.to_thread(verify_cm5.verify, address, EUROC)  # type: ignore[attr-defined]
 

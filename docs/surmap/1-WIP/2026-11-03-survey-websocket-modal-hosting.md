@@ -12,7 +12,7 @@ contract change (GPS on the wire), and two new Modal deploy targets; touches `su
 ## Workflow
 
 - [wf 1] ✅ 2026-11-03 `/plan-red` Plan — changeset, initial discovery · this file + discovery companion
-- [wf 2] ⏳ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
+- [wf 2] ✅ 2026-11-03 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 30 red (23 failing + 3 modules not importable), 17 unchanged green
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] `surmap.rpc`: Connect-over-WebSocket route that serves a host's composed Connect apps (`HypercornHost(connect_websocket_path=...)`)
   - [ ] `surmap.rpc`: hypercorn pings WebSockets (`websocket_ping_interval`) so an idle socket survives an idle-cutting proxy
@@ -21,6 +21,8 @@ contract change (GPS on the wire), and two new Modal deploy targets; touches `su
   - [ ] Survey proto: `GpsFix` on `Cm5Request`, `GpsAnchorOut` on `Cm5Response`; regenerate bindings
   - [ ] CM5 `StreamSurvey`: each fix answered with an anchor carrying the map position of the pose nearest in time
   - [ ] `cm5_main` / `station_main`: serve `/connect` over WebSocket, `--auth-token` / `SURMAP_SURVEY_TOKEN`
+  - [ ] `cm5_main.describe(argv)`: `--slam-backend streaming` without `--calibration-dir` — every stream brings its camera definitions (no default backend)
+  - [ ] `StreamRegionPoints` answered by the open survey stream's own backend (`build_description(stream_regions=True)`)
   - [ ] `surmap.demo.remote` on the asyncio WebSocket client (h2c and `http.client` paths removed); sync ports bridged to one event-loop thread
   - [ ] `scripts/verify_cm5.py` / `scripts/verify_station.py` on the WebSocket client, URL addresses, `--token`
   - [ ] `scripts/build_rtabmap_native.sh` runs as root without `sudo` (image builds)
@@ -136,8 +138,14 @@ Out:
 real `websockets` connections: unary and bidi Connect calls over `/connect`, an idle socket kept
 open by pings, auth refusals, CM5 survey + region points + GPS anchors and station analysis
 through `SurveyConnection`, and the demo remote adapters against those servers.
-**Command:** `uv run pytest -q tests/rpc/it/test_connect_websocket.py tests/test_survey_ws_client.py tests/test_survey_gps.py tests/test_demo_remote.py tests/test_modal_survey_apps.py`
-**Before:** to be recorded by the Red row (expected: failures for the missing route, client, GPS messages and app files).
+**Command:** `uv run pytest -q tests/rpc/it/test_connect_websocket.py tests/test_survey_ws_client.py tests/test_survey_gps.py tests/test_demo_remote.py tests/test_modal_survey_apps.py tests/test_survey_region_points.py tests/test_verify_cm5.py tests/test_verify_station.py`
+**Before:** red @ the Red commit — `tests/rpc/it/test_connect_websocket.py` 6 failed
+(`ServerDescription` has no `connect_websocket_path`; `HypercornHost` has no `auth_token`),
+`tests/test_survey_gps.py` 4 failed (`survey_pb2` has no `GpsFix`), `tests/test_demo_remote.py` 9
+failed and `tests/test_verify_{cm5,station}.py` 4 failed (no `auth_token` on the host the switched
+tests start), and `tests/test_survey_ws_client.py`, `tests/test_modal_survey_apps.py`,
+`tests/test_survey_region_points.py` not importable (`surmap.survey.ws_client`,
+`surmap.survey.modal_hosting`, `cm5_main.describe` missing).
 **After:** all pass; full gates green.
 
 **Modal hosting — V4 (needs consent).** No harness here reaches Modal. Procedure:
@@ -175,7 +183,10 @@ Evidence: the scripts' output (rates, device line), the stream's duration.
   - a GPS fix after a posed frame is answered with that frame's map position
   - a fix with no pose within 0.5 s is answered without a map position
   - a server that predates GPS (frames only) still serves a stream that carries fixes (oneof skip)
-- `tests/test_demo_remote.py` — existing scenarios over the WebSocket endpoint
+  - region points reach the backend built for the open survey stream (same connection)
+- `tests/test_survey_region_points.py` — the live mode without a calibration dir serves streaming SLAM and region points; the sidecar mode still needs one (replaces "the live mode needs a calibration dir", a requirement this change lifts)
+- `tests/test_demo_remote.py` — existing scenarios over the WebSocket endpoint; the detection source reaches a token-guarded CM5
+- `tests/test_verify_cm5.py`, `tests/test_verify_station.py` — the server-backed checks over the WebSocket endpoint
 - `tests/test_modal_survey_apps.py` — both app files define `app` and a `web_server` function with `max_containers=1`, read the `surmap-survey` secret, and run the right main with `/connect`
 
 ## Decisions & Trade-offs
@@ -187,4 +198,7 @@ Evidence: the scripts' output (rates, device line), the stream's duration.
 - **Clients switch fully to WebSocket; servers keep HTTP too**: on-prem consumers outside this repo
   keep working, and nothing in the repo still needs the HTTP path.
 - **One PR**, as asked.
+- **Calibration over RPC.** No camera calibration is committed, and a simulated drone already
+  sends its camera definitions in `Cm5StreamConfig`, so the live mode no longer requires
+  `--calibration-dir`; without it, a stream that brings none is refused.
 - **Native RTAB-Map in the CM5 image** so the simulated drone produces real poses and region points.

@@ -34,6 +34,17 @@ async def running_server(description: object) -> AsyncIterator[str]:
         await host.stop()
 
 
+@asynccontextmanager
+async def running_ws_server(description: object, token: str | None = None) -> AsyncIterator[str]:
+    """`running_server`, yielding the server's `ws://` Connect URL; `token` guards it."""
+    host = HypercornHost(description, None, host="127.0.0.1", port=0, auth_token=token)  # type: ignore[arg-type]
+    ports = await host.start()
+    try:
+        yield f"ws://127.0.0.1:{ports.public}/connect"
+    finally:
+        await host.stop()
+
+
 def _frame_message(message: Message) -> bytes:
     payload = message.SerializeToString()
     return struct.pack(">BI", 0, len(payload)) + payload
