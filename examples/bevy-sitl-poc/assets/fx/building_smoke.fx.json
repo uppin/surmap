@@ -8,7 +8,7 @@
         0.1
       ],
       1.0,
-      0.7
+      0.45
     ],
     [
       1.0,
@@ -22,8 +22,8 @@
     ]
   ],
   "size_m": [
-    3.0,
-    18.0
+    4.0,
+    22.0
   ],
   "lifetime_s": [
     15.0,
@@ -36,12 +36,12 @@
   },
   "blend": "alpha",
   "spawn": {
-    "per_metre": 0.5
+    "per_metre": 1.25
   },
   "max_particles": 20000,
   "emitter_spacing_m": 4.0,
   "refresh_s": 1.0,
   "shape": "soft_disc",
-  "softness": 0.9,
+  "softness": 0.95,
   "emit_radius_m": 1.0
 }

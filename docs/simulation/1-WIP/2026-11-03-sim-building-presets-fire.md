@@ -24,7 +24,7 @@ PRD: `PRD-2026-11-03-sim-building-presets-fire.md` · Discovery:
   - [x] Acceptance tests written and failing for the right reason (`tests/test_sim_building_fire_e2e.py`)
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes · all 22 Rust and 33 Python reds green (cargo test 155/155, pytest 1920 passed · 33 skipped, ruff/mypy clean, wasm check ok); D1 (4 districts) and D2 (t = 15/120/400/900) stills taken for the planner
+- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes · all 22 Rust and 33 Python reds green (cargo test 155/155, pytest 1920 passed · 33 skipped, ruff/mypy clean, wasm check ok); D1 (4 districts) and D2 (t = 15/120/400/900) stills taken for the planner; visual review round 1 applied (glow, flame and smoke looks, neighbour ignites at 365 s)
   - [x] Rust `building_style.rs`: facade, roof, district preset loaders and validation; deterministic weighted resolution (contract below)
   - [x] Rust `building_fire.rs`: floor-by-floor fire, spread between buildings and from the wildfire (contract below); burning footprints into n4's `World.burning_areas`
   - [x] Rust `scene_manifest.rs`: `districts`, `building_fires`, building `facade`/`roof`/colours/`roof_shape`/`floors`/`glazing`; `material` optional when a preset resolves

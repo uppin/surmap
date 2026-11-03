@@ -2,9 +2,9 @@
   "climb_s_per_floor": 45.0,
   "descend_factor": 3.0,
   "floor_burn_s": 600.0,
-  "ignite_distance_m": 6.0,
+  "ignite_distance_m": 4.0,
   "ignite_wind_gain_s": 1.0,
-  "exposure_s": 60.0,
+  "exposure_s": 360.0,
   "effects": {
     "window_flames": "fx/window_flames.fx.json",
     "smoke": "fx/building_smoke.fx.json",
@@ -12,8 +12,8 @@
   },
   "glow_colour": [
     1.0,
-    0.45,
-    0.12
+    0.42,
+    0.1
   ],
-  "glow_intensity": 10.0
+  "glow_intensity": 3.5
 }
