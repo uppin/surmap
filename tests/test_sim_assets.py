@@ -7,6 +7,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+
 from surmap.simulation.sim_assets import (
     AssetHashMismatch,
     AssetPin,
