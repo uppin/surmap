@@ -78,7 +78,6 @@ describe("chat page", () => {
 
   afterEach(() => {
     window.history.replaceState({}, "", "/");
-    window.sessionStorage.clear();
   });
 
   it("lists the server's models and starts on the default one", async () => {
@@ -121,23 +120,70 @@ describe("chat page", () => {
     await waitFor(() => expect(asked.watch).toEqual(["conv-9"]));
   });
 
-  it("keeps one conversation per tab when the URL names none", async () => {
-    window.history.replaceState({}, "", "/");
-    const first = fakePort({ turn: aConversation().turnFinished().build() });
-    const firstRender = render(<App port={first.port} />);
+  it("names a new conversation in the URL when the URL names none", async () => {
+    window.history.replaceState({}, "", "/?server=http://agent.test");
+    const { port, asked } = fakePort({ turn: aConversation().turnFinished().build() });
+    render(<App port={port} />);
     const user = userEvent.setup();
-    await user.type(screen.getByRole("textbox", { name: "Message" }), "One");
-    await user.click(screen.getByRole("button", { name: "Send" }));
-    await waitFor(() => expect(first.asked.streamTurn).toHaveLength(1));
-    firstRender.unmount();
 
-    const second = fakePort({ turn: aConversation().turnFinished().build() });
-    render(<App port={second.port} />);
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "Hello");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(asked.streamTurn).toHaveLength(1));
+
+    expect({ conversation: urlParam("conversation"), server: urlParam("server") }).toEqual({
+      conversation: asked.streamTurn[0]?.conversationId,
+      server: "http://agent.test",
+    });
+  });
+
+  it("names the model in use in the URL", async () => {
+    const { port } = fakePort({ models: TWO_MODELS });
+    render(<App port={port} />);
+    const user = userEvent.setup();
     await screen.findByRole("combobox", { name: "Model" });
-    await user.type(screen.getByRole("textbox", { name: "Message" }), "Two");
-    await user.click(screen.getByRole("button", { name: "Send" }));
-    await waitFor(() => expect(second.asked.streamTurn).toHaveLength(1));
+    await waitFor(() => expect(urlParam("model")).toBe("meta:muse-spark"));
 
-    expect(second.asked.streamTurn[0]?.conversationId).toBe(first.asked.streamTurn[0]?.conversationId);
+    await user.selectOptions(screen.getByRole("combobox", { name: "Model" }), "fireworks:kimi-k3");
+
+    expect(urlParam("model")).toBe("fireworks:kimi-k3");
+  });
+
+  it("keeps the conversation and its chosen model across a reload", async () => {
+    window.history.replaceState({}, "", "/");
+    const before = fakePort({ models: TWO_MODELS });
+    const beforeReload = render(<App port={before.port} />);
+    const user = userEvent.setup();
+    await screen.findByRole("option", { name: /Kimi K3/ });
+    await user.selectOptions(screen.getByRole("combobox", { name: "Model" }), "fireworks:kimi-k3");
+    const conversationId = urlParam("conversation");
+    beforeReload.unmount();
+
+    const after = fakePort({ models: TWO_MODELS, turn: aConversation().turnFinished().build() });
+    render(<App port={after.port} />);
+    await screen.findByRole("option", { name: /Kimi K3/ });
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "Still there?");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(after.asked.streamTurn).toHaveLength(1));
+
+    expect(after.asked.streamTurn[0]).toMatchObject({ conversationId, modelId: "fireworks:kimi-k3" });
+  });
+
+  it("falls back to the default model when the URL names one the server does not list", async () => {
+    window.history.replaceState({}, "", "/?conversation=conv-9&model=ollama:gone");
+    const { port } = fakePort({ models: TWO_MODELS });
+
+    render(<App port={port} />);
+
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("meta:muse-spark"));
+    expect(urlParam("model")).toBe("meta:muse-spark");
   });
 });
+
+const TWO_MODELS: ModelInfo[] = [
+  aModel({ id: "meta:muse-spark", isDefault: true }),
+  aModel({ id: "fireworks:kimi-k3", provider: "fireworks", displayName: "Kimi K3" }),
+];
+
+function urlParam(name: string): string | null {
+  return new URLSearchParams(window.location.search).get(name);
+}

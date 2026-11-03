@@ -4,8 +4,8 @@ import type { TranscriptItem } from "@/view-model/transcript";
 import { SERVER_URL, aToolStep } from "@/test-support/view-items";
 import { Transcript } from "./Transcript";
 
-function renderTranscript(items: TranscriptItem[]) {
-  render(<Transcript items={items} serverUrl={SERVER_URL} />);
+function renderTranscript(items: TranscriptItem[], { awaitingReply = false } = {}) {
+  render(<Transcript items={items} serverUrl={SERVER_URL} awaitingReply={awaitingReply} />);
   return { log: () => screen.getByRole("log", { name: "Conversation" }) };
 }
 
@@ -55,6 +55,21 @@ describe("Transcript", () => {
     ]);
 
     expect(transcript.log()).toHaveTextContent("Job job-7 (run_demo) succeeded");
+  });
+
+  it("shows a typing indicator after the conversation while awaiting the agent's reply", () => {
+    const transcript = renderTranscript(
+      [{ kind: "user", id: "u1", turnId: "turn-1", text: "What demos are there?" }],
+      { awaitingReply: true },
+    );
+
+    expect(within(transcript.log()).getByRole("status", { name: "Agent is thinking" })).toBeInTheDocument();
+  });
+
+  it("shows no typing indicator when no reply is awaited", () => {
+    renderTranscript([{ kind: "assistant", id: "a1", turnId: "turn-1", text: "Three demos are ready." }]);
+
+    expect(screen.queryByRole("status", { name: "Agent is thinking" })).not.toBeInTheDocument();
   });
 
   it("shows an error as an alert", () => {

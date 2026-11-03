@@ -56,11 +56,14 @@ export type ChatAction =
   | { type: "models_loaded"; models: ModelInfo[] }
   | { type: "model_selected"; modelId: string };
 
-/** A conversation with nothing in it yet. */
-export function initialChatState(conversationId: string): ChatState {
+/**
+ * A conversation with nothing in it yet; `modelId` is a preferred model, kept when the loaded
+ * models list it.
+ */
+export function initialChatState(conversationId: string, modelId: string | null = null): ChatState {
   return {
     conversationId,
-    modelId: null,
+    modelId,
     models: [],
     phase: "idle",
     turnId: null,
@@ -106,6 +109,17 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
 /** Whether a turn is in flight, so the composer steers instead of starting one. */
 export function isTurnActive(state: ChatState): boolean {
   return state.phase !== "idle";
+}
+
+/**
+ * Whether the running turn has nothing to show yet: no answer text streaming and no tool step
+ * showing its own progress, so the transcript shows a typing indicator.
+ */
+export function isAwaitingReply(state: ChatState): boolean {
+  if (state.phase !== "starting" && state.phase !== "running") return false;
+  const last = state.transcript.at(-1);
+  if (last?.kind === "assistant" && last.turnId === state.turnId) return false;
+  return !(last?.kind === "tool" && last.status === "running");
 }
 
 /** Applies one event of a turn, unless its `seq` is one the state already holds. */
