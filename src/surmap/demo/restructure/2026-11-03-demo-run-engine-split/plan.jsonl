@@ -1,7 +1,0 @@
-{"v":2,"snapshot":{"src/surmap/demo/server.py":"sha256:def7fbc9c356671b07667506c4287131a85b2e741f8b5c04b3b4a38a45ad85a1"}}
-{"op":"move_symbol","anchor":{"kind":"position","file":"src/surmap/demo/server.py","position":{"line":1292,"character":6}},"to":"src/surmap/demo/runs.py","with_private_deps":false}
-{"op":"move_symbol","anchor":{"kind":"position","file":"src/surmap/demo/server.py","position":{"line":1301,"character":0}},"to":"src/surmap/demo/runs.py","with_private_deps":false}
-{"op":"move_symbol","anchor":{"kind":"position","file":"src/surmap/demo/server.py","position":{"line":852,"character":6}},"to":"src/surmap/demo/runs.py","with_private_deps":false}
-{"op":"move_symbol","anchor":{"kind":"position","file":"src/surmap/demo/server.py","position":{"line":2192,"character":4}},"to":"src/surmap/demo/runs.py","with_private_deps":false}
-{"op":"move_symbol","anchor":{"kind":"position","file":"src/surmap/demo/server.py","position":{"line":1679,"character":6}},"to":"src/surmap/demo/runs.py","with_private_deps":false}
-{"op":"organize_imports","anchor":{"kind":"file","file":"src/surmap/demo/server.py"}}

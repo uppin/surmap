@@ -16,10 +16,10 @@
   - [x] Layout proposed, seam order fixed, snapshot taken
   - [x] Baseline recorded (`## Baseline` Before column)
   - [x] Coverage of the moved code checked — 4 characterisation tests (V1) in `tests/test_demo_runs.py`
-- [wf 2] ⬜ `/code-restructuring` Restructure — apply the plan, baseline still green ·
-  - [ ] Dry run clean, plan applied, per-seam checks green
-  - [ ] Build and full suite back to the recorded numbers
-  - [ ] `uv run ruff check src tests` and `uv run mypy` clean
+- [wf 2] ✅ 2026-11-03 `/code-restructuring` Restructure — apply the plan, baseline still green · no `restructure` executor in this checkout: the plan's six ops ran through rope, then the manual `DemoRunHost` step and plan 2 (see `## Decisions & Trade-offs`); full suite 1321 passed · 32 Known-red · 30 skipped, same as before the apply in this checkout; mypy and ruff clean — apply commit (the `refactor(demo): apply the run engine split` commit)
+  - [x] Dry run clean, plan applied, per-seam checks green — the executor's dry run was not available, so each op's rope change set was computed before it was written; per-seam, each seam's moved members were checked verbatim (AST) after plan 1 and after the cut; the gates ran once after the final seam, not after each one
+  - [x] Build and full suite back to the recorded numbers — see `## Baseline` After column (1383 collected in both; 23 fixture-gated e2e tests skip in this checkout)
+  - [x] `uv run ruff check src tests` and `uv run mypy` clean
 - [wf 3] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/surmap/changelog/2026-11-03-demo-run-engine-split.md` — write release-note file with before/after line counts and test numbers
@@ -183,7 +183,8 @@ Cut and paste only; no line of a moved body is retyped. Against the tree plan 1 
 | `src` importers of a moved name | none (`demo/replay.py` and `demo/cloud_view.py` name `PlaybackControls` only in prose) |
 | Monkeypatches of a moved name | none — no test patches `TAKEOVER_TIMEOUT_S` or any moved symbol through `surmap.demo.server` |
 | Facade | `X as X` re-exports in `server.py` for `_RunEngine`, `PlaybackControls`, `TAKEOVER_TIMEOUT_S` (manual step 7) — permanent: n7 and out-of-tree callers keep the old path |
-| Consequence | rope rewrites the import lines of the 5 test files above to `surmap.demo.runs` (option 1 — `move_symbol` always rewrites importers); every other caller is untouched, and the facade keeps every old path resolving |
+| Consequence | the 5 test files' import lines name `surmap.demo.runs` (option 1). **Observed in the apply:** rope did not rewrite them, so they were edited by hand (import lines only); every other caller is untouched, and the facade keeps every old path resolving |
+| Re-exports the plan did not list | `server.py`'s explicit `X as X` re-exports of `CloudPose`, `render_cloud_view`, `CLOUD_VIEW_PX`, `MOVING_ALPHA`, `MOVING_COLOUR`, `SURFACE_ALPHA`, `SURFACE_COLOURS`, `surface_tint` are imported by `tests/test_demo.py` and `tests/test_demo_surfaces.py`. Plan 2's `organize_imports` on `server.py` dropped them as unused; restored by hand (see Decisions) |
 
 ## Verification
 
@@ -223,10 +224,10 @@ Recorded in commit 2, before any change:
 
 | Gate | Before | After |
 |---|---|---|
-| `uv run pytest -q` | 1344 passed · 32 failed (all Known-red, below) · 7 skipped — 1340 passed before the 4 characterisation tests | |
-| `uv run mypy` | Success: no issues found in 316 source files | |
-| `uv run ruff check src tests` | All checks passed | |
-| `uv run ruff format --check src tests` | 341 files already formatted | |
+| `uv run pytest -q` | 1344 passed · 32 failed (all Known-red, below) · 7 skipped — 1340 passed before the 4 characterisation tests | 1321 passed · 32 failed (the same 32 Known-red, each `NotImplementedError` from n1's stubs) · 30 skipped — 1383 collected both times. The checkout the Before row was taken on had the generated fixtures (`tests/fixtures/euroc_v101_rtabmap`, `coral_model`), so its e2e tests ran; this worktree lacks them and 23 of them skip. Measured before the apply in this checkout: 1321 / 32 / 30 (one run also hit the load-sensitive `test_differencing_is_within_frame_budget`, which passes alone). The skip list and the 32 failures match the before run |
+| `uv run mypy` | Success: no issues found in 316 source files | Success: no issues found in 317 source files (`demo/runs.py` is the new file) |
+| `uv run ruff check src tests` | All checks passed | All checks passed |
+| `uv run ruff format --check src tests` | 341 files already formatted | 342 files already formatted |
 
 Two of five full runs also failed `tests/test_moving_differencing.py::test_differencing_is_within_frame_budget`
 (a wall-clock budget, no demo code) while the host's load average was ~40 from parallel agents; it
@@ -247,16 +248,17 @@ Inherited from n1 (`pr-1-survey-agent`, commit 2): its planned red tests, each f
 
 | Issue | Disposition |
 |---|---|
-| `oversized-file-demo-server.md` | Partially addressed — ~2215 → ~1800 lines; stays open for the display / floor-plan / HTTP splits it proposes |
+| `oversized-file-demo-server.md` | Partially addressed — 2215 → 1750 lines in `server.py` (+ 504-line `runs.py`); stays open for the display / floor-plan / HTTP splits it proposes. Not deleted |
 | `oversized-file-demo-page.md` | Not touched — different file |
 
 ## Plan
 
-`src/surmap/demo/restructure/2026-11-03-demo-run-engine-split/plan.jsonl` — written in commit 2:
-snapshot `server.py` @ `sha256:def7fbc9…a85a1`, 6 ops (5 `move_symbol` → `src/surmap/demo/runs.py`,
-1 `organize_imports`). Anchors are 0-based on each declaration's name, checked against the snapshot.
-The `DemoRunHost` extraction and plan 2 follow it (`### Delta` → *Manual step*). Deleted in the
-Restructure row once the baseline holds again.
+Applied in the Restructure row. Plan 1 was 6 operations (5 `move_symbol` → `src/surmap/demo/runs.py`,
+1 `organize_imports`) against snapshot `server.py` @ `sha256:def7fbc9…a85a1`; the manual `DemoRunHost`
+step (18 annotations and 8 methods cut verbatim, one lazy import, one annotation, the header base) and
+plan 2 (12 `add_missing_imports` intents on `runs.py`, `organize_imports` on `runs.py` and `server.py`)
+followed it, then the facade lines by hand. The `plan.jsonl` file was deleted in the apply commit
+(`git ls-files '*/restructure/*/plan.jsonl'` prints nothing).
 
 ## Decisions & Trade-offs
 
@@ -277,13 +279,33 @@ Restructure row once the baseline holds again.
   it, so leaving it in `server.py` would make `runs.py` import `server` at module level — a cycle.
   It is a leaf (threading + `CloudViewer`), it is the run's control state (`current`), and moving it
   costs 4 test files one import line each, kept old-path-reachable by the facade.
-- **Importers are rewritten, and the facade is kept anyway.** rope's `move_symbol` rewrites every
-  importer (5 test files); a plan cannot stop it. The `X as X` facade is still added so
-  `surmap.demo.server` stays a complete surface for n7 and scripts.
+- **Importers are rewritten, and the facade is kept anyway.** The plan expected rope to rewrite the
+  5 test files' imports; it did not (rope saw no occurrence through `surmap.demo.server`). They were
+  edited by hand to `surmap.demo.runs`, and the `X as X` facade is kept so `surmap.demo.server` stays a
+  complete surface for n7 and scripts.
 - **The `restructure` executor is not in this checkout** (`common/code-restructuring/` is absent), so
-  `restructure check` / `check --deep` / `anchors` could not run in commit 2. The anchors were
-  verified by reading the snapshot at each coordinate. The Restructure row must provision the
-  executor, or run the same six intents through rope directly, before applying.
+  nothing ran `restructure check`, `--dry-run`, `status` or `verify`. The six plan-1 intents were
+  applied by a rope script (`rope` 1.15.0, driven directly, not the plan executor): each anchor was
+  resolved to its name against the snapshot (`git show HEAD:…`) and each move was computed as a rope
+  change set before it was written. The executor's own journal and anchor ledger were not exercised.
+- **rope's stock `add_import` writes `runs.X` into `server.py`.** The existing `from surmap.demo import
+  run_archive` line makes rope merge into it and qualify every moved reference (`runs.PlaybackControls`),
+  which would have put a `runs.` self-import into `runs.py` and changed the moved bodies. The apply
+  pins the import style to bare `from surmap.demo.runs import X` (`from-global`, and a patched
+  `add_import` that always takes the `from` form). Verified: each moved top-level symbol and each
+  `DemoRunHost` member is AST-identical to its `HEAD` source, and `start_run` differs only by the lazy
+  import.
+- **plan 2's `organize_imports` removed re-exports the plan did not foresee.** `server.py` no longer
+  uses `CloudPose`, `render_cloud_view`, `MOVING_*`, `SURFACE_*`, `surface_tint` or `CLOUD_VIEW_PX`,
+  so organize dropped their `X as X` lines, and `tests/test_demo.py` and `tests/test_demo_surfaces.py`
+  failed at mypy and import. They were restored as explicit `X as X` re-exports, and the other
+  unused imports that organize removed (`PrepareProgress`, `JournalPlayer`, `ensure_dataset` and
+  similar) have no importer in `src`, `tests`, `scripts`, `examples` or `deploy`.
+- **Ruff isort (`I001`) reordered the two modules and the test imports** after the rope passes, which
+  left the moved names in unsorted, sometimes combined statements. Import order only.
+- **Decided without review (apply):** the 5 test-file import lines (`surmap.demo.runs`); the 8
+  restored re-exports in `server.py`; the rope import-style pin (above); the ruff import-order fixes;
+  `runs.py` at 504 lines against the 500-line budget (planned ~505). Nothing else was deleted.
 - **Dead code: none removed.** `code-analysis` is not installed; the measured coverage found no
   unreachable moved member — every uncovered line is a reachable branch (`## Verification`).
 - **Characterisation tests in a new suite.** `tests/test_demo_controls.py` is 386 lines; the four

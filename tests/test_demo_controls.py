@@ -22,7 +22,8 @@ from surmap.demo.datasets import (
     cached_dataset,
     ensure_dataset,
 )
-from surmap.demo.server import DemoEvent, DemoPlayer, PlaybackControls, make_demo_server
+from surmap.demo.runs import PlaybackControls
+from surmap.demo.server import DemoEvent, DemoPlayer, make_demo_server
 from surmap.slam.base import FrameResult
 from surmap.types import StereoFramePair
 from tests.test_demo import FakeLiveBackend, _odom_with, _prepared_tiny
@@ -298,7 +299,7 @@ def test_the_run_keeps_playing_server_side_after_the_viewer_leaves(tmp_path: Pat
 
 
 def test_an_unstarted_run_engine_joins_cleanly(tmp_path: Path) -> None:
-    from surmap.demo.server import _RunEngine
+    from surmap.demo.runs import _RunEngine
 
     # Given a run engine that was created but never started (a
     # takeover can land in exactly that window)

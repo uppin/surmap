@@ -10,14 +10,8 @@ from pathlib import Path
 
 from surmap.demo.datasets import DatasetSpec, PreparedDataset
 from surmap.demo.history import RunHistoryStore
-from surmap.demo.server import (
-    TAKEOVER_TIMEOUT_S,
-    DemoEvent,
-    PlaybackControls,
-    _DemoHttpServer,
-    _RunEngine,
-    make_demo_server,
-)
+from surmap.demo.runs import TAKEOVER_TIMEOUT_S, PlaybackControls, _RunEngine
+from surmap.demo.server import DemoEvent, _DemoHttpServer, make_demo_server
 from tests.test_demo import _prepared_tiny
 from tests.test_demo_controls import a_local_scene, eventually
 
