@@ -180,13 +180,29 @@ class Cm5StreamConfig(_message.Message):
     max_depth_m: float
     def __init__(self, calibration: _Optional[_Union[StereoCalibration, _Mapping[str, _Any]]] = ..., video_channels: _Optional[_Iterable[int]] = ..., cam0_yaml: _Optional[str] = ..., cam1_yaml: _Optional[str] = ..., max_depth_m: _Optional[float] = ...) -> None: ...
 
+class GpsFix(_message.Message):
+    __slots__ = ("t_ns", "lat", "lon", "alt_m", "accuracy_m")
+    T_NS_FIELD_NUMBER: _ClassVar[int]
+    LAT_FIELD_NUMBER: _ClassVar[int]
+    LON_FIELD_NUMBER: _ClassVar[int]
+    ALT_M_FIELD_NUMBER: _ClassVar[int]
+    ACCURACY_M_FIELD_NUMBER: _ClassVar[int]
+    t_ns: int
+    lat: float
+    lon: float
+    alt_m: float
+    accuracy_m: float
+    def __init__(self, t_ns: _Optional[int] = ..., lat: _Optional[float] = ..., lon: _Optional[float] = ..., alt_m: _Optional[float] = ..., accuracy_m: _Optional[float] = ...) -> None: ...
+
 class Cm5Request(_message.Message):
-    __slots__ = ("config", "frame")
+    __slots__ = ("config", "frame", "gps")
     CONFIG_FIELD_NUMBER: _ClassVar[int]
     FRAME_FIELD_NUMBER: _ClassVar[int]
+    GPS_FIELD_NUMBER: _ClassVar[int]
     config: Cm5StreamConfig
     frame: RawVideoFrame
-    def __init__(self, config: _Optional[_Union[Cm5StreamConfig, _Mapping[str, _Any]]] = ..., frame: _Optional[_Union[RawVideoFrame, _Mapping[str, _Any]]] = ...) -> None: ...
+    gps: GpsFix
+    def __init__(self, config: _Optional[_Union[Cm5StreamConfig, _Mapping[str, _Any]]] = ..., frame: _Optional[_Union[RawVideoFrame, _Mapping[str, _Any]]] = ..., gps: _Optional[_Union[GpsFix, _Mapping[str, _Any]]] = ...) -> None: ...
 
 class PointBatch(_message.Message):
     __slots__ = ("designation", "frame_id", "t_ns", "points")
@@ -252,15 +268,27 @@ class OdomUpdateOut(_message.Message):
     rectification: RectificationOut
     def __init__(self, frame_id: _Optional[int] = ..., t_ns: _Optional[int] = ..., position: _Optional[_Union[Point3, _Mapping[str, _Any]]] = ..., orientation_xyzw: _Optional[_Iterable[float]] = ..., map_position: _Optional[_Union[Point3, _Mapping[str, _Any]]] = ..., map_orientation_xyzw: _Optional[_Iterable[float]] = ..., keypoints: _Optional[_Iterable[_Union[TrackedKeypoint, _Mapping[str, _Any]]]] = ..., rectification: _Optional[_Union[RectificationOut, _Mapping[str, _Any]]] = ...) -> None: ...
 
+class GpsAnchorOut(_message.Message):
+    __slots__ = ("fix", "frame_id", "map_position")
+    FIX_FIELD_NUMBER: _ClassVar[int]
+    FRAME_ID_FIELD_NUMBER: _ClassVar[int]
+    MAP_POSITION_FIELD_NUMBER: _ClassVar[int]
+    fix: GpsFix
+    frame_id: int
+    map_position: Point3
+    def __init__(self, fix: _Optional[_Union[GpsFix, _Mapping[str, _Any]]] = ..., frame_id: _Optional[int] = ..., map_position: _Optional[_Union[Point3, _Mapping[str, _Any]]] = ...) -> None: ...
+
 class Cm5Response(_message.Message):
-    __slots__ = ("points", "video", "odom")
+    __slots__ = ("points", "video", "odom", "gps_anchor")
     POINTS_FIELD_NUMBER: _ClassVar[int]
     VIDEO_FIELD_NUMBER: _ClassVar[int]
     ODOM_FIELD_NUMBER: _ClassVar[int]
+    GPS_ANCHOR_FIELD_NUMBER: _ClassVar[int]
     points: PointBatch
     video: VideoFrameOut
     odom: OdomUpdateOut
-    def __init__(self, points: _Optional[_Union[PointBatch, _Mapping[str, _Any]]] = ..., video: _Optional[_Union[VideoFrameOut, _Mapping[str, _Any]]] = ..., odom: _Optional[_Union[OdomUpdateOut, _Mapping[str, _Any]]] = ...) -> None: ...
+    gps_anchor: GpsAnchorOut
+    def __init__(self, points: _Optional[_Union[PointBatch, _Mapping[str, _Any]]] = ..., video: _Optional[_Union[VideoFrameOut, _Mapping[str, _Any]]] = ..., odom: _Optional[_Union[OdomUpdateOut, _Mapping[str, _Any]]] = ..., gps_anchor: _Optional[_Union[GpsAnchorOut, _Mapping[str, _Any]]] = ...) -> None: ...
 
 class ObjectDetection(_message.Message):
     __slots__ = ("label", "score", "box", "track_id")

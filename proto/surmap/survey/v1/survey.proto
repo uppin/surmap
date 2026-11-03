@@ -106,11 +106,26 @@ message Cm5StreamConfig {
   double max_depth_m = 5;
 }
 
-// One client message on the CM5 stream: config first, then frames.
+// One GPS measurement, on the same monotonic clock as the frames.
+message GpsFix {
+  // Monotonic-clock timestamp on the sending machine, nanoseconds.
+  int64 t_ns = 1;
+  // WGS84 degrees.
+  double lat = 2;
+  double lon = 3;
+  // Altitude above the WGS84 ellipsoid, metres.
+  double alt_m = 4;
+  // Horizontal accuracy, metres (1 sigma); 0 when unknown.
+  double accuracy_m = 5;
+}
+
+// One client message on the CM5 stream: config first, then frames and
+// GPS fixes interleaved in time order.
 message Cm5Request {
   oneof kind {
     Cm5StreamConfig config = 1;
     RawVideoFrame frame = 2;
+    GpsFix gps = 3;
   }
 }
 
@@ -161,12 +176,22 @@ message OdomUpdateOut {
   optional RectificationOut rectification = 8;
 }
 
+// A GPS fix tied to the map frame: the posed frame nearest to the fix in
+// time (within 0.5 s) and its map position. Without such a frame the fix
+// is acknowledged with neither.
+message GpsAnchorOut {
+  GpsFix fix = 1;
+  optional int64 frame_id = 2;
+  optional Point3 map_position = 3;
+}
+
 // One server message on the CM5 stream.
 message Cm5Response {
   oneof kind {
     PointBatch points = 1;
     VideoFrameOut video = 2;
     OdomUpdateOut odom = 3;
+    GpsAnchorOut gps_anchor = 4;
   }
 }
 

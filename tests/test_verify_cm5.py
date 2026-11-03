@@ -38,6 +38,19 @@ def _load_verify() -> object:
 verify_cm5 = _load_verify()
 
 
+def _load_verify_simulated() -> object:
+    path = SCRIPT.with_name("verify_cm5_simulated.py")
+    spec = importlib.util.spec_from_file_location("verify_cm5_simulated", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["verify_cm5_simulated"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+verify_cm5_simulated = _load_verify_simulated()
+
+
 def a_detection_message(
     frame_id: int, *, label: str = "chair", score: float = 0.8, track_id: int = 1
 ) -> survey_pb2.FrameDetections:
@@ -159,7 +172,7 @@ async def test_verify_passes_against_a_server_running_the_real_detector() -> Non
     from surmap.detection.source import CoralDetectionSource, CoralObjectPointSource
     from surmap.survey.cm5_main import build_description
     from surmap.survey.stereo import StereoReconstructor
-    from tests.test_survey_server_e2e import running_server
+    from tests.test_survey_server_e2e import running_ws_server
 
     # Given a real CM5 server whose detector is the real Coral network on CPU
     detector = CoralDetector(
@@ -170,7 +183,7 @@ async def test_verify_passes_against_a_server_running_the_real_detector() -> Non
     description = build_description(objects=objects, detections=source)
 
     # When the demo stream is fed to it by the verification script
-    async with running_server(description) as address:
+    async with running_ws_server(description) as address:
         report = await asyncio.to_thread(verify_cm5.verify, address, EUROC)  # type: ignore[attr-defined]
 
     # Then every check passes, and a frame rate is measured per stream
@@ -183,10 +196,10 @@ async def test_verify_passes_against_a_server_running_the_real_detector() -> Non
 async def test_verify_fails_against_a_server_without_a_detector() -> None:
     _require_prepared()
     from surmap.survey.cm5_main import build_description
-    from tests.test_survey_server_e2e import running_server
+    from tests.test_survey_server_e2e import running_ws_server
 
     # Given a CM5 server with the default no-detector configuration
-    async with running_server(build_description()) as address:
+    async with running_ws_server(build_description()) as address:
         # When the demo stream is fed to it by the verification script
         report = await asyncio.to_thread(verify_cm5.verify, address, EUROC)  # type: ignore[attr-defined]
 
@@ -251,3 +264,120 @@ def test_the_script_reports_its_fixture_manifest_frame_count() -> None:
 
     # Then it takes the first frames of the session, in order
     assert frames == [int(value) for value in timestamps[:40]]
+
+
+def _require_euroc() -> None:
+    if not (EUROC / "manifest.json").is_file():
+        pytest.skip("run `uv run python scripts/fetch_rtabmap_fixture.py` first")
+
+
+class SimulatedDroneBackend:
+    """A per-stream backend, as a simulated drone's CM5 builds one from the stream's cameras:
+    every pair posed one metre further along x, dense points held for every frame it saw."""
+
+    def __init__(self, cam0_yaml: str) -> None:
+        self.cam0_yaml = cam0_yaml
+        self._points: dict[int, tuple[object, ...]] = {}
+
+    def process_frame(self, frame: object) -> object:
+        from surmap.slam.base import FrameResult
+        from surmap.types import Pose, Vec3
+
+        frame_id = frame.frame_id  # type: ignore[attr-defined]
+        self._points[frame_id] = (Vec3(0.0, 0.0, 3.0),)
+        pose = Pose(Vec3(float(frame_id), 0.0, 0.0))
+        return FrameResult(frame_id, frame.t_ns, pose, (Vec3(1.0, 2.0, 3.0),))  # type: ignore[attr-defined]
+
+    def region_points(self, query: object, timeout: float = 5.0) -> object:
+        from surmap.slam.regions import RegionResult, RegionStatus
+
+        points = self._points.get(query.frame_id)  # type: ignore[attr-defined]
+        status = RegionStatus.OK if points else RegionStatus.FRAME_EXPIRED
+        return RegionResult(query.query_id, query.frame_id, query.channel, status, points or ())  # type: ignore[attr-defined, arg-type]
+
+    def trajectory(self) -> list[object]:
+        return []
+
+    def close(self) -> None:
+        pass
+
+
+def a_simulated_drone_cm5(*, regions: bool = True) -> object:
+    """A CM5 with no calibration of its own: each stream must bring its camera definitions."""
+    from surmap.survey.cm5_main import build_description
+
+    built: list[SimulatedDroneBackend] = []
+
+    def per_stream(config: survey_pb2.Cm5StreamConfig) -> SimulatedDroneBackend:
+        if not config.cam0_yaml:
+            raise ValueError("send cam0_yaml and cam1_yaml in the stream config")
+        built.append(SimulatedDroneBackend(config.cam0_yaml))
+        return built[-1]
+
+    return build_description(
+        use_stereo=False,
+        slam_factory=per_stream,  # type: ignore[arg-type]
+        stream_regions=regions,
+        slam_label="streaming",
+    )
+
+
+async def test_verify_simulated_passes_against_a_cm5_fed_cameras_and_gps_over_rpc() -> None:
+    _require_euroc()
+    from tests.test_survey_server_e2e import running_ws_server
+
+    # Given a token-guarded simulated-drone CM5 that takes its cameras from the stream
+    async with running_ws_server(a_simulated_drone_cm5(), token="survey-secret") as address:
+        # When the simulated-drone verification feeds it frames and GPS over one connection
+        report = await asyncio.to_thread(
+            verify_cm5_simulated.verify_simulated,  # type: ignore[attr-defined]
+            address,
+            EUROC,
+            6,
+            token="survey-secret",
+        )
+
+    # Then health, survey, GPS anchoring and region points all pass, with a survey rate
+    assert {result.name for result in report.checks} == {"health", "survey", "gps", "regions"}
+    assert all(result.ok for result in report.checks), [r.detail for r in report.checks]
+    assert [rate.name for rate in report.rates] == ["survey"]
+
+
+async def test_verify_simulated_holds_the_stream_open_for_the_requested_time() -> None:
+    _require_euroc()
+    from tests.test_survey_server_e2e import running_ws_server
+
+    # Given a simulated-drone CM5
+    async with running_ws_server(a_simulated_drone_cm5()) as address:
+        # When the verification is asked to keep its survey stream open for 2 s
+        report = await asyncio.to_thread(
+            verify_cm5_simulated.verify_simulated,  # type: ignore[attr-defined]
+            address,
+            EUROC,
+            4,
+            hold_s=2.0,
+        )
+
+    # Then the survey stream lasted at least that long and still passed
+    survey = next(rate for rate in report.rates if rate.name == "survey")
+    assert survey.elapsed_s >= 2.0
+    assert all(result.ok for result in report.checks), [r.detail for r in report.checks]
+
+
+async def test_verify_simulated_fails_the_region_check_on_a_cm5_without_region_points() -> None:
+    _require_euroc()
+    from tests.test_survey_server_e2e import running_ws_server
+
+    # Given a simulated-drone CM5 started without region points
+    async with running_ws_server(a_simulated_drone_cm5(regions=False)) as address:
+        report = await asyncio.to_thread(
+            verify_cm5_simulated.verify_simulated,  # type: ignore[attr-defined]
+            address,
+            EUROC,
+            4,
+        )
+
+    # Then only the region check fails, naming the refusal
+    by_name = {result.name: result for result in report.checks}
+    assert (by_name["survey"].ok, by_name["gps"].ok, by_name["regions"].ok) == (True, True, False)
+    assert "region" in by_name["regions"].detail.lower()

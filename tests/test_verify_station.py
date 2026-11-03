@@ -143,11 +143,11 @@ async def test_verify_passes_and_reports_cpu_against_the_fake_model_server() -> 
     _require_prepared()
     from surmap.survey.sam3 import sam3_detector
     from surmap.survey.station_main import build_description
-    from tests.test_survey_server_e2e import running_server
+    from tests.test_survey_server_e2e import running_ws_server
 
     # Given a real station server running the fake SAM3 model on CPU
     detector = sam3_detector(FAKE_MODEL, device="cpu", label="wall")
-    async with running_server(build_description(detector=detector)) as address:
+    async with running_ws_server(build_description(detector=detector)) as address:
         # When the demo stream is fed to it by the verification script
         report = await asyncio.to_thread(verify_station.verify, address, EUROC)  # type: ignore[attr-defined]
 
@@ -163,11 +163,11 @@ async def test_verify_expecting_gpu_fails_against_a_cpu_server() -> None:
     _require_prepared()
     from surmap.survey.sam3 import sam3_detector
     from surmap.survey.station_main import build_description
-    from tests.test_survey_server_e2e import running_server
+    from tests.test_survey_server_e2e import running_ws_server
 
     # Given the same CPU server, verified with a GPU expectation
     detector = sam3_detector(FAKE_MODEL, device="cpu", label="wall")
-    async with running_server(build_description(detector=detector)) as address:
+    async with running_ws_server(build_description(detector=detector)) as address:
         report = await asyncio.to_thread(
             verify_station.verify,  # type: ignore[attr-defined]
             address,

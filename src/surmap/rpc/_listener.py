@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import hmac
 import socket
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -16,6 +18,7 @@ from surmap.rpc.http_limits import (
     RequestBodyTooLargeError,
     read_limited_body,
 )
+from surmap.rpc.socket_rpc._trace import socket_trace
 
 AsgiApp = Callable[..., Awaitable[None]]
 WebSocketAsgiApp = Callable[..., Awaitable[None]]
@@ -24,6 +27,40 @@ WebSocketAsgiApp = Callable[..., Awaitable[None]]
 def _looks_like_rpc(path: str) -> bool:
     segments = path.strip("/").split("/")
     return len(segments) == 2 and "." in segments[0]
+
+
+def _authorized(scope: dict[str, Any], token: str | None) -> bool:
+    """Whether the request carries `Authorization: Bearer <token>` (always, when no token)."""
+    if token is None:
+        return True
+    expected = f"Bearer {token}".encode()
+    for name, value in scope.get("headers", ()):
+        if name.lower() == b"authorization" and hmac.compare_digest(value, expected):
+            return True
+    return False
+
+
+# How long a stopping listener waits for hypercorn to close its connections before cancelling.
+SHUTDOWN_GRACE_S = 10.0
+
+# A WebSocket without the bearer token is refused inside the socket: told this text frame, then
+# closed with this code. A proxy in front (e.g. Modal's edge) turns an HTTP 401 on the upgrade
+# into an error of its own and rewrites close codes, but passes the frame.
+UNAUTHORIZED_TEXT = "unauthorized"
+UNAUTHORIZED_CLOSE_CODE = 4401
+
+
+async def _refuse_websocket(scope: dict[str, Any], receive: Any, send: Any) -> None:
+    """Accept the upgrade, say it is unauthorized, close it; nothing on it is ever served."""
+    message = await receive()
+    if message["type"] != "websocket.connect":
+        return
+    await send({"type": "websocket.accept"})
+    socket_trace("ws.server.refused", path=scope.get("path", ""), reason="no bearer token")
+    await send({"type": "websocket.send", "text": UNAUTHORIZED_TEXT})
+    await send(
+        {"type": "websocket.close", "code": UNAUTHORIZED_CLOSE_CODE, "reason": UNAUTHORIZED_TEXT}
+    )
 
 
 async def _send_response(send: Any, response: HttpResponse) -> None:
@@ -41,7 +78,9 @@ def build_listener_app(
     connect_apps: Mapping[str, ConnectASGIApplication[Any]],
     http_handlers: Mapping[tuple[str, str], HttpHandler],
     websocket_handlers: Mapping[str, WebSocketAsgiApp] | None = None,
+    auth_token: str | None = None,
 ) -> AsgiApp:
+    """`auth_token`, when set, guards Connect calls and WebSocket upgrades (see `_authorized`)."""
     paths_by_method: dict[str, set[str]] = {}
     for method, path in http_handlers:
         paths_by_method.setdefault(path, set()).add(method)
@@ -54,6 +93,9 @@ def build_listener_app(
             ws_app = websockets.get(path)
             if ws_app is None:
                 await send({"type": "websocket.close", "code": 1008})
+                return
+            if not _authorized(scope, auth_token):
+                await _refuse_websocket(scope, receive, send)
                 return
             await ws_app(scope, receive, send)
             return
@@ -70,6 +112,9 @@ def build_listener_app(
             connect_app = connect_apps.get(path)
             if connect_app is None:
                 await _send_plain(send, status=404, body=b"", headers={})
+                return
+            if not _authorized(scope, auth_token):
+                await _send_plain(send, status=401, body=b"", headers={})
                 return
             await connect_app(scope, receive, send)
             return
@@ -109,7 +154,14 @@ class _HypercornServer:
         self._shutdown.set()
 
     async def wait_closed(self) -> None:
-        await self._task
+        # Bounded: a connection hypercorn cannot close (a client holding a WebSocket) must not
+        # hold shutdown forever — on Python 3.12 hypercorn's own graceful timeout never fires.
+        try:
+            await asyncio.wait_for(asyncio.shield(self._task), SHUTDOWN_GRACE_S)
+        except TimeoutError:
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task
         # Hypercorn owns the fd passed via `fd://`; do not close it again here.
         self._bind_socket = None
 
@@ -122,6 +174,7 @@ async def start_hypercorn(
     http_handlers: Mapping[tuple[str, str], HttpHandler],
     websocket_handlers: Mapping[str, WebSocketAsgiApp] | None = None,
     app: AsgiApp | None = None,
+    auth_token: str | None = None,
 ) -> tuple[_HypercornServer, int]:
     from hypercorn.asyncio import serve
     from hypercorn.config import Config
@@ -131,6 +184,7 @@ async def start_hypercorn(
             connect_apps=connect_apps,
             http_handlers=http_handlers,
             websocket_handlers=websocket_handlers,
+            auth_token=auth_token,
         )
     bind_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     bind_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

@@ -8,8 +8,8 @@ import pytest
 
 from surmap.rpc.hosts.in_memory import InMemoryHost
 from surmap.slam.regions import InMemoryRegionPointSource, RegionPointSource
-from surmap.survey.cm5_main import build_description, main, streaming_backend
-from surmap.survey.cm5_server import stream_region_points
+from surmap.survey.cm5_main import build_description, describe, main, streaming_backend
+from surmap.survey.cm5_service import stream_region_points
 from surmap.survey.v1 import survey_pb2
 from surmap.types import Vec3
 from tests.test_demo import CAM0_YAML
@@ -177,10 +177,27 @@ async def test_the_region_stream_is_mounted_on_the_cm5_survey_service() -> None:
     assert [(r.query_id, r.status, len(r.points)) for r in responses] == [(3, OK, 2)]
 
 
-def test_the_cm5_live_mode_needs_a_calibration_dir() -> None:
-    # Given / When / Then the live RTAB-Map mode cannot start uncalibrated
+async def test_the_cm5_live_mode_without_a_calibration_dir_takes_each_streams_own() -> None:
+    # Given the live RTAB-Map mode with region points and no calibration dir (a simulator
+    # sends each stream's camera definitions in its config)
+    description = describe(["--slam-backend", "streaming", "--region-points"])
+
+    # When its capabilities are read
+    host = InMemoryHost(description, None)
+    client = host.client(survey_pb2.DESCRIPTOR.services_by_name["Cm5SurveyService"])
+    capabilities = cast(
+        "survey_pb2.Capabilities",
+        await client.unary("GetCapabilities", survey_pb2.CapabilitiesRequest()),
+    )
+
+    # Then it serves streaming SLAM and region points without a default backend
+    assert (capabilities.slam, capabilities.region_points) == ("streaming", True)
+
+
+def test_the_cm5_sidecar_mode_still_needs_a_calibration_dir() -> None:
+    # Given / When / Then the batch sidecar cannot start uncalibrated
     with pytest.raises(SystemExit):
-        main(["--slam-backend", "streaming"])
+        main(["--slam-backend", "sidecar"])
 
 
 def test_the_cm5_live_mode_starts_the_streaming_sidecar_at_the_frame_size(

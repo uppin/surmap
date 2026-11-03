@@ -90,6 +90,11 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 # Deploy entrypoint must `import modal` at module scope (Modal 1.x rejects
 # nested functions). The SDK is not a CI dependency, so this module is not
-# typechecked here. Tests parse it with ast instead of importing it.
-module = "surmap.survey.modal_sam_app"
+# typechecked here. Tests parse it with ast instead of importing it; what the
+# survey apps run lives in surmap.survey.modal_hosting, which is typechecked.
+module = [
+    "surmap.survey.modal_sam_app",
+    "surmap.survey.modal_cm5_app",
+    "surmap.survey.modal_station_app",
+]
 ignore_errors = true

@@ -11,6 +11,9 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # The suite takes about 3 minutes; a hang fails here instead of running for hours, after
+    # tests/conftest.py's hang dump (SURMAP_TEST_HANG_DUMP_S) has written where it waits.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

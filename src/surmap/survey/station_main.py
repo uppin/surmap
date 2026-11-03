@@ -28,6 +28,7 @@ from pathlib import Path
 from surmap.rpc.description import ServerDescription
 from surmap.rpc.hosts.hypercorn import HypercornHost
 from surmap.rpc.routes import health_routes
+from surmap.survey.endpoint import CONNECT_PATH, survey_token
 from surmap.survey.modal_sam import ModalSamDetector, modal_sam_detector
 from surmap.survey.sam import SamDetector
 from surmap.survey.sam3 import Sam3Detector, Sam3Unavailable, sam3_detector
@@ -75,16 +76,25 @@ def resolve_detector(
 def build_description(
     detector: SamDetector | None = None,
 ) -> ServerDescription[None]:
-    """The station server's description: SAM service plus health routes."""
+    """The station server's description: SAM service plus health routes, Connect also over a
+    WebSocket at `CONNECT_PATH`."""
     return ServerDescription(
         services=(station_service_module(detector),),
         http_routes=health_routes(lambda: False),
+        connect_websocket_path=CONNECT_PATH,
     )
 
 
-async def serve(host: str, port: int, description: ServerDescription[None] | None = None) -> None:
+async def serve(
+    host: str,
+    port: int,
+    description: ServerDescription[None] | None = None,
+    auth_token: str | None = None,
+) -> None:
     """Serve the station description until cancelled; always stop the host."""
-    server = HypercornHost(description or build_description(), None, host=host, port=port)
+    server = HypercornHost(
+        description or build_description(), None, host=host, port=port, auth_token=auth_token
+    )
     await server.start()
     try:
         await asyncio.Event().wait()
@@ -97,6 +107,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="surmap.survey.station_main")
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument(
+        "--auth-token",
+        default=None,
+        help="bearer token required on Connect calls (default: $SURMAP_SURVEY_TOKEN; none: open)",
+    )
     parser.add_argument(
         "--detector",
         choices=("memory", "sam3", "sam3-modal", "sam31-torch"),
@@ -133,7 +148,7 @@ def main(argv: list[str] | None = None) -> None:
         parser.error(str(exc))
     description = None if detector is None else build_description(detector=detector)
     try:
-        asyncio.run(serve(args.host, args.port, description))
+        asyncio.run(serve(args.host, args.port, description, survey_token(args.auth_token)))
     except KeyboardInterrupt:
         pass
 

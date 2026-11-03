@@ -28,7 +28,7 @@ from surmap.demo.server import make_demo_server
 from surmap.detection.tracker import TrackedDetection
 from surmap.types import StereoFramePair
 from tests.test_demo import _prepared_tiny
-from tests.test_survey_server_e2e import running_server
+from tests.test_survey_server_e2e import running_ws_server
 
 ROOT = Path(__file__).resolve().parent.parent
 EUROC = ROOT / "tests" / "fixtures" / "euroc_v101_rtabmap"
@@ -62,7 +62,7 @@ async def test_capabilities_of_a_live_cm5_host_describe_its_build() -> None:
     from surmap.survey.cm5_main import build_description
 
     # Given a real CM5 server on a local socket (bare build)
-    async with running_server(build_description()) as address:
+    async with running_ws_server(build_description()) as address:
         # When its capabilities are fetched over the wire
         capabilities = await asyncio.to_thread(fetch_capabilities, address, "Cm5SurveyService")
 
@@ -81,7 +81,7 @@ async def test_the_remote_cm5_backend_builds_its_cloud_from_survey_points() -> N
     calibration = load_calibration(PreparedDataset(DATASETS["euroc-v1-01-easy"], EUROC, ())).scaled(
         376, 240
     )
-    async with running_server(build_description()) as address:
+    async with running_ws_server(build_description()) as address:
         backend = RemoteCm5Backend(address, calibration, (376, 240))
         try:
             # When the played pairs are streamed to it and flushed
@@ -112,15 +112,40 @@ async def test_the_remote_detection_source_returns_the_servers_tracks() -> None:
         def detect_tracked(self, frame_id: int, rgb: np.ndarray) -> tuple[TrackedDetection, ...]:
             return (TrackedDetection("car", 0.9, (1.0, 2.0, 30.0, 40.0), 7, frame_id),)
 
-    async with running_server(build_description(detections=StubSource())) as address:
+    async with running_ws_server(build_description(detections=StubSource())) as address:
         source = RemoteDetectionSource(address)
-
-        # When a frame is analyzed through the wire client
-        tracked = await asyncio.to_thread(
-            source.detect_tracked, 3, np.zeros((240, 376, 3), dtype=np.uint8)
-        )
+        try:
+            # When a frame is analyzed through the wire client
+            tracked = await asyncio.to_thread(
+                source.detect_tracked, 3, np.zeros((240, 376, 3), dtype=np.uint8)
+            )
+        finally:
+            source.close()
 
     # Then the server's detection and track id come back unchanged
+    assert [(d.label, d.track_id) for d in tracked] == [("car", 7)]
+
+
+async def test_the_remote_detection_source_reaches_a_token_guarded_cm5_with_its_token() -> None:
+    from surmap.survey.cm5_main import build_description
+
+    # Given a token-guarded CM5 server whose detector reports one tracked car
+    class StubSource:
+        def detect_tracked(self, frame_id: int, rgb: np.ndarray) -> tuple[TrackedDetection, ...]:
+            return (TrackedDetection("car", 0.9, (1.0, 2.0, 30.0, 40.0), 7, frame_id),)
+
+    description = build_description(detections=StubSource())
+    async with running_ws_server(description, token="survey-secret") as address:
+        source = RemoteDetectionSource(address, token="survey-secret")
+        try:
+            # When a frame is analyzed through the wire client holding the token
+            tracked = await asyncio.to_thread(
+                source.detect_tracked, 3, np.zeros((240, 376, 3), dtype=np.uint8)
+            )
+        finally:
+            source.close()
+
+    # Then the server answered it
     assert [(d.label, d.track_id) for d in tracked] == [("car", 7)]
 
 
@@ -131,7 +156,7 @@ async def test_the_remote_sam_detector_tracks_the_stations_detections() -> None:
     # Given a station server with a configured in-memory detection
     detection = SamDetection("car", 0.9, (10.0, 10.0, 60.0, 60.0), ((10.0, 10.0), (60.0, 60.0)))
     detector = InMemorySamDetector((detection,))
-    async with running_server(station_description(detector=detector)) as address:
+    async with running_ws_server(station_description(detector=detector)) as address:
         source = RemoteSamDetector(address, "car")
         try:
             # When two frames are tracked through the wire client
@@ -208,7 +233,7 @@ async def test_the_remote_backend_receives_odometry_and_live_points_before_flush
             pass
 
     calibration = _calibration()
-    async with running_server(build_description(slam=StubSlam(), use_stereo=False)) as address:
+    async with running_ws_server(build_description(slam=StubSlam(), use_stereo=False)) as address:
         backend = RemoteCm5Backend(address, calibration, (376, 240))
         try:
             # When two pairs are played (with no flush yet)
@@ -292,7 +317,9 @@ async def test_each_survey_stream_gets_its_own_slam_built_from_the_stream_config
         return slam
 
     calibration = _calibration()
-    async with running_server(build_description(slam_factory=factory, use_stereo=False)) as address:  # type: ignore[arg-type]
+    async with running_ws_server(
+        build_description(slam_factory=factory, use_stereo=False)  # type: ignore[arg-type]
+    ) as address:
 
         async def play_one() -> list[tuple[float, ...]]:
             backend = RemoteCm5Backend(
@@ -330,7 +357,7 @@ async def test_a_shared_slam_never_leaks_its_previous_map_or_odometry_into_a_str
     # Given one shared SLAM backend that already holds a previous
     # run's map point and odometry for frame 1 (under another t_ns)
     calibration = _calibration()
-    async with running_server(
+    async with running_ws_server(
         build_description(slam=_stub_slam(9.0, odom_t_ns=999, pre_mapped=True), use_stereo=False)  # type: ignore[arg-type]
     ) as address:
         backend = RemoteCm5Backend(address, calibration, (376, 240))
@@ -383,7 +410,7 @@ async def test_a_keyframe_emits_at_most_the_stored_point_cap_placed_by_its_pose(
             pass
 
     calibration = _calibration()
-    async with running_server(
+    async with running_ws_server(
         build_description(slam=BigKeyframeSlam(), use_stereo=False)
     ) as address:
         backend = RemoteCm5Backend(address, calibration, (376, 240))

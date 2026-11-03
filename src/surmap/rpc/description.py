@@ -48,4 +48,6 @@ class ServerDescription(Generic[C]):
     services: Sequence[ServiceModule[C]] = field(default_factory=tuple)
     http_routes: Sequence[HttpRoute[C]] = field(default_factory=tuple)
     websocket_routes: Sequence[WebSocketRoute[C]] = field(default_factory=tuple)
+    # When set, every service is also served as Connect over one WebSocket at this path.
+    connect_websocket_path: str | None = None
     closeables: Callable[[C], Sequence[Closeable]] = field(default=lambda _context: ())

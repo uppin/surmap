@@ -15,49 +15,63 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterable, AsyncIterator, Callable
-from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 
-from surmap.detection.detector import decode_rgb
-from surmap.detection.source import DetectionSource
 from surmap.geometry import to_map_frame
-from surmap.rpc.compose import Brick
-from surmap.rpc.description import ServiceModule
 from surmap.slam.base import FrameResult, SlamBackend
-from surmap.slam.fake import InMemorySlamBackend
-from surmap.slam.regions import RegionPointSource, RegionQuery, RegionStatus, invalid_reason
+from surmap.slam.capabilities import (
+    FlushableBackend,
+    KeyframeSource,
+    MapSnapshotSource,
+    OdometrySource,
+    RectificationSource,
+)
+from surmap.slam.regions import (
+    RegionPointSource,
+    StreamRegionRouter,
+)
 from surmap.slam.stream_protocol import KeyframeUpdate, OdomUpdate, Rectification
 from surmap.survey.designations import object_designation, video_designation
+from surmap.survey.gps import PendingFixes, PoseTimeline
 from surmap.survey.moving_stream import _encoding_name as _encoding_name
 from surmap.survey.moving_stream import stream_moving_areas as stream_moving_areas
-from surmap.survey.object_points import InMemoryObjectPointSource, ObjectPointSource
+from surmap.survey.object_points import ObjectPointSource
+from surmap.survey.offload import forget_backend, run_blocking
 from surmap.survey.points import IncrementalPointEmitter
 from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
 from surmap.survey.v1 import survey_pb2
 from surmap.types import StereoFramePair, Vec3
 
-
-@dataclass(frozen=True)
-class Cm5Context:
-    """Context carrying the SLAM backend and object-point source for a host."""
-
-    slam: SlamBackend
-    objects: ObjectPointSource
-    stereo: StereoReconstructor | None = None
-    regions: RegionPointSource | None = None
+# A survey stream with no request for this long still drains what a live backend produced since
+# (odometry, keyframes, the GPS anchors waiting for them).
+IDLE_DRAIN_S = 0.1
 
 
-# A region is streamed in chunks of at most this many points.
-MAX_REGION_POINTS_PER_MESSAGE = 10_000
-
-_REGION_STATUS = {
-    RegionStatus.OK: survey_pb2.REGION_STATUS_OK,
-    RegionStatus.FRAME_EXPIRED: survey_pb2.REGION_STATUS_FRAME_EXPIRED,
-    RegionStatus.NO_POSE: survey_pb2.REGION_STATUS_NO_POSE,
-    RegionStatus.INVALID_QUERY: survey_pb2.REGION_STATUS_INVALID_QUERY,
-}
+async def _with_idle_ticks(
+    requests: AsyncIterable[survey_pb2.Cm5Request], idle_s: float
+) -> AsyncIterator[survey_pb2.Cm5Request | None]:
+    """`requests`, with a `None` whenever `idle_s` passes without one. The pending read is kept
+    across ticks, never cancelled."""
+    iterator = aiter(requests)
+    pending: asyncio.Future[survey_pb2.Cm5Request] | None = None
+    try:
+        while True:
+            if pending is None:
+                pending = asyncio.ensure_future(anext(iterator))
+            done, _ = await asyncio.wait({pending}, timeout=idle_s)
+            if not done:
+                yield None
+                continue
+            try:
+                request = pending.result()
+            except StopAsyncIteration:
+                return
+            pending = None
+            yield request
+    finally:
+        if pending is not None and not pending.done():
+            pending.cancel()
 
 
 # The local streaming backend stores at most this many points per
@@ -184,17 +198,24 @@ async def stream_survey(
     emitter: IncrementalPointEmitter | None = None,
     stereo: StereoReconstructor | None = None,
     slam_factory: SlamFactory | None = None,
+    stream_regions: StreamRegionRouter | None = None,
 ) -> AsyncIterator[survey_pb2.Cm5Response]:
-    """Serve one CM5 survey stream: config first, then per-channel frames."""
+    """Serve one CM5 survey stream: config first, then per-channel frames and GPS fixes.
+
+    A backend `slam_factory` builds for this stream answers `stream_regions` while it is open.
+    """
     owned: list[SlamBackend] = []
     try:
         async for response in _stream_survey(
-            requests, slam, objects, emitter, stereo, slam_factory, owned
+            requests, slam, objects, emitter, stereo, slam_factory, owned, stream_regions
         ):
             yield response
     finally:
         if owned:
+            if stream_regions is not None and isinstance(owned[0], RegionPointSource):
+                stream_regions.close(owned[0])
             owned[0].close()
+            forget_backend(owned[0])
 
 
 async def _stream_survey(
@@ -205,6 +226,7 @@ async def _stream_survey(
     stereo: StereoReconstructor | None = None,
     slam_factory: SlamFactory | None = None,
     owned: list[SlamBackend] | None = None,
+    stream_regions: StreamRegionRouter | None = None,
 ) -> AsyncIterator[survey_pb2.Cm5Response]:
     if emitter is None:
         emitter = IncrementalPointEmitter()
@@ -213,16 +235,17 @@ async def _stream_survey(
     pairs: dict[int, StereoFramePair] = {}
     odom_pending: set[int] = set()
     rectification_sent = False
+    timeline = PoseTimeline()
+    fixes = PendingFixes()
 
     def drain_odom() -> list[survey_pb2.Cm5Response]:
         """Odometry responses for pending frames whose odometry landed."""
         nonlocal rectification_sent
-        frame_odometry = getattr(slam, "frame_odometry", None)
-        if not callable(frame_odometry):
+        if not isinstance(slam, OdometrySource):
             return []
         responses: list[survey_pb2.Cm5Response] = []
         for frame_id in sorted(odom_pending):
-            update = frame_odometry(frame_id)
+            update = slam.frame_odometry(frame_id)
             if update is None:
                 continue
             pair = pairs.get(frame_id)
@@ -232,15 +255,48 @@ async def _stream_survey(
                 odom_pending.discard(frame_id)
                 continue
             odom_pending.discard(frame_id)
+            posed = update.map_pose or update.pose
+            if posed is not None:
+                timeline.add(frame_id, update.t_ns, posed.position)
             rectification: Rectification | None = None
-            if not rectification_sent:
-                candidate = getattr(slam, "rectification", None)
+            if not rectification_sent and isinstance(slam, RectificationSource):
+                candidate = slam.rectification
                 if candidate is not None:
                     rectification, rectification_sent = candidate, True
             responses.append(_odom_response(update, rectification))
         return responses
 
-    async for request in requests:
+    def drain_keyframes() -> list[survey_pb2.Cm5Response]:
+        """Scene batches for keyframes that landed. New keyframes only: placing their local
+        points costs O(new), unlike re-scanning the whole map snapshot per pair (which grows
+        with the cloud and throttles the stream)."""
+        if not isinstance(slam, KeyframeSource):
+            return []
+        responses: list[survey_pb2.Cm5Response] = []
+        for update in slam.poll_updates():
+            if not isinstance(update, KeyframeUpdate):
+                continue
+            fresh = emitter.emit(1, _placed_keyframe_points(update))
+            if fresh:
+                responses.append(
+                    survey_pb2.Cm5Response(
+                        points=survey_pb2.PointBatch(
+                            designation=1,
+                            frame_id=update.frame_id,
+                            t_ns=update.t_ns,
+                            points=[survey_pb2.Point3(x=p.x, y=p.y, z=p.z) for p in fresh],
+                        )
+                    )
+                )
+        return responses
+
+    async for request in _with_idle_ticks(requests, IDLE_DRAIN_S):
+        if request is None:
+            # The sender is idle: stream what a live backend produced meanwhile.
+            if config is not None:
+                for response in [*drain_odom(), *drain_keyframes(), *fixes.resolve(timeline)]:
+                    yield response
+            continue
         if config is None:
             if request.WhichOneof("kind") != "config":
                 raise ValueError("first request must be config")
@@ -251,15 +307,20 @@ async def _stream_survey(
                     slam = built
                     if owned is not None:
                         owned.append(built)
+                    if stream_regions is not None and isinstance(built, RegionPointSource):
+                        stream_regions.open(built)
             # Whatever the backend already maps predates this stream:
             # mark it sent so only this stream's own points go out,
             # and drain keyframe updates queued by earlier streams.
-            snapshot_fn = getattr(slam, "map_snapshot", None)
-            if callable(snapshot_fn):
-                emitter.emit(1, snapshot_fn())
-            poll_fn = getattr(slam, "poll_updates", None)
-            if callable(poll_fn):
-                poll_fn()
+            if isinstance(slam, MapSnapshotSource):
+                emitter.emit(1, slam.map_snapshot())
+            if isinstance(slam, KeyframeSource):
+                slam.poll_updates()
+            continue
+        if request.WhichOneof("kind") == "gps":
+            fixes.add(request.gps)
+            for response in fixes.resolve(timeline):
+                yield response
             continue
         if request.WhichOneof("kind") != "frame":
             continue
@@ -290,31 +351,17 @@ async def _stream_survey(
         )
         pairs[frame.frame_id] = pair
         odom_pending.add(frame.frame_id)
-        result = slam.process_frame(pair)
+        result = await run_blocking(slam, slam.process_frame, pair)
         # Live-backend extras the pair result cannot carry (a streaming
         # backend's result has no pose yet): odometry that has landed
         # since (pose + tracked keypoints for the video overlay) and
         # the map snapshot growing behind it.
-        for response in drain_odom():
+        for response in [*drain_odom(), *drain_keyframes()]:
             yield response
-        # New keyframes only: placing their local points costs
-        # O(new), unlike re-scanning the whole map snapshot per pair
-        # (which grows with the cloud and throttles the stream).
-        poll_updates = getattr(slam, "poll_updates", None)
-        if callable(poll_updates):
-            for update in poll_updates():
-                if not isinstance(update, KeyframeUpdate):
-                    continue
-                fresh = emitter.emit(1, _placed_keyframe_points(update))
-                if fresh:
-                    yield survey_pb2.Cm5Response(
-                        points=survey_pb2.PointBatch(
-                            designation=1,
-                            frame_id=update.frame_id,
-                            t_ns=update.t_ns,
-                            points=[survey_pb2.Point3(x=p.x, y=p.y, z=p.z) for p in fresh],
-                        )
-                    )
+        if result.pose is not None:
+            timeline.add(pair.frame_id, pair.t_ns, result.pose.position)
+        for response in fixes.resolve(timeline):
+            yield response
         if result.pose is None:
             continue
         scene_points = list(result.static_points)
@@ -331,7 +378,8 @@ async def _stream_survey(
         if stereo is not None and rig is not None:
             left_frame, right_frame = channels[0], channels[1]
             try:
-                camera_points = stereo.reconstruct(
+                camera_points = await asyncio.to_thread(
+                    stereo.reconstruct,
                     FrameImage(
                         left_frame.width,
                         left_frame.height,
@@ -349,15 +397,16 @@ async def _stream_survey(
             except ValueError:
                 camera_points = ()
             scene_points.extend(to_map_frame(point, result.pose) for point in camera_points)
-        for response in _point_responses(result, pair, scene_points, objects, emitter, rig):
+        for response in await run_blocking(
+            objects, _point_responses, result, pair, scene_points, objects, emitter, rig
+        ):
             yield response
     if config is None:
         raise ValueError("first request must be config")
     # Batch backends (the RTAB-Map sidecar) only know their poses and
     # points once the whole stream is staged: flush them now, on this
     # still-open stream, so their scene/object batches arrive too.
-    flush = getattr(slam, "flush", None)
-    if callable(flush):
+    if isinstance(slam, FlushableBackend):
         calibration = config.calibration
         flush_rig: StereoRig | None = None
         if calibration.focal_length_px > 0 and calibration.baseline_m > 0:
@@ -368,209 +417,25 @@ async def _stream_survey(
                 cy=calibration.cy,
                 baseline_m=calibration.baseline_m,
             )
-        for result in await asyncio.to_thread(flush):
+        for result in await run_blocking(slam, slam.flush):
             if result.pose is None:
                 continue
             flushed_pair = pairs.get(result.frame_id)
             if flushed_pair is None:
                 continue
-            for response in _point_responses(
-                result, flushed_pair, list(result.static_points), objects, emitter, flush_rig
+            for response in await run_blocking(
+                objects,
+                _point_responses,
+                result,
+                flushed_pair,
+                list(result.static_points),
+                objects,
+                emitter,
+                flush_rig,
             ):
                 yield response
         for response in drain_odom():
             yield response
-
-
-async def stream_detections(
-    requests: AsyncIterable[survey_pb2.Cm5Request],
-    source: DetectionSource | None,
-) -> AsyncIterator[survey_pb2.DetectionResponse]:
-    """Serve the detections stream: channel-0 frames in, detections out.
-
-    A separate stream from `StreamSurvey` by design: the detector
-    runs on its own cadence, so detection messages are never attached
-    to survey output frames — each carries its `frame_id` (and
-    `t_ns`) for the client to join against the frames it sent. One
-    message is yielded per analyzed frame, including frames with no
-    detections; a server with no detection source configured rejects
-    the stream.
-    """
-    if source is None:
-        raise ValueError("no detection source configured on this CM5 server")
-    config_seen = False
-    async for request in requests:
-        if not config_seen:
-            if request.WhichOneof("kind") != "config":
-                raise ValueError("first request must be config")
-            config_seen = True
-            continue
-        if request.WhichOneof("kind") != "frame":
-            continue
-        frame = request.frame
-        if frame.channel != 0:
-            continue
-        rgb = decode_rgb(FrameImage(frame.width, frame.height, _encoding_name(frame), frame.data))
-        tracked = await asyncio.to_thread(source.detect_tracked, frame.frame_id, rgb)
-        yield survey_pb2.DetectionResponse(
-            detections=survey_pb2.FrameDetections(
-                frame_id=frame.frame_id,
-                t_ns=frame.t_ns,
-                detections=[
-                    survey_pb2.ObjectDetection(
-                        label=detection.label,
-                        score=detection.score,
-                        box=survey_pb2.Box(
-                            x_min=detection.box_xyxy[0],
-                            y_min=detection.box_xyxy[1],
-                            x_max=detection.box_xyxy[2],
-                            y_max=detection.box_xyxy[3],
-                        ),
-                        track_id=detection.track_id,
-                    )
-                    for detection in tracked
-                ],
-            )
-        )
-    if not config_seen:
-        raise ValueError("first request must be config")
-
-
-async def stream_region_points(
-    requests: AsyncIterable[survey_pb2.RegionQuery],
-    source: RegionPointSource | None,
-    max_points_per_message: int = MAX_REGION_POINTS_PER_MESSAGE,
-) -> AsyncIterator[survey_pb2.RegionPoints]:
-    """Serve the region stream: SAM polygons in, dense map-frame points out.
-
-    Each query is answered from its own frame only — nothing accumulates
-    across frames or queries — in chunks whose last one is `final`. An
-    invalid query is refused without asking for depth; a server with no
-    region source configured rejects the stream.
-    """
-    if source is None:
-        raise ValueError("no region source configured on this CM5 server")
-    async for request in requests:
-        query = RegionQuery(
-            query_id=request.query_id,
-            frame_id=request.frame_id,
-            channel=request.channel,
-            width=request.width,
-            height=request.height,
-            polygon=tuple((point.x, point.y) for point in request.polygon),
-        )
-        points: tuple[Vec3, ...] = ()
-        if invalid_reason(query) is not None:
-            status = RegionStatus.INVALID_QUERY
-        else:
-            result = await asyncio.to_thread(source.region_points, query)
-            status, points = result.status, result.points
-        step = max(1, max_points_per_message)
-        chunks = [points[start : start + step] for start in range(0, len(points), step)] or [()]
-        for index, chunk in enumerate(chunks):
-            yield survey_pb2.RegionPoints(
-                query_id=query.query_id,
-                frame_id=query.frame_id,
-                channel=query.channel,
-                status=_REGION_STATUS[status],
-                points=[survey_pb2.Point3(x=p.x, y=p.y, z=p.z) for p in chunk],
-                final=index == len(chunks) - 1,
-            )
-
-
-def cm5_service_module(
-    slam: SlamBackend | None = None,
-    objects: ObjectPointSource | None = None,
-    stereo: StereoReconstructor | None = None,
-    detections: DetectionSource | None = None,
-    regions: RegionPointSource | None = None,
-    *,
-    moving_areas: bool = True,
-    slam_label: str = "inmemory",
-    slam_factory: SlamFactory | None = None,
-) -> ServiceModule[Any]:
-    """The `surmap.rpc` service module mounting `Cm5SurveyService`."""
-    object_points_enabled = objects is not None
-    default_slam: SlamBackend = slam if slam is not None else InMemorySlamBackend()
-    default_objects: ObjectPointSource = (
-        objects if objects is not None else InMemoryObjectPointSource()
-    )
-
-    def bricks(ctx: Any) -> tuple[Brick, ...]:
-        effective_slam: SlamBackend = getattr(ctx, "slam", None) or default_slam
-        effective_objects: ObjectPointSource = getattr(ctx, "objects", None) or default_objects
-        effective_stereo: StereoReconstructor | None = getattr(ctx, "stereo", None) or stereo
-
-        async def handler(
-            requests: AsyncIterable[survey_pb2.Cm5Request], _ctx: Any
-        ) -> AsyncIterator[survey_pb2.Cm5Response]:
-            async for response in stream_survey(
-                requests,
-                effective_slam,
-                effective_objects,
-                stereo=effective_stereo,
-                slam_factory=slam_factory,
-            ):
-                yield response
-
-        effective_detections: DetectionSource | None = (
-            getattr(ctx, "detections", None) or detections
-        )
-
-        async def detections_handler(
-            requests: AsyncIterable[survey_pb2.Cm5Request], _ctx: Any
-        ) -> AsyncIterator[survey_pb2.DetectionResponse]:
-            async for response in stream_detections(requests, effective_detections):
-                yield response
-
-        async def moving_areas_handler(
-            requests: AsyncIterable[survey_pb2.Cm5Request], _ctx: Any
-        ) -> AsyncIterator[survey_pb2.MovingAreasResponse]:
-            if not moving_areas:
-                raise ValueError(
-                    "moving areas are not enabled on this CM5 server "
-                    "(start with --moving-areas to enable)"
-                )
-            async for response in stream_moving_areas(
-                requests, stereo=effective_stereo, slam=effective_slam
-            ):
-                yield response
-
-        effective_regions: RegionPointSource | None = getattr(ctx, "regions", None) or regions
-
-        async def region_points_handler(
-            requests: AsyncIterable[survey_pb2.RegionQuery], _ctx: Any
-        ) -> AsyncIterator[survey_pb2.RegionPoints]:
-            async for response in stream_region_points(requests, effective_regions):
-                yield response
-
-        async def capabilities_handler(
-            _request: survey_pb2.CapabilitiesRequest, _ctx: Any
-        ) -> survey_pb2.Capabilities:
-            return survey_pb2.Capabilities(
-                service="cm5",
-                detections=effective_detections is not None,
-                object_points=object_points_enabled,
-                moving_areas=moving_areas,
-                region_points=effective_regions is not None,
-                provider=str(getattr(effective_detections, "provider", "") or ""),
-                device=str(getattr(effective_detections, "device", "") or ""),
-                slam=slam_label,
-            )
-
-        return (
-            Brick(
-                methods={
-                    "GetCapabilities": capabilities_handler,
-                    "StreamSurvey": handler,
-                    "StreamDetections": detections_handler,
-                    "StreamMovingAreas": moving_areas_handler,
-                    "StreamRegionPoints": region_points_handler,
-                }
-            ),
-        )
-
-    return ServiceModule(
-        descriptor=survey_pb2.DESCRIPTOR.services_by_name["Cm5SurveyService"],
-        bricks=bricks,
-    )
+    # A fix still waiting for a later pose is answered with what the stream had.
+    for response in fixes.resolve(timeline, final=True):
+        yield response

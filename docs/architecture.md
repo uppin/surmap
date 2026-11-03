@@ -514,7 +514,18 @@ requester-assigned `frame_id`; the stream's analysis mode decides
 whether frames queue (lag) or drop while the detector is busy. Both
 servers run as processes (`python -m surmap.survey.cm5_main`,
 `python -m surmap.survey.station_main`) and deploy over SSH as systemd
-services — see `docs/deployment.md`. Defaults are still the
+services — see `docs/deployment.md`. Both serve Connect over HTTP and
+over one WebSocket at `/connect`, guarded by an optional bearer token;
+every client in the repo uses the WebSocket (`SurveyConnection`), so a
+region query rides the same socket as the survey stream that sent its
+frame. GPS joins the Board API on `StreamSurvey`: a `GpsFix` between
+frames (same monotonic clock) is answered with a `GpsAnchorOut` — the fix
+plus the frame id and map position of the posed frame nearest in time
+(within 0.5 s, else neither), sent once a pose at or after the fix has
+landed or the stream ends. Anchors are read-only output; nothing reaches
+RTAB-Map's map. A CM5 started without `--calibration-dir` takes each
+stream's camera definitions from its config, which is how a simulated
+drone (e.g. on Modal, `docs/modal.md` §5) is fed. Defaults are still the
 in-memory adapters: CM5 `--slam-backend inmemory` and `--detector none`,
 station `--detector memory` (no boxes). Opt-in flags select the
 RTAB-Map Docker sidecar and the Coral detector. `--detector sam3`

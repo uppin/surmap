@@ -10,6 +10,7 @@ written back into its map (docs/architecture.md section 1).
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Protocol, runtime_checkable
@@ -89,3 +90,35 @@ class InMemoryRegionPointSource:
                 query.query_id, query.frame_id, query.channel, RegionStatus.FRAME_EXPIRED
             )
         return RegionResult(query.query_id, query.frame_id, query.channel, RegionStatus.OK, points)
+
+
+class StreamRegionRouter:
+    """A `RegionPointSource` over the backends of the survey streams open right now.
+
+    A stream whose backend was built for it (from the camera definitions in its config) holds
+    its own frames, so a query goes to the newest open backend that still holds the frame.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._sources: list[RegionPointSource] = []
+
+    def open(self, source: RegionPointSource) -> None:
+        with self._lock:
+            self._sources.append(source)
+
+    def close(self, source: RegionPointSource) -> None:
+        with self._lock:
+            if source in self._sources:
+                self._sources.remove(source)
+
+    def region_points(self, query: RegionQuery, timeout: float = 5.0) -> RegionResult:
+        with self._lock:
+            sources = list(reversed(self._sources))
+        for source in sources:
+            result = source.region_points(query, timeout)
+            if result.status is not RegionStatus.FRAME_EXPIRED:
+                return result
+        return RegionResult(
+            query.query_id, query.frame_id, query.channel, RegionStatus.FRAME_EXPIRED
+        )

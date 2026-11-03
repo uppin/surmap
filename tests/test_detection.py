@@ -120,7 +120,7 @@ def _jpeg_bytes() -> bytes:
 
 
 async def test_detections_stream_is_separate_and_keyed_by_frame_id() -> None:
-    from surmap.survey.cm5_server import stream_detections
+    from surmap.survey.cm5_service import stream_detections
     from surmap.survey.v1 import survey_pb2
 
     class RecordingSource:
