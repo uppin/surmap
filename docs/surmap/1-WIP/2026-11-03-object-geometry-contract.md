@@ -8,12 +8,15 @@
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-03 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file + discovery (commit 1)
+- [wf 1] ✅ 2026-11-03 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file + discovery (commit 1, `e98dc5f`)
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
+- [wf 2] ✅ 2026-11-03 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 46 failing — commit 2
+  - [x] Create failing acceptance tests
+  - [x] Run acceptance tests (verify they fail)
+  - [x] TDD Red — write failing unit/integration tests
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Milestone 1: `summarize` — centroid, AABB, PCA OBB, height, footprint, shape class
   - [ ] Milestone 2: `neighbours` — distance and relation between summaries
@@ -33,7 +36,7 @@ Full codebase exploration that grounded this plan:
 
 ## Stack Context
 
-**Stack**: survey agent · slug **`#survey-agent`** — this PR is **3 of 9** · #pending
+**Stack**: survey agent · slug **`#survey-agent`** — this PR is **3 of 9** · [#79](https://github.com/uppin/surmap/pull/79)
 **Branch**: `pr-3-survey-agent` · **Base**: `pr-2-survey-agent`
 **Successor**: `pr-4-survey-agent`
 **Kind**: Feature · behaviour-adds
@@ -185,3 +188,18 @@ its header, JSON chunk and BIN length.
 - **Deterministic decimation** (voxel, then a strided pick sorted by voxel key) so tool results are
   reproducible in tests; Poisson-disk can replace it behind the same limits later.
 - **No `pygltflib`** — GLB for points and triangles is ~80 lines of struct packing; no new dependency.
+- **Red step (commit 2)** — `tests/test_objects3d.py`, 46 tests, every one failing on this node's
+  own `NotImplementedError` (25 `summary`, 14 `obj_text`, 7 `glb`); none drives a predecessor stub.
+  Known-red on this branch and not this node's: n1's 32 red tests (`tests/test_agent_contracts.py`,
+  `tests/test_agent_services.py`) and `tests/test_survey_cm5_rtabmap_e2e.py::test_euroc_pairs_stream_real_rtabmap_poses_and_points`
+  (a real-RTAB-Map timeout, red on `origin/main` too).
+- **Contract details the stubs fix** — `Obb.extents` are half-lengths, largest first; `Obb.rotation`
+  is row-major box→frame (column *i* is box axis *i*); `Neighbour.relation` is where the neighbour
+  sits relative to the summarised object (the proto's reading), `distance_m` the AABB gap.
+  Added real types beyond the planned surface: `Relation`, `UpAxis`, `DecodedObj` (decoder result,
+  points in frame metres, faces 0-based) and `GlbHeader` (what `read_glb_header` returns).
+- **Proto alignment (n1's `ObjectSummary` message)** — field names match one-for-one. Differences
+  n7's converter maps: `Obb` ↔ `OrientedBox` (rotation 3x3 tuple ↔ 9 repeated doubles);
+  `ShapeClass` ↔ `Shape` and `Relation` ↔ `Relation` (no `*_UNSPECIFIED` here);
+  `confidence`, `t_first_ns`, `t_last_ns`, `geometry_uri` are `None`-able here but plain scalars
+  in proto3 (None → 0 / "").
