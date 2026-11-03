@@ -454,9 +454,13 @@ async def test_the_agent_s_model_is_offered_every_survey_map_and_job_tool() -> N
     # When the user writes
     await one_turn(server, "hi")
 
-    # Then the model was bound to all of them
+    # Then the model was bound to all of them, plus the two skill tools
     assert sorted(model.bound_tool_names[0]) == sorted(
-        contract.name for contract in (*SURVEY_CONTRACTS, *MAP_CONTRACTS, *JOB_CONTRACTS)
+        [
+            *(contract.name for contract in (*SURVEY_CONTRACTS, *MAP_CONTRACTS, *JOB_CONTRACTS)),
+            "list_skills",
+            "load_skill",
+        ]
     )
 
 
