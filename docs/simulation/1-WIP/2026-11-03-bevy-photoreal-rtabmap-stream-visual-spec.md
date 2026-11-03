@@ -52,7 +52,33 @@ only picked assets go into `assets.lock.json`.
 | `props` (models) | barrels, crates, road barrier, tyre, dumpster, wooden pallet, fallen branch | as named |
 | `vehicle` (model) | any photo-scanned / realistic car or van | car, van, vehicle |
 
-Textures: the **2K-JPG** variants (members `_Color`, `_NormalGL`, `_Roughness`). Normal maps are
+### 2.1 Picks (planner, 2026-11-03, from the shortlist contact sheet)
+
+All Poly Haven, CC0, 2K. Textures: download the individual JPGs `_diff_2k`, `_nor_gl_2k`,
+`_arm_2k` (no zips). Models: the 2K `.gltf` entry file plus every file it references.
+
+| Slot | Asset | Use |
+|---|---|---|
+| `asphalt` | `aerial_asphalt_01` | roads |
+| `ground` | `rocks_ground_02` | block ground + apron |
+| `mud` | `brown_mud_03` | pond rim |
+| `concrete_slab` | `concrete_floor_worn_001` | pancaked slabs **and** rubble chunks and the debris scatter |
+| `facade` | `white_plaster_02` | background buildings |
+| `rubble` (model) | **none** — rejected (natural sandstone/moss rocks, not broken concrete) | chunks stay procedural (§4.1, §4.4) in `concrete_slab` |
+| props | `concrete_road_barrier` ×5, `old_tyre` ×4, `Barrel_01` ×3 | §4.4 |
+| vehicle | `covered_car` ×1 (the site nearest the pond) | the other two vehicle sites stay procedural (§4.3) |
+
+**ARM maps** (Poly Haven `_arm`: R = ambient occlusion, G = roughness, B = metalness). Manifest
+contract addition (planner): `PbrTextureSet` gains `arm: Option<String>`; when set it is used as
+**both** `metallic_roughness_texture` and `occlusion_texture`, with `metallic = 1.0` and
+`perceptual_roughness = 1.0` multipliers (B is real metalness here); `roughness` is used only when
+`arm` is absent (then §3's `metallic = 0.0` rule applies). Models' own glTF materials are used as
+loaded.
+
+**Ground-truth objects**: every vehicle (`kind: "car"`) and every pancaked site's slab stack
+(`kind: "collapsed_building"`, box = the slabs' bounds, rubble fan excluded).
+
+Textures (for reference only — superseded by §2.1): the **2K-JPG** variants (members `_Color`, `_NormalGL`, `_Roughness`). Normal maps are
 **OpenGL (+Y)**, Bevy's convention. If no CC0 realistic vehicle exists, cars stay procedural (§4.3) —
 the implementer reports that, it does not substitute a stylised one.
 
