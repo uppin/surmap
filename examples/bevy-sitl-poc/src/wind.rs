@@ -1,7 +1,6 @@
 //! The scenario's one wind: from the manifest's `weather.wind`, it drives Feronia's
 //! vegetation, the fire's spread and the particles' drift.
 
-#![allow(dead_code)]
 
 use bevy::math::Vec2;
 

@@ -11,15 +11,14 @@ use std::f32::consts::{PI, TAU};
 use bevy::asset::io::Reader;
 use bevy::asset::{Asset, AssetLoader, LoadContext};
 use bevy::math::{Quat, Vec2, Vec3};
-use bevy::prelude::{Assets, Component, Handle, Query, Res, ResMut, Resource, Time, Transform};
+use bevy::prelude::{Assets, Component, Handle, Query, Res, ResMut, Resource, Transform};
 use bevy::reflect::TypePath;
 use serde::Deserialize;
 
 use crate::behaviour::{Runner, Tree, World, TICK_HZ};
 use crate::fire::FireSpec;
-use crate::record::SimTime;
 use crate::scene_manifest::Weather;
-use crate::wildfire::{sim_seconds, Wildfire};
+use crate::wildfire::{SimClock, Wildfire};
 use crate::wind::WindModel;
 use crate::world::enu;
 
@@ -277,8 +276,7 @@ fn tick_time(ticks: u64) -> f32 {
 /// Ticks every tree up to the simulation's moment, in order, then moves the figures. It runs
 /// before the wind is read, so the vegetation, the fire and the particles see this tick's wind.
 pub fn tick_behaviours(
-    sim: Res<SimTime>,
-    time: Res<Time>,
+    clock: SimClock,
     look: Option<Res<FigureLook>>,
     looks: Res<Assets<FigureAsset>>,
     scene: Option<ResMut<Wildfire>>,
@@ -291,7 +289,7 @@ pub fn tick_behaviours(
     let Some(FigureAsset(gait)) = looks.get(&look.0) else {
         return;
     };
-    let now = sim_seconds(&sim, &time);
+    let now = clock.now();
     while tick_time(behaviour.ticks) <= now + CLOCK_SLACK_S {
         let t_s = tick_time(behaviour.ticks);
         tick_once(
@@ -346,8 +344,7 @@ fn tick_once(
 
 /// Each figure's pose at the simulation's moment: its turn eased, and its step bob.
 pub fn animate_figures(
-    sim: Res<SimTime>,
-    time: Res<Time>,
+    clock: SimClock,
     look: Option<Res<FigureLook>>,
     looks: Res<Assets<FigureAsset>>,
     mut figures: Query<(&Figure, &mut Transform)>,
@@ -355,7 +352,7 @@ pub fn animate_figures(
     let Some(FigureAsset(gait)) = look.and_then(|look| looks.get(&look.0)) else {
         return;
     };
-    let now = sim_seconds(&sim, &time);
+    let now = clock.now();
     for (figure, mut transform) in &mut figures {
         transform.translation =
             figure.bevy_base() + Vec3::Y * bob(gait, figure.speed_m_s, figure.phase, now);

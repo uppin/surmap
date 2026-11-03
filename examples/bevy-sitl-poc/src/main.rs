@@ -109,6 +109,7 @@ fn main() {
         .init_asset::<actors::FigureAsset>()
         .init_asset_loader::<actors::FigureLoader>()
         .init_resource::<actors::Behaviour>()
+        .init_resource::<fx::SoftDiscs>()
         .init_resource::<vegetation::PendingStands>()
         .init_resource::<vegetation::PineKits>()
         .init_asset::<ManifestAsset>()

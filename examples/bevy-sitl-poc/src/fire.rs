@@ -1,8 +1,7 @@
 //! Wildfire spread: a Huygens ellipse with its rear focus at the ignition point, stretched
-//! downwind (changeset § *Fire model*). Pure, so the front, the burnt area and the ground truth
-//! the recorder writes all come from one place.
+//! downwind (`docs/simulation/bevy-simulation.md` § *Weather, wind and fire*). Pure, so the
+//! front, the burnt area and the ground truth the recorder writes all come from one place.
 
-#![allow(dead_code)]
 
 use bevy::math::Vec2;
 

@@ -2,12 +2,19 @@
 //! `assets/species/*.species.json`): every visual number of weather, fire and vegetation lives in
 //! these runtime files, never in Rust.
 
-#![allow(dead_code)]
 
 use bevy::asset::io::Reader;
 use bevy::asset::{Asset, AssetLoader, LoadContext};
 use bevy::reflect::TypePath;
 use serde::Deserialize;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Shape {
+    #[default]
+    Quad,
+    SoftDisc,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -58,6 +65,12 @@ pub struct FxDef {
     /// 0 leaves each particle a rectangle, 1 makes it an ellipse (flames, embers, smoke).
     #[serde(default)]
     pub round: f32,
+    /// `soft_disc`: a radial alpha falloff from a small generated texture (flames, smoke).
+    #[serde(default)]
+    pub shape: Shape,
+    /// Soft discs: 0 is a hard edge, 1 a gaussian-like falloff from the centre.
+    #[serde(default = "half")]
+    pub softness: f32,
     /// Fire effects: one emitter per this many metres of perimeter.
     #[serde(default = "two")]
     pub emitter_spacing_m: f32,
@@ -162,6 +175,9 @@ impl FxDef {
         };
         if rate <= 0.0 || fx.max_particles == 0 || fx.stretch <= 0.0 {
             return Err("spawn rate, max_particles and stretch must be positive".into());
+        }
+        if !(0.0..=1.0).contains(&fx.softness) {
+            return Err("softness must lie in 0..=1".into());
         }
         if fx.emitter_spacing_m <= 0.0 || fx.refresh_s <= 0.0 {
             return Err("emitter_spacing_m and refresh_s must be positive".into());
@@ -271,6 +287,25 @@ mod tests {
             SpeciesDef::from_json(&shipped(&format!("species/{name}.species.json")))
                 .unwrap_or_else(|e| panic!("{name}: {e}"));
         }
+    }
+
+    #[test]
+    fn flames_and_smoke_are_soft_discs_and_embers_the_least_soft() {
+        let load = |n: &str| FxDef::from_json(&shipped(&format!("fx/{n}.fx.json"))).expect(n);
+        let (flames, smoke, embers) = (load("flames"), load("smoke"), load("embers"));
+
+        assert!([&flames, &smoke, &embers].iter().all(|f| f.shape == Shape::SoftDisc));
+        assert!(embers.softness < flames.softness && flames.softness < smoke.softness);
+    }
+
+    #[test]
+    fn a_softness_outside_zero_to_one_is_refused() {
+        let text = r#"{"colour_gradient": [[0.0, [1,1,1], 1, 1], [1.0, [1,1,1], 1, 0]],
+            "size_m": [1, 2], "lifetime_s": [1, 2], "motion": {"up": 1, "wind_coupling": 0.5},
+            "blend": "alpha", "spawn": {"per_second": 10}, "max_particles": 100,
+            "shape": "soft_disc", "softness": 1.5}"#;
+
+        assert!(FxDef::from_json(text).is_err());
     }
 
     #[test]
