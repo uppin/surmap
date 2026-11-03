@@ -2,7 +2,6 @@
 //! `assets/species/*.species.json`): every visual number of weather, fire and vegetation lives in
 //! these runtime files, never in Rust.
 
-#![allow(dead_code)]
 
 use bevy::asset::io::Reader;
 use bevy::asset::{Asset, AssetLoader, LoadContext};
