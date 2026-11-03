@@ -63,3 +63,12 @@ jobs:
 
       - name: Build
         run: yarn build
+
+      - name: Install Playwright Chromium
+        run: yarn playwright install --with-deps chromium
+
+      # The suite runs the Vite dev server and a stub agent server; a missing browser fails the job.
+      - name: End-to-end (Playwright against the stub agent server)
+        env:
+          E2E_REQUIRE_BROWSER: "1"
+        run: yarn e2e

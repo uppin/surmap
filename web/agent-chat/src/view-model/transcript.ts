@@ -89,6 +89,6 @@ export type TranscriptItem =
 
 /** The policy as one label, e.g. `"SYNC 30 s → DETACH"` or `"ASYNC"`. */
 export function policyLabel(policy: PolicyView): string {
-  void policy;
-  throw new Error("TODO(pr-9): implement");
+  if (policy.mode === "ASYNC") return "ASYNC";
+  return `SYNC ${policy.timeoutS} s → ${policy.onTimeout}`;
 }

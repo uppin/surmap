@@ -19,7 +19,6 @@ export interface JobView {
 
 /** Milliseconds the job has run: up to `now` while running, up to its last change once ended. */
 export function jobElapsedMs(job: JobView, now: number): number {
-  void job;
-  void now;
-  throw new Error("TODO(pr-9): implement");
+  const end = job.status === "running" ? now : job.updatedAt;
+  return Math.max(0, end - job.startedAt);
 }

@@ -17,14 +17,14 @@
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Milestone 1: `ChatPort` (ports) + Connect adapter over the generated client (`createAgentTransport`, `createConnectChatPort`); `chatReducer`, `isTurnActive`, `policyLabel`, `jobElapsedMs` from `TurnEvent`s
-  - [ ] Milestone 2: transcript, Markdown, tool steps with policy and status
-  - [ ] Milestone 3: composer (send / steer / stop), jobs panel with cancel
-  - [ ] Milestone 4: frame images, GLB preview (three.js `GLTFLoader`), model picker, watch stream, history restore
-  - [ ] Milestone 5: `App` wires the port, reducer and components (`?server=` default `http://127.0.0.1:8780`, `?conversation=` else one id per tab); replaces n6's placeholder page and its `App.test.tsx`
-  - [ ] `.github/workflows/agent-chat.yml`: install Chromium (`yarn playwright install --with-deps chromium`) and run `E2E_REQUIRE_BROWSER=1 yarn e2e`
-  - [ ] Acceptance: `yarn test --run` (vitest) and `yarn e2e` (Playwright against the stub server) pass
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · 86 vitest + 8 Playwright passing — commit 3
+  - [x] Milestone 1: `ChatPort` (ports) + Connect adapter over the generated client (`createAgentTransport`, `createConnectChatPort`); `chatReducer`, `isTurnActive`, `policyLabel`, `jobElapsedMs` from `TurnEvent`s · adapter 8/8, reducer 24/24
+  - [x] Milestone 2: transcript, Markdown, tool steps with policy and status · Transcript 6/6, ToolStep 13/13
+  - [x] Milestone 3: composer (send / steer / stop), jobs panel with cancel · Composer 9/9, JobsPanel 6/6
+  - [x] Milestone 4: frame images, GLB preview (three.js `GLTFLoader`), model picker, watch stream, history restore · ModelPicker 4/4; e2e frame image and GLB preview, watch, reload
+  - [x] Milestone 5: `App` wires the port, reducer and components (`?server=` default `http://127.0.0.1:8780`, `?conversation=` else one id per tab); replaces n6's placeholder page and its `App.test.tsx` · `ChatPage.tsx`, `App.test.tsx` 4/4
+  - [x] `.github/workflows/agent-chat.yml`: install Chromium (`yarn playwright install --with-deps chromium`) and run `E2E_REQUIRE_BROWSER=1 yarn e2e`
+  - [x] Acceptance: `yarn test --run` (vitest, 86 passed) and `yarn e2e` (Playwright against the stub server, 8 passed) pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (plus one manual run against `python -m surmap.agent --sam-fake`, or why not)
   - [ ] `docs/agent.md` — "Chat UI" section with a screenshot
@@ -139,7 +139,7 @@ interface ChatPort {
 function createConnectChatPort(transport: Transport): ChatPort;
 function chatReducer(state: ChatState, action: ChatAction): ChatState;
 // ChatAction: turn_requested | event{event, at} | history_loaded{events, at} | stop_requested
-//             | stream_failed{message} | models_loaded{models} | model_selected{modelId}
+//             | stream_failed{message} | request_failed{message} | models_loaded{models} | model_selected{modelId}
 // TurnPhase: idle | starting | running | stopping; events at or below lastSeq are ignored
 ```
 
@@ -162,7 +162,7 @@ tests and the Playwright page object use: `log "Conversation"`, `group "Tool cal
 **Method:** V1 — fail→pass reducer and component tests (vitest) and Playwright flows against a stub Connect server
 **Command:** `cd web/agent-chat && yarn test --run && yarn e2e`
 **Before:** red (commit 2) — `yarn test --run`: 70 failed, 14 passed (n6's App and lock-resolver tests); `yarn e2e`: 8 failed (n6's placeholder page has no chat) — every failure is `Error: TODO(pr-9): implement` or a role the stub components do not render yet
-**After:** green; the `agent-chat` workflow runs both
+**After (wf 3):** green — `yarn test --run` 86 passed (the 70 acceptance tests, n6's lock-resolver tests and the 4 App tests that replace the placeholder test); `yarn e2e` with `E2E_REQUIRE_BROWSER=1` 8 passed; `yarn lint` 0 errors (2 pre-existing shadcn warnings); `yarn typecheck`, `yarn build`, `node scripts/resolve-local-lock.mjs --check` and `yarn gen` with no drift all green. The `agent-chat` workflow runs both.
 
 ## Testing Plan
 
@@ -200,3 +200,24 @@ Written red in commit 2; all fail on this node's missing implementation only.
   handlers through `createFetchHandler` (`@connectrpc/connect/protocol`) on `node:http`.
 - **`yarn e2e` skips without Chromium** (`scripts/e2e.mjs`), unless `E2E_REQUIRE_BROWSER=1`, which
   CI sets after installing the browser.
+
+### Decided without review (green step)
+
+- **The watch opens once the server knows the conversation**: when `GetConversation` answers, or
+  when a turn's first event arrives. The server answers `WatchConversation` with `NOT_FOUND` for a
+  conversation it has not seen, and the first event means the first `StreamTurn` has created it, so
+  the watch never races that turn into an error. The watch then stays open across turns.
+- **`request_failed` action** (added to `ChatAction`): a failed model list, steer, stop, job cancel
+  or watch is shown in the transcript as an error and leaves the turn phase alone; `stream_failed`
+  still ends a turn whose stream broke.
+- **A steer the server does not accept starts a turn** with the same text, as `SteerOutcome` says.
+- **A page load ends idle**: `history_loaded` applies the events and leaves the phase idle, because
+  a turn still running at load cannot be followed from the page. A second `StreamTurn` on it is
+  refused by the server and shown as an error.
+- **The GLB canvas is laid out but `invisible` until the model is drawn**, behind a "Loading
+  preview…" placeholder, so a visible canvas means a loaded model.
+- **Frame images are `data:` URLs** built from the bytes: no object URLs to revoke.
+- **`App` takes an optional `port`**: the seam `App.test.tsx` uses; by default it is the Connect port
+  to `?server=`. Without `?conversation=` the tab's id lives in `sessionStorage`, so a reload keeps it.
+- **Build**: the lazily loaded `glb-preview` chunk (three.js) is about 610 kB minified and Vite warns
+  above 500 kB; the entry chunk is 499 kB. The warning is left as it is, not silenced.
