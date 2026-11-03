@@ -17,7 +17,7 @@
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
-- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · 39/39 green; full suite 1481 passed, 32 skipped, 0 failed; live Ollama `fastcontext-tools:latest` passed (`SURMAP_LIVE_OLLAMA=1`); live Muse skipped (no `MODEL_API_KEY` on this host); ruff format/check and mypy strict clean
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · 39/39 green @ 7a9e1bb; full suite 1481 passed, 32 skipped, 0 failed; live Ollama `fastcontext-tools:latest` passed (`SURMAP_LIVE_OLLAMA=1`); live Muse skipped (no `MODEL_API_KEY` on this host); ruff format/check and mypy strict clean
   - [x] Milestone 1: `MetaResponsesChatModel` request mapping (instructions, text, images, function_call, function_call_output, tools)
   - [x] Milestone 2: response mapping (text, tool calls, usage, ledger)
   - [x] Milestone 3: `ollama_chat_model` and `ChatModelRegistry`
