@@ -1,0 +1,98 @@
+syntax = "proto3";
+
+package surmap.agent.v1;
+
+import "surmap/agent/v1/execution.proto";
+
+/*
+The survey agent's job tools: every tool call that runs ASYNC, or detaches
+after its SYNC timeout, becomes a job the model follows with these rpcs.
+Like SurveyTools, every rpc here is a model-facing tool.
+*/
+
+service AgentJobs {
+  // Waits until all (or any) of the given jobs finish, or until timeout_s passes, and returns
+  // each job's state and the result of every finished one. timeout_s is at most 300.
+  rpc WaitForJobs(WaitForJobsRequest) returns (WaitForJobsResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 300 on_timeout: FAIL};
+  }
+
+  // Returns one job's state, and its result once it has finished.
+  rpc GetJob(GetJobRequest) returns (GetJobResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Cancels a running job and returns its state; a finished job is left as it is.
+  rpc CancelJob(CancelJobRequest) returns (CancelJobResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Lists this conversation's jobs, running and finished, newest first.
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+}
+
+// When wait_for_jobs returns.
+enum WaitMode {
+  WAIT_MODE_UNSPECIFIED = 0;
+  // When every job has finished.
+  ALL = 1;
+  // When the first job finishes.
+  ANY = 2;
+}
+
+// A job and, once it has finished, what its tool returned.
+message JobResult {
+  // The job's identity and state.
+  JobHandle job = 1;
+  // The tool's response as JSON; empty until the job succeeds.
+  string result_json = 2;
+  // An image the tool returned, e.g. a frame; absent when it returned none.
+  optional bytes image = 3;
+  // The image's media type, e.g. "image/jpeg".
+  optional string media_type = 4;
+}
+
+message WaitForJobsRequest {
+  // The jobs to wait for.
+  repeated string job_ids = 1;
+  // Return when all of them finish (ALL, the default) or the first does (ANY).
+  optional WaitMode mode = 2;
+  // The longest to wait, seconds, at most 300; returns early when the mode is met.
+  optional uint32 timeout_s = 3;
+}
+
+message WaitForJobsResponse {
+  // Every requested job, in request order.
+  repeated JobResult jobs = 1;
+  // Whether timeout_s passed before the mode was met.
+  bool timed_out = 2;
+}
+
+message GetJobRequest {
+  // The job to read.
+  string job_id = 1;
+}
+
+message GetJobResponse {
+  // The job and its result.
+  JobResult job = 1;
+}
+
+message CancelJobRequest {
+  // The job to cancel.
+  string job_id = 1;
+}
+
+message CancelJobResponse {
+  // The job's state after the cancel.
+  JobHandle job = 1;
+}
+
+message ListJobsRequest {}
+
+message ListJobsResponse {
+  // This conversation's jobs, newest first.
+  repeated JobHandle jobs = 1;
+}

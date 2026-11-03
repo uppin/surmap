@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package surmap.agent.v1;
+
+import "google/protobuf/descriptor.proto";
+
+/*
+How a survey agent tool call runs: blocking the turn (SYNC) or handed to a
+job at once (ASYNC), for how long, and what happens when that time is up.
+
+Every tool rpc declares its default with the `default_execution` method
+option. The model may override any part of it per call through the
+`execution` argument the tool contract adds to every tool's schema.
+*/
+
+// Whether a tool call blocks the turn or returns a job handle at once.
+enum ExecutionMode {
+  EXECUTION_MODE_UNSPECIFIED = 0;
+  // The turn waits for the result, up to `timeout_s`.
+  SYNC = 1;
+  // The call starts as a job and returns its handle immediately.
+  ASYNC = 2;
+}
+
+// What a SYNC call does when `timeout_s` passes before it finishes.
+enum OnTimeout {
+  ON_TIMEOUT_UNSPECIFIED = 0;
+  // The call is cancelled and reported as failed.
+  FAIL = 1;
+  // The call keeps running as a job; the turn gets its handle.
+  DETACH = 2;
+}
+
+// How one tool call runs.
+message ExecutionPolicy {
+  // Block the turn (SYNC) or start a job at once (ASYNC).
+  ExecutionMode mode = 1;
+  // Seconds a SYNC call may block the turn before `on_timeout` applies.
+  uint32 timeout_s = 2;
+  // What a SYNC call does after `timeout_s`: fail, or detach to a job.
+  OnTimeout on_timeout = 3;
+}
+
+// Where a job is in its life.
+enum JobStatus {
+  JOB_STATUS_UNSPECIFIED = 0;
+  // Still running.
+  RUNNING = 1;
+  // Finished with a result.
+  SUCCEEDED = 2;
+  // Finished with an error.
+  FAILED = 3;
+  // Cancelled before it finished.
+  CANCELLED = 4;
+}
+
+// A tool call running (or finished) in the background.
+message JobHandle {
+  // Identifies the job for wait_for_jobs, get_job and cancel_job.
+  string job_id = 1;
+  // The snake_case name of the tool the job runs, e.g. "run_demo".
+  string tool = 2;
+  // Where the job is in its life.
+  JobStatus status = 3;
+  // Human-readable progress or error text; empty when there is none.
+  string detail = 4;
+}
+
+extend google.protobuf.MethodOptions {
+  // The execution a tool rpc gets when the model does not override it.
+  ExecutionPolicy default_execution = 51001;
+}

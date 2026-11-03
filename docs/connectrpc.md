@@ -23,6 +23,8 @@ follows SurMap's stack (Python 3.11+, uv, Ruff, mypy strict, pytest).
 | `src/surmap/transport/v1/socket_rpc_pb2.py` | Generated bindings (checked in; see below) |
 | `proto/surmap/survey/v1/survey.proto` | The survey streaming contract (`surmap.survey.v1`): CM5 + station BIDI services, including `Cm5SurveyService.StreamRegionPoints` (dense points under a SAM polygon) |
 | `src/surmap/survey/v1/survey_pb2.py` | Generated bindings (checked in; regenerate with `scripts/gen_survey_rpc.py`) |
+| `proto/surmap/agent/v1/*.proto` | The survey agent's tool and chat services (`surmap.agent.v1`); see [agent.md](agent.md) |
+| `src/surmap/agent/proto/` | Generated bindings and descriptor set (checked in; regenerate with `scripts/gen_agent_rpc.py`) |
 
 ## Shape of use
 
@@ -44,6 +46,7 @@ After editing the `.proto`:
 
 ```bash
 uv run --with "grpcio-tools==1.76.0" python scripts/gen_socket_rpc.py
+uv run --with "grpcio-tools==1.73.1" python scripts/gen_agent_rpc.py   # surmap.agent.v1
 ```
 
 The generated module and stub are checked in and excluded from Ruff
