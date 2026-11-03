@@ -1,0 +1,190 @@
+# Survey RPC over WebSocket, hosted on Modal
+
+**Date:** 2026-11-03
+**Status:** 🚧 In Progress
+**Type:** Feature
+**Behaviour:** adds
+**Packages:** surmap
+**Complexity:** High — a new transport on both survey servers and every survey client, a
+contract change (GPS on the wire), and two new Modal deploy targets; touches `surmap.rpc`,
+`surmap.survey`, `surmap.demo`, `scripts/` and `proto/`.
+
+## Workflow
+
+- [wf 1] ✅ 2026-11-03 `/plan-red` Plan — changeset, initial discovery · this file + discovery companion
+- [wf 2] ⏳ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
+- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
+  - [ ] `surmap.rpc`: Connect-over-WebSocket route that serves a host's composed Connect apps (`HypercornHost(connect_websocket_path=...)`)
+  - [ ] `surmap.rpc`: hypercorn pings WebSockets (`websocket_ping_interval`) so an idle socket survives an idle-cutting proxy
+  - [ ] `surmap.rpc`: bearer-token check on Connect HTTP and the WebSocket upgrade; health routes exempt
+  - [ ] `surmap.survey.ws_client`: asyncio client — dial `ws://` / `wss://` with the token, typed CM5 and station calls over one `SocketRpcPeer`
+  - [ ] Survey proto: `GpsFix` on `Cm5Request`, `GpsAnchorOut` on `Cm5Response`; regenerate bindings
+  - [ ] CM5 `StreamSurvey`: each fix answered with an anchor carrying the map position of the pose nearest in time
+  - [ ] `cm5_main` / `station_main`: serve `/connect` over WebSocket, `--auth-token` / `SURMAP_SURVEY_TOKEN`
+  - [ ] `surmap.demo.remote` on the asyncio WebSocket client (h2c and `http.client` paths removed); sync ports bridged to one event-loop thread
+  - [ ] `scripts/verify_cm5.py` / `scripts/verify_station.py` on the WebSocket client, URL addresses, `--token`
+  - [ ] `scripts/build_rtabmap_native.sh` runs as root without `sudo` (image builds)
+  - [ ] Modal apps `modal_cm5_app.py` (CPU, native RTAB-Map) and `modal_station_app.py` (GPU, SAM 3.1): `web_server`, one container, token secret
+- [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs, then open the PR ready ·
+  - [ ] Verification executed — result recorded
+  - [ ] `docs/modal.md` — hosting the CM5 sim and the station, the token secret, URLs
+  - [ ] `docs/deployment.md` — WebSocket endpoint, auth flag, verify scripts' URL form
+  - [ ] `docs/connectrpc.md` — the WebSocket route, keepalive, auth
+  - [ ] `docs/architecture.md` §10 — transport and GPS on the Board API
+  - [ ] Close `src/surmap/docs/todo/2026-10-27-gps-on-survey-wire-proto.md`
+  - [ ] Changelog entry in `docs/surmap/changelog/`
+
+## Initial Discovery
+
+[2026-11-03-survey-websocket-modal-hosting-initial-discovery.md](./2026-11-03-survey-websocket-modal-hosting-initial-discovery.md)
+— the Connect-over-WebSocket protocol is already in `surmap.rpc.socket_rpc` with no consumer; the
+server kit already routes WebSockets; every survey client is synchronous over h2c or `http.client`.
+
+## Prerequisites
+
+### Deferred TODOs
+
+| Record | Verdict | Outcome |
+|---|---|---|
+| `src/surmap/docs/todo/2026-10-27-gps-on-survey-wire-proto.md` | **In scope** — the simulated drone sends GPS over RPC | closed at wrap |
+| `src/surmap/docs/todo/2026-10-27-live-ros2-connectrpc-bridge.md` | Not in path (ROS 2 bridge) | — |
+| `src/surmap/docs/code-issues/oversized-file-demo-server.md` | Touched only at its Remote* call sites; no restructure needed | — |
+
+## Summary
+
+The simulated drone (the CM5 survey server, with stereo frames and GPS fed by an external
+simulator over RPC) and the base station can run as Modal containers. Both servers serve their
+Connect services over one WebSocket per client, which Modal carries on a stable HTTPS URL, and
+every survey client (the demo's remote adapters, the verify scripts) talks to them that way with
+an asyncio client.
+
+## Background
+
+Modal's stable endpoint URLs carry HTTP/1.1 and WebSockets; each HTTP request is capped at 150 s.
+HTTP/2 only reaches a container through a tunnel, which has a random URL per container. The
+survey services are bidi streams that last a whole survey, which Connect over HTTP needs HTTP/2
+for. Connect multiplexed over one WebSocket removes both limits, and also guarantees that
+`StreamRegionPoints` reaches the container whose ring buffer holds the frames sent on
+`StreamSurvey`, because both calls ride the same socket. Modal endpoint URLs are public, so the
+servers need a bearer token. Modal cannot run Docker inside a container, so the CM5 image builds
+RTAB-Map natively. There is no Coral on Modal; the CM5 app runs `--detector none` (or
+`--coral-cpu`).
+
+## Scope
+
+In:
+- Server: WebSocket route, keepalive pings, bearer auth — in `surmap.rpc`, used by `cm5_main` and `station_main`.
+- Client: one asyncio WebSocket client for both services; the demo adapters and verify scripts switched to it.
+- Contract: GPS fixes in, GPS anchors out, on `StreamSurvey`.
+- Deploy: two Modal app files plus a no-`sudo` native RTAB-Map build.
+
+Out:
+- The agent server (`surmap.agent`) and the chat UI stay on Connect over HTTP.
+- Connect over HTTP stays served on both survey servers (on-prem deploys keep working); only the clients switch.
+- MAVLink / UDP ingestion; flight control of any kind (architecture §1).
+- Session persistence on a Modal Volume — the CM5 server keeps no session store today.
+
+## Technical Changes
+
+### State A (Current)
+
+- `surmap.rpc.socket_rpc` is a complete Connect-over-WebSocket peer with no consumer.
+- `cm5_main` / `station_main` serve Connect over HTTP (h1/h2c) on hypercorn; no auth.
+- Survey clients: raw h2c (`StreamSurvey`), `http.client` (`StreamDetections`, `StreamAnalysis`,
+  `GetCapabilities`), all synchronous with threads.
+- `Cm5Request` carries config and frames only.
+- `scripts/build_rtabmap_native.sh` assumes `sudo`.
+
+### State B (Target)
+
+- `HypercornHost(..., connect_websocket_path="/connect", auth_token=..., websocket_ping_interval_s=...)`:
+  the path serves every composed Connect app through a `SocketRpcPeer` (acceptor role) per
+  socket; hypercorn pings sockets; when a token is set, Connect HTTP requests and WebSocket
+  upgrades without `Authorization: Bearer <token>` are refused (HTTP 401 / close before accept);
+  `/health/*` stays open.
+- `surmap.survey.ws_client.SurveyConnection`: `async with SurveyConnection.open(url, token=...)`
+  dials once and exposes `capabilities(service)`, `stream_survey(requests)`,
+  `stream_detections(requests)`, `stream_region_points(queries)`, `stream_analysis(requests)` as
+  async iterators. `host:port` means `ws://host:port/connect`; `http(s)://` maps to `ws(s)://`.
+- `Cm5Request.gps` (`GpsFix`: `t_ns`, `lat`, `lon`, `alt_m`, `accuracy_m`) → `Cm5Response.gps_anchor`
+  (`GpsAnchorOut`: the fix, plus `frame_id` and `map_position` of the posed frame nearest in time
+  within 0.5 s, absent otherwise).
+- `surmap.demo.remote` runs its calls on one background asyncio loop over `SurveyConnection`; its
+  public classes and the demo server call sites keep their shapes.
+- `src/surmap/survey/modal_cm5_app.py`, `src/surmap/survey/modal_station_app.py`: `@modal.web_server`
+  on port 8080/8081 running the existing mains bound to `0.0.0.0` with `/connect`,
+  `max_containers=1`, long `timeout`, the `surmap-survey` secret providing `SURMAP_SURVEY_TOKEN`.
+
+### Delta (What's Changing)
+
+| Path | Change |
+|---|---|
+| `src/surmap/rpc/hosts/hypercorn.py`, `src/surmap/rpc/_listener.py` | WebSocket Connect route, ping interval, auth |
+| `src/surmap/rpc/socket_rpc/serve.py` (new) | ASGI WebSocket handler that runs an acceptor peer over given apps |
+| `src/surmap/survey/ws_client.py` (new) | asyncio survey client |
+| `proto/surmap/survey/v1/survey.proto`, `src/surmap/survey/v1/survey_pb2.py{,i}` | GPS messages |
+| `src/surmap/survey/cm5_server.py` | GPS anchors |
+| `src/surmap/survey/cm5_main.py`, `station_main.py` | `/connect`, `--auth-token` |
+| `src/surmap/demo/remote.py` | WebSocket client; h2c and `http.client` removed |
+| `scripts/verify_cm5.py`, `scripts/verify_station.py` | WebSocket client, URLs, `--token` |
+| `scripts/build_rtabmap_native.sh` | `sudo` only when not root |
+| `src/surmap/survey/modal_cm5_app.py`, `modal_station_app.py` (new) | Modal deploy targets |
+
+## Verification
+
+**Behaviour — V1 fail→pass.** New acceptance tests drive real hypercorn hosts on loopback through
+real `websockets` connections: unary and bidi Connect calls over `/connect`, an idle socket kept
+open by pings, auth refusals, CM5 survey + region points + GPS anchors and station analysis
+through `SurveyConnection`, and the demo remote adapters against those servers.
+**Command:** `uv run pytest -q tests/rpc/it/test_connect_websocket.py tests/test_survey_ws_client.py tests/test_survey_gps.py tests/test_demo_remote.py tests/test_modal_survey_apps.py`
+**Before:** to be recorded by the Red row (expected: failures for the missing route, client, GPS messages and app files).
+**After:** all pass; full gates green.
+
+**Modal hosting — V4 (needs consent).** No harness here reaches Modal. Procedure:
+1. `modal secret create surmap-survey SURMAP_SURVEY_TOKEN=<token>`.
+2. `modal deploy src/surmap/survey/modal_cm5_app.py` and `modal_station_app.py`; note the two `modal.run` URLs.
+3. `uv run python scripts/verify_cm5.py wss://<cm5-url> --token <token>` and `uv run python scripts/verify_station.py wss://<station-url> --token <token>`.
+4. One survey stream held open for more than 150 s (`--frames` large enough) to prove the WebSocket is not cut at the HTTP cap.
+5. `modal app stop` both apps.
+Evidence: the scripts' output (rates, device line), the stream's duration.
+**Approved:** pending — to be asked before the Wrap row.
+
+## Testing Plan
+
+- Real sockets, no mocks of the transport: hypercorn on `127.0.0.1:0`, `websockets` client, the
+  in-memory SLAM/detector adapters the servers already default to.
+- The Modal app files are checked with the AST (CI never imports `modal`), as `tests/test_modal_sam.py` does.
+- Existing `tests/test_demo_remote.py` cases are switched to the new transport rather than duplicated.
+
+## Acceptance Tests
+
+### surmap
+
+- `tests/rpc/it/test_connect_websocket.py`
+  - a unary call over `/connect` reaches the composed service
+  - a bidi call interleaves requests and responses over one socket
+  - an idle socket stays open past the proxy idle window because the host pings it
+  - with a token set: a WebSocket without it is refused, with it is served; Connect HTTP without it answers 401; health stays open
+- `tests/test_survey_ws_client.py`
+  - `SurveyConnection` reports CM5 and station capabilities
+  - a CM5 survey streams points back while frames are still being sent
+  - region points for a frame sent on the same connection's survey stream
+  - station analysis answers one response per frame with its `frame_id`
+  - `host:port`, `http://`, `https://` addresses resolve to the `/connect` WebSocket URL
+- `tests/test_survey_gps.py`
+  - a GPS fix after a posed frame is answered with that frame's map position
+  - a fix with no pose within 0.5 s is answered without a map position
+  - a server that predates GPS (frames only) still serves a stream that carries fixes (oneof skip)
+- `tests/test_demo_remote.py` — existing scenarios over the WebSocket endpoint
+- `tests/test_modal_survey_apps.py` — both app files define `app` and a `web_server` function with `max_containers=1`, read the `surmap-survey` secret, and run the right main with `/connect`
+
+## Decisions & Trade-offs
+
+- **GPS in-band on `StreamSurvey`**, not a separate stream: same clock and ordering as frames, one
+  call for the simulator, and the anchor needs the stream's poses anyway.
+- **Bearer token, not Modal proxy auth**: proxy auth headers are Modal-specific; a server-side
+  token works the same on Modal and on-prem.
+- **Clients switch fully to WebSocket; servers keep HTTP too**: on-prem consumers outside this repo
+  keep working, and nothing in the repo still needs the HTTP path.
+- **One PR**, as asked.
+- **Native RTAB-Map in the CM5 image** so the simulated drone produces real poses and region points.
