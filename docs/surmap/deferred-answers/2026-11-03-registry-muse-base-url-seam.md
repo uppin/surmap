@@ -1,7 +1,7 @@
 # 2026-11-03 — Registry seam for the Muse base URL
 
 **Kind:** Technical
-**Source:** `docs/surmap/1-WIP/2026-11-03-agent-fake-llm-providers.md` (Muse and Ollama on fake provider servers)
+**Source:** PR #88 (Muse and Ollama on fake provider servers; changeset wrapped into `docs/surmap/changelog/2026-11-03-agent-fake-llm-providers.md`)
 **Asked by:** `/plan-test-rebalance` row 1, under `/yolo`
 **Status:** Awaiting review
 **Decision:** a) a `meta_base_url` keyword on `ChatModelRegistry`
