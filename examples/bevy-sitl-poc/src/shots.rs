@@ -196,12 +196,15 @@ pub fn setup_overview(mut commands: Commands, mode: Res<RunMode>, mut images: Re
     commands.insert_resource(Shots { overview, settled_frames: 0, requested: false, captured: 0 });
 }
 
+type OverviewNotEye = (With<OverviewCam>, Without<FireEyeCam>);
+type EyeNotOverview = (With<FireEyeCam>, Without<OverviewCam>);
+
 /// With a fire in the scene the review still looks at it: from the south of the ignition,
 /// raised, towards the downwind side. Re-aimed once, when the manifest has built.
 pub fn aim_overview_at_fire(
     fires: Option<Res<crate::wildfire::Wildfire>>,
-    mut overview: Query<&mut Transform, (With<OverviewCam>, Without<FireEyeCam>)>,
-    mut eye: Query<(&mut Transform, &mut Camera), (With<FireEyeCam>, Without<OverviewCam>)>,
+    mut overview: Query<&mut Transform, OverviewNotEye>,
+    mut eye: Query<(&mut Transform, &mut Camera), EyeNotOverview>,
     mut aimed: Local<bool>,
 ) {
     let Some(ignition) = fires.as_ref().and_then(|f| f.first_ignition()) else {

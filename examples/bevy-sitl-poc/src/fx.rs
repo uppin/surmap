@@ -112,7 +112,7 @@ pub fn effect(def: &FxDef, name: &str, rate_per_s: f32, emission: Emission) -> E
         });
     if def.shape == Shape::SoftDisc {
         asset = asset.render(ParticleTextureModifier {
-            texture_slot: texture_slot,
+            texture_slot,
             sample_mapping: ImageSampleMapping::ModulateOpacityFromR,
         });
     } else if def.round > 0.0 {

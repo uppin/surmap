@@ -9,6 +9,7 @@
 
 use bevy::asset::io::Reader;
 use bevy::asset::{AssetLoader, LoadContext};
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_feronia::extension;
 use bevy_feronia::prelude::*;
@@ -160,17 +161,24 @@ impl Library {
     }
 }
 
+/// What `build_world` reads: the loaded manifests, the asset server and the run mode.
+#[derive(SystemParam)]
+pub struct WorldInputs<'w> {
+    manifests: Res<'w, Assets<ManifestAsset>>,
+    assets: Res<'w, AssetServer>,
+    mode: Res<'w, RunMode>,
+}
+
 pub fn build_world(
     mut commands: Commands,
     mut state: ResMut<SceneState>,
-    manifests: Res<Assets<ManifestAsset>>,
-    assets: Res<AssetServer>,
+    inputs: WorldInputs,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut truth: ResMut<GroundTruth>,
     mut stands: ResMut<PendingStands>,
-    mode: Res<RunMode>,
 ) {
+    let WorldInputs { manifests, assets, mode } = inputs;
     if state.built {
         return;
     }

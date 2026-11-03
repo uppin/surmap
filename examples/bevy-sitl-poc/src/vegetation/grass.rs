@@ -112,20 +112,19 @@ pub fn scatter_stands(
     }
 }
 
+/// The parts of a freshly scattered instance batch that `show_grass` copies.
+type ScatteredBatch = (
+    Entity,
+    &'static Mesh3d,
+    &'static InstancedMeshMaterial<InstancedWindAffectedMaterial>,
+    &'static InstanceMaterialData,
+    &'static Aabb,
+);
+
 /// A stand's scattered instances live under its hidden root: copy them into a visible entity.
-#[allow(clippy::type_complexity)]
 pub fn show_grass(
     mut commands: Commands,
-    scattered: Query<
-        (
-            Entity,
-            &Mesh3d,
-            &InstancedMeshMaterial<InstancedWindAffectedMaterial>,
-            &InstanceMaterialData,
-            &Aabb,
-        ),
-        (With<ScatteredInstance>, Added<InstanceMaterialData>),
-    >,
+    scattered: Query<ScatteredBatch, (With<ScatteredInstance>, Added<InstanceMaterialData>)>,
     parents: Query<&ChildOf>,
     stands: Query<(&GrassStand, &GlobalTransform)>,
 ) {

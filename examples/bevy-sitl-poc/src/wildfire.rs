@@ -3,6 +3,7 @@
 //! ground with the glowing front, its light, and the rain around the cameras. Every look number
 //! lives in the fx files (`fxdef.rs`); the geometry of the front is `fire.rs`.
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_feronia::prelude::GlobalWind;
 use bevy_hanabi::prelude::*;
@@ -160,19 +161,46 @@ fn bevy_wind(enu_velocity: Vec2) -> Vec3 {
     Vec3::new(enu_velocity.x, 0.0, -enu_velocity.y)
 }
 
-fn sim_seconds(sim: &SimTime, time: &Time) -> f32 {
-    sim.0.unwrap_or(time.elapsed_secs())
+/// The simulation clock: the still's or recording's pinned time, else the app's elapsed time.
+#[derive(SystemParam)]
+pub struct SimClock<'w> {
+    time: Res<'w, Time>,
+    sim: Res<'w, SimTime>,
+}
+
+impl SimClock<'_> {
+    pub fn now(&self) -> f32 {
+        self.sim.0.unwrap_or(self.time.elapsed_secs())
+    }
+}
+
+/// The effect files and the hanabi effects built from them.
+#[derive(SystemParam)]
+pub struct EffectAssets<'w> {
+    fxs: Res<'w, Assets<FxAsset>>,
+    effects: ResMut<'w, Assets<EffectAsset>>,
+}
+
+/// What a fire draws on the ground and its particles sample.
+#[derive(SystemParam)]
+pub struct FireSurfaces<'w> {
+    meshes: ResMut<'w, Assets<Mesh>>,
+    standard: ResMut<'w, Assets<StandardMaterial>>,
+    images: ResMut<'w, Assets<Image>>,
+    discs: ResMut<'w, fx::SoftDiscs>,
+}
+
+/// The entities a fire moves: its emitters and its light.
+#[derive(SystemParam)]
+pub struct FireProps<'w, 's> {
+    transforms: Query<'w, 's, &'static mut Transform>,
+    lights: Query<'w, 's, &'static mut PointLight>,
 }
 
 /// Feronia's wind follows the scenario's wind model every frame.
-pub fn drive_wind(
-    time: Res<Time>,
-    sim: Res<SimTime>,
-    scene: Option<Res<Wildfire>>,
-    mut wind: ResMut<GlobalWind>,
-) {
+pub fn drive_wind(clock: SimClock, scene: Option<Res<Wildfire>>, mut wind: ResMut<GlobalWind>) {
     let Some(scene) = scene else { return };
-    let current = scene.wind.feronia(sim_seconds(&sim, &time));
+    let current = scene.wind.feronia(clock.now());
     if wind.current != current {
         wind.current = current;
     }
@@ -184,32 +212,32 @@ fn ready_effect(fx: &Assets<FxAsset>, handle: &Handle<FxAsset>) -> Option<FxDef>
 }
 
 /// Per frame: place and feed every fire's particle emitters, scorched ground and light.
-#[allow(clippy::too_many_arguments)]
 pub fn update_fires(
     mut commands: Commands,
-    time: Res<Time>,
-    sim: Res<SimTime>,
+    clock: SimClock,
     scene: Option<ResMut<Wildfire>>,
-    fxs: Res<Assets<FxAsset>>,
-    mut effects: ResMut<Assets<EffectAsset>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut standard: ResMut<Assets<StandardMaterial>>,
-    mut images: ResMut<Assets<Image>>,
-    mut discs: ResMut<fx::SoftDiscs>,
+    mut fx_assets: EffectAssets,
+    mut surfaces: FireSurfaces,
     mut emitters: Query<&mut EffectProperties, With<FireEmitter>>,
-    mut transforms: Query<&mut Transform>,
-    mut lights: Query<&mut PointLight>,
+    mut props: FireProps,
 ) {
     let Some(mut scene) = scene else { return };
-    let now = sim_seconds(&sim, &time);
+    let EffectAssets { fxs, effects } = &mut fx_assets;
+    let FireSurfaces {
+        meshes,
+        standard,
+        images,
+        discs,
+    } = &mut surfaces;
+    let now = clock.now();
     let wind = scene.wind.velocity_enu(now);
     for fire in &mut scene.fires {
         for layer in &mut fire.layers {
             if layer.effect.is_none() {
-                if let Some(def) = ready_effect(&fxs, &layer.fx) {
+                if let Some(def) = ready_effect(fxs, &layer.fx) {
                     layer.spacing_m = def.emitter_spacing_m;
                     layer.image = (def.shape == crate::fxdef::Shape::SoftDisc)
-                        .then(|| discs.handle(&mut images, def.softness));
+                        .then(|| discs.handle(images, def.softness));
                     let rate = rate_per_emitter(&def, layer.spacing_m);
                     let name = format!("{} {:?}", fire.id, layer.kind);
                     layer.effect = Some(effects.add(fx::effect(
@@ -238,10 +266,9 @@ pub fn update_fires(
                 fire,
                 now,
                 wind,
-                &mut meshes,
-                &mut standard,
-                &mut transforms,
-                &mut lights,
+                meshes,
+                standard,
+                &mut props,
             );
             fire.next_refresh_s = now + refresh_s;
         }
@@ -261,7 +288,6 @@ fn rate_per_emitter(def: &FxDef, spacing_m: f32) -> f32 {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn refresh_fire(
     commands: &mut Commands,
     fire: &mut FireRuntime,
@@ -269,8 +295,7 @@ fn refresh_fire(
     wind: Vec2,
     meshes: &mut Assets<Mesh>,
     standard: &mut Assets<StandardMaterial>,
-    transforms: &mut Query<&mut Transform>,
-    lights: &mut Query<&mut PointLight>,
+    props: &mut FireProps,
 ) {
     let front = fire.spec.perimeter(now, wind, PERIMETER_POINTS);
     if front.len() < 3 {
@@ -296,7 +321,7 @@ fn refresh_fire(
         let place =
             |index: usize| enu_at(along(&front, length, (index as f32 + 0.5) / wanted as f32));
         for (index, emitter) in layer.emitters.iter().enumerate() {
-            if let Ok(mut transform) = transforms.get_mut(*emitter) {
+            if let Ok(mut transform) = props.transforms.get_mut(*emitter) {
                 transform.translation = place(index);
             }
         }
@@ -367,10 +392,10 @@ fn refresh_fire(
         let at = enu(centroid.x, centroid.y, light.height_m);
         match fire.light {
             Some(entity) => {
-                if let Ok(mut transform) = transforms.get_mut(entity) {
+                if let Ok(mut transform) = props.transforms.get_mut(entity) {
                     transform.translation = at;
                 }
-                if let Ok(mut point) = lights.get_mut(entity) {
+                if let Ok(mut point) = props.lights.get_mut(entity) {
                     point.intensity = light.lumens_per_m * length;
                 }
             }

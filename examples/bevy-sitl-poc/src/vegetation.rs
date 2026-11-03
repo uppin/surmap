@@ -13,6 +13,7 @@ use std::sync::Arc;
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::primitives::Aabb;
 use bevy::camera::visibility::VisibilityRange;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy_eidolon::components::InstanceData;
@@ -20,9 +21,8 @@ use bevy_eidolon::prelude::InstanceMaterialData;
 use bevy_feronia::prelude::*;
 
 use crate::fxdef::{Generator, SpeciesAsset, SpeciesDef, WindDamping};
-use crate::record::SimTime;
 use crate::scene_manifest::Vegetation;
-use crate::wildfire::Wildfire;
+use crate::wildfire::{SimClock, Wildfire};
 use crate::world::{enu, Seeded};
 
 mod grass;
@@ -152,18 +152,23 @@ fn wind_material(
     }
 }
 
+/// What planting needs: the pine kits, the asset stores plants are built into, and the wind.
+#[derive(SystemParam)]
+pub struct Nursery<'w> {
+    kits: ResMut<'w, PineKits>,
+    meshes: ResMut<'w, Assets<Mesh>>,
+    images: ResMut<'w, Assets<Image>>,
+    wind_materials: ResMut<'w, Assets<ExtendedWindAffectedMaterial>>,
+    standard: ResMut<'w, Assets<StandardMaterial>>,
+    wind: Res<'w, GlobalWind>,
+}
+
 /// Plant every stand whose species has loaded.
-#[allow(clippy::too_many_arguments)]
 pub fn grow_stands(
     mut commands: Commands,
     mut plans: ResMut<PendingStands>,
     species: Res<Assets<SpeciesAsset>>,
-    mut kits: ResMut<PineKits>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut images: ResMut<Assets<Image>>,
-    mut wind_materials: ResMut<Assets<ExtendedWindAffectedMaterial>>,
-    mut standard: ResMut<Assets<StandardMaterial>>,
-    wind: Res<GlobalWind>,
+    mut nursery: Nursery,
     noise: Option<Res<WindTexture>>,
     mut scatter_state: ResMut<NextState<ScatterState>>,
 ) {
@@ -176,19 +181,15 @@ pub fn grow_stands(
     for plan in ready {
         let def = &species.get(&plan.species).expect("loaded").0;
         match def.generator {
-            Generator::Pine => plant_pines(
-                &mut commands,
-                &plan.stand,
-                def,
-                &mut kits,
-                &mut meshes,
-                &mut images,
-                &mut wind_materials,
-                &wind,
-                &noise,
-            ),
+            Generator::Pine => plant_pines(&mut commands, &plan.stand, def, &mut nursery, &noise),
             Generator::Grass => {
-                sow_grass(&mut commands, &plan.stand, def, &mut meshes, &mut standard);
+                sow_grass(
+                    &mut commands,
+                    &plan.stand,
+                    def,
+                    &mut nursery.meshes,
+                    &mut nursery.standard,
+                );
                 // Feronia collects a root's assets only in its Setup → Collecting pass: run it again.
                 scatter_state.set(ScatterState::Setup);
             }
@@ -196,18 +197,21 @@ pub fn grow_stands(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn plant_pines(
     commands: &mut Commands,
     stand: &Vegetation,
     def: &SpeciesDef,
-    kits: &mut PineKits,
-    meshes: &mut Assets<Mesh>,
-    images: &mut Assets<Image>,
-    wind_materials: &mut Assets<ExtendedWindAffectedMaterial>,
-    wind: &GlobalWind,
+    nursery: &mut Nursery,
     noise: &WindTexture,
 ) {
+    let Nursery {
+        kits,
+        meshes,
+        images,
+        wind_materials,
+        wind,
+        ..
+    } = nursery;
     let kit = match kits.0.iter().position(|k| k.species == stand.species) {
         Some(index) => index,
         None => {
@@ -307,10 +311,8 @@ pub fn sync_vegetation_wind(
 const BURN_CHECK_S: f32 = 0.5;
 
 /// Char the pines and drop the grass a fire's front has swept over.
-#[allow(clippy::too_many_arguments)]
 pub fn burn_vegetation(
-    time: Res<Time>,
-    sim: Res<SimTime>,
+    clock: SimClock,
     fires: Option<Res<Wildfire>>,
     kits: Res<PineKits>,
     mut last_check: Local<f32>,
@@ -323,7 +325,7 @@ pub fn burn_vegetation(
     mut fields: Query<(&mut GrassField, &mut InstanceMaterialData)>,
 ) {
     let Some(fires) = fires else { return };
-    let now = sim.0.unwrap_or(time.elapsed_secs());
+    let now = clock.now();
     // Newly planted vegetation is checked at once, whatever the clock.
     let fresh =
         pines.iter_mut().any(|(p, _)| p.is_added()) || fields.iter_mut().any(|(f, _)| f.is_added());
