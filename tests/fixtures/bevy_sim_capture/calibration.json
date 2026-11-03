@@ -1,0 +1,11 @@
+{
+  "baseline_m": 0.07000000029802322,
+  "calibration_id": "elp-stereo-pinhole-v1",
+  "cx": 320.0,
+  "cy": 240.0,
+  "fx": 381.3599853515625,
+  "fy": 381.3599853515625,
+  "height": 480,
+  "rate_hz": 10.0,
+  "width": 640
+}

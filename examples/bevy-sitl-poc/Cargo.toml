@@ -9,9 +9,12 @@ license = "MIT OR Apache-2.0"
 # webgpu: Feronia LOD inserts VisibilityRange on debris, whose PBR
 # pipeline needs storage buffers the WebGL2 fallback cannot provide
 # (wgpu validation panic on visibility_ranges, group 0 binding 14).
-bevy = { version = "0.18", features = ["webgpu"] }
+# jpeg: the Poly Haven textures are JPGs (Bevy decodes PNG only by default).
+bevy = { version = "0.18", features = ["webgpu", "jpeg"] }
 bevy_rapier3d = "0.33"
 bevy_feronia = "0.8"
+# Grey eye frames for --record (the version Bevy already locks).
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 wasm-bindgen = "0.2"

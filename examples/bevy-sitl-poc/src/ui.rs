@@ -5,7 +5,7 @@
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::Velocity;
 
-use crate::calibration::StereoCalibration;
+use crate::calibration::CameraProfile;
 use crate::{Drone, Flight, StereoFeeds};
 
 #[derive(Component)]
@@ -14,7 +14,7 @@ pub(crate) struct StatusText;
 #[derive(Component)]
 pub(crate) struct TakeoffButton;
 
-pub(crate) fn setup_ui(mut commands: Commands, feeds: Res<StereoFeeds>, rig: Res<StereoCalibration>) {
+pub(crate) fn setup_ui(mut commands: Commands, feeds: Res<StereoFeeds>, rig: Res<CameraProfile>) {
     // Stereo feeds + the calibration this rig produces, drawn by Bevy.
     commands
         .spawn((
@@ -51,7 +51,9 @@ pub(crate) fn setup_ui(mut commands: Commands, feeds: Res<StereoFeeds>, rig: Res
             }
             panel.spawn((
                 Text::new(format!(
-                    "STEREO CALIBRATION (from this Bevy rig)\n{}x{}  fx={} fy={}  cx={} cy={}\nbaseline={} m  left={:?}\nright={:?}\nvertical FOV={:.4} rad\nframes stay in this page — not sent anywhere",
+                    "CAMERA PROFILE {} ({:?})\n{}x{}  fx={} fy={}  cx={} cy={}\nbaseline={} m  pitch={} deg  rate={} Hz\nRTAB-Map gets its calibration from this same file",
+                    rig.id,
+                    rig.model,
                     rig.width,
                     rig.height,
                     rig.fx,
@@ -59,9 +61,8 @@ pub(crate) fn setup_ui(mut commands: Commands, feeds: Res<StereoFeeds>, rig: Res
                     rig.cx,
                     rig.cy,
                     rig.baseline_m,
-                    rig.left_translation_m,
-                    rig.right_translation_m,
-                    rig.vertical_fov_rad(),
+                    rig.mount.pitch_deg,
+                    rig.rate_hz,
                 )),
                 TextFont {
                     font_size: 11.0,
@@ -72,7 +73,7 @@ pub(crate) fn setup_ui(mut commands: Commands, feeds: Res<StereoFeeds>, rig: Res
         });
     commands.spawn((
         StatusText,
-        Text::new("landed — Space: take off"),
+        Text::new("landed | Space: take off"),
         TextFont {
             font_size: 14.0,
             ..default()
@@ -151,7 +152,7 @@ pub(crate) fn update_status(
         return;
     };
     text.0 = format!(
-        "{}  alt {:.1} m  speed {:.1} m/s  yaw {:.0}°\nWASD move · Q/E yaw · R/F up/down · Space {}",
+        "{}  alt {:.1} m  speed {:.1} m/s  yaw {:.0} deg\nWASD move | Q/E yaw | R/F up/down | Space {}",
         if flight.engaged { "FLYING" } else { "LANDED" },
         body.translation.y,
         velocity.linvel.length(),

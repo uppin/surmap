@@ -1,41 +1,51 @@
-//! Browser-only disaster-flight simulation PoC.
+//! Disaster-flight simulation (WASM in the browser, or native).
 //!
-//! Bevy (WASM) renders a simplified disaster block, Rapier physics
-//! flies a quadcopter in it, Feronia scatters ground debris, and a
-//! stereo rig renders left/right 640x480 feeds while printing the
-//! calibration the rig produces. Frames stay in this page: nothing
-//! is encoded, uploaded, or sent to a backend.
+//! Bevy renders a disaster block loaded at runtime from
+//! `assets/scene.json` (textures and models fetched, never compiled
+//! in), Rapier physics flies a quadcopter in it, Feronia scatters
+//! ground debris, and a stereo rig built from the runtime camera
+//! profile renders the left/right feeds RTAB-Map receives.
 
 mod calibration;
+mod flight;
+mod look;
+mod record;
+mod rig;
+mod scene_manifest;
+mod shots;
+mod sky;
+mod textures;
 mod ui;
+mod wire;
+mod world;
 
-use bevy_rapier3d::prelude::*;
-use bevy::camera::RenderTarget;
+use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages};
+use bevy::window::WindowResolution;
+use bevy::winit::{UpdateMode, WinitSettings};
 use bevy_feronia::asset::backend::mesh_material_backend::MeshMaterialAssetBackendPlugin;
-use bevy_feronia::extension;
 use bevy_feronia::prelude::*;
-use calibration::StereoCalibration;
+use bevy_rapier3d::prelude::*;
+use calibration::CameraProfile;
+use look::{apply_look, photographic, Lens};
+use shots::{fly_scripted, setup_overview, take_shots, FlightMode, RunMode};
 use ui::{setup_button, setup_ui, takeoff_button, update_status};
-
-const RIG_FORWARD_M: f32 = 0.30;
-const RIG_UP_M: f32 = 0.10;
+use world::{build_world, resolve_models, start_loading, ManifestAsset, ManifestLoader};
 
 #[derive(Component)]
-struct Drone;
+pub(crate) struct Drone;
 
 #[derive(Component)]
 struct Rotor(f32);
 
 #[derive(Component)]
-struct LeftEye;
+pub(crate) struct LeftEye;
 
 #[derive(Component)]
-struct RightEye;
+pub(crate) struct RightEye;
 
 #[derive(Component)]
-struct ChaseCam;
+pub(crate) struct ChaseCam;
 
 #[derive(Resource, Default)]
 struct Flight {
@@ -45,54 +55,99 @@ struct Flight {
 }
 
 fn main() {
-    let rig = StereoCalibration::surmap_rig();
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "SurMap Bevy WASM disaster simulation (PoC)".into(),
-                canvas: Some("#bevy-canvas".into()),
-                fit_canvas_to_parent: true,
-                prevent_default_event_handling: true,
-                ..default()
-            }),
-            ..default()
-        }))
+    let args: Vec<String> = std::env::args().collect();
+    let mode = RunMode::from_args(&args).unwrap_or_else(|e| panic!("{e}"));
+    let resolution = if mode.unattended() {
+        WindowResolution::new(1280, 720).with_scale_factor_override(1.0)
+    } else {
+        WindowResolution::default()
+    };
+    let interactive = !mode.unattended();
+    let hidden = !mode.record.is_none();
+    let sim_time = record::SimTime(mode.screenshot.as_ref().map(|plan| plan.at_s));
+    let mut recorder = mode.record.clone().map(record::Recorder::new);
+    let exit = App::new()
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "SurMap Bevy disaster simulation".into(),
+                        canvas: Some("#bevy-canvas".into()),
+                        fit_canvas_to_parent: true,
+                        prevent_default_event_handling: true,
+                        resolution,
+                        // A recording renders only the offscreen eyes: keep it off the desktop.
+                        visible: !hidden,
+                        ..default()
+                    }),
+                    ..default()
+                })
+                // No `.meta` files exist; on wasm each miss would be an HTTP 404.
+                .set(AssetPlugin { meta_check: AssetMetaCheck::Never, ..default() }),
+        )
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(MeshMaterialAssetBackendPlugin)
         .add_plugins(ExtendedWindAffectedScatterPlugin)
+        .init_asset::<ManifestAsset>()
+        .init_asset_loader::<ManifestLoader>()
+        .init_asset::<rig::ProfileAsset>()
+        .init_asset_loader::<rig::ProfileLoader>()
         .insert_state(HeightMapState::Setup)
         .insert_state(ScatterState::Setup)
-        .insert_resource(rig)
+        // Unattended runs keep rendering with the window hidden or unfocused.
+        .insert_resource(WinitSettings { focused_mode: UpdateMode::Continuous, unfocused_mode: UpdateMode::Continuous })
+        .insert_resource(mode)
+        .insert_resource(sim_time)
         .init_resource::<Flight>()
-        .add_systems(
-            Startup,
-            (setup_world, setup_drone, setup_cameras, setup_ui, setup_button).chain(),
-        )
+        .add_systems(Startup, move |mut commands: Commands| {
+            if let Some(recorder) = recorder.take() {
+                commands.insert_resource(recorder);
+            }
+        })
+        .add_systems(Startup, (start_loading, setup_drone, setup_cameras, setup_overview).chain())
+        .add_systems(Update, (setup_ui, setup_button).chain().run_if(move || interactive).run_if(resource_added::<StereoFeeds>))
         .add_systems(
             Update,
             (
+                build_world,
+                rig::spawn_rig,
+                textures::generate_mips,
+                resolve_models,
                 read_controls,
                 takeoff_button,
-                follow_drone_rig,
-                chase_camera,
+                fly_scripted,
+                follow_drone_rig.after(fly_scripted),
+                chase_camera.after(fly_scripted),
                 spin_rotors,
                 scatter_once,
                 update_status,
+                take_shots,
+                record::record_frames.after(fly_scripted),
+                apply_look,
+                sky::bake_sky,
             ),
         )
         .add_systems(FixedUpdate, apply_thrust)
         .run();
+    if exit.is_error() {
+        std::process::exit(1);
+    }
 }
 
 fn setup_drone(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mode: Res<RunMode>,
 ) {
+    let body_kind = match mode.flight {
+        FlightMode::Manual => RigidBody::Dynamic,
+        FlightMode::SurveyLoop => RigidBody::KinematicPositionBased,
+    };
     let body = commands
         .spawn((
             Drone,
-            RigidBody::Dynamic,
+            body_kind,
             Collider::cuboid(0.18, 0.08, 0.18),
             AdditionalMassProperties::Mass(1.2),
             LockedAxes::ROTATION_LOCKED_X | LockedAxes::ROTATION_LOCKED_Z,
@@ -143,234 +198,29 @@ fn mat(materials: &mut Assets<StandardMaterial>, color: Color) -> MeshMaterial3d
     }))
 }
 
-fn setup_world(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    commands.spawn((
-        DirectionalLight {
-            illuminance: 9_000.0,
-            shadows_enabled: false,
-            ..default()
-        },
-        Transform::from_xyz(30.0, 60.0, 20.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
-    commands.insert_resource(ClearColor(Color::srgb(0.45, 0.52, 0.60)));
-
-    // Ground: dirt plane carrying both the physics floor and the
-    // Feronia scatter root (wind-blown debris across the block).
-    let ground_mesh = meshes.add(Cuboid::new(140.0, 0.2, 200.0));
-    commands.spawn((
-        Mesh3d(ground_mesh.clone()),
-        mat(&mut materials, Color::srgb(0.42, 0.34, 0.24)),
-        Transform::from_xyz(0.0, -0.1, -45.0),
-        RigidBody::Fixed,
-        Collider::cuboid(70.0, 0.1, 100.0),
-        ScatterRoot::default(),
-        children![(
-            extension::scatter_layer("Ground debris"),
-            DistributionDensity(28.),
-            InstanceJitterStrength::default(),
-            InstanceScaleRange::default(),
-            InstanceRotationYawRange::default(),
-            WindAffected,
-            children![
-                (
-                    Name::new("Debris chunk"),
-                    MeshMaterial3d(materials.add(StandardMaterial {
-                        base_color: Color::srgb(0.55, 0.52, 0.48),
-                        perceptual_roughness: 1.0,
-                        ..default()
-                    })),
-                    Mesh3d(meshes.add(Cuboid::new(0.5, 0.22, 0.34))),
-                    Transform::from_xyz(0., 0.12, 0.),
-                ),
-                (
-                    Name::new("Debris chunk"),
-                    LevelOfDetail(1),
-                    MeshMaterial3d(materials.add(StandardMaterial {
-                        base_color: Color::srgb(0.40, 0.38, 0.35),
-                        perceptual_roughness: 1.0,
-                        ..default()
-                    })),
-                    Mesh3d(meshes.add(Cuboid::new(0.5, 0.22, 0.34))),
-                    Transform::from_xyz(0., 0.12, 0.),
-                ),
-            ]
-        )],
-    ));
-
-    // Avenue along x = 0 (north = -z in Bevy) and cross street at y = 60.
-    for (x, z, w, d) in [
-        (0.0, -45.0, 10.0, 190.0),
-        (0.0, -60.0, 110.0, 10.0),
-    ] {
-        commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(w, 0.06, d))),
-            mat(&mut materials, Color::srgb(0.16, 0.16, 0.17)),
-            Transform::from_xyz(x, 0.03, z),
-        ));
-    }
-    // Flood pond near (10, 38) ENU.
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(32.0, 0.05, 36.0))),
-        mat(&mut materials, Color::srgb(0.15, 0.30, 0.42)),
-        Transform::from_xyz(10.0, 0.06, -38.0),
-    ));
-    // Helipad at the origin, kept clear.
-    commands.spawn((
-        Mesh3d(meshes.add(Cuboid::new(8.0, 0.07, 8.0))),
-        mat(&mut materials, Color::srgb(0.25, 0.26, 0.27)),
-        Transform::from_xyz(0.0, 0.035, 0.0),
-    ));
-
-    // Pancaked buildings and rubble: grey slabs with colliders.
-    let slab = Color::srgb(0.52, 0.52, 0.50);
-    let dark = Color::srgb(0.38, 0.38, 0.37);
-    for (x, z, w, h, d, ry) in [
-        (-16.0, -30.0, 12.0, 3.0, 10.0, 0.0),
-        (-18.0, -33.0, 11.0, 0.6, 9.0, 0.12),
-        (18.0, -52.0, 14.0, 5.0, 10.0, 0.0),
-        (16.0, -86.0, 12.0, 3.4, 10.0, 0.0),
-        (-20.0, -88.0, 10.0, 6.0, 9.0, -0.08),
-        (24.0, -14.0, 9.0, 2.2, 8.0, 0.2),
-        (-14.0, -8.0, 7.0, 1.4, 6.0, 0.4),
-        (28.0, -70.0, 8.0, 1.8, 7.0, -0.3),
-    ] {
-        commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(w, h, d))),
-            mat(&mut materials, if h > 3.0 { slab } else { dark }),
-            Transform::from_xyz(x, h / 2.0, z).with_rotation(Quat::from_rotation_y(ry)),
-            RigidBody::Fixed,
-            Collider::cuboid(w / 2.0, h / 2.0, d / 2.0),
-        ));
-    }
-    // Cars at odd angles, one overturned.
-    for (x, z, ry, flip) in [
-        (4.0, -24.0, 0.5, 0.0),
-        (-4.0, -48.0, -0.9, 0.0),
-        (12.0, -40.0, 0.2, std::f32::consts::PI),
-    ] {
-        commands.spawn((
-            Mesh3d(meshes.add(Cuboid::new(1.8, 0.55, 4.2))),
-            mat(&mut materials, Color::srgb(0.55, 0.30, 0.16)),
-            Transform::from_xyz(x, 0.55, z).with_rotation(
-                Quat::from_rotation_y(ry) * Quat::from_rotation_x(flip),
-            ),
-            RigidBody::Fixed,
-            Collider::cuboid(0.9, 0.275, 2.1),
-        ));
-    }
-
-    // Survivors at the ground-truth ENU poses (x east, y north -> -z).
-    let people = [
-        (-3.5, 16.0, 0.0),
-        (-5.0, 54.0, 0.0),
-        (-4.0, 42.0, 2.2),
-        (-14.0, 86.0, 3.4),
-        (-1.0, 72.0, 0.0),
-        (-2.0, 64.0, 0.0),
-        (6.0, 76.0, 1.8),
-    ];
-    for (i, (x, north, up)) in people.iter().enumerate() {
-        let coat = if i % 2 == 0 {
-            Color::srgb(0.95, 0.42, 0.05)
-        } else {
-            Color::srgb(0.96, 0.82, 0.08)
-        };
-        commands.spawn((
-            Mesh3d(meshes.add(Capsule3d::new(0.17, 1.05))),
-            mat(&mut materials, coat),
-            Transform::from_xyz(*x, up + 0.72, -*north),
-        ));
-        commands.spawn((
-            Mesh3d(meshes.add(Sphere::new(0.13))),
-            mat(&mut materials, Color::srgb(0.85, 0.65, 0.50)),
-            Transform::from_xyz(*x, up + 1.62, -*north),
-        ));
-    }
-}
-
-fn render_target(images: &mut Assets<Image>, rig: &StereoCalibration) -> Handle<Image> {
-    let mut image = Image::new_fill(
-        Extent3d {
-            width: rig.width,
-            height: rig.height,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        &[24, 28, 34, 255],
-        TextureFormat::Bgra8UnormSrgb,
-        bevy::asset::RenderAssetUsages::default(),
-    );
-    image.texture_descriptor.usage =
-        TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
-    images.add(image)
-}
-
-fn setup_cameras(
-    mut commands: Commands,
-    mut images: ResMut<Assets<Image>>,
-    rig: Res<StereoCalibration>,
-) {
-    let projection = || {
-        Projection::Perspective(PerspectiveProjection {
-            fov: rig.vertical_fov_rad(),
-            near: 0.1,
-            far: 250.0,
-            ..default()
-        })
-    };
-    commands.spawn((
+/// The chase view at startup; the eyes follow once the camera profile loads (`rig.rs`).
+fn setup_cameras(mut commands: Commands) {
+    let mut chase = commands.spawn((
         ChaseCam,
-        Camera3d::default(),
-        AmbientLight {
-            color: Color::WHITE,
-            brightness: 500.0,
-            ..default()
-        },
         Camera {
             order: 0,
             ..default()
         },
-        projection(),
+        Projection::Perspective(PerspectiveProjection {
+            fov: 60f32.to_radians(),
+            near: 0.1,
+            far: 600.0,
+            ..default()
+        }),
         Transform::from_xyz(6.0, 4.0, 8.0).looking_at(Vec3::new(0.0, 0.5, 0.0), Vec3::Y),
     ));
-    let left_target = render_target(&mut images, &rig);
-    let right_target = render_target(&mut images, &rig);
-    commands.insert_resource(StereoFeeds {
-        left: left_target.clone(),
-        right: right_target.clone(),
-    });
-    commands.spawn((
-        LeftEye,
-        Camera3d::default(),
-        Camera {
-            order: 1,
-            ..default()
-        },
-        RenderTarget::Image(left_target.into()),
-        projection(),
-        Transform::from_xyz(-0.035, 0.55, 0.0),
-    ));
-    commands.spawn((
-        RightEye,
-        Camera3d::default(),
-        Camera {
-            order: 1,
-            ..default()
-        },
-        RenderTarget::Image(right_target.into()),
-        projection(),
-        Transform::from_xyz(0.035, 0.55, 0.0),
-    ));
+    photographic(&mut chase, Lens::Chase);
 }
 
 #[derive(Resource)]
-struct StereoFeeds {
-    left: Handle<Image>,
-    right: Handle<Image>,
+pub(crate) struct StereoFeeds {
+    pub(crate) left: Handle<Image>,
+    pub(crate) right: Handle<Image>,
 }
 
 fn read_controls(
@@ -437,18 +287,14 @@ fn follow_drone_rig(
     drone: Query<&Transform, With<Drone>>,
     mut left: Query<&mut Transform, (With<LeftEye>, Without<Drone>, Without<RightEye>)>,
     mut right: Query<&mut Transform, (With<RightEye>, Without<Drone>, Without<LeftEye>)>,
-    rig: Res<StereoCalibration>,
+    rig: Option<Res<CameraProfile>>,
 ) {
-    let Ok(body) = drone.single() else { return };
-    let mount = Vec3::new(0.0, RIG_UP_M, -RIG_FORWARD_M);
-    for (eye, offset) in [
-        (left.single_mut(), rig.left_translation_m),
-        (right.single_mut(), rig.right_translation_m),
-    ] {
+    let (Ok(body), Some(rig)) = (drone.single(), rig) else { return };
+    for (eye, right_eye) in [(left.single_mut(), false), (right.single_mut(), true)] {
         let Ok(mut eye) = eye else { return };
-        let local = Vec3::new(offset[0], offset[1], offset[2]) + mount;
+        let local = rig.mount_offset() + rig.mount_rotation() * rig.eye_translation_m(right_eye);
         eye.translation = body.translation + body.rotation * local;
-        eye.rotation = body.rotation;
+        eye.rotation = body.rotation * rig.mount_rotation();
     }
 }
 
@@ -456,13 +302,14 @@ fn chase_camera(
     drone: Query<&Transform, With<Drone>>,
     mut cam: Query<&mut Transform, (With<ChaseCam>, Without<Drone>)>,
     time: Res<Time>,
+    mode: Res<RunMode>,
 ) {
     let (Ok(body), Ok(mut eye)) = (drone.single(), cam.single_mut()) else {
         return;
     };
     let back = body.rotation * Vec3::new(5.0, 2.6, 7.5);
     let target = body.translation + back;
-    let blend = 1.0 - (-3.0 * time.delta_secs()).exp();
+    let blend = if mode.screenshot.is_some() { 1.0 } else { 1.0 - (-3.0 * time.delta_secs()).exp() };
     eye.translation = eye.translation.lerp(target, blend);
     eye.look_at(body.translation + Vec3::new(0.0, 0.3, 0.0), Vec3::Y);
 }

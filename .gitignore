@@ -32,3 +32,8 @@ web/agent-chat/dist
 web/agent-chat/yarn.lock.local-install-backup
 web/agent-chat/test-results
 web/agent-chat/playwright-report
+
+# Fetched by scripts/fetch_sim_assets.py (pinned in assets.lock.json, uncommitted)
+examples/bevy-sitl-poc/assets/textures/
+examples/bevy-sitl-poc/assets/models/
+examples/bevy-sitl-poc/assets/hdri/

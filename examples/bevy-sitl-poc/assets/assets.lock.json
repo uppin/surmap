@@ -1,0 +1,256 @@
+{
+  "assets": [
+    {
+      "path": "textures/aerial_asphalt_01_diff_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/aerial_asphalt_01/aerial_asphalt_01_diff_2k.jpg",
+      "sha256": "a85ce28b8e6ed90acb0234832969b27f5b73fe055a0d5b94f34fc2943d319fb5",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/aerial_asphalt_01"
+    },
+    {
+      "path": "textures/aerial_asphalt_01_nor_gl_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/aerial_asphalt_01/aerial_asphalt_01_nor_gl_2k.jpg",
+      "sha256": "cb7e5b75ff47ad672ab820f71b77566419b612e52e7791c5ed90a7fa27b71807",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/aerial_asphalt_01"
+    },
+    {
+      "path": "textures/aerial_asphalt_01_arm_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/aerial_asphalt_01/aerial_asphalt_01_arm_2k.jpg",
+      "sha256": "ce664ad5621446bee3f02dadf4efdf016d0eecf67c45ab93a4fd54f35fd89283",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/aerial_asphalt_01"
+    },
+    {
+      "path": "textures/rocks_ground_02_diff_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rocks_ground_02/rocks_ground_02_col_2k.jpg",
+      "sha256": "a2a4fc4e10a307ca6e345e0df50d6115ba1058174de915bfcfdd5ff3f49dc2fa",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/rocks_ground_02"
+    },
+    {
+      "path": "textures/rocks_ground_02_nor_gl_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rocks_ground_02/rocks_ground_02_nor_gl_2k.jpg",
+      "sha256": "bde35636a0c548e57006917287e067d11abf3bfac2d70373162deb171ca9a4ef",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/rocks_ground_02"
+    },
+    {
+      "path": "textures/rocks_ground_02_arm_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rocks_ground_02/rocks_ground_02_arm_2k.jpg",
+      "sha256": "dc327dd84c9526d8accb821bedc5d38cf573ae208737639037359d0f29246ea1",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/rocks_ground_02"
+    },
+    {
+      "path": "textures/brown_mud_03_diff_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/brown_mud_03/brown_mud_03_diff_2k.jpg",
+      "sha256": "57a87dae26769677578ab53b8829fe9b1e4dfec1ae1726f2942ce99fc73f400b",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/brown_mud_03"
+    },
+    {
+      "path": "textures/brown_mud_03_nor_gl_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/brown_mud_03/brown_mud_03_nor_gl_2k.jpg",
+      "sha256": "4d9ea1c9321618dbde7bdb2287fae85b646e4bd7b27c294a3475096d30b33880",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/brown_mud_03"
+    },
+    {
+      "path": "textures/brown_mud_03_arm_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/brown_mud_03/brown_mud_03_arm_2k.jpg",
+      "sha256": "29dae9a0c85cb0b91bd8c9b878d184f36363472212bd6a02662f415627f06992",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/brown_mud_03"
+    },
+    {
+      "path": "textures/concrete_floor_worn_001_diff_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/concrete_floor_worn_001/concrete_floor_worn_001_diff_2k.jpg",
+      "sha256": "e29b45cdcd6d02fae3c087c456196ffa750779a9b62e7071aa3831dc322a0cc4",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/concrete_floor_worn_001"
+    },
+    {
+      "path": "textures/concrete_floor_worn_001_nor_gl_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/concrete_floor_worn_001/concrete_floor_worn_001_nor_gl_2k.jpg",
+      "sha256": "3b782137e34d63fd59b2e92b4e27b2ee4d082caf9dd23f00dc7ab4da5513daef",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/concrete_floor_worn_001"
+    },
+    {
+      "path": "textures/concrete_floor_worn_001_arm_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/concrete_floor_worn_001/concrete_floor_worn_001_arm_2k.jpg",
+      "sha256": "f239a75b8b816ceb85058933b6115e0fcd92e4709e9210e2b4f834f47d9fa7c6",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/concrete_floor_worn_001"
+    },
+    {
+      "path": "textures/white_plaster_02_diff_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/white_plaster_02/white_plaster_02_diff_2k.jpg",
+      "sha256": "0ca5245ba70777d3e41ff4566c9f8d363855461891802c55cb7dc0f6f85f084e",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/white_plaster_02"
+    },
+    {
+      "path": "textures/white_plaster_02_nor_gl_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/white_plaster_02/white_plaster_02_nor_gl_2k.jpg",
+      "sha256": "083579b03a8f31ec1886512e5972f3b893610bf26a2098f97910e0f46745cdc9",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/white_plaster_02"
+    },
+    {
+      "path": "textures/white_plaster_02_arm_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/white_plaster_02/white_plaster_02_arm_2k.jpg",
+      "sha256": "acdb65bfabb3613812bdad9156021400e518bdf4998c011921ce43695a5e24d4",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/white_plaster_02"
+    },
+    {
+      "path": "models/concrete_road_barrier/concrete_road_barrier_2k.gltf",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/2k/concrete_road_barrier/concrete_road_barrier_2k.gltf",
+      "sha256": "9189168735eaf2e91a7d8b9d250f4644f984bf5353a2cc844f8ccef270d743dd",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/concrete_road_barrier"
+    },
+    {
+      "path": "models/concrete_road_barrier/concrete_road_barrier.bin",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/concrete_road_barrier/concrete_road_barrier.bin",
+      "sha256": "64a4f9bc6e4af64d714a252c3c13428c430a60569deba3d52ca6b7dd3aa70d8c",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/concrete_road_barrier"
+    },
+    {
+      "path": "models/concrete_road_barrier/textures/concrete_road_barrier_arm_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/concrete_road_barrier/concrete_road_barrier_arm_2k.jpg",
+      "sha256": "8c17f77897138a5ee0f80d0b5d194fd00554371e33b9f62f6d7b6a4e640094d6",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/concrete_road_barrier"
+    },
+    {
+      "path": "models/concrete_road_barrier/textures/concrete_road_barrier_diff_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/concrete_road_barrier/concrete_road_barrier_diff_2k.jpg",
+      "sha256": "51832691e0769a04246b61222e5df1ce7dc22e9c7162f786a314409ac76d643c",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/concrete_road_barrier"
+    },
+    {
+      "path": "models/concrete_road_barrier/textures/concrete_road_barrier_nor_gl_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/concrete_road_barrier/concrete_road_barrier_nor_gl_2k.jpg",
+      "sha256": "8e48a287ae58a53030635c585d57a2da72660531a907a8e6cd04836bc60bf3a3",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/concrete_road_barrier"
+    },
+    {
+      "path": "models/old_tyre/old_tyre_2k.gltf",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/2k/old_tyre/old_tyre_2k.gltf",
+      "sha256": "718887df6f9c3870e83c37a599204bb6b1503e659c5ba4964fffc72a8183927a",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/old_tyre"
+    },
+    {
+      "path": "models/old_tyre/old_tyre.bin",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/4k/old_tyre/old_tyre.bin",
+      "sha256": "659e7982c2de92ca1d13194c97bf112b6dec22d91daecc88e3912d37ce1b7252",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/old_tyre"
+    },
+    {
+      "path": "models/old_tyre/textures/old_tyre_arm_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/old_tyre/old_tyre_arm_2k.jpg",
+      "sha256": "2a5bcb0b7a9f447de60bbf6f492dc01059dcbbfe94cf67eee8c5e1b2892ff5eb",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/old_tyre"
+    },
+    {
+      "path": "models/old_tyre/textures/old_tyre_diff_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/old_tyre/old_tyre_diff_2k.jpg",
+      "sha256": "fc84489da73f20898deb28c85a6a392e1d752a6f57be0f45be55edfa088b48c9",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/old_tyre"
+    },
+    {
+      "path": "models/old_tyre/textures/old_tyre_nor_gl_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/old_tyre/old_tyre_nor_gl_2k.jpg",
+      "sha256": "46b54580adcc86af76d80c1e524c268e36fa7a46dade269fafb1109bf56a6df1",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/old_tyre"
+    },
+    {
+      "path": "models/Barrel_01/Barrel_01_2k.gltf",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/2k/Barrel_01/Barrel_01_2k.gltf",
+      "sha256": "1b9f9774879a071146045bb0d3557b06a97f4f9c360e3c57664cfe723e1c55e9",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/Barrel_01"
+    },
+    {
+      "path": "models/Barrel_01/Barrel_01.bin",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/Barrel_01/Barrel_01.bin",
+      "sha256": "fe8369c1ac796059b62a091c0db7367dc420aa2cee212672e48f991f4208da98",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/Barrel_01"
+    },
+    {
+      "path": "models/Barrel_01/textures/Barrel_01_explosive_arm_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/Barrel_01/Barrel_01_explosive_arm_2k.jpg",
+      "sha256": "3f6fdb68391e4369e551d90f8577b0899c30589b532ebd416e996170279cd852",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/Barrel_01"
+    },
+    {
+      "path": "models/Barrel_01/textures/Barrel_01_explosive_diff_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/Barrel_01/Barrel_01_explosive_diff_2k.jpg",
+      "sha256": "09da9d519d87d34c0318da3bb293296071ce2e09c78415befe1157949a644b8b",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/Barrel_01"
+    },
+    {
+      "path": "models/Barrel_01/textures/Barrel_01_explosive_nor_gl_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/Barrel_01/Barrel_01_explosive_nor_gl_2k.jpg",
+      "sha256": "050d5dfcf86b37172708637d1c1939010dd1837ed503b7e5561b5b1e67cb0379",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/Barrel_01"
+    },
+    {
+      "path": "models/covered_car/covered_car_2k.gltf",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/2k/covered_car/covered_car_2k.gltf",
+      "sha256": "7d53067dc7b60c94e05eebc43c6b956f56d35a57ef3568e7619bb92227ab8a1f",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/covered_car"
+    },
+    {
+      "path": "models/covered_car/covered_car.bin",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/covered_car/covered_car.bin",
+      "sha256": "dcbd7bf82d415e30d02c3e7056013b44729de7b712868b5ab9bf29f2b3b8bc57",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/covered_car"
+    },
+    {
+      "path": "models/covered_car/textures/covered_car_arm_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/covered_car/covered_car_arm_2k.jpg",
+      "sha256": "09bb2ccf251ddd679dd147673443cd68ccc39db3f42ba037ad4185da1b8f6e1b",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/covered_car"
+    },
+    {
+      "path": "models/covered_car/textures/covered_car_diff_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/covered_car/covered_car_diff_2k.jpg",
+      "sha256": "d482fc7fe8ea8c523e9f29f581a4dd50e14bb060e09779c9633fc55a6473dffb",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/covered_car"
+    },
+    {
+      "path": "models/covered_car/textures/covered_car_nor_gl_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/covered_car/covered_car_nor_gl_2k.jpg",
+      "sha256": "c37a276f7f55e8477e066f0b0bf83a6cf770ab82cdcf3439bad1b939ff762ceb",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/covered_car"
+    },
+    {
+      "path": "hdri/kloofendal_28d_misty_puresky_2k.hdr",
+      "url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/kloofendal_28d_misty_puresky_2k.hdr",
+      "sha256": "7adde668fb821069a05e4dcaf09c08ebf2de6503bdd99fd5bdf7bcfddff4236a",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/kloofendal_28d_misty_puresky"
+    }
+  ]
+}
