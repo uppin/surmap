@@ -256,3 +256,56 @@ for checking a file.
 - **Integer centimetres from the OBB centre**, not a normalised grid, so the agent reads real
   dimensions in three digits.
 - **No `pygltflib`**: the writer is plain struct packing.
+
+## Models (`surmap.agent.llm`)
+
+The runtime binds a LangChain `BaseChatModel`. `ChatModelRegistry`
+(`registry.py`) lists the models usable right now and builds one by id.
+
+| Id | Provider | Listed when | Built as |
+|---|---|---|---|
+| `meta:<model>` | Meta Model API, Responses (`POST {base}/responses`) | `MODEL_API_KEY` is set; the model is `SURMAP_AGENT_META_MODEL`, else `muse-wonder-1.0` | `MetaResponsesChatModel` (`meta.py`) |
+| `ollama:<model>` | Loopback Ollama (`SURMAP_OLLAMA_URL`, else the labelling default) | the server's `GET /api/tags` names it; an unreachable server lists nothing | `ChatOllama` via `ollama_chat_model` (`ollama.py`) |
+
+An id splits at the first colon (`ollama:llama3.2:3b` is Ollama model
+`llama3.2:3b`). `build` does not consult the listing: any `meta:` or
+`ollama:` id builds; any other provider raises `UnknownModelProvider`.
+The registry reads an injected `environ` (default `os.environ`).
+
+### Muse on the Responses API
+
+`MetaResponsesChatModel` defaults: model `muse-wonder-1.0`,
+`reasoning_effort` `medium`, `max_output_tokens` `8192`. The key is
+`MODEL_API_KEY` (or `api_key`), sent only as `Authorization: Bearer`;
+a missing key raises `MetaResponsesError` before any request. The
+transport is `labelling.meta_muse`'s, which refuses redirects. One
+response is one chunk; there is no token streaming.
+
+The mapping is two pure functions:
+
+- `responses_request(messages, tools, *, model, effort, max_output_tokens)`:
+  the system message becomes `instructions`; human text and images
+  become `input_text` / `input_image` (data URL) parts; AI text is sent
+  before its tool calls; each tool call is a `function_call` item
+  (`call_id`, `name`, `arguments` as `json.dumps(args)`) and each tool
+  result a `function_call_output` with the same `call_id`. Tools are
+  `{type: "function", name, description, parameters, strict: false}`;
+  no tools means no `tools` field, and `tool_choice` is refused.
+- `parse_responses(body, *, requested_model)`: `output_text` parts are
+  the content, `function_call` items the tool calls in order,
+  unparseable arguments an invalid tool call, `usage` the message's
+  usage metadata. A body with no `output` list is refused.
+
+An empty reply (no text, no tool call) is asked for once more, then
+raises `MetaResponsesError`. Every response with usage goes to
+`usage_sink` (normally a `UsageLedger`, provider `meta`), and
+`before_call` (normally `UsageLedger.check`) runs before every request,
+so a spent `SURMAP_BUDGET_META_*` budget refuses the turn before a
+socket opens.
+
+### Live checks
+
+| Check | Command | Result on the dev host |
+|---|---|---|
+| Muse tool round trip (`echo`) | `SURMAP_LIVE_META=1 uv run pytest -q tests/test_agent_llm_meta.py -k live` | **Not run — no `MODEL_API_KEY` on the dev host. Live Meta function-tool support is unverified**: the request and reply shapes follow the OpenAI-style Responses API and are pinned only by hand-built fixtures |
+| Ollama tool round trip | `SURMAP_LIVE_OLLAMA=1 SURMAP_OLLAMA_MODEL=<model> uv run pytest -q tests/test_agent_llm_registry.py -k live` | Passed against `fastcontext-tools:latest` |
