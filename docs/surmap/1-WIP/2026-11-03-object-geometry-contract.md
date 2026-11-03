@@ -18,8 +18,8 @@
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Milestone 1: `summarize` — centroid, AABB, PCA OBB, height, footprint, shape class
-  - [ ] Milestone 2: `neighbours` — distance and relation between summaries
+  - [x] Milestone 1: `summarize` — centroid, AABB, PCA OBB, height, footprint, shape class
+  - [x] Milestone 2: `neighbours` — distance and relation between summaries
   - [ ] Milestone 3: `encode_obj_text` / `decode_obj_text` with voxel downsampling and cap
   - [ ] Milestone 4: `write_glb` for points and triangles
   - [ ] Acceptance: `tests/test_objects3d.py` passes
