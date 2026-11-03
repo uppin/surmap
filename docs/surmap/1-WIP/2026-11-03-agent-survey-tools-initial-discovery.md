@@ -197,3 +197,21 @@ Patterns taken from prior LangGraph agent work the developer pointed at (not nam
   for cancellation tests); everything else (graph, tool node, stores) runs for real.
 - Chat UI: React + Vite + Tailwind + connect-es v2 / protobuf-es; transcript as a discriminated
   union of roles; tool calls as collapsible steps with a status icon; job progress components.
+
+## Exploration 4 — red step against the landed predecessors
+
+- `surmap.demo.runs.DemoRunHost` (n2) is attribute-only: `make_demo_server(...)` sets every field on
+  `_DemoHttpServer(ThreadingHTTPServer, DemoRunHost)`. A headless host is that server built with
+  `port=0` and never served (`tests/test_demo_runs.py:19 a_run_host`), so the adapter is handed a
+  host.
+- `DemoRunHost.start_run(prepared, sam_prompt)` → `_RunEngine` (`done` event, `stop()`, `run_id`);
+  per-run `fps` / `max_frames` are not parameters — they live in the host-wide `player_options`.
+  `host.sam_prompt(dataset_id, requested)` resolves the concept (`SamPromptPolicy`).
+- Recorded SAM boxes are in **display** pixels (`_SamWorker` tracks the display JPEG,
+  `demo/server.py:571`); `RunHistoryStore.sam_at` returns them with `track_id`, and
+  `surface_points.track_id` joins a surface to its SAM track. The tiny fixture records frames 1, 2
+  at t_ns 100, 200; display 376 x 240, full 752 x 480 in the scene cache.
+- Without RTAB-Map a recorded run has no surfaces, so object tests seed them with
+  `RunHistoryStore.record_surface` (lattice boxes from `tests/object_fakes.py`).
+- `surmap.objects3d.ObjectSummary` has no `moving` field; the converter takes it as an argument
+  (n3's note: `Obb`↔`OrientedBox`, `ShapeClass`↔`Shape`, `None` → `0` / `""`).

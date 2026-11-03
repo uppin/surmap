@@ -8,12 +8,15 @@
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-03 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file + discovery (commit 1)
+- [wf 1] ✅ 2026-11-03 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file + discovery (commit 1, `6693a9a`)
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
+- [wf 2] ✅ 2026-11-03 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 66 failing — commit 2
+  - [x] Create failing acceptance tests
+  - [x] Run acceptance tests (verify they fail)
+  - [x] TDD Red — write failing unit/integration tests
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Milestone 1: `SurveyWorkspace` port + adapter over `DemoRunHost` and `RunHistoryStore` (headless start, wait for end)
   - [ ] Milestone 2: `list_demos`, `run_demo`, `get_run`
@@ -36,7 +39,7 @@ Full codebase exploration that grounded this plan:
 
 ## Stack Context
 
-**Stack**: survey agent · slug **`#survey-agent`** — this PR is **7 of 9** · #pending
+**Stack**: survey agent · slug **`#survey-agent`** — this PR is **7 of 9** · [#83](https://github.com/uppin/surmap/pull/83)
 **Branch**: `pr-7-survey-agent` · **Base**: `pr-6-survey-agent`
 **Successor**: `pr-8-survey-agent`
 **Kind**: Feature · behaviour-adds
@@ -47,11 +50,18 @@ take decoded proto requests and return proto responses, so they test without a m
 
 ### Owned API surface
 
-- `surmap.agent.tools.workspace`: `SurveyWorkspace` (protocol), `DemoWorkspace` (adapter over
-  `DemoRunHost` + `RunHistoryStore` + scene cache), `GeometryStore` (GLB by `(run_id, object_id)`)
-- `surmap.agent.tools.handlers`: `survey_tool_handlers(workspace) -> Mapping[str, Handler]` and
-  one handler per `SurveyTools` rpc
-- `surmap.agent.tools.frames`: `frame_image(...)`, `crop_box_for_object(...)`
+- `surmap.agent.tools.workspace`: `SurveyWorkspace` (protocol) and its info types `SceneInfo`,
+  `RunInfo`, `RunStatus`, `FrameRecord`, `FrameDetections`, `StoredObject`, `ObjectBox`,
+  `FrameImage`, `FrameSource`, `BoxXYXY` (real); `DemoWorkspace(host, *, detector, geometry)`
+  (adapter over `DemoRunHost` + its `RunHistoryStore` + scene cache) and `GeometryStore(root)`
+  (`uri`, `has`, `put`, `read` — GLB by `(run_id, object_id)`) stubbed
+- `surmap.agent.tools.handlers`: `survey_tool_handlers(workspace) -> Mapping[str, Handler]` (by
+  rpc name, `(request, ctx)` shape), one `async def <tool>(request, workspace)` per `SurveyTools`
+  rpc on `surmap.agent.proto.survey_tools_pb2` messages, the converter
+  `object_summary_message(summary, *, moving)`, and `MAX_SAM_FRAMES = 8`,
+  `OBJECT_CROP_PAD_PX = 16`
+- `surmap.agent.tools.frames`: `EncodedImage`, `frame_image(image, *, crop, pad_px, max_side)`,
+  `crop_box_for_object(box, *, measured_on, image_size)`
 
 ### Green wave
 
@@ -67,9 +77,11 @@ Real dependency edges, as opposed to the branch line:
 
 ### Greenable independently?
 
-**no — blocked by n1, n2 and n3**: the acceptance tests mount handlers on `survey_tools_module` (n1),
-start runs through `DemoRunHost` (n2) and assert `ObjectSummary` fields and OBJ text (n3). Tests red
-because those are still stubs are blocked-on-n1/n2/n3, not failures.
+**yes — its predecessors are green**: the tests mount handlers on `survey_tools_module` (n1), record
+runs through `DemoRunHost` (n2) and read summaries, OBJ text and GLBs through `surmap.objects3d`
+(n3) — all real on this base since the red step (commit 2). All 66 red tests fail on this node's
+own `NotImplementedError` (`src/surmap/agent/tools/handlers.py` 58, `frames.py` 8); none is
+blocked on a predecessor. The wave edges are unchanged.
 
 ### Trunk-merge safety
 
@@ -86,7 +98,7 @@ runs the tests start go to a temp history DB, never `~/.cache/surmap`. **Product
 | `surmap.objects3d.summarize`, `encode_obj_text`, `write_glb` | n3 | real after n3 green | calls them; does not implement geometry |
 | `JobRunner` / `bind_contract_tool` | n4 | not needed by these tests | handlers are plain async functions; binding happens in n8 |
 
-**Greenable independently?** no — needs n1, n2, n3 green first.
+**Greenable independently?** yes — n1, n2, n3 are green on this base.
 
 ## Inherited Restructure — expect rewrite
 
@@ -96,6 +108,14 @@ runs the tests start go to a temp history DB, never `~/.cache/surmap`. **Product
 
 **Repair**: after n2's `/code-restructuring` lands, run `/pr-stack-rebase` here, then fix the fallout
 in **a new commit on this branch**. Each red test must still fail for this PR's missing handlers.
+
+**Applied (red step, commit 2):** planned against the landed `surmap.demo.runs` — `DemoRunHost` has
+no constructor of its own (`make_demo_server` builds it, `_DemoHttpServer` is the subclass), so
+`DemoWorkspace` **takes a built host** instead of constructing one; tests build it with
+`make_demo_server(port=0, ...)` and never serve it. `start_run(prepared, sam_prompt)` reads
+`fps`/`max_frames` from the host-wide `player_options`, so per-call `fps` / `max_frames` are the
+adapter's to apply at green (n2's file is not edited). `PlaybackControls` comes from
+`surmap.demo.playback` via `_RunEngine.controls`; cancellation is `_RunEngine.stop()`.
 
 ## Affected Packages
 
@@ -135,14 +155,22 @@ in `survey/sam.py` with `CentredBoxVideoSamDetector` (193) for fakes.
 ```python
 class SurveyWorkspace(Protocol):
     def scenes(self) -> Sequence[SceneInfo]: ...
-    async def run_demo(self, dataset: str, prompt: str | None, *, frames: int | None, fps: float | None) -> RunInfo: ...
+    async def run_demo(self, dataset: str, prompt: str | None, *, max_frames: int | None, fps: float | None) -> RunInfo: ...
     def run(self, run_id: str) -> RunInfo | None: ...
-    async def detect(self, run_id: str, concept: str, frame_ids: Sequence[str]) -> Sequence[FrameDetections]: ...
-    def objects(self, run_id: str) -> Sequence[StoredObject]: ...        # points + label + frames
-    def frame(self, run_id: str, frame_ref: FrameRef) -> FrameImage: ...  # bytes, media type, size, source
+    def timeline(self, run_id: str) -> Sequence[FrameRecord]: ...          # index, frame_id, t_ns
+    async def detect(self, run_id: str, concept: str, frame_ids: Sequence[int]) -> Sequence[FrameDetections]: ...
+    def objects(self, run_id: str) -> Sequence[StoredObject]: ...           # points + label + frames
+    def object_box(self, run_id: str, object_id: str, frame_id: int) -> ObjectBox | None: ...
+    def frame(self, run_id: str, frame_id: int) -> FrameImage | None: ...   # full if cached, else display
+    def publish_geometry(self, run_id: str, obj: StoredObject) -> str: ...  # GLB URI
 
-async def run_demo(req: agent_pb2.RunDemoRequest, ws: SurveyWorkspace) -> agent_pb2.RunDemoResponse: ...
+async def run_demo(request: survey_tools_pb2.RunDemoRequest, workspace: SurveyWorkspace) -> survey_tools_pb2.RunDemoResponse: ...
 ```
+
+The handler resolves `frame_index` / `frame_id` / `t_ns` through `timeline` (the State B draft's
+`FrameRef`), and picks `prompt_sam`'s evenly spaced frames from it. `ConnectError` codes:
+`NOT_FOUND` for an unknown scene, run, frame or object; `INVALID_ARGUMENT` for `near` without
+`radius_m`.
 
 `run_demo` awaits the engine's `done` in a thread (`asyncio.to_thread`) so the runtime can detach or
 cancel it; a cancelled job stops the engine.
@@ -152,12 +180,13 @@ cancel it; a cancelled job stops the engine.
 #### surmap
 
 - `src/surmap/agent/tools/{__init__,workspace,handlers,frames}.py` (new)
+- `tests/test_agent_tools_{demo,objects,frames}.py` and the shared rig `tests/agent_tool_fakes.py` (new)
 
 ## Verification
 
 **Method:** V1 — fail→pass acceptance and integration tests
 **Command:** `uv run pytest -q tests/test_agent_tools_demo.py tests/test_agent_tools_objects.py tests/test_agent_tools_frames.py`
-**Before:** red — handlers raise `NotImplementedError` (and blocked on n1–n3 stubs until they green)
+**Before:** red — 66 failing, every one on this node's `NotImplementedError` (commit 2); rest of the suite 1504 passed, 9 skipped
 **After:** green, offline (fake SAM, tiny EuRoC fixture, no RTAB-Map)
 
 ## Testing Plan
@@ -182,3 +211,27 @@ cancel it; a cancelled job stops the engine.
 - **Headless runs share the demo's history DB** (configurable path) so the console shows agent runs;
   a headless run takes over a running console run exactly as a new viewer would.
 - **Images go back as image content**, not base64 inside JSON; the binding in n8 turns `GetFrameResponse.image` into a model image part.
+
+### Decided without review (red step)
+
+- **`DemoWorkspace` takes a built `DemoRunHost`** (plus a `VideoSamDetector` for `prompt_sam` and a
+  `GeometryStore`) rather than constructing one: n2's host has no constructor apart from
+  `make_demo_server`.
+- **The port grew three methods** beyond the State B draft — `timeline`, `object_box`,
+  `publish_geometry` — and `frame` takes a resolved `frame_id`, so handlers own frame selection and
+  the workspace owns storage.
+- **Object id is `obj_<surface_id>`**; an object's points are every point the run assigned to that
+  surface; objects are in the `map` frame, up axis `-y`.
+- **`prompt_sam` runs on the image `get_frame` returns** (full resolution when cached), so its boxes
+  and `get_frame` crops share one pixel space; `max_frames` above 8 is clamped, not refused;
+  evenly spaced picks include the first and last frame.
+- **`find_objects` order**: with `near`, nearest first by point-to-AABB distance (the radius test
+  uses the same distance); without, largest (most points) first.
+- **`get_frame`** always answers JPEG; an object crop pads by 16 px unless `pad_px` is given, uses
+  the object's recorded SAM mask box (matched by the surface's SAM track id, scaled from the
+  display frame), and with no frame chosen takes the object's first frame with a box. A padded crop
+  is clamped to the frame.
+- **History status mapping**: `running` → `RUNNING`, `completed` → `FINISHED`, `interrupted` →
+  `CANCELLED` (the history does not tell a cancel from a failure).
+- **`get_run.prompt`** for a run this workspace did not start is the concept from its title
+  (`… · SAM: <prompt>`), the only place the history keeps it.
