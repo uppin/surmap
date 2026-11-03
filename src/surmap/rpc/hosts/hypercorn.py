@@ -12,7 +12,7 @@ from surmap.rpc._listener import _HypercornServer, start_hypercorn
 from surmap.rpc.compose import compose_service
 from surmap.rpc.description import ServerDescription
 from surmap.rpc.http import HttpHandler
-from surmap.rpc.socket_rpc import connect_websocket_app
+from surmap.rpc.socket_rpc import ConnectWebSocketApp, connect_websocket_app
 
 __all__ = ["BoundPorts", "HypercornHost"]
 
@@ -32,6 +32,7 @@ class _Mounted(Generic[C]):
     public_websockets: dict[str, Any]
     management_http: dict[tuple[str, str], HttpHandler]
     closeables: list[Any]
+    connect_socket_app: ConnectWebSocketApp | None = None
 
 
 class HypercornHost(Generic[C]):
@@ -78,10 +79,12 @@ class HypercornHost(Generic[C]):
         websocket_handlers: dict[str, Callable[..., Awaitable[None]]] = {
             route.path: route.handler(self._context) for route in self._description.websocket_routes
         }
+        connect_socket_app: ConnectWebSocketApp | None = None
         if self._description.connect_websocket_path is not None:
-            websocket_handlers[self._description.connect_websocket_path] = connect_websocket_app(
+            connect_socket_app = connect_websocket_app(
                 apps, keepalive_s=self._websocket_keepalive_s
             )
+            websocket_handlers[self._description.connect_websocket_path] = connect_socket_app
         if self._management_port is not None:
             public_http: dict[tuple[str, str], HttpHandler] = {}
             public_websockets = websocket_handlers
@@ -98,6 +101,7 @@ class HypercornHost(Generic[C]):
             public_websockets=public_websockets,
             management_http=management_http,
             closeables=closeables,
+            connect_socket_app=connect_socket_app,
         )
 
     async def start(self) -> BoundPorts:
@@ -124,6 +128,10 @@ class HypercornHost(Generic[C]):
         return BoundPorts(public=public_port, management=management_port)
 
     async def stop(self) -> None:
+        # Close the Connect WebSockets first: a server shutting down waits for its open
+        # connections, and a client holding a socket idle would hold the stop.
+        if self._mounted is not None and self._mounted.connect_socket_app is not None:
+            await self._mounted.connect_socket_app.close_all()
         if self._public_server is not None:
             self._public_server.close()
             await self._public_server.wait_closed()

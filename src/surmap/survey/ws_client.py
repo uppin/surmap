@@ -13,6 +13,7 @@ survey stream sent, and a stream can last a whole survey behind a proxy that cap
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterable, AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Literal, TypeVar
@@ -23,6 +24,7 @@ from connectrpc.method import IdempotencyLevel, MethodInfo
 from google.protobuf.message import Message
 
 from surmap.rpc.socket_rpc import PeerRole, SocketRpcPeer, WebSocketFrames
+from surmap.rpc.socket_rpc._trace import socket_trace
 from surmap.survey.endpoint import CONNECT_PATH
 from surmap.survey.v1 import survey_pb2
 
@@ -124,9 +126,12 @@ class SurveyConnection:
         """Dial `address` (see `connect_url`); `PermissionError` when the server refuses the
         token, `OSError` when nothing answers."""
         headers = {"Authorization": f"Bearer {token}"} if token else None
+        url = connect_url(address)
+        opened = time.monotonic()
+        socket_trace("ws.client.open", url=url, token=token is not None)
         try:
             socket = await websockets.connect(
-                connect_url(address),
+                url,
                 additional_headers=headers,
                 open_timeout=open_timeout_s,
                 max_size=_MAX_MESSAGE_BYTES,
@@ -142,13 +147,25 @@ class SurveyConnection:
             raise OSError(f"{address} answered HTTP {status}, not a WebSocket") from None
         except (TimeoutError, websockets.InvalidHandshake) as failed:
             raise OSError(f"{address} did not open a WebSocket: {failed}") from None
-        await _await_greeting(socket, address, open_timeout_s)
+        try:
+            await _await_greeting(socket, address, open_timeout_s)
+        except PermissionError:
+            socket_trace("ws.client.refused", url=url)
+            raise
+        socket_trace("ws.client.greeted", url=url, after_s=round(time.monotonic() - opened, 3))
         peer = SocketRpcPeer(WebSocketFrames(socket), role=PeerRole.DIALER)
         serving = asyncio.create_task(peer.serve())
         try:
             yield cls(peer)
         finally:
+            still_open = [f"{c.direction}:{c.method}" for c in peer.open_calls()]
             await peer.close()
+            socket_trace(
+                "ws.client.closed",
+                url=url,
+                duration_s=round(time.monotonic() - opened, 3),
+                open_calls=still_open,
+            )
             serving.cancel()
             await asyncio.gather(serving, return_exceptions=True)
 

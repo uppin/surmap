@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol, TypeVar
@@ -67,6 +68,11 @@ class _IncomingCall:
     aborted: bool = False
     task: asyncio.Task[None] | None = None
     request_more: asyncio.Event = field(default_factory=asyncio.Event)
+    started: float = field(default_factory=time.monotonic)
+
+    @property
+    def method_path(self) -> str:
+        return f"{self.init.service_name.value}/{self.init.method_name.value}"
 
 
 @dataclass
@@ -81,3 +87,18 @@ class _OutgoingCall:
     buffer_body: bool = True
     headers_sent: bool = False
     finished: bool = False
+    started: float = field(default_factory=time.monotonic)
+
+    @property
+    def method_path(self) -> str:
+        return f"{self.method.service_name}/{self.method.name}"
+
+
+@dataclass(frozen=True)
+class OpenCall:
+    """A call a peer has open: `in` it serves, `out` it started; `age_s` since it opened."""
+
+    direction: str
+    stream_id: int
+    method: str
+    age_s: float

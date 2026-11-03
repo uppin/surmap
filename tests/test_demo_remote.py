@@ -114,11 +114,13 @@ async def test_the_remote_detection_source_returns_the_servers_tracks() -> None:
 
     async with running_ws_server(build_description(detections=StubSource())) as address:
         source = RemoteDetectionSource(address)
-
-        # When a frame is analyzed through the wire client
-        tracked = await asyncio.to_thread(
-            source.detect_tracked, 3, np.zeros((240, 376, 3), dtype=np.uint8)
-        )
+        try:
+            # When a frame is analyzed through the wire client
+            tracked = await asyncio.to_thread(
+                source.detect_tracked, 3, np.zeros((240, 376, 3), dtype=np.uint8)
+            )
+        finally:
+            source.close()
 
     # Then the server's detection and track id come back unchanged
     assert [(d.label, d.track_id) for d in tracked] == [("car", 7)]
@@ -135,11 +137,13 @@ async def test_the_remote_detection_source_reaches_a_token_guarded_cm5_with_its_
     description = build_description(detections=StubSource())
     async with running_ws_server(description, token="survey-secret") as address:
         source = RemoteDetectionSource(address, token="survey-secret")
-
-        # When a frame is analyzed through the wire client holding the token
-        tracked = await asyncio.to_thread(
-            source.detect_tracked, 3, np.zeros((240, 376, 3), dtype=np.uint8)
-        )
+        try:
+            # When a frame is analyzed through the wire client holding the token
+            tracked = await asyncio.to_thread(
+                source.detect_tracked, 3, np.zeros((240, 376, 3), dtype=np.uint8)
+            )
+        finally:
+            source.close()
 
     # Then the server answered it
     assert [(d.label, d.track_id) for d in tracked] == [("car", 7)]

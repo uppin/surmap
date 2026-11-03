@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 from collections.abc import AsyncIterable, AsyncIterator, Mapping
 from typing import Any, cast
 
@@ -16,6 +17,7 @@ from connectrpc.method import MethodInfo
 from connectrpc.server import ConnectASGIApplication
 
 from surmap.rpc.socket_rpc._asgi import END_STREAM_FLAG, endpoint_kind
+from surmap.rpc.socket_rpc._trace import socket_trace
 from surmap.rpc.socket_rpc._types import (
     _DEFAULT_CODEC,
     REQ,
@@ -45,6 +47,27 @@ class _Caller:
     _id_step: int
     _applications: dict[str, ConnectASGIApplication[Any]]
     _outgoing: dict[int, _OutgoingCall]
+
+    def _open_outgoing(self, outgoing: _OutgoingCall) -> None:
+        self._outgoing[outgoing.stream_id] = outgoing
+        socket_trace(
+            "call.out.open",
+            stream_id=outgoing.stream_id,
+            method=outgoing.method_path,
+            kind=outgoing.kind,
+        )
+
+    def _end_outgoing(self, stream_id: int) -> None:
+        outgoing = self._outgoing.pop(stream_id, None)
+        if outgoing is None:
+            return
+        socket_trace(
+            "call.out.end",
+            stream_id=stream_id,
+            method=outgoing.method_path,
+            duration_s=round(time.monotonic() - outgoing.started, 3),
+            error=outgoing.error.code.name if outgoing.error is not None else None,
+        )
 
     def next_stream_id(self) -> int:
         """Reserve the id of the next call this peer starts."""
@@ -144,7 +167,7 @@ class _Caller:
         writer = ConnectEnvelopeWriter(_DEFAULT_CODEC, IdentityCompression())
         stream_id = self.next_stream_id()
         outgoing = _OutgoingCall(stream_id=stream_id, method=method, kind=self._call_kind(method))
-        self._outgoing[stream_id] = outgoing
+        self._open_outgoing(outgoing)
         try:
             await self._send_call_open(
                 stream_id,
@@ -168,7 +191,7 @@ class _Caller:
                 ),
             )
         finally:
-            self._outgoing.pop(stream_id, None)
+            self._end_outgoing(stream_id)
 
     def call_bidi_stream(
         self,
@@ -188,7 +211,7 @@ class _Caller:
                 kind=self._call_kind(method),
                 buffer_body=False,
             )
-            self._outgoing[stream_id] = outgoing
+            self._open_outgoing(outgoing)
             reader = ConnectEnvelopeReader(
                 method.output, _DEFAULT_CODEC, IdentityCompression(), None
             )
@@ -227,7 +250,7 @@ class _Caller:
                 with contextlib.suppress(asyncio.CancelledError):
                     await sender
                 await self._send_abort(stream_id)
-                self._outgoing.pop(stream_id, None)
+                self._end_outgoing(stream_id)
 
         return _gen()
 
@@ -242,7 +265,7 @@ class _Caller:
     ) -> bytes:
         stream_id = self.next_stream_id()
         outgoing = _OutgoingCall(stream_id=stream_id, method=method, kind=self._call_kind(method))
-        self._outgoing[stream_id] = outgoing
+        self._open_outgoing(outgoing)
         try:
             await self._send_call_open(
                 stream_id,
@@ -264,7 +287,7 @@ class _Caller:
                 return _unary_from_stream_body(body, method.output)
             return _decode_unary_response_body(body, method.output)
         finally:
-            self._outgoing.pop(stream_id, None)
+            self._end_outgoing(stream_id)
 
     async def _stream_round_trip(
         self,
@@ -281,7 +304,7 @@ class _Caller:
             kind=self._call_kind(method),
             buffer_body=False,
         )
-        self._outgoing[stream_id] = outgoing
+        self._open_outgoing(outgoing)
         try:
             await self._send_call_open(
                 stream_id,
@@ -312,7 +335,7 @@ class _Caller:
                     raise SocketRpcError(error.code, error.message) from error
         finally:
             await self._send_abort(stream_id)
-            self._outgoing.pop(stream_id, None)
+            self._end_outgoing(stream_id)
 
     async def _send_call_open(
         self,

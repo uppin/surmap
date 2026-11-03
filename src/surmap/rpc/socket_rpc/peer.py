@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import time
 from collections.abc import Mapping
 from typing import Any
 
@@ -22,12 +23,13 @@ from surmap.rpc.socket_rpc._asgi import (
     unary_response_body,
 )
 from surmap.rpc.socket_rpc._calls import _Caller
-from surmap.rpc.socket_rpc._trace import socket_debug, socket_trace
+from surmap.rpc.socket_rpc._trace import register_peer, socket_debug, socket_trace
 from surmap.rpc.socket_rpc._types import (
     _DEFAULT_CODEC,
     DEFAULT_CHUNK_BYTES,
     DEFAULT_MAX_CALL_BYTES,
     FrameSocket,
+    OpenCall,
     PeerRole,
     SocketRpcError,
     _IncomingCall,
@@ -82,6 +84,23 @@ class SocketRpcPeer(_Caller):
         self._incoming: dict[int, _IncomingCall] = {}
         self._outgoing: dict[int, _OutgoingCall] = {}
         self._serve_guard = asyncio.Lock()
+        register_peer(self)
+
+    @property
+    def role_name(self) -> str:
+        return self._role.value
+
+    def open_calls(self) -> list[OpenCall]:
+        """The calls this peer has open now, incoming and outgoing, oldest first."""
+        now = time.monotonic()
+        calls = [
+            OpenCall("in", call.stream_id, call.method_path, now - call.started)
+            for call in self._incoming.values()
+        ] + [
+            OpenCall("out", call.stream_id, call.method_path, now - call.started)
+            for call in self._outgoing.values()
+        ]
+        return sorted(calls, key=lambda call: -call.age_s)
 
     @property
     def role(self) -> PeerRole:
@@ -109,7 +128,11 @@ class SocketRpcPeer(_Caller):
                 elif kind == "response":
                     await self._handle_response(frame.response)
         finally:
-            socket_trace("socket_rpc.serve.exit", role=self._role.value)
+            socket_trace(
+                "socket_rpc.serve.exit",
+                role=self._role.value,
+                open_calls=[f"{c.direction}:{c.method}" for c in self.open_calls()],
+            )
             self._closed = True
             self._close_event.set()
             await self._fail_all_open_calls(Code.UNAVAILABLE, "socket closed")
@@ -166,6 +189,12 @@ class SocketRpcPeer(_Caller):
             init = request.call_init
             incoming = _IncomingCall(stream_id=stream_id, init=init)
             self._incoming[stream_id] = incoming
+            socket_trace(
+                "call.in.open",
+                role=self._role.value,
+                stream_id=stream_id,
+                method=incoming.method_path,
+            )
             if request.end_of_stream:
                 incoming.ended = True
             if not self._append_incoming_request(incoming, message_bytes(request.message)):
@@ -352,6 +381,13 @@ class SocketRpcPeer(_Caller):
             if body_token is not None:
                 _unary_request_body.reset(body_token)
             self._incoming.pop(incoming.stream_id, None)
+            socket_trace(
+                "call.in.end",
+                role=self._role.value,
+                stream_id=incoming.stream_id,
+                method=incoming.method_path,
+                duration_s=round(time.monotonic() - incoming.started, 3),
+            )
 
     async def _send_response_message(self, stream_id: int, payload: bytes, *, end: bool) -> None:
         chunks = self._chunks(payload)

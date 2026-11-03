@@ -274,3 +274,23 @@ async def test_connect_over_http_without_the_token_answers_401_and_health_stays_
 
     # Then only the tokenless call is refused
     assert (without, with_token, health) == (401, 200, 200)
+
+
+async def test_stopping_the_host_closes_its_open_websockets_promptly() -> None:
+    # Given a client holding a WebSocket open on a host, with no call in flight
+    service = echo_service()
+    host = HypercornHost(_echo_description(service), None)
+    port = (await host.start()).public
+    async with websockets.connect(f"ws://127.0.0.1:{port}{CONNECT_PATH}") as socket:
+        await socket.recv()  # the greeting
+
+        # When the host stops
+        started = asyncio.get_running_loop().time()
+        await asyncio.wait_for(host.stop(), 10.0)
+        stopped_after = asyncio.get_running_loop().time() - started
+
+        # Then it closed the socket itself instead of waiting for the client to leave
+        with pytest.raises(websockets.ConnectionClosed):
+            await asyncio.wait_for(socket.recv(), 2.0)
+
+    assert stopped_after < 1.5, f"stop took {stopped_after:.1f}s"
