@@ -18,6 +18,7 @@ from typing import Protocol
 import numpy as np
 from numpy.typing import NDArray
 
+from surmap.demo.gallery import GalleryEntry
 from surmap.objects3d import UpAxis
 from surmap.survey.sam import SamDetection
 
@@ -26,6 +27,7 @@ __all__ = [
     "OBJECT_UP_AXIS",
     "BoxXYXY",
     "FrameDetections",
+    "GalleryEntry",
     "FrameImage",
     "FrameRecord",
     "FrameSource",
@@ -155,6 +157,38 @@ class SurveyWorkspace(Protocol):
 
     def scenes(self) -> Sequence[SceneInfo]:
         """Every scene this station can run, in catalogue order."""
+        ...
+
+    def datasets(self) -> Sequence[GalleryEntry]:
+        """Every dataset in the gallery catalogue, in catalogue order."""
+        ...
+
+    def dataset(self, dataset_id: str) -> GalleryEntry | None:
+        """The dataset `dataset_id`, or None when the catalogue does not offer it."""
+        ...
+
+    def dataset_thumbnail(self, dataset_id: str) -> bytes | None:
+        """The dataset's thumbnail JPEG, or None when it is not prepared."""
+        ...
+
+    async def prepare_dataset(self, dataset_id: str) -> GalleryEntry:
+        """Download and prepare `dataset_id`; `KeyError` for an unknown dataset."""
+        ...
+
+    async def run_rtabmap(
+        self, dataset: str, *, max_frames: int | None, fps: float | None
+    ) -> RunInfo:
+        """Run RTAB-Map (no SAM) on `dataset` and return the recorded run when it ends."""
+        ...
+
+    async def run_sam_on_dataset(
+        self, dataset: str, concept: str | None, *, max_frames: int | None
+    ) -> Sequence[FrameDetections]:
+        """SAM, looking for `concept`, on evenly spaced frames of `dataset` itself.
+
+        No RTAB-Map and no recorded run: the dataset is prepared first when
+        needed. `KeyError` for an unknown dataset.
+        """
         ...
 
     async def run_demo(

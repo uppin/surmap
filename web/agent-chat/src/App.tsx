@@ -19,7 +19,7 @@ export default function App(props: AppProps): ReactNode {
   const serverUrl = params.get("server") ?? DEFAULT_SERVER_URL;
   const [conversationId] = useState(() => params.get("conversation") ?? tabConversationId());
   const port = useMemo(
-    () => props.port ?? createConnectChatPort(createAgentTransport(serverUrl)),
+    () => props.port ?? createConnectChatPort(createAgentTransport(serverUrl), serverUrl),
     [props.port, serverUrl],
   );
   return <ChatPage port={port} serverUrl={serverUrl} conversationId={conversationId} />;

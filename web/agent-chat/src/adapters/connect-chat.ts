@@ -8,7 +8,7 @@ import {
   type GeoPoint,
   type MapScene,
 } from "@/gen/surmap/agent/v1/map_tools_pb";
-import type { ChatPort, MapPointView, MapSceneView } from "@/ports";
+import type { ChatPort, DatasetView, MapPointView, MapSceneView } from "@/ports";
 
 /** The header `AgentJobs` calls name their conversation in; each conversation has its own jobs. */
 export const CONVERSATION_HEADER = "surmap-conversation-id";
@@ -21,8 +21,26 @@ export function createAgentTransport(baseUrl: string): Transport {
   return createConnectTransport({ baseUrl });
 }
 
+interface DatasetJson {
+  id: string;
+  title: string;
+  description: string;
+  provider: string;
+  license: { name: string; url: string; attribution: string };
+  modality: string;
+  official_url: string;
+  default_prompt: string;
+  prepared: boolean;
+  frame_count: number;
+  thumbnail_available: boolean;
+  location_label: string;
+  gps_centre: { lon: number; lat: number } | null;
+  gps_track: { lon: number; lat: number }[];
+  credit: string;
+}
+
 /** The `ChatPort` over the generated `ChatService` and `AgentJobs` clients. */
-export function createConnectChatPort(transport: Transport): ChatPort {
+export function createConnectChatPort(transport: Transport, baseUrl: string = DEFAULT_SERVER_URL): ChatPort {
   const chat = createClient(ChatService, transport);
   const jobs = createClient(AgentJobs, transport);
   const map = createClient(MapTools, transport);
@@ -70,6 +88,33 @@ export function createConnectChatPort(transport: Transport): ChatPort {
       if (!response.scene) throw new Error("the agent server returned no map scene");
       return sceneView(response.scene);
     },
+    async listDatasets() {
+      const response = await fetch(`${baseUrl.replace(/\/$/, "")}/datasets`);
+      if (!response.ok) throw new Error(`dataset gallery failed: ${response.status}`);
+      const body = (await response.json()) as { datasets: DatasetJson[] };
+      return body.datasets.map(datasetView);
+    },
+  };
+}
+
+function datasetView(json: DatasetJson): DatasetView {
+  return {
+    id: json.id,
+    title: json.title,
+    description: json.description,
+    provider: json.provider,
+    licenseName: json.license.name,
+    licenseUrl: json.license.url,
+    attribution: json.license.attribution,
+    modality: json.modality === "color" ? "color" : "grey",
+    officialUrl: json.official_url,
+    defaultPrompt: json.default_prompt,
+    prepared: json.prepared,
+    frameCount: json.frame_count,
+    thumbnailAvailable: json.thumbnail_available,
+    locationLabel: json.location_label,
+    gpsCentre: json.gps_centre,
+    gpsTrack: json.gps_track,
   };
 }
 

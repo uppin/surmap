@@ -28,6 +28,12 @@ class FrameSource(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     FRAME_SOURCE_UNSPECIFIED: _ClassVar[FrameSource]
     FULL: _ClassVar[FrameSource]
     DISPLAY: _ClassVar[FrameSource]
+
+class DatasetModality(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    MODALITY_UNSPECIFIED: _ClassVar[DatasetModality]
+    GREY: _ClassVar[DatasetModality]
+    COLOR: _ClassVar[DatasetModality]
 SHAPE_UNSPECIFIED: Shape
 LINEAR: Shape
 PLANAR: Shape
@@ -40,6 +46,9 @@ OVERLAPS: Relation
 FRAME_SOURCE_UNSPECIFIED: FrameSource
 FULL: FrameSource
 DISPLAY: FrameSource
+MODALITY_UNSPECIFIED: DatasetModality
+GREY: DatasetModality
+COLOR: DatasetModality
 
 class Vec3(_message.Message):
     __slots__ = ("x", "y", "z")
@@ -344,6 +353,122 @@ class GetFrameRequest(_message.Message):
     pad_px: int
     max_side: int
     def __init__(self, run_id: _Optional[str] = ..., frame_index: _Optional[int] = ..., frame_id: _Optional[int] = ..., t_ns: _Optional[int] = ..., crop_box: _Optional[_Union[PixelBox, _Mapping[str, _Any]]] = ..., crop_object_id: _Optional[str] = ..., pad_px: _Optional[int] = ..., max_side: _Optional[int] = ...) -> None: ...
+
+class DatasetGeoPoint(_message.Message):
+    __slots__ = ("lon", "lat", "alt_m")
+    LON_FIELD_NUMBER: _ClassVar[int]
+    LAT_FIELD_NUMBER: _ClassVar[int]
+    ALT_M_FIELD_NUMBER: _ClassVar[int]
+    lon: float
+    lat: float
+    alt_m: float
+    def __init__(self, lon: _Optional[float] = ..., lat: _Optional[float] = ..., alt_m: _Optional[float] = ...) -> None: ...
+
+class DatasetLicense(_message.Message):
+    __slots__ = ("name", "url", "attribution")
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    URL_FIELD_NUMBER: _ClassVar[int]
+    ATTRIBUTION_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    url: str
+    attribution: str
+    def __init__(self, name: _Optional[str] = ..., url: _Optional[str] = ..., attribution: _Optional[str] = ...) -> None: ...
+
+class DatasetEntry(_message.Message):
+    __slots__ = ("id", "title", "description", "provider", "license", "modality", "official_url", "default_prompt", "prepared", "frame_count", "thumbnail_available", "location_label", "gps_centre", "gps_track", "credit")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    TITLE_FIELD_NUMBER: _ClassVar[int]
+    DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    PROVIDER_FIELD_NUMBER: _ClassVar[int]
+    LICENSE_FIELD_NUMBER: _ClassVar[int]
+    MODALITY_FIELD_NUMBER: _ClassVar[int]
+    OFFICIAL_URL_FIELD_NUMBER: _ClassVar[int]
+    DEFAULT_PROMPT_FIELD_NUMBER: _ClassVar[int]
+    PREPARED_FIELD_NUMBER: _ClassVar[int]
+    FRAME_COUNT_FIELD_NUMBER: _ClassVar[int]
+    THUMBNAIL_AVAILABLE_FIELD_NUMBER: _ClassVar[int]
+    LOCATION_LABEL_FIELD_NUMBER: _ClassVar[int]
+    GPS_CENTRE_FIELD_NUMBER: _ClassVar[int]
+    GPS_TRACK_FIELD_NUMBER: _ClassVar[int]
+    CREDIT_FIELD_NUMBER: _ClassVar[int]
+    id: str
+    title: str
+    description: str
+    provider: str
+    license: DatasetLicense
+    modality: DatasetModality
+    official_url: str
+    default_prompt: str
+    prepared: bool
+    frame_count: int
+    thumbnail_available: bool
+    location_label: str
+    gps_centre: DatasetGeoPoint
+    gps_track: _containers.RepeatedCompositeFieldContainer[DatasetGeoPoint]
+    credit: str
+    def __init__(self, id: _Optional[str] = ..., title: _Optional[str] = ..., description: _Optional[str] = ..., provider: _Optional[str] = ..., license: _Optional[_Union[DatasetLicense, _Mapping[str, _Any]]] = ..., modality: _Optional[_Union[DatasetModality, str]] = ..., official_url: _Optional[str] = ..., default_prompt: _Optional[str] = ..., prepared: bool = ..., frame_count: _Optional[int] = ..., thumbnail_available: bool = ..., location_label: _Optional[str] = ..., gps_centre: _Optional[_Union[DatasetGeoPoint, _Mapping[str, _Any]]] = ..., gps_track: _Optional[_Iterable[_Union[DatasetGeoPoint, _Mapping[str, _Any]]]] = ..., credit: _Optional[str] = ...) -> None: ...
+
+class ListDatasetsRequest(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class ListDatasetsResponse(_message.Message):
+    __slots__ = ("datasets",)
+    DATASETS_FIELD_NUMBER: _ClassVar[int]
+    datasets: _containers.RepeatedCompositeFieldContainer[DatasetEntry]
+    def __init__(self, datasets: _Optional[_Iterable[_Union[DatasetEntry, _Mapping[str, _Any]]]] = ...) -> None: ...
+
+class GetDatasetRequest(_message.Message):
+    __slots__ = ("dataset_id",)
+    DATASET_ID_FIELD_NUMBER: _ClassVar[int]
+    dataset_id: str
+    def __init__(self, dataset_id: _Optional[str] = ...) -> None: ...
+
+class PrepareDatasetRequest(_message.Message):
+    __slots__ = ("dataset_id",)
+    DATASET_ID_FIELD_NUMBER: _ClassVar[int]
+    dataset_id: str
+    def __init__(self, dataset_id: _Optional[str] = ...) -> None: ...
+
+class DatasetResponse(_message.Message):
+    __slots__ = ("dataset",)
+    DATASET_FIELD_NUMBER: _ClassVar[int]
+    dataset: DatasetEntry
+    def __init__(self, dataset: _Optional[_Union[DatasetEntry, _Mapping[str, _Any]]] = ...) -> None: ...
+
+class RunRtabmapRequest(_message.Message):
+    __slots__ = ("dataset", "max_frames", "fps")
+    DATASET_FIELD_NUMBER: _ClassVar[int]
+    MAX_FRAMES_FIELD_NUMBER: _ClassVar[int]
+    FPS_FIELD_NUMBER: _ClassVar[int]
+    dataset: str
+    max_frames: int
+    fps: float
+    def __init__(self, dataset: _Optional[str] = ..., max_frames: _Optional[int] = ..., fps: _Optional[float] = ...) -> None: ...
+
+class RunRtabmapResponse(_message.Message):
+    __slots__ = ("run",)
+    RUN_FIELD_NUMBER: _ClassVar[int]
+    run: RunInfo
+    def __init__(self, run: _Optional[_Union[RunInfo, _Mapping[str, _Any]]] = ...) -> None: ...
+
+class RunSamOnDatasetRequest(_message.Message):
+    __slots__ = ("dataset", "concept", "max_frames")
+    DATASET_FIELD_NUMBER: _ClassVar[int]
+    CONCEPT_FIELD_NUMBER: _ClassVar[int]
+    MAX_FRAMES_FIELD_NUMBER: _ClassVar[int]
+    dataset: str
+    concept: str
+    max_frames: int
+    def __init__(self, dataset: _Optional[str] = ..., concept: _Optional[str] = ..., max_frames: _Optional[int] = ...) -> None: ...
+
+class RunSamOnDatasetResponse(_message.Message):
+    __slots__ = ("dataset_id", "frames")
+    DATASET_ID_FIELD_NUMBER: _ClassVar[int]
+    FRAMES_FIELD_NUMBER: _ClassVar[int]
+    dataset_id: str
+    frames: _containers.RepeatedCompositeFieldContainer[SamFrameDetections]
+    def __init__(self, dataset_id: _Optional[str] = ..., frames: _Optional[_Iterable[_Union[SamFrameDetections, _Mapping[str, _Any]]]] = ...) -> None: ...
 
 class GetFrameResponse(_message.Message):
     __slots__ = ("frame_id", "t_ns", "width", "height", "source", "image", "media_type")

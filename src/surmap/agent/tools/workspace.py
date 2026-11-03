@@ -43,6 +43,7 @@ from surmap.agent.tools.port import (
 )
 from surmap.demo.datasets import DatasetSpec, PreparedDataset, ensure_dataset
 from surmap.demo.events import DemoEvent
+from surmap.demo.gallery import GalleryEntry, dataset_thumbnail, gallery_entries
 from surmap.demo.playback import PlaybackControls
 from surmap.demo.runs import DemoRunHost, _RunEngine
 from surmap.demo.server import DemoPlayer
@@ -121,6 +122,91 @@ class DemoWorkspace:
         self._detector_lock = threading.Lock()
         self.geometry = geometry
 
+    def datasets(self) -> Sequence[GalleryEntry]:
+        prepared = {
+            dataset_id: found
+            for dataset_id in self._host.catalog
+            if (found := self._host.prepared_scene(dataset_id)) is not None
+        }
+        return gallery_entries(self._host.cache_dir, catalog=self._host.catalog, prepared=prepared)
+
+    def dataset(self, dataset_id: str) -> GalleryEntry | None:
+        return next((entry for entry in self.datasets() if entry.dataset_id == dataset_id), None)
+
+    def dataset_thumbnail(self, dataset_id: str) -> bytes | None:
+        """The dataset's thumbnail JPEG, or None when it is not prepared."""
+        if dataset_id not in self._host.catalog:
+            return None
+        prepared = self._host.prepared_scene(dataset_id)
+        if prepared is None or not prepared.timestamps_ns:
+            return None
+        return dataset_thumbnail(prepared)
+
+    async def prepare_dataset(self, dataset_id: str) -> GalleryEntry:
+        spec = self._host.catalog[dataset_id]
+        await asyncio.to_thread(self._prepared, spec)
+        entry = self.dataset(dataset_id)
+        if entry is None:  # the catalogue just answered with it
+            raise RuntimeError(f"dataset {dataset_id} vanished from the catalogue")
+        return entry
+
+    async def run_rtabmap(
+        self, dataset: str, *, max_frames: int | None, fps: float | None
+    ) -> RunInfo:
+        """RTAB-Map only: SAM sources disabled, the RTAB-Map backend forced on."""
+        if fps is not None and fps <= 0:
+            raise ValueError("fps must be positive")
+        spec = self._host.catalog[dataset]
+        prepared = await asyncio.to_thread(self._prepared, spec)
+        return await self._run_recorded(
+            prepared,
+            None,
+            max_frames=max_frames,
+            fps=fps,
+            overrides={"with_rtabmap": True, "sam_source": None, "sam_streamer": None},
+            title_suffix=" · RTAB-Map",
+        )
+
+    async def run_sam_on_dataset(
+        self, dataset: str, concept: str | None, *, max_frames: int | None
+    ) -> Sequence[FrameDetections]:
+        """SAM only: evenly spaced frames of the prepared dataset, no run recorded."""
+        spec = self._host.catalog[dataset]
+        prepared = await asyncio.to_thread(self._prepared, spec)
+        prompt = concept or spec.sam_prompt
+        count = min(max_frames or 8, 8, len(prepared.timestamps_ns))
+        if count < 1:
+            return ()
+        stamps = prepared.timestamps_ns
+        if count == 1:
+            picks = [(0, stamps[0])]
+        else:
+            last = len(stamps) - 1
+            picks = sorted(
+                {
+                    (round(step * last / (count - 1)), stamps[round(step * last / (count - 1))])
+                    for step in range(count)
+                }
+            )
+        frames: list[RawFrame] = []
+        for index, t_ns in picks:
+            path = prepared.frame_path(0, t_ns)
+            with Image.open(path) as opened:
+                rgb = opened.convert("RGB")
+            frames.append(
+                RawFrame(index + 1, t_ns, 0, rgb.width, rgb.height, "raw_rgb", rgb.tobytes())
+            )
+        with self._detector_lock:
+            self._detector.reset(prompt)
+            return tuple(
+                FrameDetections(
+                    frame_id=frame.frame_id,
+                    t_ns=frame.t_ns,
+                    detections=self._detector.track(frame),
+                )
+                for frame in frames
+            )
+
     def scenes(self) -> Sequence[SceneInfo]:
         host = self._host
         return tuple(
@@ -147,8 +233,22 @@ class DemoWorkspace:
         spec = self._host.catalog[dataset]
         prepared = await asyncio.to_thread(self._prepared, spec)
         sam_prompt = self._host.sam_prompt(dataset, prompt)
+        return await self._run_recorded(prepared, sam_prompt, max_frames=max_frames, fps=fps)
+
+    async def _run_recorded(
+        self,
+        prepared: PreparedDataset,
+        sam_prompt: str | None,
+        *,
+        max_frames: int | None,
+        fps: float | None,
+        overrides: dict[str, Any] | None = None,
+        title_suffix: str = "",
+    ) -> RunInfo:
         starting = asyncio.ensure_future(
-            asyncio.to_thread(self._start, prepared, sam_prompt, max_frames, fps)
+            asyncio.to_thread(
+                self._start, prepared, sam_prompt, max_frames, fps, overrides or {}, title_suffix
+            )
         )
         try:
             engine = await asyncio.shield(starting)
@@ -295,15 +395,20 @@ class DemoWorkspace:
         sam_prompt: str | None,
         max_frames: int | None,
         fps: float | None,
+        overrides: dict[str, Any] | None = None,
+        title_suffix: str = "",
     ) -> _RunEngine | None:
-        # The host's player options are one untyped bag; this call's rate and frame cap
-        # replace the host-wide ones for this run only.
+        # The host's player options are one untyped bag; this call's rate, frame cap
+        # and per-mode overrides replace the host-wide ones for this run only.
         options: dict[str, Any] = {
             **self._host.player_options,
             "fps": fps,
             "max_frames": max_frames or 0,
+            **(overrides or {}),
         }
-        title = prepared.spec.title + (f"{_SAM_TITLE}{sam_prompt}" if sam_prompt else "")
+        title = (
+            prepared.spec.title + (f"{_SAM_TITLE}{sam_prompt}" if sam_prompt else "") + title_suffix
+        )
 
         def play(controls: PlaybackControls) -> Iterator[DemoEvent]:
             player = DemoPlayer(prepared, controls=controls, sam_prompt=sam_prompt, **options)

@@ -36,6 +36,8 @@ from surmap.agent.tools.workspace import (
     StoredObject,
     SurveyWorkspace,
 )
+from surmap.demo.datasets import GeoPoint, ImageModality, LicenseInfo
+from surmap.demo.gallery import GalleryEntry
 from surmap.objects3d import (
     ObjectSummary,
     ObjTextLimits,
@@ -109,6 +111,11 @@ def survey_tool_handlers(workspace: SurveyWorkspace) -> Mapping[str, Handler]:
         "GetObject": bind(get_object),
         "GetObjectGeometry": bind(get_object_geometry),
         "GetFrame": bind(get_frame),
+        "ListDatasets": bind(list_datasets),
+        "GetDataset": bind(get_dataset),
+        "PrepareDataset": bind(prepare_dataset),
+        "RunRtabmap": bind(run_rtabmap),
+        "RunSamOnDataset": bind(run_sam_on_dataset),
     }
 
 
@@ -150,6 +157,124 @@ async def run_demo(request: pb.RunDemoRequest, workspace: SurveyWorkspace) -> pb
         frames=run.frames,
         objects=run.objects,
         status=_RUN_STATUS[run.status],
+    )
+
+
+_MODALITIES: dict[ImageModality, pb.DatasetModality] = {
+    ImageModality.GREY: pb.GREY,
+    ImageModality.COLOR: pb.COLOR,
+}
+
+
+def _geo_point(point: GeoPoint) -> pb.DatasetGeoPoint:
+    message = pb.DatasetGeoPoint(lon=point.lon, lat=point.lat)
+    if point.alt_m is not None:
+        message.alt_m = point.alt_m
+    return message
+
+
+def _dataset_message(entry: GalleryEntry) -> pb.DatasetEntry:
+    licence: LicenseInfo = entry.license or LicenseInfo(
+        name="Not specified", url="", attribution=entry.credit or "Not specified"
+    )
+    message = pb.DatasetEntry(
+        id=entry.dataset_id,
+        title=entry.title,
+        description=entry.description,
+        provider=entry.provider,
+        license=pb.DatasetLicense(
+            name=licence.name, url=licence.url, attribution=licence.attribution
+        ),
+        modality=_MODALITIES[entry.modality],
+        official_url=entry.official_url,
+        default_prompt=entry.default_prompt,
+        prepared=entry.prepared,
+        frame_count=entry.frame_count,
+        thumbnail_available=entry.thumbnail_available,
+        location_label=entry.location_label,
+        gps_track=[_geo_point(point) for point in entry.gps_track],
+        credit=entry.credit,
+    )
+    if entry.gps_centre is not None:
+        message.gps_centre.CopyFrom(_geo_point(entry.gps_centre))
+    return message
+
+
+def _dataset_or_refuse(workspace: SurveyWorkspace, dataset_id: str) -> GalleryEntry:
+    entry = workspace.dataset(dataset_id)
+    if entry is None:
+        raise ConnectError(Code.NOT_FOUND, f"no dataset {dataset_id!r} in the catalogue")
+    return entry
+
+
+async def list_datasets(
+    request: pb.ListDatasetsRequest, workspace: SurveyWorkspace
+) -> pb.ListDatasetsResponse:
+    """`ListDatasets`: every gallery dataset with licence, modality and GPS preview data."""
+    return pb.ListDatasetsResponse(
+        datasets=[_dataset_message(entry) for entry in workspace.datasets()]
+    )
+
+
+async def get_dataset(
+    request: pb.GetDatasetRequest, workspace: SurveyWorkspace
+) -> pb.DatasetResponse:
+    """`GetDataset`: one gallery dataset by id."""
+    return pb.DatasetResponse(
+        dataset=_dataset_message(_dataset_or_refuse(workspace, request.dataset_id))
+    )
+
+
+async def prepare_dataset(
+    request: pb.PrepareDatasetRequest, workspace: SurveyWorkspace
+) -> pb.DatasetResponse:
+    """`PrepareDataset`: download and prepare one dataset, then describe it."""
+    _dataset_or_refuse(workspace, request.dataset_id)
+    try:
+        entry = await workspace.prepare_dataset(request.dataset_id)
+    except KeyError as missing:
+        raise _not_found(missing) from missing
+    return pb.DatasetResponse(dataset=_dataset_message(entry))
+
+
+async def run_rtabmap(
+    request: pb.RunRtabmapRequest, workspace: SurveyWorkspace
+) -> pb.RunRtabmapResponse:
+    """`RunRtabmap`: RTAB-Map alone on a dataset; the recorded run when it ends."""
+    _dataset_or_refuse(workspace, request.dataset)
+    try:
+        run = await workspace.run_rtabmap(
+            request.dataset,
+            max_frames=request.max_frames if request.HasField("max_frames") else None,
+            fps=request.fps if request.HasField("fps") else None,
+        )
+    except KeyError as missing:
+        raise _not_found(missing) from missing
+    except ValueError as bad:
+        raise ConnectError(Code.INVALID_ARGUMENT, str(bad)) from bad
+    except RunBusy as busy:
+        raise ConnectError(Code.UNAVAILABLE, str(busy)) from busy
+    return pb.RunRtabmapResponse(run=_run_message(run))
+
+
+async def run_sam_on_dataset(
+    request: pb.RunSamOnDatasetRequest, workspace: SurveyWorkspace
+) -> pb.RunSamOnDatasetResponse:
+    """`RunSamOnDataset`: SAM alone on evenly spaced frames of a dataset, no run."""
+    _dataset_or_refuse(workspace, request.dataset)
+    if request.HasField("max_frames") and request.max_frames < 1:
+        raise ConnectError(Code.INVALID_ARGUMENT, "max_frames must be at least 1")
+    try:
+        results = await workspace.run_sam_on_dataset(
+            request.dataset,
+            request.concept if request.HasField("concept") else None,
+            max_frames=request.max_frames if request.HasField("max_frames") else None,
+        )
+    except KeyError as missing:
+        raise _not_found(missing) from missing
+    return pb.RunSamOnDatasetResponse(
+        dataset_id=request.dataset,
+        frames=[_frame_detections(result) for result in results],
     )
 
 

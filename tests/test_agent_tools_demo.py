@@ -61,6 +61,7 @@ async def test_list_demos_offers_every_scene_with_its_default_sam_prompt(tmp_pat
         TINY_SCENE: "object",
         "euroc-v1-01-easy": "box",
         "kitti-2011-09-26-drive-0009": "car",
+        "kitti-2011-09-26-drive-0009-color": "car",
         "ntu-viral-sbs-01": "person",
     }
 
@@ -76,6 +77,7 @@ async def test_list_demos_says_only_the_cached_scene_is_prepared(tmp_path: Path)
         TINY_SCENE: True,
         "euroc-v1-01-easy": False,
         "kitti-2011-09-26-drive-0009": False,
+        "kitti-2011-09-26-drive-0009-color": False,
         "ntu-viral-sbs-01": False,
     }
 

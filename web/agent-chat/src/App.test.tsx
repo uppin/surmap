@@ -57,6 +57,9 @@ function fakePort(options: FakePortOptions = {}) {
       if (options.history === null) throw new ConnectError(`no conversation ${conversationId}`, Code.NotFound);
       return options.history ?? [];
     },
+    async listDatasets() {
+      return [];
+    },
     async getMapScene() {
       return {
         sceneId: "default",

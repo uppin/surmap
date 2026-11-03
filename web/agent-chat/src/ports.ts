@@ -74,6 +74,31 @@ export interface MapLayerView {
   isDefault: boolean;
 }
 
+/** One dataset in the gallery, as its card shows it. */
+export interface DatasetView {
+  id: string;
+  title: string;
+  description: string;
+  /** Who publishes it, e.g. `"KITTI"`; a new source names itself here. */
+  provider: string;
+  licenseName: string;
+  licenseUrl: string;
+  attribution: string;
+  /** `"grey"` or `"color"` frames. */
+  modality: "grey" | "color";
+  officialUrl: string;
+  defaultPrompt: string;
+  prepared: boolean;
+  frameCount: number;
+  thumbnailAvailable: boolean;
+  locationLabel: string;
+  gpsCentre: { lon: number; lat: number } | null;
+  gpsTrack: { lon: number; lat: number }[];
+}
+
+/** How a gallery card asks the agent to run a dataset. */
+export type DatasetRunMode = "rtabmap" | "sam" | "both";
+
 /** The whole display scene the map pane renders; `revision` bumps on every agent edit. */
 export interface MapSceneView {
   sceneId: string;
@@ -105,4 +130,6 @@ export interface ChatPort {
   getConversation(conversationId: string): Promise<TurnEvent[]>;
   /** The current map scene (objects, camera, routes); the pane polls it to redraw agent edits. */
   getMapScene(): Promise<MapSceneView>;
+  /** Every dataset in the gallery catalogue, in catalogue order. */
+  listDatasets(): Promise<DatasetView[]>;
 }

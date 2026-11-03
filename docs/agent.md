@@ -33,6 +33,11 @@ leading comment, and argument descriptions are the field comments.
 | `get_object` | `SurveyTools.GetObject` | SYNC · 10 s · FAIL |
 | `get_object_geometry` | `SurveyTools.GetObjectGeometry` | SYNC · 15 s · FAIL |
 | `get_frame` | `SurveyTools.GetFrame` | SYNC · 15 s · FAIL |
+| `list_datasets` | `SurveyTools.ListDatasets` | SYNC · 10 s · FAIL |
+| `get_dataset` | `SurveyTools.GetDataset` | SYNC · 10 s · FAIL |
+| `prepare_dataset` | `SurveyTools.PrepareDataset` | SYNC · 30 s · DETACH |
+| `run_rtabmap` | `SurveyTools.RunRtabmap` | SYNC · 30 s · DETACH |
+| `run_sam_on_dataset` | `SurveyTools.RunSamOnDataset` | SYNC · 60 s · DETACH |
 | `wait_for_jobs` | `AgentJobs.WaitForJobs` | SYNC · 300 s · FAIL |
 | `get_job` | `AgentJobs.GetJob` | SYNC · 10 s · FAIL |
 | `cancel_job` | `AgentJobs.CancelJob` | SYNC · 10 s · FAIL |
@@ -94,6 +99,25 @@ in the console) and publishes GLB through a `GeometryStore` (`tools/geometry.py`
 | `get_object` | `run_id`, `object_id` | one summary with its nearest neighbours (5 m, 5 nearest) | SYNC · 10 s · FAIL |
 | `get_object_geometry` | `run_id`, `object_id`; `max_points` (500), `voxel_m` | `surmap-obj v1` text and the GLB `geometry_uri` | SYNC · 15 s · FAIL |
 | `get_frame` | `run_id`; `frame_index` / `frame_id` / `t_ns` (first frame); `crop_box` / `crop_object_id`; `pad_px`; `max_side` | one JPEG as image content, its size and `source` (`FULL` / `DISPLAY`) | SYNC · 15 s · FAIL |
+| `list_datasets` | — | every gallery dataset: provider, licence, `GREY`/`COLOR` modality, prepared, frame count, thumbnail flag, location, GPS centre + downsampled track | SYNC · 10 s · FAIL |
+| `get_dataset` | `dataset_id` | one `DatasetEntry` | SYNC · 10 s · FAIL |
+| `prepare_dataset` | `dataset_id` | the prepared `DatasetEntry` | SYNC · 30 s · DETACH |
+| `run_rtabmap` | `dataset`; `max_frames`; `fps` | the recorded RTAB-Map-only run (`RunInfo`) | SYNC · 30 s · DETACH |
+| `run_sam_on_dataset` | `dataset`; `concept` (dataset default); `max_frames` (≤ 8) | per-frame SAM detections on the dataset itself, no run | SYNC · 60 s · DETACH |
+
+## Dataset gallery
+
+The chat page's gallery and the dataset tools read one catalogue
+(`surmap.demo.gallery.gallery_entries` over `surmap.demo.datasets.DATASETS`).
+A new data source registers one `DatasetSpec` with `provider`, `license`,
+`modality` (`GREY`/`COLOR`), `location_label` and `gps_centre`; it then
+appears in the gallery, `list_datasets` and the demo picker with no other
+code. The first KITTI entry ships the 2011_09_26 drive 0009 in grey
+(`image_00/01`) and colour (`image_02/03`, sharing the one download);
+preparing either extracts its `oxts` GPS fixes to `gps_track.json`, which
+the gallery renders as a map-preview track (the static centre shows before
+preparation). Thumbnails are the first left frame (`GET /datasets/<id>/thumbnail.jpg`,
+colour kept for colour datasets); the catalogue itself is `GET /datasets`.
 
 - **Objects.** An object's id is `obj_<surface_id>` of the run history's surface; its points are
   every point the run assigned to it, in frame `map`, up axis `-y`. `status` maps the history:

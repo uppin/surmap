@@ -27,6 +27,7 @@ from surmap.agent.runtime.tools import BoundTool, bind_contract_tool, job_tools
 from surmap.agent.server.chat_service import agent_jobs_handlers, chat_handlers
 from surmap.agent.server.hub import ChatHub
 from surmap.agent.services import agent_jobs_module, chat_service_module
+from surmap.agent.tools.port import GalleryEntry
 from surmap.agent.tools.workspace import (
     FrameDetections,
     FrameImage,
@@ -302,6 +303,28 @@ class EmptyWorkspace:
 
     def publish_geometry(self, run_id: str, obj: StoredObject) -> str:
         raise KeyError(obj.object_id)
+
+    def datasets(self) -> Sequence[GalleryEntry]:
+        return ()
+
+    def dataset(self, dataset_id: str) -> GalleryEntry | None:
+        return None
+
+    async def prepare_dataset(self, dataset_id: str) -> GalleryEntry:
+        raise KeyError(dataset_id)
+
+    def dataset_thumbnail(self, dataset_id: str) -> bytes | None:
+        return None
+
+    async def run_rtabmap(
+        self, dataset: str, *, max_frames: int | None, fps: float | None
+    ) -> RunInfo:
+        raise KeyError(dataset)
+
+    async def run_sam_on_dataset(
+        self, dataset: str, concept: str | None, *, max_frames: int | None
+    ) -> Sequence[FrameDetections]:
+        raise KeyError(dataset)
 
 
 class NoGlbs:

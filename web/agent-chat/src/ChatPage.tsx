@@ -1,11 +1,12 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { Composer } from "@/components/Composer";
+import { DatasetGallery } from "@/components/DatasetGallery";
 import { JobsPanel } from "@/components/JobsPanel";
 import { MapPane } from "@/components/MapPane";
 import { ModelPicker } from "@/components/ModelPicker";
 import { Transcript } from "@/components/Transcript";
-import type { ChatPort, MapSceneView } from "@/ports";
+import type { ChatPort, DatasetView, MapSceneView } from "@/ports";
 import { chatReducer, initialChatState, isTurnActive } from "@/view-model/chat-reducer";
 
 export interface ChatPageProps {
@@ -25,6 +26,7 @@ export function ChatPage(props: ChatPageProps): ReactNode {
   const [state, dispatch] = useReducer(chatReducer, conversationId, initialChatState);
   const [onServer, setOnServer] = useState(false);
   const [mapScene, setMapScene] = useState<MapSceneView | null>(null);
+  const [datasets, setDatasets] = useState<DatasetView[]>([]);
   const [now, setNow] = useState(0);
   const turn = useRef<AbortController | null>(null);
 
@@ -50,6 +52,19 @@ export function ChatPage(props: ChatPageProps): ReactNode {
     return () => {
       current = false;
       window.clearInterval(timer);
+    };
+  }, [port]);
+
+  useEffect(() => {
+    let current = true;
+    port.listDatasets().then(
+      (found) => {
+        if (current) setDatasets(found);
+      },
+      () => {},
+    );
+    return () => {
+      current = false;
     };
   }, [port]);
 
@@ -162,6 +177,7 @@ export function ChatPage(props: ChatPageProps): ReactNode {
         />
       </header>
       <MapPane scene={mapScene} />
+      <DatasetGallery datasets={datasets} serverUrl={props.serverUrl} onRun={startTurn} />
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem]">
         <Transcript items={state.transcript} serverUrl={props.serverUrl} />
         <JobsPanel jobs={state.jobs} now={now} onCancel={cancelJob} />

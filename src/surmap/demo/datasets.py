@@ -31,6 +31,7 @@ import urllib.request
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -61,6 +62,31 @@ Report = Callable[[PrepareProgress], None]
 
 def _no_report(_: PrepareProgress) -> None:
     pass
+
+
+class ImageModality(Enum):
+    """Whether a dataset's frames are grey or colour; both are first-class."""
+
+    GREY = "grey"
+    COLOR = "color"
+
+
+@dataclass(frozen=True)
+class LicenseInfo:
+    """A dataset's licence: its name, canonical URL and the credit line to show."""
+
+    name: str
+    url: str
+    attribution: str
+
+
+@dataclass(frozen=True)
+class GeoPoint:
+    """A WGS84 position for a dataset's GPS preview."""
+
+    lon: float
+    lat: float
+    alt_m: float | None = None
 
 
 @dataclass(frozen=True)
@@ -116,6 +142,20 @@ class DatasetSpec:
     credit: str = ""
     # The concept SAM looks for unless the page or launcher names another.
     sam_prompt: str = "object"
+    # Gallery metadata: a new data source sets these on its one spec and
+    # appears in the gallery, the agent tools and the demo with no other code.
+    provider: str = ""
+    license: LicenseInfo | None = None
+    modality: ImageModality = ImageModality.GREY
+    # KITTI camera pair ("00"/"01" grey, "02"/"03" colour) for kitti-raw specs.
+    kitti_cameras: tuple[str, str] = ("00", "01")
+    location_label: str = ""
+    # Approximate (lon, lat) shown before GPS is extracted; the extracted
+    # track replaces it once the dataset is prepared.
+    gps_centre: tuple[float, float] | None = None
+    # Downloads are stored under this id when set, so grey/colour variants
+    # of one drive share the one large zip instead of fetching it twice.
+    download_id: str = ""
 
 
 # The registry. The EuRoC zip is byte-identical between the official
@@ -135,6 +175,17 @@ DATASETS: dict[str, DatasetSpec] = {
             "vicon_room/vicon_room_1/V1_01_easy/V1_01_easy.zip"
         ),
         sam_prompt="box",
+        provider="EuRoC / ETH Zurich ASL",
+        license=LicenseInfo(
+            name="EuRoC dataset terms (ETH ASL)",
+            url="https://robotics.ethz.ch/~asl-datasets/ijrr_euroc_mav_dataset/",
+            attribution=(
+                "EuRoC MAV Dataset, Burri et al., ETH Zurich ASL — see the official "
+                "page for terms of use"
+            ),
+        ),
+        modality=ImageModality.GREY,
+        location_label="Vicon Room 1, ETH Zurich (indoor, no GPS)",
     ),
     # KITTI raw, fetched from KITTI's own host and converted locally; never
     # re-hosted (CC BY-NC-SA 3.0, academic use — credited on the page).
@@ -165,6 +216,65 @@ DATASETS: dict[str, DatasetSpec] = {
             "Institute), CC BY-NC-SA 3.0, for academic use — cvlibs.net/datasets/kitti"
         ),
         sam_prompt="car",
+        provider="KITTI",
+        license=LicenseInfo(
+            name="CC BY-NC-SA 3.0",
+            url="https://creativecommons.org/licenses/by-nc-sa/3.0/",
+            attribution=(
+                "KITTI raw data, Geiger, Lenz, Stiller and Urtasun (KIT and Toyota "
+                "Technological Institute), CC BY-NC-SA 3.0, for academic use — "
+                "cvlibs.net/datasets/kitti"
+            ),
+        ),
+        modality=ImageModality.GREY,
+        kitti_cameras=("00", "01"),
+        location_label="Karlsruhe, Germany (approx.)",
+        gps_centre=(8.42, 49.01),
+    ),
+    # The same KITTI drive's colour pair (image_02/03), sharing the grey
+    # variant's one download; colour frames feed SAM in colour while the
+    # stereo/RTAB-Map path converts to grey as it always has.
+    "kitti-2011-09-26-drive-0009-color": DatasetSpec(
+        dataset_id="kitti-2011-09-26-drive-0009-color",
+        title="KITTI 2011_09_26 drive 0009 (colour)",
+        description="Karlsruhe city drive, 447 rectified colour stereo pairs at 10 Hz.",
+        zip_url=(
+            "https://s3.eu-central-1.amazonaws.com/avg-kitti/raw_data/"
+            "2011_09_26_drive_0009/2011_09_26_drive_0009_sync.zip"
+        ),
+        zip_size_bytes=1_791_264_044,
+        zip_sha256="909639de40540f1d9bd8e3c181d79556ee4852781aa4684999f4cda3f3ef2611",
+        official_url="https://www.cvlibs.net/datasets/kitti/raw_data.php",
+        dataset_format="kitti-raw",
+        calibration=ZipAsset(
+            url="https://s3.eu-central-1.amazonaws.com/avg-kitti/raw_data/2011_09_26_calib.zip",
+            size_bytes=4_068,
+            sha256="e0108cfd000cf802c14ed94fba38601185c792e5640abba015a34b7a85b812e0",
+        ),
+        display_size=(620, 188),
+        fps=10.0,
+        depth_stops_m=(5.0, 15.0, 40.0),
+        max_map_depth_m=30.0,
+        credit=(
+            "KITTI raw data, Geiger, Lenz, Stiller and Urtasun (KIT and Toyota Technological "
+            "Institute), CC BY-NC-SA 3.0, for academic use — cvlibs.net/datasets/kitti"
+        ),
+        sam_prompt="car",
+        provider="KITTI",
+        license=LicenseInfo(
+            name="CC BY-NC-SA 3.0",
+            url="https://creativecommons.org/licenses/by-nc-sa/3.0/",
+            attribution=(
+                "KITTI raw data, Geiger, Lenz, Stiller and Urtasun (KIT and Toyota "
+                "Technological Institute), CC BY-NC-SA 3.0, for academic use — "
+                "cvlibs.net/datasets/kitti"
+            ),
+        ),
+        modality=ImageModality.COLOR,
+        kitti_cameras=("02", "03"),
+        location_label="Karlsruhe, Germany (approx.)",
+        gps_centre=(8.42, 49.01),
+        download_id="kitti-2011-09-26-drive-0009",
     ),
     # NTU VIRAL, a UAV flight over a campus plaza: the ROS 1 bag is read
     # once into the EuRoC layout. The zip has no calibration; it is the
@@ -269,6 +379,18 @@ DATASETS: dict[str, DatasetSpec] = {
             "CC BY-NC-SA 4.0, for non-commercial use — ntu-aris.github.io/ntu_viral_dataset"
         ),
         sam_prompt="person",
+        provider="NTU VIRAL",
+        license=LicenseInfo(
+            name="CC BY-NC-SA 4.0",
+            url="https://creativecommons.org/licenses/by-nc-sa/4.0/",
+            attribution=(
+                "NTU VIRAL dataset, Nguyen, Yuan, Cao, Yang, Nguyen and Xie "
+                "(NTU Singapore), CC BY-NC-SA 4.0, for non-commercial use — "
+                "ntu-aris.github.io/ntu_viral_dataset"
+            ),
+        ),
+        modality=ImageModality.GREY,
+        location_label="NTU campus, Singapore",
     ),
 }
 
@@ -299,6 +421,27 @@ class PreparedDataset:
     def imu_csv(self) -> str:
         path = self.root / "mav0" / "imu0" / "data.csv"
         return path.read_text(encoding="utf-8") if path.is_file() else ""
+
+    def gps_track(self) -> tuple[GeoPoint, ...]:
+        """GPS fixes extracted with the dataset (`gps_track.json`), in frame order.
+
+        Empty for datasets without GPS (indoor EuRoC, NTU VIRAL as prepared here).
+        """
+        path = self.root / "gps_track.json"
+        if not path.is_file():
+            return ()
+        try:
+            loaded: object = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeError):
+            return ()
+        if not isinstance(loaded, list):
+            return ()
+        points: list[GeoPoint] = []
+        for item in loaded:
+            if isinstance(item, list) and len(item) >= 2:
+                alt = float(item[2]) if len(item) > 2 else None
+                points.append(GeoPoint(lon=float(item[0]), lat=float(item[1]), alt_m=alt))
+        return tuple(points)
 
 
 @dataclass(frozen=True)
@@ -451,24 +594,43 @@ def _kitti_sensor_yaml(projection: list[float], size: list[int], x_m: float) -> 
     )
 
 
-def _extract_kitti_raw(
-    zip_path: Path, calibration_path: Path, root: Path, report: Report = _no_report
-) -> None:
-    """A KITTI raw `_sync` drive as the EuRoC layout: grey stereo + calibration.
+def _kitti_oxts_track(archive: zipfile.ZipFile, names: list[str], drive: str) -> list[list[float]]:
+    """`[lon, lat, alt_m]` per frame from the drive's `oxts/data/*.txt` fixes."""
+    members = sorted(n for n in names if n.startswith(f"{drive}oxts/data/") and n.endswith(".txt"))
+    track: list[list[float]] = []
+    for member in members:
+        fields = archive.read(member).decode().split()
+        if len(fields) >= 3:
+            lat, lon, alt = float(fields[0]), float(fields[1]), float(fields[2])
+            track.append([lon, lat, alt])
+    return track
 
-    KITTI sync frames are rectified and aligned by index, so cam0's
-    timestamps name both images of a pair.
+
+def _extract_kitti_raw(
+    zip_path: Path,
+    calibration_path: Path,
+    root: Path,
+    report: Report = _no_report,
+    *,
+    cameras: tuple[str, str] = ("00", "01"),
+) -> None:
+    """A KITTI raw `_sync` drive as the EuRoC layout: one stereo pair + calibration + GPS.
+
+    `cameras` selects the pair: `("00", "01")` is grey, `("02", "03")` is
+    colour. KITTI sync frames are rectified and aligned by index, so the
+    left camera's timestamps name both images of a pair. The drive's
+    `oxts` GPS fixes become `gps_track.json` at the dataset root.
     """
     with zipfile.ZipFile(calibration_path) as archive:
         name = next(n for n in archive.namelist() if n.endswith("calib_cam_to_cam.txt"))
         calib = archive.read(name).decode()
-    left, left_size = _kitti_projection(calib, "00")
-    right, right_size = _kitti_projection(calib, "01")
+    left, left_size = _kitti_projection(calib, cameras[0])
+    right, right_size = _kitti_projection(calib, cameras[1])
     baseline_m = -right[3] / right[0]
     with zipfile.ZipFile(zip_path) as archive:
         names = archive.namelist()
-        stamps_name = next(n for n in names if n.endswith("image_00/timestamps.txt"))
-        drive = stamps_name.removesuffix("image_00/timestamps.txt")
+        stamps_name = next(n for n in names if n.endswith(f"image_{cameras[0]}/timestamps.txt"))
+        drive = stamps_name.removesuffix(f"image_{cameras[0]}/timestamps.txt")
         stamps = [
             _kitti_t_ns(line) for line in archive.read(stamps_name).decode().splitlines() if line
         ]
@@ -481,7 +643,7 @@ def _extract_kitti_raw(
                 _kitti_sensor_yaml(projection, size, x_m), encoding="utf-8"
             )
             for index, t_ns in enumerate(stamps):
-                member = f"{drive}image_0{channel}/data/{index:010d}.png"
+                member = f"{drive}image_{cameras[channel]}/data/{index:010d}.png"
                 if member in names:
                     (camera / "data" / f"{t_ns}.png").write_bytes(archive.read(member))
                 report(
@@ -489,6 +651,9 @@ def _extract_kitti_raw(
                         "extracting", channel * len(stamps) + index + 1, 2 * len(stamps)
                     )
                 )
+        track = _kitti_oxts_track(archive, names, drive)
+        if track:
+            (root / "gps_track.json").write_text(json.dumps(track), encoding="utf-8")
 
 
 class _RosStamp(Protocol):
@@ -695,7 +860,7 @@ def ensure_dataset(
 
     downloads = cache_dir / "downloads"
     downloads.mkdir(parents=True, exist_ok=True)
-    zip_path = downloads / f"{spec.dataset_id}.zip"
+    zip_path = downloads / f"{spec.download_id or spec.dataset_id}.zip"
     log(f"dataset {spec.dataset_id}: {spec.title} (official: {spec.official_url})")
     _fetch_verified(
         spec.zip_url, spec.zip_size_bytes, spec.zip_sha256, zip_path, log, fetch, report
@@ -706,7 +871,7 @@ def ensure_dataset(
     if spec.dataset_format == "kitti-raw":
         if spec.calibration is None:
             raise ValueError(f"{spec.dataset_id}: a kitti-raw dataset needs its calibration zip")
-        calibration_path = downloads / f"{spec.dataset_id}-calibration.zip"
+        calibration_path = downloads / f"{spec.download_id or spec.dataset_id}-calibration.zip"
         _fetch_verified(
             spec.calibration.url,
             spec.calibration.size_bytes,
@@ -716,7 +881,7 @@ def ensure_dataset(
             fetch,
             report,
         )
-        _extract_kitti_raw(zip_path, calibration_path, root, report)
+        _extract_kitti_raw(zip_path, calibration_path, root, report, cameras=spec.kitti_cameras)
     elif spec.dataset_format == "ros1-stereo":
         if spec.ros1_stereo is None:
             raise ValueError(f"{spec.dataset_id}: a ros1-stereo dataset needs its topics")
