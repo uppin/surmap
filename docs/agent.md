@@ -67,6 +67,12 @@ leading comment, and argument descriptions are the field comments.
 | `set_behaviour` | `SimulationTools.SetBehaviour` | SYNC · 10 s · FAIL |
 | `update_behaviour_node` | `SimulationTools.UpdateBehaviourNode` | SYNC · 10 s · FAIL |
 | `get_behaviour` | `SimulationTools.GetBehaviour` | SYNC · 10 s · FAIL |
+| `list_building_presets` | `SimulationTools.ListBuildingPresets` | SYNC · 10 s · FAIL |
+| `set_district` | `SimulationTools.SetDistrict` | SYNC · 10 s · FAIL |
+| `remove_district` | `SimulationTools.RemoveDistrict` | SYNC · 10 s · FAIL |
+| `style_building` | `SimulationTools.StyleBuilding` | SYNC · 10 s · FAIL |
+| `add_building_fire` | `SimulationTools.AddBuildingFire` | SYNC · 10 s · FAIL |
+| `remove_building_fire` | `SimulationTools.RemoveBuildingFire` | SYNC · 10 s · FAIL |
 | `get_scenario` | `SimulationTools.GetScenario` | SYNC · 10 s · FAIL |
 | `list_scenarios` | `SimulationTools.ListScenarios` | SYNC · 10 s · FAIL |
 

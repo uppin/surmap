@@ -18,9 +18,10 @@ use bevy_rapier3d::prelude::*;
 use std::collections::BTreeMap;
 
 use crate::actors::{self, Figure};
+use crate::building;
 use crate::scene_manifest::{
-    BoxElement, Building, CollapsedBuilding, Element, Environment, ManifestError, ModelInstance, PbrTextureSet,
-    Person, SceneManifest,
+    BoxElement, Building, CollapsedBuilding, DistrictDef, Element, Environment, ManifestError, ModelInstance,
+    PbrTextureSet, Person, SceneManifest,
 };
 use crate::rig::{ProfileAsset, RigSource};
 use crate::shots::RunMode;
@@ -74,6 +75,8 @@ pub struct SceneState {
     pub failed: Option<String>,
     /// Every handle the scene waits on before it counts as ready.
     pub pending: Vec<UntypedHandle>,
+    /// False while preset-styled buildings still wait for their preset files (`building.rs`).
+    pub buildings_ready: bool,
 }
 
 /// Ground-truth boxes (ENU) of the objects a region query may target.
@@ -88,7 +91,7 @@ pub struct PendingModel {
 
 pub fn start_loading(mut commands: Commands, assets: Res<AssetServer>, mode: Res<RunMode>) {
     let path = crate::shots::manifest_path(mode.scenario.as_deref());
-    commands.insert_resource(SceneState { manifest: assets.load(path), built: false, failed: None, pending: Vec::new() });
+    commands.insert_resource(SceneState { manifest: assets.load(path), built: false, failed: None, pending: Vec::new(), buildings_ready: true });
     commands.init_resource::<GroundTruth>();
 }
 
@@ -201,7 +204,11 @@ pub fn build_world(
             plan_stand(&assets, &mut state.pending, &mut stands, stand);
         }
     }
-    let mut world = Builder { commands: &mut commands, meshes: &mut meshes, materials: &mut materials, library: &library, truth: &mut truth };
+    if let Some(plan) = building::plan(manifest, &assets, &mut state.pending) {
+        state.buildings_ready = false;
+        commands.insert_resource(plan);
+    }
+    let mut world = Builder { commands: &mut commands, meshes: &mut meshes, materials: &mut materials, library: &library, truth: &mut truth, districts: &manifest.districts };
     for element in &manifest.elements {
         world.element(element);
     }
@@ -245,6 +252,7 @@ struct Builder<'a, 'w, 's> {
     materials: &'a mut Assets<StandardMaterial>,
     library: &'a Library,
     truth: &'a mut GroundTruth,
+    districts: &'a [DistrictDef],
 }
 
 impl Builder<'_, '_, '_> {
@@ -252,7 +260,8 @@ impl Builder<'_, '_, '_> {
         match element {
             Element::Box(e) => self.box_element(e),
             Element::CollapsedBuilding(e) => self.collapsed(e),
-            Element::Building(e) => self.building(e),
+            Element::Building(e) if !building::is_styled(e, self.districts) => self.building(e),
+            Element::Building(_) => {}
             Element::Person(e) => self.person(e),
             Element::Vegetation(_) => {}
         }
@@ -420,7 +429,7 @@ pub struct CameraLook {
 
 /// True once the manifest and everything it named have loaded.
 pub fn scene_ready(state: &SceneState, assets: &AssetServer, models: usize) -> bool {
-    state.built && models == 0 && state.pending.iter().all(|h| assets.is_loaded_with_dependencies(h.id()))
+    state.built && state.buildings_ready && models == 0 && state.pending.iter().all(|h| assets.is_loaded_with_dependencies(h.id()))
 }
 
 #[cfg(test)]

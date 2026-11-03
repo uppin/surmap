@@ -36,6 +36,11 @@ class BevyCapture:
     # empty without an `object_tracks.jsonl`.
     object_tracks: dict[int, dict[str, Vec3]] = field(default_factory=dict)
     wind: dict[int, tuple[float, float]] = field(default_factory=dict)
+    # Each frame's burning and burnt floors per building (`(burning, burnt)` by id), keyed by
+    # `t_ns`; empty without a `building_fires.jsonl`.
+    building_fires: dict[int, dict[str, tuple[tuple[int, ...], tuple[int, ...]]]] = field(
+        default_factory=dict
+    )
 
 
 class CaptureRecorder:
@@ -242,7 +247,41 @@ def load_bevy_capture(root: Path) -> BevyCapture:
         fire_perimeters=_load_fire_perimeters(root / "fire_perimeter.jsonl"),
         object_tracks=object_tracks,
         wind=wind,
+        building_fires=_load_building_fires(root / "building_fires.jsonl"),
     )
+
+
+def _floors(value: object) -> tuple[int, ...]:
+    if not isinstance(value, list) or any(
+        isinstance(f, bool) or not isinstance(f, int) for f in value
+    ):
+        raise ValueError("floors are a list of whole numbers")
+    return tuple(int(f) for f in value)
+
+
+def _load_building_fires(
+    path: Path,
+) -> dict[int, dict[str, tuple[tuple[int, ...], tuple[int, ...]]]]:
+    """`building_fires.jsonl`: one `{t_ns, buildings: [{id, burning, burnt}]}` line per frame."""
+    if not path.is_file():
+        return {}
+    frames: dict[int, dict[str, tuple[tuple[int, ...], tuple[int, ...]]]] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        frame = _as_obj(json.loads(line), "building fire frame")
+        buildings = frame.get("buildings")
+        if not isinstance(buildings, list):
+            raise ValueError("buildings must be a list")
+        by_id: dict[str, tuple[tuple[int, ...], tuple[int, ...]]] = {}
+        for raw in buildings:
+            building = _as_obj(raw, "building")
+            building_id = building.get("id")
+            if not isinstance(building_id, str):
+                raise ValueError("a building needs an id")
+            by_id[building_id] = (_floors(building.get("burning")), _floors(building.get("burnt")))
+        frames[int(_num(frame, "t_ns", integer=True))] = by_id
+    return frames
 
 
 def _load_object_tracks(

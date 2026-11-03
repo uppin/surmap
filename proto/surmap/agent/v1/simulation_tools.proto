@@ -266,6 +266,8 @@ message BoxElement {
 
 message BuildingElement {
   string id = 1;
+  // The legacy single wall material. Leave empty inside a district (or style the building with
+  // StyleBuilding): the district's preset then draws the facade and roof.
   string material = 2;
   EnuPoint size = 3;
   EnuPoint position = 4;

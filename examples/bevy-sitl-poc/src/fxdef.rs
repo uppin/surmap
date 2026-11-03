@@ -77,6 +77,10 @@ pub struct FxDef {
     /// Fire effects: emitters are re-placed on the front every this many seconds.
     #[serde(default = "half")]
     pub refresh_s: f32,
+    /// Fire effects: particles appear within this radius of their emitter, m (a window's flames
+    /// stay at the window); `None` spreads them over half the emitter spacing.
+    #[serde(default)]
+    pub emit_radius_m: Option<f32>,
     /// The scorched ground a fire leaves (read from the fire's flames effect).
     #[serde(default)]
     pub ground: Option<GroundDef>,

@@ -1,0 +1,18 @@
+{
+  "material": {
+    "base_color": "textures/roof_slates_03_diff_2k.jpg",
+    "normal": "textures/roof_slates_03_nor_gl_2k.jpg",
+    "arm": "textures/roof_slates_03_arm_2k.jpg",
+    "uv_scale": 0.33,
+    "reflectance": 0.35
+  },
+  "colourable": false,
+  "burnt": {
+    "color": [
+      0.05,
+      0.045,
+      0.04
+    ],
+    "perceptual_roughness": 1.0
+  }
+}

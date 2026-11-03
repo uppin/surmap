@@ -14,8 +14,10 @@ use std::collections::BTreeMap;
 use bevy::prelude::Transform;
 use serde::Deserialize;
 
+mod buildings;
 mod nature;
 
+pub use buildings::{BuildingFireDef, DistrictDef};
 pub use nature::{FireDef, Vegetation, Weather, WindDef};
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -39,34 +41,6 @@ pub struct SceneManifest {
     pub districts: Vec<DistrictDef>,
     #[serde(default)]
     pub building_fires: Vec<BuildingFireDef>,
-}
-
-/// A district: a preset (`downtown` or `building/districts/<x>.district.json`) over an ENU
-/// rectangle (`position_enu` its centre, `size_m` east, north), drawn with `seed`.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct DistrictDef {
-    pub id: String,
-    pub preset: String,
-    pub position_enu: [f32; 3],
-    pub size_m: [f32; 2],
-    #[serde(default)]
-    pub seed: u64,
-}
-
-/// A fire lit inside `building` on `floor` at `start_s`, tuned by `tuning`.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct BuildingFireDef {
-    pub id: String,
-    pub building: String,
-    pub floor: u32,
-    #[serde(default)]
-    pub start_s: f32,
-    #[serde(default = "building_fire_tuning")]
-    pub tuning: String,
-}
-
-fn building_fire_tuning() -> String {
-    "building/fire.json".into()
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -135,7 +109,7 @@ fn default_reflectance() -> f32 {
 pub enum Element {
     Box(BoxElement),
     CollapsedBuilding(CollapsedBuilding),
-    Building(Building),
+    Building(Box<Building>),
     Person(Person),
     Vegetation(Vegetation),
 }
@@ -160,7 +134,7 @@ impl Element {
             }
             Self::CollapsedBuilding(e) => vec![e.material.as_str()],
             Self::Building(e) => {
-                let mut keys = vec![e.material.as_str()];
+                let mut keys: Vec<&str> = Some(e.material.as_str()).filter(|m| !m.is_empty()).into_iter().collect();
                 keys.extend(e.windows.iter().map(|w| w.material.as_str()));
                 keys
             }
@@ -359,7 +333,8 @@ impl SceneManifest {
             .iter()
             .map(|m| m.id.as_str())
             .chain(manifest.elements.iter().map(Element::id))
-            .chain(manifest.fires.iter().map(|f| f.id.as_str()));
+            .chain(manifest.fires.iter().map(|f| f.id.as_str()))
+            .chain(manifest.building_fires.iter().map(|f| f.id.as_str()));
         for id in ids {
             if !seen.insert(id.to_owned()) {
                 return Err(ManifestError::DuplicateId(id.to_owned()));
@@ -390,6 +365,7 @@ impl SceneManifest {
             }
         }
         manifest.validate_weather_fire_vegetation()?;
+        manifest.validate_buildings()?;
         manifest.validate_behaviours()?;
         Ok(manifest)
     }

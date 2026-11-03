@@ -1,0 +1,46 @@
+{
+  "material": {
+    "base_color": "textures/weathered_plank_siding_diff_2k.jpg",
+    "normal": "textures/weathered_plank_siding_nor_gl_2k.jpg",
+    "arm": "textures/weathered_plank_siding_arm_2k.jpg",
+    "uv_scale": 0.64,
+    "reflectance": 0.35
+  },
+  "colourable": true,
+  "glazing": {
+    "kind": "punched",
+    "window_ratio": 0.3,
+    "pane_m": [
+      1.4,
+      1.6
+    ],
+    "bay_m": 3.0,
+    "recess_m": 0.12,
+    "frame_m": 0.06,
+    "glass": {
+      "color": [
+        0.06,
+        0.07,
+        0.08
+      ],
+      "perceptual_roughness": 0.08,
+      "reflectance": 0.5
+    },
+    "frame": {
+      "color": [
+        0.18,
+        0.18,
+        0.19
+      ],
+      "perceptual_roughness": 0.6
+    }
+  },
+  "burnt": {
+    "color": [
+      0.05,
+      0.045,
+      0.04
+    ],
+    "perceptual_roughness": 1.0
+  }
+}

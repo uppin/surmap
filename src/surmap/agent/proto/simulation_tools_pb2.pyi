@@ -338,6 +338,102 @@ class BehaviourResponse(_message.Message):
     version: int
     def __init__(self, target_id: _Optional[str] = ..., tree_json: _Optional[str] = ..., version: _Optional[int] = ...) -> None: ...
 
+class ListBuildingPresetsRequest(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class BuildingPresetsResponse(_message.Message):
+    __slots__ = ("facades", "roofs", "districts")
+    FACADES_FIELD_NUMBER: _ClassVar[int]
+    ROOFS_FIELD_NUMBER: _ClassVar[int]
+    DISTRICTS_FIELD_NUMBER: _ClassVar[int]
+    facades: _containers.RepeatedScalarFieldContainer[str]
+    roofs: _containers.RepeatedScalarFieldContainer[str]
+    districts: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, facades: _Optional[_Iterable[str]] = ..., roofs: _Optional[_Iterable[str]] = ..., districts: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class Rgb(_message.Message):
+    __slots__ = ("r", "g", "b")
+    R_FIELD_NUMBER: _ClassVar[int]
+    G_FIELD_NUMBER: _ClassVar[int]
+    B_FIELD_NUMBER: _ClassVar[int]
+    r: float
+    g: float
+    b: float
+    def __init__(self, r: _Optional[float] = ..., g: _Optional[float] = ..., b: _Optional[float] = ...) -> None: ...
+
+class SetDistrictRequest(_message.Message):
+    __slots__ = ("scenario_id", "id", "preset", "centre", "size_east_m", "size_north_m", "seed")
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    ID_FIELD_NUMBER: _ClassVar[int]
+    PRESET_FIELD_NUMBER: _ClassVar[int]
+    CENTRE_FIELD_NUMBER: _ClassVar[int]
+    SIZE_EAST_M_FIELD_NUMBER: _ClassVar[int]
+    SIZE_NORTH_M_FIELD_NUMBER: _ClassVar[int]
+    SEED_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    id: str
+    preset: str
+    centre: EnuPoint
+    size_east_m: float
+    size_north_m: float
+    seed: int
+    def __init__(self, scenario_id: _Optional[str] = ..., id: _Optional[str] = ..., preset: _Optional[str] = ..., centre: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., size_east_m: _Optional[float] = ..., size_north_m: _Optional[float] = ..., seed: _Optional[int] = ...) -> None: ...
+
+class RemoveDistrictRequest(_message.Message):
+    __slots__ = ("scenario_id", "district_id")
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    DISTRICT_ID_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    district_id: str
+    def __init__(self, scenario_id: _Optional[str] = ..., district_id: _Optional[str] = ...) -> None: ...
+
+class StyleBuildingRequest(_message.Message):
+    __slots__ = ("scenario_id", "building_id", "facade", "roof", "roof_shape", "facade_colour", "roof_colour", "floors", "glazing", "window_ratio")
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    BUILDING_ID_FIELD_NUMBER: _ClassVar[int]
+    FACADE_FIELD_NUMBER: _ClassVar[int]
+    ROOF_FIELD_NUMBER: _ClassVar[int]
+    ROOF_SHAPE_FIELD_NUMBER: _ClassVar[int]
+    FACADE_COLOUR_FIELD_NUMBER: _ClassVar[int]
+    ROOF_COLOUR_FIELD_NUMBER: _ClassVar[int]
+    FLOORS_FIELD_NUMBER: _ClassVar[int]
+    GLAZING_FIELD_NUMBER: _ClassVar[int]
+    WINDOW_RATIO_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    building_id: str
+    facade: str
+    roof: str
+    roof_shape: str
+    facade_colour: Rgb
+    roof_colour: Rgb
+    floors: int
+    glazing: str
+    window_ratio: float
+    def __init__(self, scenario_id: _Optional[str] = ..., building_id: _Optional[str] = ..., facade: _Optional[str] = ..., roof: _Optional[str] = ..., roof_shape: _Optional[str] = ..., facade_colour: _Optional[_Union[Rgb, _Mapping[str, _Any]]] = ..., roof_colour: _Optional[_Union[Rgb, _Mapping[str, _Any]]] = ..., floors: _Optional[int] = ..., glazing: _Optional[str] = ..., window_ratio: _Optional[float] = ...) -> None: ...
+
+class AddBuildingFireRequest(_message.Message):
+    __slots__ = ("scenario_id", "id", "building_id", "floor", "start_s")
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    ID_FIELD_NUMBER: _ClassVar[int]
+    BUILDING_ID_FIELD_NUMBER: _ClassVar[int]
+    FLOOR_FIELD_NUMBER: _ClassVar[int]
+    START_S_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    id: str
+    building_id: str
+    floor: int
+    start_s: float
+    def __init__(self, scenario_id: _Optional[str] = ..., id: _Optional[str] = ..., building_id: _Optional[str] = ..., floor: _Optional[int] = ..., start_s: _Optional[float] = ...) -> None: ...
+
+class RemoveBuildingFireRequest(_message.Message):
+    __slots__ = ("scenario_id", "fire_id")
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    FIRE_ID_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    fire_id: str
+    def __init__(self, scenario_id: _Optional[str] = ..., fire_id: _Optional[str] = ...) -> None: ...
+
 class GetScenarioRequest(_message.Message):
     __slots__ = ("scenario_id",)
     SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]

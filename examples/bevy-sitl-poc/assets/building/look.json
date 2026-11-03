@@ -1,0 +1,52 @@
+{
+  "roof_shapes": {
+    "flat": {
+      "parapet_m": 0.6,
+      "parapet_thickness_m": 0.25
+    },
+    "gabled": {
+      "pitch_deg": 35.0,
+      "eave_m": 0.3
+    },
+    "hipped": {
+      "pitch_deg": 30.0,
+      "eave_m": 0.3
+    },
+    "pyramidal": {
+      "pitch_deg": 30.0,
+      "eave_m": 0.3
+    }
+  },
+  "shopfront": {
+    "floors": 1
+  },
+  "interior": {
+    "inset_m": 0.6,
+    "colour": [
+      0.03,
+      0.03,
+      0.035
+    ]
+  },
+  "fire": {
+    "glow_inset_m": 0.5,
+    "soot": {
+      "height_m": 1.5,
+      "colour": [
+        0.03,
+        0.03,
+        0.03
+      ],
+      "alpha": 0.85
+    },
+    "light": {
+      "colour": [
+        1.0,
+        0.5,
+        0.18
+      ],
+      "lumens_per_floor": 600000.0,
+      "range_m": 70.0
+    }
+  }
+}

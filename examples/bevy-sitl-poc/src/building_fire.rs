@@ -3,12 +3,12 @@
 //! area. Pure and stepped, so the renderer, the behaviour trees and the recorder share one state.
 //! Every coefficient comes from `building/fire.json`.
 
-#![allow(dead_code)]
-
 use bevy::math::Vec2;
 use serde::Deserialize;
 
 use crate::fire::FireSpec;
+
+mod geometry;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct FireEffectPaths {
@@ -54,17 +54,73 @@ pub enum FloorState {
     Burnt,
 }
 
+/// Spacing of the points along a footprint's walls the wildfire's burnt area is tested at.
+const WALL_STEP_M: f32 = 1.0;
+
+/// When and where a building caught: floor `floor` at `at_s`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Lit {
+    at_s: f32,
+    floor: u32,
+}
+
+/// How close building `from` stands to building `to`, and the unit direction between their walls.
+#[derive(Debug, Clone, Copy)]
+struct Reach {
+    gap_m: f32,
+    direction: Vec2,
+}
+
 pub struct BuildingFires {
-    pub buildings: Vec<Footprint>,
-    pub tuning: BuildingFireTuning,
+    buildings: Vec<Footprint>,
+    tuning: BuildingFireTuning,
+    declared: Vec<Ignition>,
+    lit: Vec<Option<Lit>>,
+    /// Seconds each building has been continuously within reach of a burning neighbour.
+    exposed_s: Vec<f32>,
+    /// `reach[from][to]`.
+    reach: Vec<Vec<Reach>>,
+    wall_points: Vec<Vec<Vec2>>,
+    now_s: f32,
+}
+
+fn positive(value: f32, what: &str) -> Result<(), String> {
+    if value > 0.0 {
+        Ok(())
+    } else {
+        Err(format!("{what} must be > 0"))
+    }
 }
 
 impl BuildingFireTuning {
     /// Parse and validate: every duration and distance positive, `descend_factor` ≥ 1, effect
     /// paths `fx/*.fx.json`.
     pub fn from_json(text: &str) -> Result<Self, String> {
-        let _ = text;
-        todo!("parse building fire tuning")
+        let tuning: Self = serde_json::from_str(text).map_err(|e| e.to_string())?;
+        positive(tuning.climb_s_per_floor, "climb_s_per_floor")?;
+        positive(tuning.floor_burn_s, "floor_burn_s")?;
+        positive(tuning.ignite_distance_m, "ignite_distance_m")?;
+        positive(tuning.exposure_s, "exposure_s")?;
+        if tuning.descend_factor < 1.0 {
+            return Err("descend_factor must be >= 1".into());
+        }
+        if tuning.ignite_wind_gain_s < 0.0 || tuning.glow_intensity < 0.0 {
+            return Err("ignite_wind_gain_s and glow_intensity must be >= 0".into());
+        }
+        let effects = &tuning.effects;
+        for path in [&effects.window_flames, &effects.smoke, &effects.embers] {
+            if !path.starts_with("fx/") || !path.ends_with(".fx.json") || path.contains("..") {
+                return Err(format!("effect {path:?} must be an fx/*.fx.json path"));
+            }
+        }
+        Ok(tuning)
+    }
+}
+
+impl FloorState {
+    /// Whether this floor is alight.
+    pub fn is_burning(self) -> bool {
+        self == Self::Burning
     }
 }
 
@@ -74,232 +130,182 @@ impl BuildingFires {
         ignitions: Vec<Ignition>,
         tuning: BuildingFireTuning,
     ) -> Self {
-        let _ = (buildings, ignitions, tuning);
-        todo!("building fires")
+        let reach = buildings
+            .iter()
+            .map(|from| {
+                buildings
+                    .iter()
+                    .map(|to| {
+                        let (a, b) = geometry::closest_points(&from.polygon_enu, &to.polygon_enu);
+                        let toward = if a == b {
+                            geometry::centroid(&to.polygon_enu)
+                                - geometry::centroid(&from.polygon_enu)
+                        } else {
+                            b - a
+                        };
+                        Reach {
+                            gap_m: a.distance(b),
+                            direction: toward.normalize_or_zero(),
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+        let wall_points = buildings
+            .iter()
+            .map(|b| geometry::wall_points(&b.polygon_enu, WALL_STEP_M))
+            .collect();
+        Self {
+            lit: vec![None; buildings.len()],
+            exposed_s: vec![0.0; buildings.len()],
+            reach,
+            wall_points,
+            buildings,
+            tuning,
+            declared: ignitions,
+            now_s: f32::MIN,
+        }
+    }
+
+    pub fn buildings(&self) -> &[Footprint] {
+        &self.buildings
+    }
+
+    fn index(&self, id: &str) -> Option<usize> {
+        self.buildings.iter().position(|b| b.id == id)
+    }
+
+    /// The time floor `floor` of a building lit at `lit` catches fire.
+    fn floor_ignites_s(&self, lit: Lit, floor: u32) -> f32 {
+        let climb = self.tuning.climb_s_per_floor;
+        if floor >= lit.floor {
+            lit.at_s + (floor - lit.floor) as f32 * climb
+        } else {
+            lit.at_s + (lit.floor - floor) as f32 * climb * self.tuning.descend_factor
+        }
+    }
+
+    fn state_at(&self, lit: Lit, floor: u32, t_s: f32) -> FloorState {
+        let ignites = self.floor_ignites_s(lit, floor);
+        if t_s < ignites {
+            FloorState::Intact
+        } else if t_s < ignites + self.tuning.floor_burn_s {
+            FloorState::Burning
+        } else {
+            FloorState::Burnt
+        }
+    }
+
+    fn catch(&mut self, building: usize, at_s: f32, floor: u32) {
+        if self.lit[building].is_none() {
+            let floor = floor.min(self.buildings[building].floors.saturating_sub(1));
+            self.lit[building] = Some(Lit { at_s, floor });
+        }
+    }
+
+    /// The lowest burning floor of building `index` at the current time, if any floor burns.
+    fn lowest_burning(&self, index: usize) -> Option<u32> {
+        (0..self.buildings[index].floors)
+            .find(|&f| self.floor(&self.buildings[index].id, f).is_burning())
     }
 
     /// Advance to `t_s` by `dt` under `wind_enu` (m/s toward), lighting buildings that a wildfire's
     /// burnt area touches.
     pub fn step(&mut self, t_s: f32, dt: f32, wind_enu: Vec2, wildfires: &[FireSpec]) {
-        let _ = (t_s, dt, wind_enu, wildfires);
-        todo!("step building fires")
+        self.now_s = t_s;
+        for ignition in self.declared.clone() {
+            if t_s >= ignition.start_s {
+                if let Some(index) = self.index(&ignition.building) {
+                    self.catch(index, ignition.start_s, ignition.floor);
+                }
+            }
+        }
+        for index in 0..self.buildings.len() {
+            if self.lit[index].is_some() {
+                continue;
+            }
+            let touched = self.wall_points[index]
+                .iter()
+                .any(|p| wildfires.iter().any(|fire| fire.burnt(*p, t_s, wind_enu)));
+            if touched {
+                self.catch(index, t_s, 0);
+            }
+        }
+        self.spread(dt, wind_enu);
+    }
+
+    /// A burning building lights an intact neighbour it has stood within reach of for the
+    /// exposure time; reach is longer downwind.
+    fn spread(&mut self, dt: f32, wind_enu: Vec2) {
+        let sources: Vec<(usize, u32)> = (0..self.buildings.len())
+            .filter_map(|i| self.lowest_burning(i).map(|floor| (i, floor)))
+            .collect();
+        for target in 0..self.buildings.len() {
+            if self.lit[target].is_some() {
+                continue;
+            }
+            let nearest = sources
+                .iter()
+                .filter(|(source, _)| {
+                    let reach = self.reach[*source][target];
+                    let downwind = wind_enu.dot(reach.direction).max(0.0);
+                    reach.gap_m
+                        <= self.tuning.ignite_distance_m + self.tuning.ignite_wind_gain_s * downwind
+                })
+                .min_by(|a, b| {
+                    self.reach[a.0][target]
+                        .gap_m
+                        .total_cmp(&self.reach[b.0][target].gap_m)
+                });
+            match nearest {
+                Some((_, floor)) => {
+                    self.exposed_s[target] += dt;
+                    if self.exposed_s[target] >= self.tuning.exposure_s {
+                        self.catch(target, self.now_s, *floor);
+                    }
+                }
+                None => self.exposed_s[target] = 0.0,
+            }
+        }
     }
 
     pub fn floor(&self, building: &str, floor: u32) -> FloorState {
-        let _ = (building, floor);
-        todo!("floor state")
+        match self.index(building).and_then(|i| self.lit[i]) {
+            Some(lit) if floor < self.buildings[self.index(building).unwrap_or(0)].floors => {
+                self.state_at(lit, floor, self.now_s)
+            }
+            _ => FloorState::Intact,
+        }
     }
 
     pub fn ignited_at(&self, building: &str) -> Option<f32> {
-        let _ = building;
-        todo!("ignition time")
+        self.index(building)
+            .and_then(|i| self.lit[i])
+            .map(|lit| lit.at_s)
+    }
+
+    /// Floors of `building` that burn now, then those burnt out, in ascending order.
+    pub fn burning_and_burnt(&self, building: &str) -> (Vec<u32>, Vec<u32>) {
+        let Some(index) = self.index(building) else {
+            return (Vec::new(), Vec::new());
+        };
+        let floors = self.buildings[index].floors;
+        let of = |wanted: FloorState| {
+            (0..floors)
+                .filter(|&f| self.floor(building, f) == wanted)
+                .collect()
+        };
+        (of(FloorState::Burning), of(FloorState::Burnt))
     }
 
     /// Footprints of buildings with at least one burning floor — n4's `World.burning_areas`.
     pub fn burning_footprints(&self) -> Vec<Vec<Vec2>> {
-        todo!("burning footprints")
+        (0..self.buildings.len())
+            .filter(|&i| self.lowest_burning(i).is_some())
+            .map(|i| self.buildings[i].polygon_enu.clone())
+            .collect()
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const DT: f32 = 0.5;
-
-    fn tuning() -> BuildingFireTuning {
-        BuildingFireTuning {
-            climb_s_per_floor: 45.0,
-            descend_factor: 3.0,
-            floor_burn_s: 600.0,
-            ignite_distance_m: 6.0,
-            ignite_wind_gain_s: 1.0,
-            exposure_s: 60.0,
-            effects: FireEffectPaths {
-                window_flames: "fx/window_flames.fx.json".into(),
-                smoke: "fx/building_smoke.fx.json".into(),
-                embers: "fx/embers.fx.json".into(),
-            },
-            glow_colour: [1.0, 0.45, 0.12],
-            glow_intensity: 10.0,
-        }
-    }
-
-    /// A 10 × 10 m block with its west wall at `west`.
-    fn block(id: &str, west: f32, floors: u32) -> Footprint {
-        Footprint {
-            id: id.into(),
-            polygon_enu: vec![
-                Vec2::new(west, 0.0),
-                Vec2::new(west + 10.0, 0.0),
-                Vec2::new(west + 10.0, 10.0),
-                Vec2::new(west, 10.0),
-            ],
-            floors,
-        }
-    }
-
-    fn run(fires: &mut BuildingFires, from: f32, to: f32, wind: Vec2, wildfires: &[FireSpec]) {
-        let mut t = from;
-        while t < to {
-            t += DT;
-            fires.step(t, DT, wind, wildfires);
-        }
-    }
-
-    fn tower_lit_on_floor_3() -> BuildingFires {
-        BuildingFires::new(
-            vec![block("tower", 0.0, 10)],
-            vec![Ignition {
-                building: "tower".into(),
-                floor: 3,
-                start_s: 5.0,
-            }],
-            tuning(),
-        )
-    }
-
-    #[test]
-    fn the_shipped_tuning_is_valid() {
-        let text = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/assets/building/fire.json"
-        ))
-        .expect("shipped");
-
-        BuildingFireTuning::from_json(&text).expect("valid");
-    }
-
-    #[test]
-    fn nothing_burns_before_the_ignition() {
-        let mut fires = tower_lit_on_floor_3();
-
-        run(&mut fires, 0.0, 4.0, Vec2::ZERO, &[]);
-
-        assert_eq!(fires.floor("tower", 3), FloorState::Intact);
-        assert_eq!(fires.ignited_at("tower"), None);
-    }
-
-    #[test]
-    fn the_fire_climbs_a_floor_per_climb_time_and_descends_slower() {
-        let mut fires = tower_lit_on_floor_3();
-
-        run(&mut fires, 0.0, 5.0 + 45.0 * 2.0 + 1.0, Vec2::ZERO, &[]);
-
-        assert_eq!(fires.floor("tower", 3), FloorState::Burning);
-        assert_eq!(
-            fires.floor("tower", 5),
-            FloorState::Burning,
-            "two floors up after two climb times"
-        );
-        assert_eq!(fires.floor("tower", 6), FloorState::Intact);
-        assert_eq!(
-            fires.floor("tower", 2),
-            FloorState::Intact,
-            "one floor down takes 135 s"
-        );
-    }
-
-    #[test]
-    fn a_floor_burns_out_after_its_burn_time() {
-        let mut fires = tower_lit_on_floor_3();
-
-        run(&mut fires, 0.0, 5.0 + 600.0 + 1.0, Vec2::ZERO, &[]);
-
-        assert_eq!(fires.floor("tower", 3), FloorState::Burnt);
-        assert_eq!(fires.floor("tower", 4), FloorState::Burning);
-    }
-
-    #[test]
-    fn a_close_neighbour_catches_after_its_exposure_time() {
-        let mut fires = BuildingFires::new(
-            vec![block("a", 0.0, 4), block("b", 15.0, 4)],
-            vec![Ignition {
-                building: "a".into(),
-                floor: 0,
-                start_s: 0.0,
-            }],
-            tuning(),
-        );
-
-        run(&mut fires, 0.0, 59.0, Vec2::ZERO, &[]);
-        let before = fires.ignited_at("b");
-        run(&mut fires, 59.0, 62.0, Vec2::ZERO, &[]);
-
-        assert_eq!(before, None, "5 m apart, but not exposed for 60 s yet");
-        assert!(fires.ignited_at("b").is_some());
-    }
-
-    #[test]
-    fn wind_carries_the_fire_farther_downwind_than_upwind() {
-        // Neighbours 9 m away on both sides: beyond 6 m calm reach, within 6 + 1·4 downwind.
-        let mut fires = BuildingFires::new(
-            vec![
-                block("west", -19.0, 3),
-                block("source", 0.0, 3),
-                block("east", 19.0, 3),
-            ],
-            vec![Ignition {
-                building: "source".into(),
-                floor: 0,
-                start_s: 0.0,
-            }],
-            tuning(),
-        );
-
-        run(&mut fires, 0.0, 300.0, Vec2::new(4.0, 0.0), &[]);
-
-        assert!(
-            fires.ignited_at("east").is_some(),
-            "downwind neighbour caught"
-        );
-        assert_eq!(fires.ignited_at("west"), None, "upwind neighbour did not");
-    }
-
-    #[test]
-    fn a_wildfire_reaching_a_building_lights_its_ground_floor() {
-        let wildfire = FireSpec {
-            ignition: Vec2::new(-10.0, 5.0),
-            start_s: 0.0,
-            spread_m_s: 0.5,
-            max_radius_m: 40.0,
-            head_wind_gain: 0.5,
-            lb_wind_gain: 0.25,
-        };
-        let mut fires = BuildingFires::new(vec![block("hut", 0.0, 2)], vec![], tuning());
-
-        run(
-            &mut fires,
-            0.0,
-            25.0,
-            Vec2::ZERO,
-            std::slice::from_ref(&wildfire),
-        );
-
-        let lit = fires
-            .ignited_at("hut")
-            .expect("the front reached the west wall at 20 s");
-        assert!((lit - 20.0).abs() <= 1.0, "{lit}");
-        assert_eq!(fires.floor("hut", 0), FloorState::Burning);
-    }
-
-    #[test]
-    fn only_burning_buildings_are_burning_areas() {
-        let mut fires = BuildingFires::new(
-            vec![block("a", 0.0, 2), block("far", 200.0, 2)],
-            vec![Ignition {
-                building: "a".into(),
-                floor: 0,
-                start_s: 0.0,
-            }],
-            tuning(),
-        );
-
-        run(&mut fires, 0.0, 10.0, Vec2::ZERO, &[]);
-
-        assert_eq!(
-            fires.burning_footprints(),
-            vec![block("a", 0.0, 2).polygon_enu]
-        );
-    }
-}
+mod tests;

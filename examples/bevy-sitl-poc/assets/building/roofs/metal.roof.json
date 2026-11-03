@@ -1,0 +1,19 @@
+{
+  "material": {
+    "base_color": "textures/corrugated_iron_03_diff_2k.jpg",
+    "normal": "textures/corrugated_iron_03_nor_gl_2k.jpg",
+    "arm": "textures/corrugated_iron_03_arm_2k.jpg",
+    "uv_scale": 0.5,
+    "reflectance": 0.35,
+    "metallic": 0.0
+  },
+  "colourable": true,
+  "burnt": {
+    "color": [
+      0.05,
+      0.045,
+      0.04
+    ],
+    "perceptual_roughness": 1.0
+  }
+}

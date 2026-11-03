@@ -71,7 +71,9 @@ def _sha256(data: bytes) -> str:
 
 
 def _default_opener(url: str) -> bytes:
-    with urllib.request.urlopen(url) as response:  # pinned in the lock file
+    # ambientCG refuses urllib's default user agent.
+    request = urllib.request.Request(url, headers={"User-Agent": "surmap-sim/1"})
+    with urllib.request.urlopen(request) as response:  # pinned in the lock file
         data: bytes = response.read()
         return data
 
@@ -83,13 +85,18 @@ def fetch_assets(
 ) -> None:
     open_url = opener if opener is not None else _default_opener
     dest = Path(dest)
+    archives: dict[str, bytes] = {}
     for pin in pins:
         _validate_relative(pin.path)
         target = dest / pin.path
         if target.is_file() and _sha256(target.read_bytes()) == pin.sha256:
             continue
-        downloaded = open_url(pin.url)
+        if pin.member is not None and pin.url in archives:
+            downloaded = archives[pin.url]
+        else:
+            downloaded = open_url(pin.url)
         if pin.member is not None:
+            archives[pin.url] = downloaded
             with zipfile.ZipFile(io.BytesIO(downloaded)) as archive:
                 data = archive.read(pin.member)
         else:

@@ -24,17 +24,17 @@ PRD: `PRD-2026-11-03-sim-building-presets-fire.md` · Discovery:
   - [x] Acceptance tests written and failing for the right reason (`tests/test_sim_building_fire_e2e.py`)
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Rust `building_style.rs`: facade, roof, district preset loaders and validation; deterministic weighted resolution (contract below)
-  - [ ] Rust `building_fire.rs`: floor-by-floor fire, spread between buildings and from the wildfire (contract below); burning footprints into n4's `World.burning_areas`
-  - [ ] Rust `scene_manifest.rs`: `districts`, `building_fires`, building `facade`/`roof`/colours/`roof_shape`/`floors`/`glazing`; `material` optional when a preset resolves
-  - [ ] Declarative assets — every value the visual spec names, none in Rust: 11 `building/facades/*.facade.json`, 14 `building/roofs/*.roof.json`, 4 `building/districts/*.district.json`, `building/fire.json`, `fx/window_flames.fx.json`, `fx/building_smoke.fx.json`; CC0 textures added to `assets.lock.json` through the licence-gated sources
-  - [ ] Rendering per the visual spec: textured walls and roofs, roof shapes, punched windows and curtain walls, per-floor fire (window flames, smoke, interior glow, broken panes, charring), a screenshot set at each checkpoint
-  - [ ] Recorder: `building_fires.jsonl` beside every capture
-  - [ ] Python `scenario_manifest`: validation; `building_presets`, `set_district`, `remove_district`, `style_building`, `add_building_fire`, `remove_building_fire`; presets `district-showcase`, `downtown-blaze`
-  - [ ] `SimulationTools`: `ListBuildingPresets`, `SetDistrict`, `RemoveDistrict`, `StyleBuilding`, `AddBuildingFire`, `RemoveBuildingFire`; regenerated code, handlers, docs table
-  - [ ] `bevy_capture`: `load_bevy_capture(...).building_fires`
-  - [ ] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
+- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes · all 22 Rust and 33 Python reds green (cargo test 155/155, pytest 1920 passed · 33 skipped, ruff/mypy clean, wasm check ok); D1 (4 districts) and D2 (t = 15/120/400/900) stills taken for the planner
+  - [x] Rust `building_style.rs`: facade, roof, district preset loaders and validation; deterministic weighted resolution (contract below)
+  - [x] Rust `building_fire.rs`: floor-by-floor fire, spread between buildings and from the wildfire (contract below); burning footprints into n4's `World.burning_areas`
+  - [x] Rust `scene_manifest.rs`: `districts`, `building_fires`, building `facade`/`roof`/colours/`roof_shape`/`floors`/`glazing`; `material` optional when a preset resolves
+  - [x] Declarative assets — every value the visual spec names, none in Rust: 11 `building/facades/*.facade.json`, 14 `building/roofs/*.roof.json`, 4 `building/districts/*.district.json`, `building/fire.json`, `fx/window_flames.fx.json`, `fx/building_smoke.fx.json`; CC0 textures added to `assets.lock.json` through the licence-gated sources
+  - [x] Rendering per the visual spec: textured walls and roofs, roof shapes, punched windows and curtain walls, per-floor fire (window flames, smoke, interior glow, broken panes, charring), a screenshot set at each checkpoint
+  - [x] Recorder: `building_fires.jsonl` beside every capture
+  - [x] Python `scenario_manifest`: validation; `building_presets`, `set_district`, `remove_district`, `style_building`, `add_building_fire`, `remove_building_fire`; presets `district-showcase`, `downtown-blaze`
+  - [x] `SimulationTools`: `ListBuildingPresets`, `SetDistrict`, `RemoveDistrict`, `StyleBuilding`, `AddBuildingFire`, `RemoveBuildingFire`; regenerated code, handlers, docs table
+  - [x] `bevy_capture`: `load_bevy_capture(...).building_fires`
+  - [x] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (tests + the planner-reviewed D1–D2 screenshot sets)
   - [ ] `docs/simulation/bevy-simulation.md` — Buildings and building fires; `docs/agent.md` — the tools
@@ -82,6 +82,7 @@ top; nothing burns but n3's ground fire.
 | `building/facades/<name>.facade.json` | `material` (a manifest material definition: textures, `uv_scale`, roughness…), `colourable` (whether a colour tints it), `glazing` default `{kind: punched \| curtain_wall \| none, window_ratio, pane_m, bay_m, glass, frame}` (`curtain_wall`: `mullion_m [w, h]`, `mullion`), `burnt` material |
 | `building/roofs/<name>.roof.json` | `material`, `colourable`, `burnt` |
 | `building/districts/<name>.district.json` | weighted `facades`, `roofs`, `roof_shapes` (`[[name, weight], …]`), `facade_colours` / `roof_colours` palettes, `floor_m` |
+| `building/look.json` | the numbers no preset owns: roof shapes (`flat` parapet height and thickness; `gabled`/`hipped`/`pyramidal` pitch and eave), the dark `interior` behind the walls, `shopfront.floors`, and the fire's look (`glow_inset_m`, `soot`, the building light) |
 | `building/fire.json` | `climb_s_per_floor`, `descend_factor`, `floor_burn_s`, `ignite_distance_m`, `ignite_wind_gain_s` (extra metres downwind per m/s), `exposure_s`, `effects` `{window_flames, smoke, embers}` fx paths, glow colour/intensity |
 
 Shipped names are Overture's: facades `brick, cement_block, clay, concrete, glass, metal, plaster,

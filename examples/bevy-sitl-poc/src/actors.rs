@@ -14,6 +14,8 @@ use bevy::reflect::TypePath;
 use serde::Deserialize;
 
 use crate::behaviour::{Runner, Tree, World, TICK_HZ};
+use crate::building::BuildingClock;
+use crate::building_fire::BuildingFires;
 use crate::fire::FireSpec;
 use crate::scene_manifest::Weather;
 use crate::wildfire::{SimClock, Wildfire};
@@ -278,22 +280,29 @@ pub fn tick_behaviours(
     look: Option<Res<FigureLook>>,
     looks: Res<Assets<FigureAsset>>,
     scene: Option<ResMut<Wildfire>>,
+    buildings: BuildingClock,
     mut behaviour: ResMut<Behaviour>,
     mut figures: Query<&mut Figure>,
 ) {
     let (Some(look), Some(mut scene)) = (look, scene) else {
         return;
     };
+    // The ticks of buildings still being raised would run without their fire: wait for them.
+    if buildings.raising.is_some() {
+        return;
+    }
     let Some(FigureAsset(gait)) = looks.get(&look.0) else {
         return;
     };
     let now = clock.now();
+    let mut fires = buildings.blaze.map(|blaze| blaze.map_unchanged(|b| &mut b.fires));
     while tick_time(behaviour.ticks) <= now + CLOCK_SLACK_S {
         let t_s = tick_time(behaviour.ticks);
         tick_once(
             t_s,
             &mut behaviour,
             &mut scene,
+            fires.as_deref_mut(),
             &mut figures,
             gait.yaw_ease_s,
         );
@@ -305,6 +314,7 @@ fn tick_once(
     t_s: f32,
     behaviour: &mut Behaviour,
     scene: &mut Wildfire,
+    buildings: Option<&mut BuildingFires>,
     figures: &mut Query<&mut Figure>,
     yaw_ease_s: f32,
 ) {
@@ -324,6 +334,11 @@ fn tick_once(
         scene.wind = wind.wind;
     }
     let wind = scene.wind;
+    // Buildings alight at this tick, for people to flee from.
+    let burning_areas: Vec<Vec<Vec2>> = buildings.map_or_else(Vec::new, |buildings| {
+        buildings.step(t_s, DT, wind.velocity_enu(t_s), &fires);
+        buildings.burning_footprints()
+    });
     let objects: Vec<(String, Vec2)> = figures
         .iter()
         .map(|figure| (figure.id.clone(), figure.position()))
@@ -331,7 +346,7 @@ fn tick_once(
     let world = World {
         t_s,
         fires: &fires,
-        burning_areas: &[],
+        burning_areas: &burning_areas,
         wind: &wind,
         objects: &objects,
     };
