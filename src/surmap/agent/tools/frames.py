@@ -7,11 +7,17 @@ frame) over to another size of the same frame (its full-resolution original).
 
 from __future__ import annotations
 
+import io
+import math
 from dataclasses import dataclass
+
+from PIL import Image
 
 from surmap.agent.tools.workspace import BoxXYXY
 
 __all__ = ["EncodedImage", "crop_box_for_object", "frame_image"]
+
+_JPEG_QUALITY = 85
 
 
 @dataclass(frozen=True)
@@ -38,7 +44,19 @@ def frame_image(
     side is at most that many pixels; an image already within it is not enlarged. Raises
     `ValueError` for a crop with no area inside the image or a `max_side` below 1.
     """
-    raise NotImplementedError  # TODO(pr-7): implement
+    if max_side is not None and max_side < 1:
+        raise ValueError("max_side must be at least 1 pixel")
+    with Image.open(io.BytesIO(image)) as opened:
+        rgb = opened.convert("RGB")
+    if crop is not None:
+        rgb = rgb.crop(_padded_box(crop, pad_px, rgb.size))
+    if max_side is not None and max(rgb.size) > max_side:
+        scale = max_side / max(rgb.size)
+        size = (max(1, round(rgb.width * scale)), max(1, round(rgb.height * scale)))
+        rgb = rgb.resize(size, Image.Resampling.LANCZOS)
+    buffer = io.BytesIO()
+    rgb.save(buffer, format="JPEG", quality=_JPEG_QUALITY)
+    return EncodedImage(buffer.getvalue(), "image/jpeg", rgb.width, rgb.height)
 
 
 def crop_box_for_object(
@@ -51,4 +69,20 @@ def crop_box_for_object(
 
     The two images are the same frame at two resolutions, so each axis scales by its own ratio.
     """
-    raise NotImplementedError  # TODO(pr-7): implement
+    x_scale = image_size[0] / measured_on[0]
+    y_scale = image_size[1] / measured_on[1]
+    x0, y0, x1, y1 = box_xyxy
+    return (x0 * x_scale, y0 * y_scale, x1 * x_scale, y1 * y_scale)
+
+
+def _padded_box(box: BoxXYXY, pad_px: int, size: tuple[int, int]) -> tuple[int, int, int, int]:
+    """`box` grown by `pad_px` and clamped to an image of `size`, as whole pixels."""
+    width, height = size
+    x0, y0, x1, y1 = box
+    left = max(0, math.floor(min(x0, x1) - pad_px))
+    top = max(0, math.floor(min(y0, y1) - pad_px))
+    right = min(width, math.ceil(max(x0, x1) + pad_px))
+    bottom = min(height, math.ceil(max(y0, y1) + pad_px))
+    if right <= left or bottom <= top:
+        raise ValueError(f"crop {box} has no area inside the {width} x {height} image")
+    return (left, top, right, bottom)
