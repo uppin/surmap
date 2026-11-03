@@ -147,7 +147,7 @@ this repository.
 label strings to `POST https://api.meta.ai/v1/responses`. The default
 model id is `muse-wonder-1.0`. Auth is `Authorization: Bearer` from
 `MODEL_API_KEY`. `SURMAP_META_MODEL` or the constructor may select
-another covered id, such as hosted Muse Spark `muse-spark-1.3`. The
+another covered id. The
 client refuses Muse Wonder Full and the Baseten slug
 `meta-models/muse-spark-open-1026`. The prompt asks for
 a civilian search-and-rescue description and for no flight advice.

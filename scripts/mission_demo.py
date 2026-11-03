@@ -13,8 +13,8 @@ clients. Otherwise it uses the recorded SITL fixture and fakes;
     uv run python scripts/mission_demo.py --fixtures
 
 Live with ``SURMAP_LIVE_META=1`` and ``MODEL_API_KEY`` calls Muse
-Spark to pick SAM concepts, Meta SAM 3.1, Muse Spark labels, and the
-Muse Spark scene note. ``SURMAP_LIVE_BASETEN=1`` moves labels to
+Wonder to pick SAM concepts, Meta SAM 3.1, Muse Wonder labels, and the
+Muse Wonder scene note. ``SURMAP_LIVE_BASETEN=1`` moves labels to
 open-weight Muse Spark Open on Baseten, also when Meta is on. Modal SAM
 (``SURMAP_LIVE_MODAL``) is used when the Meta flag is unset. Keys are read only
 inside those clients. ``--sam-route modal`` (with ``SURMAP_LIVE_MODAL=1``)
