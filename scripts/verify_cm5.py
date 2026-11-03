@@ -15,6 +15,10 @@ uses) to a running CM5 server over the wire and verifies the output:
     uv run python scripts/fetch_coral_model.py
     uv run python scripts/fetch_rtabmap_fixture.py
     uv run python scripts/verify_cm5.py 10.88.77.237:8080
+    uv run python scripts/verify_cm5.py wss://<cm5-host>/connect --token <token>
+
+The streams go over the server's Connect WebSocket (`/connect`); the
+token defaults to `$SURMAP_SURVEY_TOKEN`.
 
 To measure the RTAB-Map streaming sidecar alone — no server, no
 Coral detector, no object tracking, recorded pairs straight into
@@ -29,13 +33,13 @@ repo: the address is a CLI argument, as with the deploy scripts.
 from __future__ import annotations
 
 import argparse
-import http.client
+import asyncio
 import json
 import math
-import struct
 import sys
 import time
 import urllib.request
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -43,7 +47,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from surmap.demo.datasets import DATASETS, PreparedDataset, load_calibration  # noqa: E402
 from surmap.slam.base import SlamBackend  # noqa: E402
+from surmap.survey.endpoint import survey_token  # noqa: E402
 from surmap.survey.v1 import survey_pb2  # noqa: E402
+from surmap.survey.ws_client import SurveyConnection, health_url  # noqa: E402
 from surmap.types import StereoFramePair  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -151,31 +157,29 @@ def check_survey(responses: list[survey_pb2.Cm5Response], *, min_object_points: 
     return failures
 
 
-def _frame_message(message: survey_pb2.Cm5Request) -> bytes:
-    payload = message.SerializeToString()
-    return struct.pack(">BI", 0, len(payload)) + payload
+def _stream_detections(
+    address: str, requests: list[survey_pb2.Cm5Request], token: str | None
+) -> list[survey_pb2.DetectionResponse]:
+    async def run() -> list[survey_pb2.DetectionResponse]:
+        async with SurveyConnection.open(address, token=token) as connection:
+            return [r async for r in connection.stream_detections(_each(requests))]
+
+    return asyncio.run(run())
 
 
-def _post_stream(address: str, path: str, requests: list[survey_pb2.Cm5Request]) -> list[bytes]:
-    body = b"".join(_frame_message(request) for request in requests)
-    connection = http.client.HTTPConnection(address, timeout=120)
-    try:
-        connection.request(
-            "POST", path, body=body, headers={"content-type": "application/connect+proto"}
-        )
-        raw = connection.getresponse().read()
-    finally:
-        connection.close()
-    payloads: list[bytes] = []
-    offset = 0
-    while offset < len(raw):
-        flag, length = struct.unpack(">BI", raw[offset : offset + 5])
-        payload = raw[offset + 5 : offset + 5 + length]
-        if flag == 2:
-            break
-        payloads.append(payload)
-        offset += 5 + length
-    return payloads
+def _stream_survey(
+    address: str, requests: list[survey_pb2.Cm5Request], token: str | None
+) -> list[survey_pb2.Cm5Response]:
+    async def run() -> list[survey_pb2.Cm5Response]:
+        async with SurveyConnection.open(address, token=token) as connection:
+            return [r async for r in connection.stream_survey(_each(requests))]
+
+    return asyncio.run(run())
+
+
+async def _each(requests: list[survey_pb2.Cm5Request]) -> AsyncIterator[survey_pb2.Cm5Request]:
+    for request in requests:
+        yield request
 
 
 def _config(fixture_dir: Path) -> survey_pb2.Cm5Request:
@@ -267,8 +271,9 @@ def verify(
     min_frames_with_detections: int = 10,
     min_track_length: int = 3,
     min_object_points: int = 50,
+    token: str | None = None,
 ) -> VerifyReport:
-    """Feed the demo stream to the server at `address`.
+    """Feed the demo stream to the server at `address` (see `connect_url`).
 
     One check per output stream, plus a frame rate per stream: the
     detections rate is the Coral detector's end-to-end rate (decode,
@@ -278,7 +283,7 @@ def verify(
     results: list[CheckResult] = []
     rates: list[Rate] = []
     try:
-        with urllib.request.urlopen(f"http://{address}/health/is_alive", timeout=10) as response:
+        with urllib.request.urlopen(health_url(address), timeout=10) as response:
             status = int(response.status)  # type: ignore[attr-defined]
         results.append(CheckResult("health", status == 200, f"GET /health/is_alive -> {status}"))
     except Exception as exc:  # a dead server fails every later check too
@@ -298,17 +303,23 @@ def verify(
         _frame(fixture_dir, index + 1, t_ns, 0) for index, t_ns in enumerate(timestamps)
     ]
     started = time.perf_counter()
-    payloads = _post_stream(
-        address, "/surmap.survey.v1.Cm5SurveyService/StreamDetections", detection_requests
-    )
+    try:
+        detection_responses = _stream_detections(address, detection_requests, token)
+        stream_error = ""
+    except Exception as exc:  # the server refused or broke the stream: the check fails
+        detection_responses, stream_error = [], f"StreamDetections failed: {exc}"
     rates.append(Rate("coral-detections", len(timestamps), time.perf_counter() - started))
-    messages = [survey_pb2.DetectionResponse.FromString(payload).detections for payload in payloads]
-    failures = check_detections(
-        messages,
-        width=FRAME_WIDTH,
-        height=FRAME_HEIGHT,
-        min_frames_with_detections=min_frames_with_detections,
-        min_track_length=min_track_length,
+    messages = [response.detections for response in detection_responses]
+    failures = (
+        [stream_error]
+        if stream_error
+        else check_detections(
+            messages,
+            width=FRAME_WIDTH,
+            height=FRAME_HEIGHT,
+            min_frames_with_detections=min_frames_with_detections,
+            min_track_length=min_track_length,
+        )
     )
     with_detections = sum(1 for message in messages if message.detections)
     results.append(
@@ -328,12 +339,17 @@ def verify(
             _frame(fixture_dir, index + 1, t_ns, 1),
         ]
     started = time.perf_counter()
-    payloads = _post_stream(
-        address, "/surmap.survey.v1.Cm5SurveyService/StreamSurvey", survey_requests
-    )
+    try:
+        responses = _stream_survey(address, survey_requests, token)
+        stream_error = ""
+    except Exception as exc:  # the server refused or broke the stream: the check fails
+        responses, stream_error = [], f"StreamSurvey failed: {exc}"
     rates.append(Rate("survey", len(timestamps), time.perf_counter() - started))
-    responses = [survey_pb2.Cm5Response.FromString(payload) for payload in payloads]
-    failures = check_survey(responses, min_object_points=min_object_points)
+    failures = (
+        [stream_error]
+        if stream_error
+        else check_survey(responses, min_object_points=min_object_points)
+    )
     object_points = sum(
         len(r.points.points)
         for r in responses
@@ -351,7 +367,14 @@ def verify(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("address", nargs="?", help="CM5 server address, e.g. 10.88.77.237:8080")
+    parser.add_argument(
+        "address",
+        nargs="?",
+        help="CM5 server: host:port, or a ws(s):// / http(s):// URL, e.g. 10.88.77.237:8080",
+    )
+    parser.add_argument(
+        "--token", default=None, help="bearer token (default: $SURMAP_SURVEY_TOKEN)"
+    )
     parser.add_argument("--fixture", type=Path, default=DEFAULT_FIXTURE)
     parser.add_argument("--frames", type=int, default=40)
     parser.add_argument("--min-detection-frames", type=int, default=10)
@@ -394,6 +417,7 @@ def main(argv: list[str] | None = None) -> int:
         min_frames_with_detections=args.min_detection_frames,
         min_track_length=args.min_track_length,
         min_object_points=args.min_object_points,
+        token=survey_token(args.token),
     )
     rates = list(report.rates)
     if args.rtabmap:

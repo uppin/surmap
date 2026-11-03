@@ -313,7 +313,9 @@ async def test_each_survey_stream_gets_its_own_slam_built_from_the_stream_config
         return slam
 
     calibration = _calibration()
-    async with running_ws_server(build_description(slam_factory=factory, use_stereo=False)) as address:  # type: ignore[arg-type]
+    async with running_ws_server(
+        build_description(slam_factory=factory, use_stereo=False)  # type: ignore[arg-type]
+    ) as address:
 
         async def play_one() -> list[tuple[float, ...]]:
             backend = RemoteCm5Backend(

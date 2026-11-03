@@ -14,8 +14,15 @@
 # RTAB-Map is a system dependency (not on PyPI, not in Debian trixie):
 # this script installs its build deps with apt and builds a pinned
 # RTAB-Map release into /usr/local, then builds
-# deploy/rtabmap-stream against it.
+# deploy/rtabmap-stream against it. Run as root (a container image
+# build), it needs no sudo.
 set -eu
+
+if [ "$(id -u)" = "0" ]; then
+    SUDO=""
+else
+    SUDO="sudo"
+fi
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RTABMAP_TAG="${RTABMAP_TAG:-0.23.1}"
@@ -29,8 +36,8 @@ if [ -x "$BINARY" ] && [ "${FORCE:-0}" != "1" ]; then
 fi
 
 echo "installing RTAB-Map build dependencies"
-sudo apt-get update -qq
-sudo apt-get install -y --no-install-recommends \
+$SUDO apt-get update -qq
+$SUDO apt-get install -y --no-install-recommends \
     git cmake g++ \
     libpcl-dev libopencv-dev libsqlite3-dev liboctomap-dev \
     libboost-all-dev libusb-1.0-0-dev libyaml-cpp-dev libjsoncpp-dev
@@ -45,8 +52,8 @@ cmake -S "$WORK/rtabmap" -B "$WORK/rtabmap/build" \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_APP=OFF -DBUILD_TOOLS=OFF -DBUILD_EXAMPLES=OFF
 cmake --build "$WORK/rtabmap/build" -j "$JOBS"
-sudo cmake --install "$WORK/rtabmap/build"
-sudo ldconfig
+$SUDO cmake --install "$WORK/rtabmap/build"
+$SUDO ldconfig
 
 echo "building surmap-rtabmap-stream -> $BINARY"
 cmake -S "$REPO_ROOT/deploy/rtabmap-stream" -B "$WORK/stream-build" \

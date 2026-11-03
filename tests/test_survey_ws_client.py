@@ -12,8 +12,8 @@ from contextlib import asynccontextmanager
 
 import pytest
 
-from surmap.rpc.hosts.hypercorn import HypercornHost
 from surmap.rpc.description import ServerDescription
+from surmap.rpc.hosts.hypercorn import HypercornHost
 from surmap.slam.base import FrameResult
 from surmap.slam.regions import InMemoryRegionPointSource, RegionQuery, RegionResult
 from surmap.survey.cm5_main import build_description as cm5_description

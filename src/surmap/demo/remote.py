@@ -18,23 +18,25 @@ seams, so the playback/session code does not change shape:
 - `fetch_capabilities` — the unary `GetCapabilities` on either
   service, or None when the host does not answer; the demo renders
   only the panes a host reports.
+
+Every adapter talks to its server over one `SurveyConnection` (Connect
+over a WebSocket, asyncio), opened on first use and kept for the
+adapter's life. The demo's seams are synchronous, so each adapter runs
+its connection on an event loop of its own in a background thread.
+An address is anything `connect_url` accepts (`host:port`, `ws(s)://`,
+`http(s)://`); `token` is the server's bearer token, if it has one.
 """
 
 from __future__ import annotations
 
-import http.client
+import asyncio
+import concurrent.futures
 import io
-import json
-import socket
-import struct
 import threading
-from collections.abc import Iterator
-from typing import Any
+from collections.abc import AsyncIterator, Callable, Coroutine
+from typing import Any, TypeVar
 
 import numpy as np
-from h2.config import H2Configuration
-from h2.connection import H2Connection
-from h2.events import DataReceived, StreamEnded, StreamReset, WindowUpdated
 from numpy.typing import NDArray
 from PIL import Image
 
@@ -45,189 +47,107 @@ from surmap.slam.stream_protocol import Keypoint, MapUpdate, OdomUpdate, Rectifi
 from surmap.slam.streaming import MapCloud
 from surmap.survey.sam import RawFrame, SamDetection
 from surmap.survey.v1 import survey_pb2
+from surmap.survey.ws_client import SurveyConnection, SurveyService
 from surmap.types import Pose, StereoFramePair, Vec3
 
 _MAX_CLOUD_POINTS = 300_000
 
+# How long one exchange (a frame's detections or analysis) may take.
+_EXCHANGE_TIMEOUT_S = 60.0
+# How long closing waits for the WebSocket close handshake before dropping the socket.
+_CLOSE_TIMEOUT_S = 5.0
 
-def _frame_message(message: Any) -> bytes:
-    payload: bytes = message.SerializeToString()
-    return struct.pack(">BI", 0, len(payload)) + payload
-
-
-def _read_payloads(raw: bytes) -> list[bytes]:
-    payloads: list[bytes] = []
-    offset = 0
-    while offset < len(raw):
-        flag, length = struct.unpack(">BI", raw[offset : offset + 5])
-        payload = raw[offset + 5 : offset + 5 + length]
-        if flag == 2:
-            trailer = json.loads(payload or b"{}")
-            error = trailer.get("error") if isinstance(trailer, dict) else None
-            if error:
-                raise RuntimeError(f"wire error: {error.get('message', error)}")
-            break
-        payloads.append(payload)
-        offset += 5 + length
-    return payloads
+T = TypeVar("T")
 
 
-def _exchange(address: str, path: str, requests: list[Any], timeout: float = 60.0) -> list[bytes]:
-    """One send-all/read-all bidi exchange (config + frames in, replies out)."""
-    connection = http.client.HTTPConnection(address, timeout=timeout)
-    try:
-        connection.request(
-            "POST",
-            path,
-            body=b"".join(_frame_message(request) for request in requests),
-            headers={"content-type": "application/connect+proto"},
-        )
-        return _read_payloads(connection.getresponse().read())
-    finally:
-        connection.close()
+class _Link:
+    """One `SurveyConnection` on a private event loop thread, for synchronous callers."""
 
+    def __init__(self, address: str, token: str | None) -> None:
+        self._address = address
+        self._token = token
+        self._loop = asyncio.new_event_loop()
+        self._thread = threading.Thread(target=self._serve_loop, daemon=True)
+        self._thread.start()
+        self._connection: SurveyConnection | None = None
+        self._closing: asyncio.Event | None = None
+        self._holder: asyncio.Future[None] | None = None
 
-def _unary(address: str, path: str, request: Any, timeout: float) -> bytes:
-    connection = http.client.HTTPConnection(address, timeout=timeout)
-    try:
-        connection.request(
-            "POST",
-            path,
-            body=request.SerializeToString(),
-            headers={"content-type": "application/proto"},
-        )
-        response = connection.getresponse()
-        body = response.read()
-        if response.status != 200:
-            raise RuntimeError(f"unary {path} answered HTTP {response.status}")
-        return body
-    finally:
-        connection.close()
+    def _serve_loop(self) -> None:
+        try:
+            self._loop.run_forever()
+        finally:
+            self._loop.close()
+
+    def run(self, coro: Coroutine[Any, Any, T], timeout_s: float = _EXCHANGE_TIMEOUT_S) -> T:
+        """Run `coro` on the link's loop and wait for its result."""
+        return asyncio.run_coroutine_threadsafe(coro, self._loop).result(timeout_s)
+
+    def submit(self, coro: Coroutine[Any, Any, T]) -> concurrent.futures.Future[T]:
+        """Start `coro` on the link's loop without waiting for it."""
+        return asyncio.run_coroutine_threadsafe(coro, self._loop)
+
+    def call_soon(self, callback: Callable[[], None]) -> None:
+        self._loop.call_soon_threadsafe(callback)
+
+    async def connection(self) -> SurveyConnection:
+        """The link's connection, opened on first use (call on the link's loop)."""
+        if self._connection is None:
+            opened: asyncio.Future[SurveyConnection] = self._loop.create_future()
+            self._closing = asyncio.Event()
+            self._holder = self._loop.create_task(self._hold(opened, self._closing))
+            self._connection = await opened
+        return self._connection
+
+    async def _hold(self, opened: asyncio.Future[SurveyConnection], closing: asyncio.Event) -> None:
+        try:
+            async with SurveyConnection.open(self._address, token=self._token) as connection:
+                opened.set_result(connection)
+                await closing.wait()
+        except BaseException as error:
+            if not opened.done():
+                opened.set_exception(error)
+            raise
+
+    def close(self) -> None:
+        """Close the connection and stop the loop, without waiting: the close handshake
+        finishes on the link's own thread, so a caller on the server's loop cannot block it."""
+        if not self._loop.is_closed() and self._thread.is_alive():
+            asyncio.run_coroutine_threadsafe(self._shut_down(), self._loop)
+
+    async def _shut_down(self) -> None:
+        if self._closing is not None and self._holder is not None:
+            self._closing.set()
+            try:
+                await asyncio.wait_for(asyncio.shield(self._holder), _CLOSE_TIMEOUT_S)
+            except BaseException:
+                pass
+        current = asyncio.current_task()
+        others = [task for task in asyncio.all_tasks() if task is not current]
+        for task in others:
+            task.cancel()
+        await asyncio.gather(*others, return_exceptions=True)
+        self._loop.stop()
 
 
 def fetch_capabilities(
-    address: str, service: str, timeout: float = 3.0
+    address: str, service: SurveyService, timeout: float = 3.0, token: str | None = None
 ) -> survey_pb2.Capabilities | None:
     """A host's reported capabilities, or None when it does not answer."""
+
+    async def ask() -> survey_pb2.Capabilities:
+        async with SurveyConnection.open(address, token=token, open_timeout_s=timeout) as link:
+            return await asyncio.wait_for(link.capabilities(service), timeout)
+
     try:
-        raw = _unary(
-            address,
-            f"/surmap.survey.v1.{service}/GetCapabilities",
-            survey_pb2.CapabilitiesRequest(),
-            timeout,
-        )
-        return survey_pb2.Capabilities.FromString(raw)
+        return asyncio.run(ask())
     except Exception:
         return None
 
 
-class _SurveyStream:
-    """One long-lived `StreamSurvey` exchange over HTTP/2 (h2c).
-
-    The Connect sync/async clients cannot stream a request body
-    against the repo's Hypercorn host (their body writer fails
-    before the handler runs), so the survey stream — the one demo
-    flow that must interleave sends and receives — speaks h2c
-    directly: frames go out as they are played, point batches are
-    parsed off the same connection by the reader thread.
-    """
-
-    def __init__(self, address: str) -> None:
-        host, _, port = address.rpartition(":")
-        self._socket = socket.create_connection((host, int(port)), timeout=60.0)
-        self._socket.settimeout(None)
-        config = H2Configuration(client_side=True, header_encoding="utf-8")
-        self._conn = H2Connection(config=config)
-        self._lock = threading.Lock()
-        self._window_ready = threading.Condition(self._lock)
-        self._stream_id = 1
-        self._buffer = bytearray()
-        self._ended = False
-        with self._lock:
-            self._conn.initiate_connection()
-            self._conn.send_headers(
-                self._stream_id,
-                [
-                    (":method", "POST"),
-                    (":path", "/surmap.survey.v1.Cm5SurveyService/StreamSurvey"),
-                    (":scheme", "http"),
-                    (":authority", address),
-                    ("content-type", "application/connect+proto"),
-                    ("te", "trailers"),
-                ],
-            )
-            self._conn.increment_flow_control_window(1 << 24)
-            self._conn.increment_flow_control_window(1 << 24, stream_id=self._stream_id)
-            self._flush()
-
-    def _flush(self) -> None:
-        data = self._conn.data_to_send()
-        if data:
-            self._socket.sendall(data)
-
-    def send(self, message: survey_pb2.Cm5Request) -> None:
-        framed = _frame_message(message)
-        offset = 0
-        with self._window_ready:
-            while offset < len(framed):
-                window = self._conn.local_flow_control_window(self._stream_id)
-                if window <= 0:
-                    self._window_ready.wait(timeout=60.0)
-                    continue
-                chunk = framed[offset : offset + min(window, 16384)]
-                self._conn.send_data(self._stream_id, chunk)
-                self._flush()
-                offset += len(chunk)
-
-    def finish(self) -> None:
-        with self._lock:
-            self._conn.end_stream(self._stream_id)
-            self._flush()
-
-    def responses(self) -> Iterator[survey_pb2.Cm5Response]:
-        while not self._ended:
-            chunk = self._socket.recv(65536)
-            if not chunk:
-                return
-            with self._window_ready:
-                events = self._conn.receive_data(chunk)
-                self._flush()
-                for event in events:
-                    if isinstance(event, DataReceived):
-                        self._buffer += event.data
-                        self._conn.acknowledge_received_data(
-                            event.flow_controlled_length, event.stream_id
-                        )
-                    elif isinstance(event, WindowUpdated):
-                        self._window_ready.notify_all()
-                    elif isinstance(event, StreamEnded):
-                        self._ended = True
-                    elif isinstance(event, StreamReset):
-                        raise RuntimeError(f"survey stream reset: {event.error_code}")
-                self._flush()
-            yield from self._drain()
-
-    def _drain(self) -> Iterator[survey_pb2.Cm5Response]:
-        while len(self._buffer) >= 5:
-            flag, length = struct.unpack(">BI", bytes(self._buffer[:5]))
-            if len(self._buffer) < 5 + length:
-                return
-            payload = bytes(self._buffer[5 : 5 + length])
-            del self._buffer[: 5 + length]
-            if flag == 2:
-                trailer = json.loads(payload or b"{}")
-                error = trailer.get("error") if isinstance(trailer, dict) else None
-                if error:
-                    raise RuntimeError(f"wire error: {error.get('message', error)}")
-                self._ended = True
-                return
-            yield survey_pb2.Cm5Response.FromString(payload)
-
-    def close(self) -> None:
-        try:
-            self._socket.close()
-        except OSError:
-            pass
+async def _single(*messages: T) -> AsyncIterator[T]:
+    for message in messages:
+        yield message
 
 
 def _jpeg_bytes(rgb: NDArray[np.uint8]) -> bytes:
@@ -246,14 +166,17 @@ class RemoteCm5Backend:
         size: tuple[int, int],
         cam_yamls: tuple[str, str] | None = None,
         max_depth_m: float = 0.0,
+        token: str | None = None,
     ) -> None:
         self._address = address
+        self._token = token
         self._calibration = calibration
         self._size = size
         self._cam_yamls = cam_yamls
         self._max_depth_m = max_depth_m
-        self._stream: _SurveyStream | None = None
-        self._reader_thread: threading.Thread | None = None
+        self._link: _Link | None = None
+        self._requests: asyncio.Queue[survey_pb2.Cm5Request | None] | None = None
+        self._survey: concurrent.futures.Future[None] | None = None
         self._lock = threading.Lock()
         self._scene: list[Vec3] = []
         self._scene_frames: set[int] = set()
@@ -262,12 +185,18 @@ class RemoteCm5Backend:
         self._error: BaseException | None = None
         self._finished = False
 
-    def _ensure_stream(self) -> _SurveyStream:
-        if self._stream is not None:
-            return self._stream
-        stream = _SurveyStream(self._address)
+    def _ensure_stream(self) -> None:
+        if self._link is not None:
+            return
+        link = _Link(self._address, self._token)
+
+        async def new_queue() -> asyncio.Queue[survey_pb2.Cm5Request | None]:
+            return asyncio.Queue()
+
+        self._requests = link.run(new_queue())
+        self._link = link
         calibration = self._calibration
-        stream.send(
+        self._send(
             survey_pb2.Cm5Request(
                 config=survey_pb2.Cm5StreamConfig(
                     calibration=survey_pb2.StereoCalibration(
@@ -286,38 +215,48 @@ class RemoteCm5Backend:
                 )
             )
         )
-        self._stream = stream
-        self._reader_thread = threading.Thread(target=self._read, daemon=True)
-        self._reader_thread.start()
-        return stream
+        self._survey = link.submit(self._run(link, self._requests))
 
-    def _read(self) -> None:
-        assert self._stream is not None
+    def _send(self, message: survey_pb2.Cm5Request | None) -> None:
+        """Queue `message` on the survey stream; `None` ends the stream."""
+        assert self._link is not None and self._requests is not None
+        queue = self._requests
+        self._link.call_soon(lambda: queue.put_nowait(message))
+
+    async def _run(self, link: _Link, queue: asyncio.Queue[survey_pb2.Cm5Request | None]) -> None:
+        async def requests() -> AsyncIterator[survey_pb2.Cm5Request]:
+            while (message := await queue.get()) is not None:
+                yield message
+
         try:
-            for response in self._stream.responses():
-                kind = response.WhichOneof("kind")
-                if kind == "odom":
-                    self._store_odom(response.odom)
-                    continue
-                if kind != "points":
-                    continue
-                batch = response.points
-                if batch.designation != 1:
-                    continue
-                with self._lock:
-                    self._scene_frames.add(batch.frame_id)
-                    self._scene.extend(Vec3(point.x, point.y, point.z) for point in batch.points)
-                    if len(self._scene) > _MAX_CLOUD_POINTS:
-                        del self._scene[: len(self._scene) - _MAX_CLOUD_POINTS]
+            connection = await link.connection()
+            async for response in connection.stream_survey(requests()):
+                self._receive(response)
         except BaseException as exc:  # surfaced on the playback thread
             with self._lock:
                 self._error = exc
 
+    def _receive(self, response: survey_pb2.Cm5Response) -> None:
+        kind = response.WhichOneof("kind")
+        if kind == "odom":
+            self._store_odom(response.odom)
+            return
+        if kind != "points":
+            return
+        batch = response.points
+        if batch.designation != 1:
+            return
+        with self._lock:
+            self._scene_frames.add(batch.frame_id)
+            self._scene.extend(Vec3(point.x, point.y, point.z) for point in batch.points)
+            if len(self._scene) > _MAX_CLOUD_POINTS:
+                del self._scene[: len(self._scene) - _MAX_CLOUD_POINTS]
+
     def process_frame(self, frame: StereoFramePair) -> FrameResult:
-        stream = self._ensure_stream()
+        self._ensure_stream()
         width, height = self._size
         for channel, data in ((0, frame.left_data), (1, frame.right_data)):
-            stream.send(
+            self._send(
                 survey_pb2.Cm5Request(
                     frame=survey_pb2.RawVideoFrame(
                         frame_id=frame.frame_id,
@@ -408,23 +347,25 @@ class RemoteCm5Backend:
         return [pose for update in updates if (pose := update.map_pose or update.pose) is not None]
 
     def flush(self) -> list[FrameResult]:
-        if self._stream is not None and not self._finished:
+        if self._survey is not None and not self._finished:
             self._finished = True
-            self._stream.finish()
-            if self._reader_thread is not None:
-                self._reader_thread.join(timeout=120)
+            self._send(None)
+            try:
+                self._survey.result(timeout=120)
+            except concurrent.futures.TimeoutError:
+                pass
         with self._lock:
             if self._error is not None:
                 raise self._error
         return []
 
     def close(self) -> None:
-        if self._stream is not None:
+        if self._link is not None:
             try:
                 self.flush()
             except Exception:
                 pass
-            self._stream.close()
+            self._link.close()
 
     @property
     def dropped_frames(self) -> int:
@@ -453,8 +394,8 @@ class RemoteCm5Backend:
 class RemoteDetectionSource:
     """A `DetectionSource` served by a CM5's `StreamDetections`."""
 
-    def __init__(self, address: str) -> None:
-        self._address = address
+    def __init__(self, address: str, token: str | None = None) -> None:
+        self._link = _Link(address, token)
 
     def detect_tracked(self, frame_id: int, rgb: NDArray[np.uint8]) -> tuple[TrackedDetection, ...]:
         height, width = int(rgb.shape[0]), int(rgb.shape[1])
@@ -477,12 +418,14 @@ class RemoteDetectionSource:
                 )
             ),
         ]
-        payloads = _exchange(
-            self._address, "/surmap.survey.v1.Cm5SurveyService/StreamDetections", requests
-        )
+
+        async def exchange() -> list[survey_pb2.DetectionResponse]:
+            connection = await self._link.connection()
+            return [r async for r in connection.stream_detections(_single(*requests))]
+
         tracked: list[TrackedDetection] = []
-        for payload in payloads:
-            detections = survey_pb2.DetectionResponse.FromString(payload).detections
+        for response in self._link.run(exchange()):
+            detections = response.detections
             if detections.frame_id != frame_id:
                 continue
             for detection in detections.detections:
@@ -497,6 +440,9 @@ class RemoteDetectionSource:
                     )
                 )
         return tuple(tracked)
+
+    def close(self) -> None:
+        self._link.close()
 
 
 def _iou(a: tuple[float, ...], b: tuple[float, ...]) -> float:
@@ -519,8 +465,8 @@ class RemoteSamDetector:
     kept for the page's SAM status.
     """
 
-    def __init__(self, address: str, prompt: str = "object") -> None:
-        self._address = address
+    def __init__(self, address: str, prompt: str = "object", token: str | None = None) -> None:
+        self._link = _Link(address, token)
         self._prompt = prompt
         self.provider = ""
         self.device = ""
@@ -554,12 +500,14 @@ class RemoteSamDetector:
                 )
             ),
         ]
-        payloads = _exchange(
-            self._address, "/surmap.survey.v1.StationSamService/StreamAnalysis", requests
-        )
+
+        async def exchange() -> list[survey_pb2.StationResponse]:
+            connection = await self._link.connection()
+            return [r async for r in connection.stream_analysis(_single(*requests))]
+
         detections: list[SamDetection] = []
-        for payload in payloads:
-            frame_result = survey_pb2.StationResponse.FromString(payload).detections
+        for response in self._link.run(exchange()):
+            frame_result = response.detections
             if frame_result.frame_id != frame.frame_id:
                 continue
             if frame_result.provider:
@@ -604,4 +552,4 @@ class RemoteSamDetector:
         return tuple(output)
 
     def close(self) -> None:
-        pass
+        self._link.close()

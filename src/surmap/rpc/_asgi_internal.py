@@ -77,7 +77,10 @@ class _AsgiCollector:
                 self._result.headers[name.decode().lower()] = value.decode()
         elif message["type"] == "http.response.body":
             chunk = message.get("body", b"")
-            self._result.body_chunks.append(chunk)
+            # A streamed body is handed on as it arrives; keeping it too would hold a whole
+            # stream in memory. An error body is kept: it carries the Connect error.
+            if self._on_body_chunk is None or self._result.status != HTTPStatus.OK:
+                self._result.body_chunks.append(chunk)
             if self._on_body_chunk is not None and chunk:
                 await self._on_body_chunk(chunk)
 

@@ -27,9 +27,16 @@ from surmap.rpc.compose import Brick
 from surmap.rpc.description import ServiceModule
 from surmap.slam.base import FrameResult, SlamBackend
 from surmap.slam.fake import InMemorySlamBackend
-from surmap.slam.regions import RegionPointSource, RegionQuery, RegionStatus, invalid_reason
+from surmap.slam.regions import (
+    RegionPointSource,
+    RegionQuery,
+    RegionStatus,
+    StreamRegionRouter,
+    invalid_reason,
+)
 from surmap.slam.stream_protocol import KeyframeUpdate, OdomUpdate, Rectification
 from surmap.survey.designations import object_designation, video_designation
+from surmap.survey.gps import PoseTimeline, gps_anchor
 from surmap.survey.moving_stream import _encoding_name as _encoding_name
 from surmap.survey.moving_stream import stream_moving_areas as stream_moving_areas
 from surmap.survey.object_points import InMemoryObjectPointSource, ObjectPointSource
@@ -184,16 +191,22 @@ async def stream_survey(
     emitter: IncrementalPointEmitter | None = None,
     stereo: StereoReconstructor | None = None,
     slam_factory: SlamFactory | None = None,
+    stream_regions: StreamRegionRouter | None = None,
 ) -> AsyncIterator[survey_pb2.Cm5Response]:
-    """Serve one CM5 survey stream: config first, then per-channel frames."""
+    """Serve one CM5 survey stream: config first, then per-channel frames and GPS fixes.
+
+    A backend `slam_factory` builds for this stream answers `stream_regions` while it is open.
+    """
     owned: list[SlamBackend] = []
     try:
         async for response in _stream_survey(
-            requests, slam, objects, emitter, stereo, slam_factory, owned
+            requests, slam, objects, emitter, stereo, slam_factory, owned, stream_regions
         ):
             yield response
     finally:
         if owned:
+            if stream_regions is not None and isinstance(owned[0], RegionPointSource):
+                stream_regions.close(owned[0])
             owned[0].close()
 
 
@@ -205,6 +218,7 @@ async def _stream_survey(
     stereo: StereoReconstructor | None = None,
     slam_factory: SlamFactory | None = None,
     owned: list[SlamBackend] | None = None,
+    stream_regions: StreamRegionRouter | None = None,
 ) -> AsyncIterator[survey_pb2.Cm5Response]:
     if emitter is None:
         emitter = IncrementalPointEmitter()
@@ -213,6 +227,7 @@ async def _stream_survey(
     pairs: dict[int, StereoFramePair] = {}
     odom_pending: set[int] = set()
     rectification_sent = False
+    timeline = PoseTimeline()
 
     def drain_odom() -> list[survey_pb2.Cm5Response]:
         """Odometry responses for pending frames whose odometry landed."""
@@ -232,6 +247,9 @@ async def _stream_survey(
                 odom_pending.discard(frame_id)
                 continue
             odom_pending.discard(frame_id)
+            posed = update.map_pose or update.pose
+            if posed is not None:
+                timeline.add(frame_id, update.t_ns, posed.position)
             rectification: Rectification | None = None
             if not rectification_sent:
                 candidate = getattr(slam, "rectification", None)
@@ -251,6 +269,8 @@ async def _stream_survey(
                     slam = built
                     if owned is not None:
                         owned.append(built)
+                    if stream_regions is not None and isinstance(built, RegionPointSource):
+                        stream_regions.open(built)
             # Whatever the backend already maps predates this stream:
             # mark it sent so only this stream's own points go out,
             # and drain keyframe updates queued by earlier streams.
@@ -260,6 +280,9 @@ async def _stream_survey(
             poll_fn = getattr(slam, "poll_updates", None)
             if callable(poll_fn):
                 poll_fn()
+            continue
+        if request.WhichOneof("kind") == "gps":
+            yield gps_anchor(request.gps, timeline)
             continue
         if request.WhichOneof("kind") != "frame":
             continue
@@ -317,6 +340,7 @@ async def _stream_survey(
                     )
         if result.pose is None:
             continue
+        timeline.add(pair.frame_id, pair.t_ns, result.pose.position)
         scene_points = list(result.static_points)
         calibration = config.calibration
         rig: StereoRig | None = None
@@ -488,8 +512,14 @@ def cm5_service_module(
     moving_areas: bool = True,
     slam_label: str = "inmemory",
     slam_factory: SlamFactory | None = None,
+    stream_regions: bool = False,
 ) -> ServiceModule[Any]:
-    """The `surmap.rpc` service module mounting `Cm5SurveyService`."""
+    """The `surmap.rpc` service module mounting `Cm5SurveyService`.
+
+    With `stream_regions`, region queries no default `regions` source answers go to the
+    backends `slam_factory` built for the survey streams open at the time.
+    """
+    router = StreamRegionRouter() if stream_regions else None
     object_points_enabled = objects is not None
     default_slam: SlamBackend = slam if slam is not None else InMemorySlamBackend()
     default_objects: ObjectPointSource = (
@@ -510,6 +540,7 @@ def cm5_service_module(
                 effective_objects,
                 stereo=effective_stereo,
                 slam_factory=slam_factory,
+                stream_regions=router,
             ):
                 yield response
 
@@ -536,7 +567,9 @@ def cm5_service_module(
             ):
                 yield response
 
-        effective_regions: RegionPointSource | None = getattr(ctx, "regions", None) or regions
+        effective_regions: RegionPointSource | None = (
+            getattr(ctx, "regions", None) or regions or router
+        )
 
         async def region_points_handler(
             requests: AsyncIterable[survey_pb2.RegionQuery], _ctx: Any

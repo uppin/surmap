@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import socket
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -26,6 +27,26 @@ def _looks_like_rpc(path: str) -> bool:
     return len(segments) == 2 and "." in segments[0]
 
 
+def _authorized(scope: dict[str, Any], token: str | None) -> bool:
+    """Whether the request carries `Authorization: Bearer <token>` (always, when no token)."""
+    if token is None:
+        return True
+    expected = f"Bearer {token}".encode()
+    for name, value in scope.get("headers", ()):
+        if name.lower() == b"authorization" and hmac.compare_digest(value, expected):
+            return True
+    return False
+
+
+async def _refuse_websocket(scope: dict[str, Any], send: Any) -> None:
+    """Refuse the upgrade with HTTP 401 where the server supports denial responses, else close."""
+    if "websocket.http.response" in scope.get("extensions", {}):
+        await send({"type": "websocket.http.response.start", "status": 401, "headers": []})
+        await send({"type": "websocket.http.response.body", "body": b"", "more_body": False})
+        return
+    await send({"type": "websocket.close", "code": 1008})
+
+
 async def _send_response(send: Any, response: HttpResponse) -> None:
     headers = [(k.lower().encode(), v.encode()) for k, v in response.headers.items()]
     await send({"type": "http.response.start", "status": response.status, "headers": headers})
@@ -41,7 +62,9 @@ def build_listener_app(
     connect_apps: Mapping[str, ConnectASGIApplication[Any]],
     http_handlers: Mapping[tuple[str, str], HttpHandler],
     websocket_handlers: Mapping[str, WebSocketAsgiApp] | None = None,
+    auth_token: str | None = None,
 ) -> AsgiApp:
+    """`auth_token`, when set, guards Connect calls and WebSocket upgrades (see `_authorized`)."""
     paths_by_method: dict[str, set[str]] = {}
     for method, path in http_handlers:
         paths_by_method.setdefault(path, set()).add(method)
@@ -54,6 +77,9 @@ def build_listener_app(
             ws_app = websockets.get(path)
             if ws_app is None:
                 await send({"type": "websocket.close", "code": 1008})
+                return
+            if not _authorized(scope, auth_token):
+                await _refuse_websocket(scope, send)
                 return
             await ws_app(scope, receive, send)
             return
@@ -70,6 +96,9 @@ def build_listener_app(
             connect_app = connect_apps.get(path)
             if connect_app is None:
                 await _send_plain(send, status=404, body=b"", headers={})
+                return
+            if not _authorized(scope, auth_token):
+                await _send_plain(send, status=401, body=b"", headers={})
                 return
             await connect_app(scope, receive, send)
             return
@@ -122,6 +151,7 @@ async def start_hypercorn(
     http_handlers: Mapping[tuple[str, str], HttpHandler],
     websocket_handlers: Mapping[str, WebSocketAsgiApp] | None = None,
     app: AsgiApp | None = None,
+    auth_token: str | None = None,
 ) -> tuple[_HypercornServer, int]:
     from hypercorn.asyncio import serve
     from hypercorn.config import Config
@@ -131,6 +161,7 @@ async def start_hypercorn(
             connect_apps=connect_apps,
             http_handlers=http_handlers,
             websocket_handlers=websocket_handlers,
+            auth_token=auth_token,
         )
     bind_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     bind_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

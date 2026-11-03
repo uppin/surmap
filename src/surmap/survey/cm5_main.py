@@ -14,7 +14,14 @@ EuRoC `sensor.yaml` files under `--calibration-dir`:
 arrive while the stream runs (the batch sidecar only has them at the
 end), and the same sidecar serves `StreamRegionPoints` — dense points
 under a SAM polygon on a recent frame. Frames are resized to
-`--frame-size` (default 376x240) for it.
+`--frame-size` (default 376x240) for it. Without `--calibration-dir` there
+is no default backend: every stream brings its camera definitions in its
+config (a simulated drone does), and region queries go to the backend of
+the stream that holds the frame.
+
+Connect is served over HTTP and over one WebSocket at `/connect`.
+`--auth-token` (default `$SURMAP_SURVEY_TOKEN`) requires
+`Authorization: Bearer <token>` on both; health stays open.
 """
 
 from __future__ import annotations
@@ -38,6 +45,7 @@ from surmap.slam.sidecar import PINNED_RTABMAP_IMAGE, SidecarRtabmapBackend
 from surmap.slam.stream_process import StreamProcess
 from surmap.slam.streaming import StreamingRtabmapBackend
 from surmap.survey.cm5_server import SlamFactory, cm5_service_module
+from surmap.survey.endpoint import CONNECT_PATH, survey_token
 from surmap.survey.object_points import ObjectPointSource
 from surmap.survey.stereo import StereoReconstructor
 from surmap.survey.v1 import survey_pb2
@@ -73,11 +81,14 @@ def build_description(
     moving_areas: bool = True,
     slam_factory: SlamFactory | None = None,
     calibration_vision: CheckerboardVision | None = None,
+    stream_regions: bool = False,
+    slam_label: str | None = None,
 ) -> ServerDescription[None]:
-    """The CM5 server's description: survey service plus health routes."""
+    """The CM5 server's description: survey service plus health routes, Connect also over a
+    WebSocket at `CONNECT_PATH`. `slam_label` names the SLAM kind when no `slam` shows it."""
     if stereo is None and use_stereo:
         stereo = StereoReconstructor()
-    slam_label = (
+    slam_label = slam_label or (
         "streaming"
         if isinstance(slam, StreamingRtabmapBackend)
         else "sidecar"
@@ -95,6 +106,7 @@ def build_description(
             moving_areas=moving_areas,
             slam_label=slam_label,
             slam_factory=slam_factory,
+            stream_regions=stream_regions,
         ),
     ]
     if calibration_vision is not None:
@@ -105,6 +117,7 @@ def build_description(
         services=tuple(services),
         http_routes=health_routes(lambda: False),
         closeables=lambda _ctx: closeables,
+        connect_websocket_path=CONNECT_PATH,
     )
 
 
@@ -194,9 +207,16 @@ def _frame_size(text: str) -> tuple[int, int]:
         raise argparse.ArgumentTypeError(f"expected WIDTHxHEIGHT, got {text!r}") from exc
 
 
-async def serve(host: str, port: int, description: ServerDescription[None] | None = None) -> None:
+async def serve(
+    host: str,
+    port: int,
+    description: ServerDescription[None] | None = None,
+    auth_token: str | None = None,
+) -> None:
     """Serve the CM5 description until cancelled; always stop the host."""
-    server = HypercornHost(description or build_description(), None, host=host, port=port)
+    server = HypercornHost(
+        description or build_description(), None, host=host, port=port, auth_token=auth_token
+    )
     await server.start()
     try:
         await asyncio.Event().wait()
@@ -215,13 +235,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument(
+        "--auth-token",
+        default=None,
+        help="bearer token required on Connect calls (default: $SURMAP_SURVEY_TOKEN; none: open)",
+    )
+    parser.add_argument(
         "--slam-backend", choices=("inmemory", "sidecar", "streaming"), default="inmemory"
     )
     parser.add_argument(
         "--calibration-dir",
         type=Path,
         default=None,
-        help="EuRoC dataset dir holding mav0/{cam0,cam1,imu0} for the sidecar backend",
+        help="EuRoC dataset dir holding mav0/{cam0,cam1,imu0}: the sidecar backend needs it; "
+        "without it the streaming backend takes each stream's camera definitions",
     )
     parser.add_argument("--rtabmap-image", default=PINNED_RTABMAP_IMAGE)
     parser.add_argument(
@@ -294,10 +320,26 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def describe(argv: list[str] | None = None) -> ServerDescription[None]:
+    """The description `main` would serve for this command line."""
+    parser = build_parser()
+    return _description(parser, parser.parse_args(argv))
+
+
 def main(argv: list[str] | None = None) -> None:
-    """Parse `--host`/`--port`/`--slam-backend` and serve until signalled."""
+    """Parse the command line and serve until signalled."""
     parser = build_parser()
     args = parser.parse_args(argv)
+    description = _description(parser, args)
+    try:
+        asyncio.run(serve(args.host, args.port, description, survey_token(args.auth_token)))
+    except KeyboardInterrupt:
+        pass
+
+
+def _description(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> ServerDescription[None]:
     detections: DetectionSource | None = None
     objects: ObjectPointSource | None = None
     if args.detector == "coral":
@@ -315,7 +357,7 @@ def main(argv: list[str] | None = None) -> None:
         from surmap.calibration.opencv_sidecar import OpenCvSidecarVision
 
         calibration_vision = OpenCvSidecarVision()
-    description = None
+    description: ServerDescription[None] | None = None
     if args.slam_backend == "sidecar":
         if args.calibration_dir is None:
             parser.error("--slam-backend sidecar requires --calibration-dir")
@@ -330,13 +372,15 @@ def main(argv: list[str] | None = None) -> None:
             calibration_vision=calibration_vision,
         )
     elif args.slam_backend == "streaming":
-        if args.calibration_dir is None:
-            parser.error("--slam-backend streaming requires --calibration-dir")
-        live = streaming_backend(
-            args.calibration_dir,
-            args.frame_size,
-            region_buffer_s=args.region_buffer_s,
-            native_binary=args.rtabmap_native,
+        live = (
+            streaming_backend(
+                args.calibration_dir,
+                args.frame_size,
+                region_buffer_s=args.region_buffer_s,
+                native_binary=args.rtabmap_native,
+            )
+            if args.calibration_dir is not None
+            else None
         )
 
         def stream_slam_factory(
@@ -347,6 +391,11 @@ def main(argv: list[str] | None = None) -> None:
             # calibrated for it, closed with the stream; a stream
             # without them runs on the configured backend above.
             if not (config.cam0_yaml and config.cam1_yaml):
+                if live is None:
+                    raise ValueError(
+                        "this CM5 has no --calibration-dir: send cam0_yaml and cam1_yaml "
+                        "in the stream config"
+                    )
                 return None
             calibration = config.calibration
             return StreamingRtabmapBackend(
@@ -368,6 +417,8 @@ def main(argv: list[str] | None = None) -> None:
             moving_areas=args.moving_areas,
             slam_factory=stream_slam_factory,
             calibration_vision=calibration_vision,
+            stream_regions=args.region_points,
+            slam_label="streaming",
         )
     elif detections is not None:
         description = build_description(
@@ -376,12 +427,11 @@ def main(argv: list[str] | None = None) -> None:
             moving_areas=args.moving_areas,
             calibration_vision=calibration_vision,
         )
-    if description is None and not args.moving_areas:
-        description = build_description(moving_areas=False, calibration_vision=calibration_vision)
-    try:
-        asyncio.run(serve(args.host, args.port, description))
-    except KeyboardInterrupt:
-        pass
+    if description is None:
+        description = build_description(
+            moving_areas=args.moving_areas, calibration_vision=calibration_vision
+        )
+    return description
 
 
 if __name__ == "__main__":

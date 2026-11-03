@@ -16,6 +16,10 @@ verifies the output:
 
     uv run python scripts/fetch_rtabmap_fixture.py
     uv run python scripts/verify_station.py 10.88.77.10:8081 --expect-device gpu
+    uv run python scripts/verify_station.py wss://<station-host>/connect --token <token>
+
+The stream goes over the server's Connect WebSocket (`/connect`); the
+token defaults to `$SURMAP_SURVEY_TOKEN`.
 
 Exits 0 only when every check passes. No target is stored in the
 repo: the address is a CLI argument, as with the deploy scripts.
@@ -24,18 +28,20 @@ repo: the address is a CLI argument, as with the deploy scripts.
 from __future__ import annotations
 
 import argparse
-import http.client
+import asyncio
 import json
-import struct
 import sys
 import time
 import urllib.request
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from surmap.survey.endpoint import survey_token  # noqa: E402
 from surmap.survey.v1 import survey_pb2  # noqa: E402
+from surmap.survey.ws_client import SurveyConnection, health_url  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "euroc_v101_rtabmap"
@@ -142,34 +148,18 @@ def device_indicator(responses: list[survey_pb2.StationResponse]) -> str:
     return f"{kind.upper()} (provider={provider}, device={device})"
 
 
-def _frame_message(message: survey_pb2.StationRequest) -> bytes:
-    payload = message.SerializeToString()
-    return struct.pack(">BI", 0, len(payload)) + payload
+def _stream_analysis(
+    address: str, requests: list[survey_pb2.StationRequest], token: str | None
+) -> list[survey_pb2.StationResponse]:
+    async def each() -> AsyncIterator[survey_pb2.StationRequest]:
+        for request in requests:
+            yield request
 
+    async def run() -> list[survey_pb2.StationResponse]:
+        async with SurveyConnection.open(address, token=token) as connection:
+            return [r async for r in connection.stream_analysis(each())]
 
-def _post_stream(address: str, requests: list[survey_pb2.StationRequest]) -> list[bytes]:
-    body = b"".join(_frame_message(request) for request in requests)
-    connection = http.client.HTTPConnection(address, timeout=300)
-    try:
-        connection.request(
-            "POST",
-            "/surmap.survey.v1.StationSamService/StreamAnalysis",
-            body=body,
-            headers={"content-type": "application/connect+proto"},
-        )
-        raw = connection.getresponse().read()
-    finally:
-        connection.close()
-    payloads: list[bytes] = []
-    offset = 0
-    while offset < len(raw):
-        flag, length = struct.unpack(">BI", raw[offset : offset + 5])
-        payload = raw[offset + 5 : offset + 5 + length]
-        if flag == 2:
-            break
-        payloads.append(payload)
-        offset += 5 + length
-    return payloads
+    return asyncio.run(run())
 
 
 def verify(
@@ -179,8 +169,9 @@ def verify(
     *,
     min_frames_with_detections: int = 1,
     expect_device: str = "any",
+    token: str | None = None,
 ) -> VerifyReport:
-    """Feed the demo stream to the station at `address`.
+    """Feed the demo stream to the station at `address` (see `connect_url`).
 
     One check per concern, plus the analysis frame rate. The
     accelerator check reads the GPU/CPU indication from the responses
@@ -189,7 +180,7 @@ def verify(
     results: list[CheckResult] = []
     rates: list[Rate] = []
     try:
-        with urllib.request.urlopen(f"http://{address}/health/is_alive", timeout=10) as response:
+        with urllib.request.urlopen(health_url(address), timeout=10) as response:
             status = int(response.status)  # type: ignore[attr-defined]
         results.append(CheckResult("health", status == 200, f"GET /health/is_alive -> {status}"))
     except Exception as exc:  # a dead server fails every later check too
@@ -228,15 +219,22 @@ def verify(
             )
         )
     started = time.perf_counter()
-    payloads = _post_stream(address, requests)
+    try:
+        responses = _stream_analysis(address, requests, token)
+        stream_error = ""
+    except Exception as exc:  # the server refused or broke the stream: the check fails
+        responses, stream_error = [], f"StreamAnalysis failed: {exc}"
     rates.append(Rate("station-analysis", len(timestamps), time.perf_counter() - started))
-    responses = [survey_pb2.StationResponse.FromString(payload) for payload in payloads]
 
-    failures = check_analysis(
-        responses,
-        width=FRAME_WIDTH,
-        height=FRAME_HEIGHT,
-        min_frames_with_detections=min_frames_with_detections,
+    failures = (
+        [stream_error]
+        if stream_error
+        else check_analysis(
+            responses,
+            width=FRAME_WIDTH,
+            height=FRAME_HEIGHT,
+            min_frames_with_detections=min_frames_with_detections,
+        )
     )
     with_detections = sum(1 for r in responses if r.detections.detections)
     results.append(
@@ -264,7 +262,13 @@ def verify(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("address", help="station server address, e.g. 10.88.77.10:8081")
+    parser.add_argument(
+        "address",
+        help="station server: host:port, or a ws(s):// / http(s):// URL, e.g. 10.88.77.10:8081",
+    )
+    parser.add_argument(
+        "--token", default=None, help="bearer token (default: $SURMAP_SURVEY_TOKEN)"
+    )
     parser.add_argument("--fixture", type=Path, default=DEFAULT_FIXTURE)
     parser.add_argument("--frames", type=int, default=6)
     parser.add_argument("--min-detection-frames", type=int, default=1)
@@ -276,6 +280,7 @@ def main(argv: list[str] | None = None) -> int:
         args.frames,
         min_frames_with_detections=args.min_detection_frames,
         expect_device=args.expect_device,
+        token=survey_token(args.token),
     )
     for result in report.checks:
         print(f"{'PASS' if result.ok else 'FAIL'} {result.name}: {result.detail}")

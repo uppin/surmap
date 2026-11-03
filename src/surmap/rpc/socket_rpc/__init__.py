@@ -12,6 +12,7 @@ from surmap.rpc.socket_rpc.peer import (
     SocketRpcError,
     SocketRpcPeer,
 )
+from surmap.rpc.socket_rpc.serve import connect_websocket_app
 from surmap.rpc.socket_rpc.websocket import AsgiWebSocketFrames, WebSocketFrames
 
 __all__ = [
@@ -21,4 +22,5 @@ __all__ = [
     "SocketRpcError",
     "SocketRpcPeer",
     "WebSocketFrames",
+    "connect_websocket_app",
 ]

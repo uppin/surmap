@@ -371,6 +371,9 @@ class SocketRpcPeer:
                     if end:
                         stream_ended = True
                         return
+                # Forget what was sent, so a long stream holds at most one partial message.
+                del stream_buffer[:stream_offset]
+                stream_offset = 0
 
             async def on_body_chunk(chunk: bytes) -> None:
                 stream_buffer.extend(chunk)

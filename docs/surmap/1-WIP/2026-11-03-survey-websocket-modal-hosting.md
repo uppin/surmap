@@ -13,25 +13,26 @@ contract change (GPS on the wire), and two new Modal deploy targets; touches `su
 
 - [wf 1] ✅ 2026-11-03 `/plan-red` Plan — changeset, initial discovery · this file + discovery companion
 - [wf 2] ✅ 2026-11-03 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 30 red (23 failing + 3 modules not importable), 17 unchanged green
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] `surmap.rpc`: Connect-over-WebSocket route that serves a host's composed Connect apps (`HypercornHost(connect_websocket_path=...)`)
-  - [ ] `surmap.rpc`: hypercorn pings WebSockets (`websocket_ping_interval`) so an idle socket survives an idle-cutting proxy
-  - [ ] `surmap.rpc`: bearer-token check on Connect HTTP and the WebSocket upgrade; health routes exempt
-  - [ ] `surmap.survey.ws_client`: asyncio client — dial `ws://` / `wss://` with the token, typed CM5 and station calls over one `SocketRpcPeer`
-  - [ ] Survey proto: `GpsFix` on `Cm5Request`, `GpsAnchorOut` on `Cm5Response`; regenerate bindings
-  - [ ] CM5 `StreamSurvey`: each fix answered with an anchor carrying the map position of the pose nearest in time
-  - [ ] `cm5_main` / `station_main`: serve `/connect` over WebSocket, `--auth-token` / `SURMAP_SURVEY_TOKEN`
-  - [ ] `cm5_main.describe(argv)`: `--slam-backend streaming` without `--calibration-dir` — every stream brings its camera definitions (no default backend)
-  - [ ] `StreamRegionPoints` answered by the open survey stream's own backend (`build_description(stream_regions=True)`)
-  - [ ] `surmap.demo.remote` on the asyncio WebSocket client (h2c and `http.client` paths removed); sync ports bridged to one event-loop thread
-  - [ ] `scripts/verify_cm5.py` / `scripts/verify_station.py` on the WebSocket client, URL addresses, `--token`
-  - [ ] `scripts/build_rtabmap_native.sh` runs as root without `sudo` (image builds)
-  - [ ] Modal apps `modal_cm5_app.py` (CPU, native RTAB-Map) and `modal_station_app.py` (GPU, SAM 3.1): `web_server`, one container, token secret
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · 31 red → green; full suite 1778 passed, 10 skipped, 1 pre-existing (`test_survey_cm5_rtabmap_e2e`, fails on untouched main)
+  - [x] `surmap.rpc`: Connect-over-WebSocket route that serves a host's composed Connect apps (`ServerDescription.connect_websocket_path`, `socket_rpc.connect_websocket_app`)
+  - [x] `surmap.rpc`: keepalive — the route sends an empty socket frame every `websocket_keepalive_s` (hypercorn's own pings linger up to one interval after close and hold shutdown for its 3 s graceful timeout)
+  - [x] `surmap.rpc`: bearer-token check on Connect HTTP and the WebSocket upgrade (401 via the ASGI denial response); health routes exempt
+  - [x] `surmap.rpc.socket_rpc`: a long streamed call no longer holds every reply until it ends (collector and peer buffer trimmed) — found during green, 100 MiB stream peaked at 401 MiB before
+  - [x] `surmap.survey.ws_client`: asyncio client — dial `ws://` / `wss://` with the token, typed CM5 and station calls over one `SocketRpcPeer`
+  - [x] Survey proto: `GpsFix` on `Cm5Request`, `GpsAnchorOut` on `Cm5Response`; regenerate bindings
+  - [x] CM5 `StreamSurvey`: each fix answered with an anchor carrying the map position of the pose nearest in time
+  - [x] `cm5_main` / `station_main`: serve `/connect` over WebSocket, `--auth-token` / `SURMAP_SURVEY_TOKEN`
+  - [x] `cm5_main.describe(argv)`: `--slam-backend streaming` without `--calibration-dir` — every stream brings its camera definitions (no default backend)
+  - [x] `StreamRegionPoints` answered by the open survey stream's own backend (`build_description(stream_regions=True)`)
+  - [x] `surmap.demo.remote` on the asyncio WebSocket client (h2c and `http.client` paths removed); each adapter runs its connection on its own event-loop thread
+  - [x] `scripts/verify_cm5.py` / `scripts/verify_station.py` on the WebSocket client, URL addresses, `--token`; a refused stream fails its check instead of crashing
+  - [x] `scripts/build_rtabmap_native.sh` runs as root without `sudo` (image builds)
+  - [x] Modal apps `modal_cm5_app.py` (CPU, native RTAB-Map) and `modal_station_app.py` (GPU, SAM 3.1): `web_server`, one container, token secret; commands in `surmap.survey.modal_hosting`
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs, then open the PR ready ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/modal.md` — hosting the CM5 sim and the station, the token secret, URLs
   - [ ] `docs/deployment.md` — WebSocket endpoint, auth flag, verify scripts' URL form
-  - [ ] `docs/connectrpc.md` — the WebSocket route, keepalive, auth
+  - [ ] `docs/connectrpc.md` — the WebSocket route, keepalive, auth, bounded memory on long streams
   - [ ] `docs/architecture.md` §10 — transport and GPS on the Board API
   - [ ] Close `src/surmap/docs/todo/2026-10-27-gps-on-survey-wire-proto.md`
   - [ ] Changelog entry in `docs/surmap/changelog/`
@@ -130,6 +131,10 @@ Out:
 | `src/surmap/demo/remote.py` | WebSocket client; h2c and `http.client` removed |
 | `scripts/verify_cm5.py`, `scripts/verify_station.py` | WebSocket client, URLs, `--token` |
 | `scripts/build_rtabmap_native.sh` | `sudo` only when not root |
+| `src/surmap/rpc/_asgi_internal.py`, `src/surmap/rpc/socket_rpc/peer.py` | streamed replies forwarded and forgotten, not held until the call ends |
+| `src/surmap/survey/gps.py`, `src/surmap/survey/endpoint.py`, `src/surmap/slam/regions.py` (`StreamRegionRouter`) (new / extended) | GPS anchoring, endpoint constants, per-stream region routing |
+| `src/surmap/survey/modal_hosting.py` (new) | what the Modal apps run (typed, tested) |
+| `pyproject.toml` | the two new Modal app modules join `modal_sam_app` in the mypy override (CI has no `modal`) |
 | `src/surmap/survey/modal_cm5_app.py`, `modal_station_app.py` (new) | Modal deploy targets |
 
 ## Verification
@@ -187,6 +192,7 @@ Evidence: the scripts' output (rates, device line), the stream's duration.
 - `tests/test_survey_region_points.py` — the live mode without a calibration dir serves streaming SLAM and region points; the sidecar mode still needs one (replaces "the live mode needs a calibration dir", a requirement this change lifts)
 - `tests/test_demo_remote.py` — existing scenarios over the WebSocket endpoint; the detection source reaches a token-guarded CM5
 - `tests/test_verify_cm5.py`, `tests/test_verify_station.py` — the server-backed checks over the WebSocket endpoint
+- `tests/rpc/unit/socket_rpc/test_socket_rpc_long_streams.py` — a 100 MiB bidi stream keeps the serving side under 32 MiB peak (added in green: the leak was found while wiring the transport)
 - `tests/test_modal_survey_apps.py` — both app files define `app` and a `web_server` function with `max_containers=1`, read the `surmap-survey` secret, and run the right main with `/connect`
 
 ## Decisions & Trade-offs

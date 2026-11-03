@@ -62,13 +62,15 @@ def _is_literal(node: ast.expr) -> bool:
 
 def test_the_cm5_command_serves_the_simulated_drone_on_every_interface() -> None:
     # Given the command the CM5 app runs
-    args = cm5_parser().parse_args(cm5_command(rtabmap_binary="/opt/rtabmap/surmap-rtabmap-stream")[3:])
+    args = cm5_parser().parse_args(
+        cm5_command(rtabmap_binary="/opt/rtabmap/surmap-rtabmap-stream")[3:]
+    )
 
     # Then it binds all interfaces on the app's port, runs RTAB-Map natively, and has no Coral
     assert (args.host, args.port) == ("0.0.0.0", CM5_PORT)
     assert (args.slam_backend, args.rtabmap_native) == (
         "streaming",
-        "/opt/rtabmap/surmap-rtabmap-stream",
+        Path("/opt/rtabmap/surmap-rtabmap-stream"),
     )
     assert args.detector == "none"
 
@@ -79,7 +81,7 @@ def test_the_station_command_serves_sam_on_every_interface() -> None:
 
     # Then it binds all interfaces on the app's port and runs SAM 3.1 on the GPU
     assert (args.host, args.port) == ("0.0.0.0", STATION_PORT)
-    assert args.detector == "sam31"
+    assert args.detector == "sam31-torch"
 
 
 @pytest.mark.parametrize("command", [cm5_command(rtabmap_binary="/bin/x"), station_command()])

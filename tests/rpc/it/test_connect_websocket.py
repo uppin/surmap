@@ -1,9 +1,9 @@
 """A host serves its Connect services over one WebSocket, on real sockets.
 
 The host mounts every composed service on `connect_websocket_path`; a client dials it with the
-`websockets` library and calls through a dialer `SocketRpcPeer`. The host pings its sockets so a
-proxy that drops idle connections keeps them, and a bearer token, when set, guards both Connect
-over HTTP and the WebSocket upgrade — the health route stays open.
+`websockets` library and calls through a dialer `SocketRpcPeer`. The host keeps its sockets alive,
+so a proxy that drops idle connections keeps them, and a bearer token, when set, guards both
+Connect over HTTP and the WebSocket upgrade — the health route stays open.
 """
 
 from __future__ import annotations
@@ -169,7 +169,9 @@ class _IdleCuttingProxy:
     async def _relay(self, client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter) -> None:
         upstream_r, upstream_w = await asyncio.open_connection("127.0.0.1", self._upstream_port)
 
-        async def pump(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, idle: bool) -> None:
+        async def pump(
+            reader: asyncio.StreamReader, writer: asyncio.StreamWriter, idle: bool
+        ) -> None:
             while True:
                 if idle:
                     chunk = await asyncio.wait_for(reader.read(65536), self._idle_s)
@@ -195,10 +197,10 @@ class _IdleCuttingProxy:
 
 
 async def test_an_idle_socket_outlives_a_proxy_that_drops_idle_connections() -> None:
-    # Given a host that pings its sockets every 0.2 s, behind a proxy that drops a connection
-    # once the server side was silent for 1 s
+    # Given a host that keeps its sockets alive every 0.2 s, behind a proxy that drops a
+    # connection once the server side was silent for 1 s
     service = echo_service()
-    async with _serving(service, websocket_ping_interval_s=0.2) as port:
+    async with _serving(service, websocket_keepalive_s=0.2) as port:
         proxy = _IdleCuttingProxy(port, idle_s=1.0)
         await proxy.start()
         try:
