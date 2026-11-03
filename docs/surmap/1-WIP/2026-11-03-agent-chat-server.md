@@ -17,13 +17,13 @@
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Milestone 1: `ChatHub` — conversations, one `AgentSession` each, event fan-out to `StreamTurn` / `WatchConversation` subscribers
-  - [ ] Milestone 2: `ChatService` handlers (`StreamTurn`, `WatchConversation`, `Steer`, `CancelTurn`, `ListModels`, `GetConversation`) and runtime-event → `TurnEvent` mapping
-  - [ ] Milestone 3: tool binding — `SurveyTools` handlers (n7) + job tools (n4) as agent tools; images as model image parts
-  - [ ] Milestone 4: HTTP routes (`/geometry`, `/frames`, `/health`), CORS
-  - [ ] Milestone 5: `surmap.agent.__main__` (flags, env, system prompt) on `HypercornHost`
-  - [ ] Acceptance: `tests/test_agent_chat_service.py`, `tests/test_agent_server_e2e.py` pass
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · 78/78 green, full suite green (1627 passed, 32 skipped) — commit 3
+  - [x] Milestone 1: `ChatHub` — conversations, one `AgentSession` each, event fan-out to `StreamTurn` / `WatchConversation` subscribers
+  - [x] Milestone 2: `ChatService` handlers (`StreamTurn`, `WatchConversation`, `Steer`, `CancelTurn`, `ListModels`, `GetConversation`) and runtime-event → `TurnEvent` mapping
+  - [x] Milestone 3: tool binding — `SurveyTools` handlers (n7) + job tools (n4) as agent tools; tool images reach the chat stream, and the model reads their placeholder (model image parts are a recorded follow-up, see `Decided without review (green step)`)
+  - [x] Milestone 4: HTTP routes (`/geometry`, `/frames`, `/health`), CORS
+  - [x] Milestone 5: `surmap.agent.__main__` (flags, env, system prompt) on `HypercornHost`
+  - [x] Acceptance: `tests/test_agent_chat_service.py`, `tests/test_agent_server_e2e.py` pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/agent.md` — "Running the agent" section: command, flags, env, ports, routes, event stream
@@ -244,3 +244,32 @@ Lower-tier red tests:
 - **Seams**: `build_agent_description` takes the workspace, a `GlbReader` and optional registry
   and `SurveyTools` handlers; the routes take a `FrameReader` + `GlbReader` rather than the whole
   workspace, so they test without n7.
+
+### Decided without review (green step)
+
+- **Busy and steer state read `AgentSession._active`.** The session has no public probe for "a
+  turn is running", so `ChatHub` reads the flag its own `run_turn` checks. Follow-up for n4: a
+  public `is_running` property, so the hub stops reading a private attribute.
+- **`StreamTurn` starts its turn before the first event**, so a second `StreamTurn` can never
+  pass the busy check while the first is suspended. A client that drops before the turn's first
+  event cancels that turn.
+- **`WatchConversation` on an unknown conversation is `NOT_FOUND`**: a conversation starts with
+  its first `StreamTurn`, as the hub's docstring says. The UI opens its watch after that turn.
+  Recorded for the chat UI node (n9), which must not watch before the first turn.
+- **Watch streams carry job-event turns only**; a `StreamTurn` consumer gets its own turn's
+  events. A job-event turn's first event is its `job_update`.
+- **Connect responses get CORS through the response context** (`ctx.response_headers`), added
+  per handler to the UI-facing `ChatService`, `AgentJobs` and `SurveyTools` handler maps only.
+  The tool bindings keep the bare handlers, which have no request context.
+- **A failed call maps to `FAILED`, and a call cut short by cancel emits no `tool_call_finished`**:
+  the turn ends as `turn_finished(CANCELLED)`, so `CANCELLED` is never a call status here.
+- **`ToolCallFinished.result_json` and `JobResult.result_json` are empty** until the call or job
+  succeeds (a detached call carries its `job` handle instead).
+- **`CancelJob` waits up to 1 s for the cancelled job to settle** before it reports the job's
+  state; `WaitForJobs` refuses a `timeout_s` above 300.
+- **`ListModels` lists the models in a worker thread**, because the Ollama listing makes a
+  blocking HTTP call.
+- **Entry point refuses a real SAM**: `build_demo_workspace` needs `--sam-fake`, since the agent
+  CLI has no SAM device or model flags yet. A real detector needs those flags first.
+- **Demo host and stores**: the run host is built with `with_rtabmap=False`, as n7's test rig
+  builds it; object GLBs are stored under `<cache-dir>/agent-geometry`.

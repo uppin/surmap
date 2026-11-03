@@ -11,10 +11,22 @@ chat UI's Vite dev server, `http://localhost:5173`).
 from __future__ import annotations
 
 import argparse
+import asyncio
+import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from surmap.agent.server.app import DEFAULT_HOST, DEFAULT_MODEL_ID, DEFAULT_PORT, AgentServerConfig
+from surmap.agent.server.app import (
+    CORS_ORIGINS_ENV,
+    DEFAULT_CORS_ORIGINS,
+    DEFAULT_HOST,
+    DEFAULT_MODEL_ID,
+    DEFAULT_PORT,
+    AgentServerConfig,
+    build_agent_description,
+    build_demo_workspace,
+)
+from surmap.rpc.hosts.hypercorn import HypercornHost
 
 __all__ = ["build_parser", "config_from_args", "main", "serve"]
 
@@ -38,17 +50,41 @@ def config_from_args(
 ) -> AgentServerConfig:
     """The config for this command line; CORS origins from `SURMAP_AGENT_CORS_ORIGINS` in
     `environ` (default `os.environ`), blank entries dropped."""
-    raise NotImplementedError  # TODO(pr-8): implement
+    args = build_parser().parse_args(argv)
+    env = os.environ if environ is None else environ
+    raw_origins = env.get(CORS_ORIGINS_ENV)
+    cors_origins = (
+        DEFAULT_CORS_ORIGINS
+        if raw_origins is None
+        else tuple(origin.strip() for origin in raw_origins.split(",") if origin.strip())
+    )
+    return AgentServerConfig(
+        host=args.host,
+        port=args.port,
+        history_db=args.history_db,
+        cache_dir=args.cache_dir,
+        model_id=args.model,
+        sam_fake=args.sam_fake,
+        cors_origins=cors_origins,
+    )
 
 
 async def serve(config: AgentServerConfig) -> None:
     """Serve the agent on `config.host:config.port` until cancelled; always stop the host."""
-    raise NotImplementedError  # TODO(pr-8): implement
+    workspace = build_demo_workspace(config)
+    description = build_agent_description(config, workspace=workspace, geometry=workspace.geometry)
+    host = HypercornHost(description, None, host=config.host, port=config.port)
+    ports = await host.start()
+    print(f"survey agent on http://{config.host}:{ports.public}", flush=True)
+    try:
+        await asyncio.Event().wait()
+    finally:
+        await host.stop()
 
 
 def main(argv: Sequence[str] | None = None) -> None:
     """Parse the command line and serve until signalled."""
-    raise NotImplementedError  # TODO(pr-8): implement
+    asyncio.run(serve(config_from_args(argv)))
 
 
 if __name__ == "__main__":

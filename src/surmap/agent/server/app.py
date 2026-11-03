@@ -17,18 +17,43 @@ it is sent. Binds loopback by default; there is no auth (docs/agent.md).
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from surmap.agent.llm.meta import DEFAULT_AGENT_META_MODEL, META_PROVIDER
+from connectrpc.request import RequestContext
+from langchain_core.language_models import BaseChatModel
+
+from surmap.agent.contracts import tool_contracts
+from surmap.agent.llm.meta import DEFAULT_AGENT_META_MODEL, META_PROVIDER, MetaResponsesChatModel
 from surmap.agent.llm.registry import ChatModelRegistry
-from surmap.agent.server.hub import ModelFactory
-from surmap.agent.server.routes import GlbReader
-from surmap.agent.services import Handler
+from surmap.agent.proto import jobs_pb2, survey_tools_pb2
+from surmap.agent.runtime.graph import TurnCaps
+from surmap.agent.server.binding import agent_tools
+from surmap.agent.server.chat_service import agent_jobs_handlers, chat_handlers
+from surmap.agent.server.hub import ChatHub, ModelFactory
+from surmap.agent.server.routes import GlbReader, agent_http_routes
+from surmap.agent.services import (
+    Handler,
+    agent_jobs_module,
+    chat_service_module,
+    survey_tools_module,
+)
+from surmap.agent.tools.geometry import GeometryStore
+from surmap.agent.tools.handlers import survey_tool_handlers
 from surmap.agent.tools.workspace import DemoWorkspace, SurveyWorkspace
+from surmap.demo.datasets import default_cache_dir
+from surmap.demo.runs import DemoRunHost
+from surmap.demo.server import make_demo_server
 from surmap.rpc.description import ServerDescription
+from surmap.survey.sam import CentredBoxVideoSamDetector
 from surmap.usage import UsageLedger
+
+_SURVEY_TOOLS = survey_tools_pb2.DESCRIPTOR.services_by_name["SurveyTools"]
+_AGENT_JOBS = jobs_pb2.DESCRIPTOR.services_by_name["AgentJobs"]
+"""The two tool services; their rpcs are the tools a conversation binds."""
 
 __all__ = [
     "CORS_ORIGINS_ENV",
@@ -90,12 +115,36 @@ class AgentServerConfig:
 
 def default_model_factory(registry: ChatModelRegistry, ledger: UsageLedger) -> ModelFactory:
     """Models from `registry`; a `meta:` model checks `ledger` before every request."""
-    raise NotImplementedError  # TODO(pr-8): implement
+
+    def build(model_id: str) -> BaseChatModel:
+        model = registry.build(model_id)
+        if isinstance(model, MetaResponsesChatModel):
+            return model.model_copy(update={"before_call": ledger.check, "usage_sink": ledger})
+        return model
+
+    return build
 
 
 def build_demo_workspace(config: AgentServerConfig) -> DemoWorkspace:
     """A `DemoWorkspace` over a non-serving demo run host on the configured cache and history."""
-    raise NotImplementedError  # TODO(pr-8): implement
+    if not config.sam_fake:
+        raise ValueError("the agent process runs the fake SAM only for now: pass --sam-fake")
+    cache_dir = config.cache_dir if config.cache_dir is not None else default_cache_dir()
+    server = make_demo_server(
+        None,
+        cache_dir=cache_dir,
+        history_db=config.history_db,
+        port=0,
+        with_rtabmap=False,
+        sam_fake=True,
+    )
+    if not isinstance(server, DemoRunHost):
+        raise TypeError("the demo server is not a run host")
+    return DemoWorkspace(
+        server,
+        detector=CentredBoxVideoSamDetector(),
+        geometry=GeometryStore(cache_dir / "agent-geometry"),
+    )
 
 
 def build_agent_description(
@@ -111,4 +160,55 @@ def build_agent_description(
     `survey_handlers` defaults to `survey_tool_handlers(workspace)`; `registry` to one over the
     process environment, which also lists the models.
     """
-    raise NotImplementedError  # TODO(pr-8): implement
+    ledger = UsageLedger()
+    models = registry if registry is not None else ChatModelRegistry()
+    model_factory = (
+        config.model_factory
+        if config.model_factory is not None
+        else default_model_factory(models, ledger)
+    )
+    rpc_handlers: dict[str, Handler] = (
+        dict(survey_handlers)
+        if survey_handlers is not None
+        else dict(survey_tool_handlers(workspace))
+    )
+    contracts = (*tool_contracts(_SURVEY_TOOLS), *tool_contracts(_AGENT_JOBS))
+    hub = ChatHub(
+        model_factory=model_factory,
+        tools=lambda runner: agent_tools(contracts, rpc_handlers, runner),
+        models=models.available,
+        default_model_id=config.model_id,
+        system_prompt=SYSTEM_PROMPT,
+        caps=TurnCaps.from_env(os.environ),
+        timeout_scale=config.timeout_scale,
+    )
+    origins = tuple(config.cors_origins)
+    return ServerDescription(
+        services=(
+            survey_tools_module(_allowing_origins(rpc_handlers, origins)),
+            agent_jobs_module(_allowing_origins(agent_jobs_handlers(hub), origins)),
+            chat_service_module(_allowing_origins(chat_handlers(hub), origins)),
+        ),
+        http_routes=agent_http_routes(workspace, geometry, cors_origins=origins),
+        closeables=lambda _context: (hub,),
+    )
+
+
+def _allowing_origins(
+    handlers: Mapping[str, Handler], origins: tuple[str, ...]
+) -> dict[str, Handler]:
+    """`handlers`, each adding CORS for `origins` to the Connect response it answers with."""
+    return {name: _with_cors(handler, origins) for name, handler in handlers.items()}
+
+
+def _with_cors(handler: Handler, origins: tuple[str, ...]) -> Handler:
+    """`handler` with the response's `Access-Control-Allow-Origin` set when the request's
+    `Origin` is one of `origins`; Connect sends the context's response headers first."""
+
+    def serve(request: object, ctx: RequestContext[Any, Any]) -> Any:
+        origin = ctx.request_headers.get("origin")
+        if origin is not None and origin in origins:
+            ctx.response_headers["access-control-allow-origin"] = origin
+        return handler(request, ctx)
+
+    return serve

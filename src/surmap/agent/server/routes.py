@@ -13,11 +13,15 @@ An unknown run, object or frame is 404. A request whose `Origin` is one of `cors
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import math
+from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
+from urllib.parse import parse_qs
 
-from surmap.agent.tools.workspace import FrameImage
+from surmap.agent.tools.frames import frame_image
+from surmap.agent.tools.workspace import BoxXYXY, FrameImage
 from surmap.rpc.description import HttpRoute
+from surmap.rpc.http import HttpRequest, HttpResponse
 
 __all__ = [
     "GLB_MEDIA_TYPE",
@@ -29,6 +33,13 @@ __all__ = [
 
 GLB_MEDIA_TYPE = "model/gltf-binary"
 HEALTH_PATH = "/health"
+_ANY_PATH = "*"
+"""The route key that serves every path of a method; the handler dispatches on the path."""
+_CORS_METHODS = "GET, POST, OPTIONS"
+_CORS_HEADERS = "content-type, connect-protocol-version, connect-timeout-ms, surmap-conversation-id"
+_PREFLIGHT_MAX_AGE_S = "600"
+_PLAIN = {"content-type": "text/plain; charset=utf-8"}
+_JPEG = "image/jpeg"
 
 
 class FrameReader(Protocol):
@@ -52,4 +63,106 @@ def agent_http_routes(
     cors_origins: Sequence[str],
 ) -> tuple[HttpRoute[Any], ...]:
     """The health, geometry, frame and CORS-preflight routes."""
-    raise NotImplementedError  # TODO(pr-8): implement
+    origins = tuple(cors_origins)
+
+    async def health(request: HttpRequest) -> HttpResponse:
+        return HttpResponse(status=200, body=b"ok", headers={**_PLAIN, **_cors(request, origins)})
+
+    async def serve(request: HttpRequest) -> HttpResponse:
+        response = _route(request, frames, geometry)
+        return HttpResponse(
+            status=response.status,
+            body=response.body,
+            headers={**response.headers, **_cors(request, origins)},
+        )
+
+    async def preflight(request: HttpRequest) -> HttpResponse:
+        headers = {
+            **_cors(request, origins),
+            "access-control-allow-methods": _CORS_METHODS,
+            "access-control-allow-headers": _CORS_HEADERS,
+            "access-control-max-age": _PREFLIGHT_MAX_AGE_S,
+        }
+        return HttpResponse(status=204, headers=headers)
+
+    return (
+        HttpRoute("GET", HEALTH_PATH, lambda _context: health),
+        HttpRoute("GET", _ANY_PATH, lambda _context: serve),
+        HttpRoute("OPTIONS", _ANY_PATH, lambda _context: preflight),
+    )
+
+
+def _route(request: HttpRequest, frames: FrameReader, geometry: GlbReader) -> HttpResponse:
+    segments = request.path.split("/")
+    if len(segments) != 4:
+        return HttpResponse(status=404)
+    _, kind, run_id, leaf = segments
+    if kind == "geometry" and leaf.endswith(".glb"):
+        return _glb(geometry, run_id, leaf.removesuffix(".glb"))
+    if kind == "frames" and leaf.endswith(".jpg"):
+        return _frame(frames, run_id, leaf.removesuffix(".jpg"), request.query)
+    return HttpResponse(status=404)
+
+
+def _glb(geometry: GlbReader, run_id: str, object_id: str) -> HttpResponse:
+    try:
+        data = geometry.read(geometry.uri(run_id, object_id))
+    except ValueError:
+        data = None
+    if data is None:
+        return HttpResponse(status=404)
+    return HttpResponse(status=200, body=data, headers={"content-type": GLB_MEDIA_TYPE})
+
+
+def _frame(frames: FrameReader, run_id: str, leaf: str, query: str) -> HttpResponse:
+    try:
+        frame_id = int(leaf)
+    except ValueError:
+        return HttpResponse(status=404)
+    frame = frames.frame(run_id, frame_id)
+    if frame is None:
+        return HttpResponse(status=404)
+    try:
+        crop, max_side = _frame_options(query)
+    except ValueError as error:
+        return HttpResponse(status=400, body=str(error).encode())
+    if crop is None and max_side is None and frame.media_type == _JPEG:
+        return HttpResponse(status=200, body=frame.data, headers={"content-type": _JPEG})
+    try:
+        encoded = frame_image(frame.data, crop=crop, max_side=max_side)
+    except ValueError as error:
+        return HttpResponse(status=400, body=str(error).encode())
+    return HttpResponse(status=200, body=encoded.data, headers={"content-type": encoded.media_type})
+
+
+def _frame_options(query: str) -> tuple[BoxXYXY | None, int | None]:
+    """The `crop` box and `max_side` a frame request asks for; `ValueError` when malformed."""
+    params = parse_qs(query, keep_blank_values=True)
+    crop: BoxXYXY | None = None
+    if "crop" in params:
+        raw = params["crop"][-1].split(",")
+        if len(raw) != 4:
+            raise ValueError("crop takes four numbers: x0,y0,x1,y1")
+        values = tuple(float(value) for value in raw)
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("crop takes four finite numbers: x0,y0,x1,y1")
+        crop = (values[0], values[1], values[2], values[3])
+    max_side: int | None = None
+    if "max_side" in params:
+        max_side = int(params["max_side"][-1])
+        if max_side < 1:
+            raise ValueError("max_side must be at least 1 pixel")
+    return crop, max_side
+
+
+def _cors(request: HttpRequest, origins: tuple[str, ...]) -> dict[str, str]:
+    """The CORS headers for a request from one of `origins`; none for any other origin."""
+    origin = _header(request.headers, "origin")
+    if origin is None or origin not in origins:
+        return {}
+    return {"access-control-allow-origin": origin, "vary": "origin"}
+
+
+def _header(headers: Mapping[str, str], name: str) -> str | None:
+    """The header `name`, matched case-insensitively."""
+    return {key.lower(): value for key, value in headers.items()}.get(name)
