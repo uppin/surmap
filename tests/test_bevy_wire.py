@@ -5,6 +5,7 @@ import struct
 from pathlib import Path
 
 import pytest
+
 from surmap.simulation.bevy_wire import (
     BevyHello,
     BevyPair,
@@ -13,9 +14,17 @@ from surmap.simulation.bevy_wire import (
     decode_bevy_message,
     encode_status,
 )
-
+from surmap.simulation.camera_profile import load_camera_profile
 from surmap.types import Vec3
 
+PROFILE = (
+    Path(__file__).parents[1]
+    / "examples"
+    / "bevy-sitl-poc"
+    / "assets"
+    / "cameras"
+    / "elp-stereo-pinhole.camera.json"
+)
 GOLDENS = Path(__file__).parent / "fixtures" / "bevy_sim_wire"
 
 
@@ -23,22 +32,16 @@ def a_message(header: bytes, payload: bytes = b"") -> bytes:
     return struct.pack("<I", len(header)) + header + payload
 
 
-def test_the_hello_golden_decodes_into_the_calibration_and_its_objects() -> None:
+def test_the_hello_golden_decodes_into_the_camera_profile_and_its_objects() -> None:
     # Given the hello the browser sends when a session opens
     message = (GOLDENS / "hello.bin").read_bytes()
 
     # When the bridge decodes it
     decoded = decode_bevy_message(message)
 
-    # Then it carries the rig as a calibration spec and the car as a ground-truth box
+    # Then it carries exactly the profile file the renderer used, and the car
     assert isinstance(decoded, BevyHello)
-    assert decoded.calibration_id == "bevy-sitl-poc-v1"
-    assert decoded.rate_hz == pytest.approx(10.0)
-    assert decoded.calibration.calibration_id == "bevy-sitl-poc-v1"
-    assert decoded.calibration.rate_hz == pytest.approx(10.0)
-    assert (decoded.calibration.width, decoded.calibration.height) == (640, 480)
-    assert decoded.calibration.fx == pytest.approx(381.36)
-    assert decoded.calibration.baseline_m == pytest.approx(0.07)
+    assert decoded.camera == load_camera_profile(PROFILE)
     assert len(decoded.objects) == 1
     assert decoded.objects[0].id == "car-1"
     assert decoded.objects[0].kind == "car"

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
+from numpy.typing import NDArray
+
 from surmap.simulation.bevy_wire import GroundTruthBox
 from surmap.simulation.calibration import StereoCalibrationSpec
 from surmap.types import Pose, Vec3
@@ -174,3 +177,19 @@ def project_box(
             crossing = tuple(start[i] + fraction * (end[i] - start[i]) for i in range(3))
             add((crossing[0], crossing[1], crossing[2]))
     return _hull(projected)
+
+
+def box_surface_distance(points: NDArray[np.float64], box: GroundTruthBox) -> NDArray[np.float64]:
+    """Distance (m) of each ENU point to the surface of an axis-aligned box.
+
+    Zero on a face; inside the box it is the depth to the nearest face, so
+    a reconstruction of a solid object is judged by how close its points
+    lie to the object's skin.
+    """
+    lo = np.array([box.min_enu.x, box.min_enu.y, box.min_enu.z])
+    hi = np.array([box.max_enu.x, box.max_enu.y, box.max_enu.z])
+    centre, half = (lo + hi) / 2.0, (hi - lo) / 2.0
+    q = np.abs(points - centre) - half
+    outside = np.linalg.norm(np.maximum(q, 0.0), axis=1)
+    inside = np.minimum(q.max(axis=1), 0.0)
+    return np.asarray(outside + np.abs(inside), dtype=np.float64)

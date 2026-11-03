@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "camera": "cameras/elp-stereo-pinhole.camera.json",
   "environment": {
     "hdri": "hdri/kloofendal_28d_misty_puresky_2k.hdr",
     "sun_illuminance_lux": 130000.0,

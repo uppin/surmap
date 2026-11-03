@@ -10,9 +10,11 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, T
 use bevy::render::view::screenshot::{save_to_disk, Screenshot, ScreenshotCaptured};
 
 use crate::flight::SurveyLoop;
+use crate::record::{RecordPlan, SimTime};
 use crate::look::{photographic, Lens};
 use crate::world::{enu, scene_ready, PendingModel, SceneState};
-use crate::{Drone, StereoFeeds, RIG_FORWARD_M, RIG_UP_M};
+use crate::calibration::CameraProfile;
+use crate::{Drone, StereoFeeds};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlightMode {
@@ -30,6 +32,7 @@ pub struct ShotPlan {
 pub struct RunMode {
     pub flight: FlightMode,
     pub screenshot: Option<ShotPlan>,
+    pub record: Option<RecordPlan>,
 }
 
 impl RunMode {
@@ -53,21 +56,52 @@ impl RunMode {
             }
             Some(None) => return Err("--screenshot needs a directory".into()),
         };
-        let flight = if screenshot.is_some() { FlightMode::SurveyLoop } else { flight };
-        Ok(Self { flight, screenshot })
+        let number = |flag: &str, default: f32| -> Result<f32, String> {
+            match value(flag) {
+                None => Ok(default),
+                Some(Some(v)) => v.parse::<f32>().map_err(|e| format!("{flag}: {e}")),
+                Some(None) => Err(format!("{flag} needs a value")),
+            }
+        };
+        let record = match value("--record") {
+            None => None,
+            Some(Some(dir)) => Some(RecordPlan {
+                dir: PathBuf::from(dir),
+                frames: number("--frames", 60.0)? as u32,
+                rate_hz: number("--rate-hz", 10.0)?,
+                start_s: number("--start", 0.0)?,
+                jpeg: args.iter().any(|a| a == "--jpeg"),
+            }),
+            Some(None) => return Err("--record needs a directory".into()),
+        };
+        let scripted = screenshot.is_some() || record.is_some();
+        let flight = if scripted { FlightMode::SurveyLoop } else { flight };
+        Ok(Self { flight, screenshot, record })
+    }
+
+    /// No window chrome: stills and recordings run unattended.
+    pub fn unattended(&self) -> bool {
+        self.screenshot.is_some() || self.record.is_some()
     }
 }
 
 /// The scripted rig pose drives the (kinematic) drone body.
-pub fn fly_scripted(mode: Res<RunMode>, time: Res<Time>, mut drone: Query<&mut Transform, With<Drone>>) {
+pub fn fly_scripted(
+    mode: Res<RunMode>,
+    time: Res<Time>,
+    sim_time: Res<SimTime>,
+    rig: Option<Res<CameraProfile>>,
+    mut drone: Query<&mut Transform, With<Drone>>,
+) {
+    let Some(rig) = rig else { return };
     if mode.flight != FlightMode::SurveyLoop {
         return;
     }
-    let t = mode.screenshot.as_ref().map_or(time.elapsed_secs(), |plan| plan.at_s);
+    let t = sim_time.0.unwrap_or(time.elapsed_secs());
     let pose = SurveyLoop::disaster_block().pose_at(t);
     let Ok(mut body) = drone.single_mut() else { return };
     body.rotation = Quat::from_rotation_y(pose.yaw_rad);
-    body.translation = pose.position - body.rotation * Vec3::new(0.0, RIG_UP_M, -RIG_FORWARD_M);
+    body.translation = pose.position - body.rotation * rig.mount_offset();
 }
 
 #[derive(Component)]
@@ -125,10 +159,16 @@ pub fn take_shots(
     scene: Option<Res<SceneState>>,
     assets: Res<AssetServer>,
     pending: Query<(), With<PendingModel>>,
-    feeds: Res<StereoFeeds>,
+    feeds: Option<Res<StereoFeeds>>,
     mut exit: MessageWriter<AppExit>,
 ) {
     let (Some(plan), Some(mut shots), Some(scene)) = (mode.screenshot.as_ref(), shots, scene) else { return };
+    if let Some(why) = &scene.failed {
+        error!("scene cannot be built: {why}");
+        exit.write(AppExit::error());
+        return;
+    }
+    let Some(feeds) = feeds else { return };
     if shots.captured == 3 {
         exit.write(AppExit::Success);
         return;
@@ -174,7 +214,7 @@ mod tests {
     fn no_flags_fly_manually_without_stills() {
         let mode = RunMode::from_args(&args(&[])).expect("valid");
 
-        assert_eq!(mode, RunMode { flight: FlightMode::Manual, screenshot: None });
+        assert_eq!(mode, RunMode { flight: FlightMode::Manual, screenshot: None, record: None });
     }
 
     #[test]
@@ -188,6 +228,17 @@ mod tests {
     #[test]
     fn a_screenshot_without_a_moment_is_refused() {
         assert!(RunMode::from_args(&args(&["--screenshot", "shots"])).is_err());
+    }
+
+    #[test]
+    fn a_recording_flies_the_survey_loop_at_its_rate() {
+        let mode = RunMode::from_args(&args(&["--record", "cap", "--frames", "120", "--start", "30", "--jpeg"])).expect("valid");
+
+        assert_eq!(mode.flight, FlightMode::SurveyLoop);
+        assert_eq!(
+            mode.record,
+            Some(RecordPlan { dir: PathBuf::from("cap"), frames: 120, rate_hz: 10.0, start_s: 30.0, jpeg: true })
+        );
     }
 
     #[test]

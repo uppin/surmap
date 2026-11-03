@@ -10,7 +10,7 @@ import json
 import struct
 from dataclasses import dataclass
 
-from surmap.simulation.calibration import StereoCalibrationSpec
+from surmap.simulation.camera_profile import CameraProfile, parse_camera_profile
 from surmap.types import Pose, Vec3
 
 
@@ -28,9 +28,7 @@ class GroundTruthBox:
 
 @dataclass(frozen=True)
 class BevyHello:
-    calibration_id: str
-    rate_hz: float
-    calibration: StereoCalibrationSpec
+    camera: CameraProfile
     objects: tuple[GroundTruthBox, ...]
 
 
@@ -144,20 +142,10 @@ def decode_bevy_message(message: bytes) -> BevyHello | BevyPair:
 
 
 def _decode_hello(header: dict[str, object]) -> BevyHello:
-    calibration_id = _str(header, "calibration_id")
-    rate_hz = _float(header, "rate_hz")
-    raw_cal = _obj(_req(header, "calibration"), "calibration")
-    calibration = StereoCalibrationSpec(
-        calibration_id=calibration_id,
-        width=_int(raw_cal, "width"),
-        height=_int(raw_cal, "height"),
-        fx=_float(raw_cal, "fx"),
-        fy=_float(raw_cal, "fy"),
-        cx=_float(raw_cal, "cx"),
-        cy=_float(raw_cal, "cy"),
-        baseline_m=_float(raw_cal, "baseline_m"),
-        rate_hz=rate_hz,
-    )
+    try:
+        camera = parse_camera_profile(_req(header, "camera"))
+    except ValueError as exc:
+        raise BevyWireError(f"hello camera profile: {exc}") from exc
     raw_objects = _req(header, "objects")
     if not isinstance(raw_objects, list):
         raise BevyWireError("objects must be a list")
@@ -172,12 +160,7 @@ def _decode_hello(header: dict[str, object]) -> BevyHello:
                 max_enu=_vec3(_req(obj, "max_enu"), "max_enu"),
             )
         )
-    return BevyHello(
-        calibration_id=calibration_id,
-        rate_hz=rate_hz,
-        calibration=calibration,
-        objects=tuple(objects),
-    )
+    return BevyHello(camera=camera, objects=tuple(objects))
 
 
 def _decode_pair(header: dict[str, object], payload: bytes) -> BevyPair:

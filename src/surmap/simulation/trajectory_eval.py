@@ -59,3 +59,21 @@ def ate_rmse(estimate: Points, truth: Points) -> float:
     if est.shape[0] == 0:
         raise ValueError("ATE needs at least one point")
     return float(np.sqrt(np.mean(np.sum((est - ref) ** 2, axis=1))))
+
+
+def similarity_scale(estimate: Points, truth: Points) -> float:
+    """Umeyama's scale: how much the estimate must be stretched to fit the truth.
+
+    1.0 is a metric estimate; a stereo rig with a mis-stated baseline or
+    focal length shows up here as a steady ratio.
+    """
+    est, ref = _checked(estimate, truth)
+    est_c = est - est.mean(axis=0)
+    ref_c = ref - ref.mean(axis=0)
+    covariance = ref_c.T @ est_c / len(est)
+    u, singular, vt = np.linalg.svd(covariance)
+    sign = np.ones(3)
+    if np.linalg.det(u) * np.linalg.det(vt) < 0:
+        sign[2] = -1.0
+    variance = float((est_c**2).sum() / len(est))
+    return float((singular * sign).sum() / variance)

@@ -3,12 +3,14 @@
 //! Bevy renders a disaster block loaded at runtime from
 //! `assets/scene.json` (textures and models fetched, never compiled
 //! in), Rapier physics flies a quadcopter in it, Feronia scatters
-//! ground debris, and a stereo rig renders left/right 640x480 feeds
-//! while printing the calibration the rig produces.
+//! ground debris, and a stereo rig built from the runtime camera
+//! profile renders the left/right feeds RTAB-Map receives.
 
 mod calibration;
 mod flight;
 mod look;
+mod record;
+mod rig;
 mod scene_manifest;
 mod shots;
 mod sky;
@@ -18,20 +20,17 @@ mod wire;
 mod world;
 
 use bevy::asset::AssetMetaCheck;
-use bevy::camera::RenderTarget;
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
+use bevy::winit::{UpdateMode, WinitSettings};
 use bevy_feronia::asset::backend::mesh_material_backend::MeshMaterialAssetBackendPlugin;
 use bevy_feronia::prelude::*;
 use bevy_rapier3d::prelude::*;
-use calibration::StereoCalibration;
+use calibration::CameraProfile;
 use look::{apply_look, photographic, Lens};
-use shots::{fly_scripted, setup_overview, shot_target, take_shots, FlightMode, RunMode};
+use shots::{fly_scripted, setup_overview, take_shots, FlightMode, RunMode};
 use ui::{setup_button, setup_ui, takeoff_button, update_status};
 use world::{build_world, resolve_models, start_loading, ManifestAsset, ManifestLoader};
-
-pub(crate) const RIG_FORWARD_M: f32 = 0.30;
-pub(crate) const RIG_UP_M: f32 = 0.10;
 
 #[derive(Component)]
 pub(crate) struct Drone;
@@ -40,10 +39,10 @@ pub(crate) struct Drone;
 struct Rotor(f32);
 
 #[derive(Component)]
-struct LeftEye;
+pub(crate) struct LeftEye;
 
 #[derive(Component)]
-struct RightEye;
+pub(crate) struct RightEye;
 
 #[derive(Component)]
 pub(crate) struct ChaseCam;
@@ -56,15 +55,17 @@ struct Flight {
 }
 
 fn main() {
-    let rig = StereoCalibration::surmap_rig();
     let args: Vec<String> = std::env::args().collect();
     let mode = RunMode::from_args(&args).unwrap_or_else(|e| panic!("{e}"));
-    let resolution = if mode.screenshot.is_some() {
+    let resolution = if mode.unattended() {
         WindowResolution::new(1280, 720).with_scale_factor_override(1.0)
     } else {
         WindowResolution::default()
     };
-    let interactive = mode.screenshot.is_none();
+    let interactive = !mode.unattended();
+    let hidden = !mode.record.is_none();
+    let sim_time = record::SimTime(mode.screenshot.as_ref().map(|plan| plan.at_s));
+    let mut recorder = mode.record.clone().map(record::Recorder::new);
     let exit = App::new()
         .add_plugins(
             DefaultPlugins
@@ -75,6 +76,8 @@ fn main() {
                         fit_canvas_to_parent: true,
                         prevent_default_event_handling: true,
                         resolution,
+                        // A recording renders only the offscreen eyes: keep it off the desktop.
+                        visible: !hidden,
                         ..default()
                     }),
                     ..default()
@@ -87,17 +90,27 @@ fn main() {
         .add_plugins(ExtendedWindAffectedScatterPlugin)
         .init_asset::<ManifestAsset>()
         .init_asset_loader::<ManifestLoader>()
+        .init_asset::<rig::ProfileAsset>()
+        .init_asset_loader::<rig::ProfileLoader>()
         .insert_state(HeightMapState::Setup)
         .insert_state(ScatterState::Setup)
-        .insert_resource(rig)
+        // Unattended runs keep rendering with the window hidden or unfocused.
+        .insert_resource(WinitSettings { focused_mode: UpdateMode::Continuous, unfocused_mode: UpdateMode::Continuous })
         .insert_resource(mode)
+        .insert_resource(sim_time)
         .init_resource::<Flight>()
+        .add_systems(Startup, move |mut commands: Commands| {
+            if let Some(recorder) = recorder.take() {
+                commands.insert_resource(recorder);
+            }
+        })
         .add_systems(Startup, (start_loading, setup_drone, setup_cameras, setup_overview).chain())
-        .add_systems(Startup, (setup_ui, setup_button).chain().after(setup_cameras).run_if(move || interactive))
+        .add_systems(Update, (setup_ui, setup_button).chain().run_if(move || interactive).run_if(resource_added::<StereoFeeds>))
         .add_systems(
             Update,
             (
                 build_world,
+                rig::spawn_rig,
                 textures::generate_mips,
                 resolve_models,
                 read_controls,
@@ -109,6 +122,7 @@ fn main() {
                 scatter_once,
                 update_status,
                 take_shots,
+                record::record_frames.after(fly_scripted),
                 apply_look,
                 sky::bake_sky,
             ),
@@ -184,64 +198,23 @@ fn mat(materials: &mut Assets<StandardMaterial>, color: Color) -> MeshMaterial3d
     }))
 }
 
-fn render_target(images: &mut Assets<Image>, rig: &StereoCalibration) -> Handle<Image> {
-    shot_target(images, rig.width, rig.height)
-}
-
-fn setup_cameras(
-    mut commands: Commands,
-    mut images: ResMut<Assets<Image>>,
-    rig: Res<StereoCalibration>,
-) {
-    let projection = || {
-        Projection::Perspective(PerspectiveProjection {
-            fov: rig.vertical_fov_rad(),
-            near: 0.1,
-            far: 600.0,
-            ..default()
-        })
-    };
+/// The chase view at startup; the eyes follow once the camera profile loads (`rig.rs`).
+fn setup_cameras(mut commands: Commands) {
     let mut chase = commands.spawn((
         ChaseCam,
-        Camera3d::default(),
         Camera {
             order: 0,
             ..default()
         },
-        projection(),
+        Projection::Perspective(PerspectiveProjection {
+            fov: 60f32.to_radians(),
+            near: 0.1,
+            far: 600.0,
+            ..default()
+        }),
         Transform::from_xyz(6.0, 4.0, 8.0).looking_at(Vec3::new(0.0, 0.5, 0.0), Vec3::Y),
     ));
     photographic(&mut chase, Lens::Chase);
-    let left_target = render_target(&mut images, &rig);
-    let right_target = render_target(&mut images, &rig);
-    commands.insert_resource(StereoFeeds {
-        left: left_target.clone(),
-        right: right_target.clone(),
-    });
-    let mut left = commands.spawn((
-        LeftEye,
-        Camera3d::default(),
-        Camera {
-            order: 1,
-            ..default()
-        },
-        RenderTarget::Image(left_target.into()),
-        projection(),
-        Transform::from_xyz(-0.035, 0.55, 0.0),
-    ));
-    photographic(&mut left, Lens::Still);
-    let mut right = commands.spawn((
-        RightEye,
-        Camera3d::default(),
-        Camera {
-            order: 1,
-            ..default()
-        },
-        RenderTarget::Image(right_target.into()),
-        projection(),
-        Transform::from_xyz(0.035, 0.55, 0.0),
-    ));
-    photographic(&mut right, Lens::Still);
 }
 
 #[derive(Resource)]
@@ -314,18 +287,14 @@ fn follow_drone_rig(
     drone: Query<&Transform, With<Drone>>,
     mut left: Query<&mut Transform, (With<LeftEye>, Without<Drone>, Without<RightEye>)>,
     mut right: Query<&mut Transform, (With<RightEye>, Without<Drone>, Without<LeftEye>)>,
-    rig: Res<StereoCalibration>,
+    rig: Option<Res<CameraProfile>>,
 ) {
-    let Ok(body) = drone.single() else { return };
-    let mount = Vec3::new(0.0, RIG_UP_M, -RIG_FORWARD_M);
-    for (eye, offset) in [
-        (left.single_mut(), rig.left_translation_m),
-        (right.single_mut(), rig.right_translation_m),
-    ] {
+    let (Ok(body), Some(rig)) = (drone.single(), rig) else { return };
+    for (eye, right_eye) in [(left.single_mut(), false), (right.single_mut(), true)] {
         let Ok(mut eye) = eye else { return };
-        let local = Vec3::new(offset[0], offset[1], offset[2]) + mount;
+        let local = rig.mount_offset() + rig.mount_rotation() * rig.eye_translation_m(right_eye);
         eye.translation = body.translation + body.rotation * local;
-        eye.rotation = body.rotation;
+        eye.rotation = body.rotation * rig.mount_rotation();
     }
 }
 

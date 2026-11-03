@@ -22,6 +22,7 @@ use crate::scene_manifest::{
     BoxElement, Building, ColliderKind, CollapsedBuilding, Element, Environment, ManifestError, ModelInstance, PbrTextureSet,
     Person, SceneManifest,
 };
+use crate::rig::{ProfileAsset, RigSource};
 use crate::sky::SkySource;
 use crate::textures::{load_texture_set, tiled_material, TextureSetHandles};
 use crate::wire::GroundTruthObject;
@@ -63,6 +64,8 @@ impl AssetLoader for ManifestLoader {
 pub struct SceneState {
     pub manifest: Handle<ManifestAsset>,
     pub built: bool,
+    /// Why the scene cannot be built as declared, if it cannot.
+    pub failed: Option<String>,
     /// Every handle the scene waits on before it counts as ready.
     pub pending: Vec<UntypedHandle>,
 }
@@ -78,7 +81,7 @@ pub struct PendingModel {
 }
 
 pub fn start_loading(mut commands: Commands, assets: Res<AssetServer>) {
-    commands.insert_resource(SceneState { manifest: assets.load(MANIFEST_PATH), built: false, pending: Vec::new() });
+    commands.insert_resource(SceneState { manifest: assets.load(MANIFEST_PATH), built: false, failed: None, pending: Vec::new() });
     commands.init_resource::<GroundTruth>();
 }
 
@@ -151,6 +154,9 @@ pub fn build_world(
     }
     let Some(ManifestAsset(manifest)) = manifests.get(&state.manifest) else { return };
     let library = Library::load(manifest, &assets, &mut state.pending);
+    let profile: Handle<ProfileAsset> = assets.load(manifest.camera.clone());
+    state.pending.push(profile.clone().untyped());
+    commands.insert_resource(RigSource(profile));
     spawn_sun_and_haze(&mut commands, &assets, &mut state.pending, &manifest.environment);
     let mut world = Builder { commands: &mut commands, meshes: &mut meshes, materials: &mut materials, library: &library, truth: &mut truth };
     for element in &manifest.elements {

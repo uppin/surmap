@@ -2,7 +2,8 @@
 
 import numpy as np
 import pytest
-from surmap.simulation.trajectory_eval import align_rigid, ate_rmse
+
+from surmap.simulation.trajectory_eval import align_rigid, ate_rmse, similarity_scale
 
 SOURCE = np.array(
     [
@@ -79,3 +80,25 @@ def test_alignment_never_scales_a_doubled_trajectory_to_fit() -> None:
 
     # Then a real error remains, because no scale was estimated
     assert ate_rmse(aligned, doubled) > 0.5
+
+
+def test_a_metric_estimate_has_unit_scale() -> None:
+    # Given an estimate that is the ground truth rotated and moved, nothing else
+    target = SOURCE @ ROTATION_Z_90.T + TRANSLATION
+
+    # When its similarity scale against the ground truth is estimated
+    scale = similarity_scale(SOURCE, target)
+
+    # Then it is exactly metric
+    assert scale == pytest.approx(1.0, abs=1e-9)
+
+
+def test_an_estimate_two_percent_short_reports_that_scale() -> None:
+    # Given ground truth 2 % larger than the estimate (a too-short baseline would do it)
+    target = (SOURCE * 1.02) @ ROTATION_Z_90.T + TRANSLATION
+
+    # When the similarity scale is estimated
+    scale = similarity_scale(SOURCE, target)
+
+    # Then the estimate must be stretched by 2 % to fit
+    assert scale == pytest.approx(1.02, abs=1e-9)

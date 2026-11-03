@@ -17,7 +17,7 @@ from surmap.simulation.bevy_wire import (
     decode_bevy_message,
     encode_status,
 )
-from surmap.simulation.calibration import render_cam_sensor_yaml
+from surmap.simulation.camera_profile import profile_sensor_yaml
 from surmap.slam.stream_protocol import OdomUpdate
 from surmap.types import StereoFramePair
 
@@ -69,12 +69,12 @@ class BevyStreamSession:
         decoded = decode_bevy_message(message)
         if isinstance(decoded, BevyHello):
             self._hello = decoded
-            cal = decoded.calibration
+            camera = decoded.camera
             self._backend = self._backend_factory(
-                cam0_yaml=render_cam_sensor_yaml(cal, 0),
-                cam1_yaml=render_cam_sensor_yaml(cal, 1),
-                width=cal.width,
-                height=cal.height,
+                cam0_yaml=profile_sensor_yaml(camera, 0),
+                cam1_yaml=profile_sensor_yaml(camera, 1),
+                width=camera.width,
+                height=camera.height,
             )
             return BridgeStatus(frames=0, posed=0, lost=False, keyframes=0, dropped=0)
         if self._backend is None or self._hello is None:
@@ -88,7 +88,7 @@ class BevyStreamSession:
                 t_ns=pair.t_ns,
                 left_ref="",
                 right_ref="",
-                calibration_id=self._hello.calibration_id,
+                calibration_id=self._hello.camera.id,
                 left_data=_png(pair.left_data, pair.width, pair.height),
                 right_data=_png(pair.right_data, pair.width, pair.height),
             )

@@ -4,10 +4,11 @@ import json
 from pathlib import Path
 
 from PIL import Image
+
 from surmap.simulation.bevy_capture import CaptureRecorder, load_bevy_capture
 from surmap.simulation.bevy_wire import BevyPair, GroundTruthBox
-
 from surmap.simulation.calibration import StereoCalibrationSpec
+from surmap.simulation.camera_profile import load_camera_profile
 from surmap.types import Pose, Vec3
 
 
@@ -73,3 +74,38 @@ def test_a_recorded_session_loads_back_with_its_poses_and_ground_truth(tmp_path:
     assert (root / "euroc" / "mav0" / "cam1" / "sensor.yaml").is_file()
     assert (root / "euroc" / "mav0" / "cam0" / "data" / "1000000.png").is_file()
     assert (root / "euroc" / "mav0" / "cam1" / "data" / "1100000.png").is_file()
+
+
+def test_a_capture_carries_the_camera_profile_it_was_rendered_with(tmp_path: Path) -> None:
+    # Given a recorded session whose recorder left the renderer's camera profile beside it
+    shipped = (
+        Path(__file__).parents[1]
+        / "examples"
+        / "bevy-sitl-poc"
+        / "assets"
+        / "cameras"
+        / "elp-stereo-pinhole.camera.json"
+    )
+    recorder = CaptureRecorder(tmp_path, a_calibration(), objects=(a_car(),))
+    recorder.record_pair(a_pair(1, 1_000_000_000, 0.0))
+    recorder.finish()
+    (tmp_path / "camera.json").write_text(shipped.read_text(encoding="utf-8"), encoding="utf-8")
+
+    # When it is loaded
+    capture = load_bevy_capture(tmp_path)
+
+    # Then the profile comes with it, so RTAB-Map's calibration is derived from the same file
+    assert capture.camera == load_camera_profile(shipped)
+
+
+def test_a_capture_without_a_camera_profile_has_none(tmp_path: Path) -> None:
+    # Given a recorded session from before camera profiles existed
+    recorder = CaptureRecorder(tmp_path, a_calibration(), objects=(a_car(),))
+    recorder.record_pair(a_pair(1, 1_000_000_000, 0.0))
+    recorder.finish()
+
+    # When it is loaded
+    capture = load_bevy_capture(tmp_path)
+
+    # Then it says so rather than inventing one
+    assert capture.camera is None

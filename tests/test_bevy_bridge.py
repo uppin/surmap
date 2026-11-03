@@ -10,6 +10,7 @@ from typing import cast
 import pytest
 import websockets
 from PIL import Image
+
 from surmap.simulation.bevy_bridge import BevyStreamSession, serve_bevy_bridge
 from surmap.simulation.bevy_wire import (
     BevyHello,
@@ -18,8 +19,7 @@ from surmap.simulation.bevy_wire import (
     BridgeStatus,
     decode_bevy_message,
 )
-
-from surmap.simulation.calibration import render_cam_sensor_yaml
+from surmap.simulation.camera_profile import profile_sensor_yaml
 from surmap.slam.stream_protocol import OdomUpdate
 from surmap.types import Pose, StereoFramePair, Vec3
 
@@ -101,8 +101,8 @@ def test_the_hello_builds_the_backend_from_the_hello_calibration() -> None:
     assert status == BridgeStatus(frames=0, posed=0, lost=False, keyframes=0, dropped=0)
 
 
-def test_the_hello_sensor_yamls_are_the_rendered_calibration() -> None:
-    # Given a bridge session and the calibration the hello golden carries
+def test_the_hello_sensor_yamls_come_from_its_camera_profile() -> None:
+    # Given a bridge session and the camera profile the hello golden carries
     session, factory, _, _ = a_session()
     session.handle(HELLO)
 
@@ -111,8 +111,8 @@ def test_the_hello_sensor_yamls_are_the_rendered_calibration() -> None:
     assert isinstance(hello, BevyHello)
 
     # Then cam0 and cam1 are exactly the rendered EuRoC yamls
-    assert factory.cam0_yaml == render_cam_sensor_yaml(hello.calibration, 0)
-    assert factory.cam1_yaml == render_cam_sensor_yaml(hello.calibration, 1)
+    assert factory.cam0_yaml == profile_sensor_yaml(hello.camera, 0)
+    assert factory.cam1_yaml == profile_sensor_yaml(hello.camera, 1)
 
 
 def test_a_pair_before_any_hello_is_refused() -> None:
@@ -136,7 +136,7 @@ def test_a_pair_becomes_a_stereo_frame_with_png_payloads() -> None:
     assert len(backend.frames) == 1
     frame = backend.frames[0]
     assert (frame.frame_id, frame.t_ns) == (7, 700_000_000)
-    assert frame.calibration_id == "bevy-sitl-poc-v1"
+    assert frame.calibration_id == "elp-stereo-pinhole-v1"
     with Image.open(io.BytesIO(frame.left_data)) as left_image:
         assert left_image.size == (4, 2)
         assert list(left_image.getdata()) == list(range(8))

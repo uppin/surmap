@@ -10,7 +10,7 @@
 use bevy::math::{Quat, Vec3};
 use serde::Serialize;
 
-use crate::calibration::StereoCalibration;
+use crate::calibration::CameraProfile;
 
 /// A ground-truth box in ENU metres, sent once in the hello.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -37,9 +37,7 @@ pub struct PairHeader {
 struct HelloHeader<'a> {
     #[serde(rename = "type")]
     kind: &'static str,
-    calibration_id: &'a str,
-    rate_hz: f32,
-    calibration: &'a StereoCalibration,
+    camera: &'a CameraProfile,
     objects: &'a [GroundTruthObject],
 }
 
@@ -67,20 +65,10 @@ fn frame(header_json: String, payloads: &[&[u8]]) -> Vec<u8> {
     out
 }
 
-/// The session opener: calibration and ground-truth objects.
-pub fn encode_hello(
-    calibration_id: &str,
-    rate_hz: f32,
-    calibration: &StereoCalibration,
-    objects: &[GroundTruthObject],
-) -> Vec<u8> {
-    let header = HelloHeader {
-        kind: "hello",
-        calibration_id,
-        rate_hz,
-        calibration,
-        objects,
-    };
+/// The session opener: the whole camera profile (the bridge derives
+/// RTAB-Map's calibration from it) and the ground-truth objects.
+pub fn encode_hello(camera: &CameraProfile, objects: &[GroundTruthObject]) -> Vec<u8> {
+    let header = HelloHeader { kind: "hello", camera, objects };
     frame(
         serde_json::to_string(&header).expect("hello header serializes"),
         &[],
@@ -190,9 +178,10 @@ mod tests {
 
     #[test]
     fn hello_matches_the_shared_golden_bytes() {
-        let rig = StereoCalibration::surmap_rig();
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/cameras/elp-stereo-pinhole.camera.json");
+        let rig = CameraProfile::from_json(&std::fs::read_to_string(path).expect("profile")).expect("valid");
 
-        let message = encode_hello("bevy-sitl-poc-v1", 10.0, &rig, &[a_car()]);
+        let message = encode_hello(&rig, &[a_car()]);
 
         assert_eq!(message, HELLO_GOLDEN);
     }

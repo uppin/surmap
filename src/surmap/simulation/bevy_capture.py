@@ -10,6 +10,7 @@ from PIL import Image
 
 from surmap.simulation.bevy_wire import BevyPair, GroundTruthBox
 from surmap.simulation.calibration import StereoCalibrationSpec
+from surmap.simulation.camera_profile import CameraProfile, load_camera_profile
 from surmap.simulation.euroc_export import export_euroc_session
 from surmap.types import Pose, StereoFramePair, Vec3
 
@@ -25,6 +26,8 @@ class BevyCapture:
     calibration: StereoCalibrationSpec
     objects: tuple[GroundTruthBox, ...]
     frames: tuple[CapturedFrame, ...]
+    # The renderer's exact profile (`camera.json`), when the recorder left one.
+    camera: CameraProfile | None = None
 
 
 class CaptureRecorder:
@@ -220,4 +223,8 @@ def load_bevy_capture(root: Path) -> BevyCapture:
             calibration_id=calibration_id,
         )
         frames.append(CapturedFrame(pair=pair, pose_enu=pose))
-    return BevyCapture(calibration=calibration, objects=tuple(objects), frames=tuple(frames))
+    profile_path = root / "camera.json"
+    camera = load_camera_profile(profile_path) if profile_path.is_file() else None
+    return BevyCapture(
+        calibration=calibration, objects=tuple(objects), frames=tuple(frames), camera=camera
+    )

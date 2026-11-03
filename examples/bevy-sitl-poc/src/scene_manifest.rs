@@ -17,6 +17,8 @@ use serde::Deserialize;
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct SceneManifest {
     pub version: u32,
+    /// The stereo camera profile (`cameras/<id>.camera.json`).
+    pub camera: String,
     pub environment: Environment,
     #[serde(default)]
     pub materials: BTreeMap<String, PbrTextureSet>,
@@ -303,6 +305,9 @@ impl SceneManifest {
         for path in manifest.referenced_paths() {
             validate_asset_path(&path)?;
         }
+        if !manifest.camera.ends_with(".camera.json") {
+            return Err(ManifestError::BadAssetPath(manifest.camera.clone()));
+        }
         for model in &manifest.models {
             if !(model.glb.ends_with(".glb") || model.glb.ends_with(".gltf")) {
                 return Err(ManifestError::BadAssetPath(model.glb.clone()));
@@ -312,7 +317,7 @@ impl SceneManifest {
     }
 
     fn referenced_paths(&self) -> Vec<String> {
-        let mut paths = Vec::new();
+        let mut paths = vec![self.camera.clone()];
         if let Some(hdri) = &self.environment.hdri {
             paths.push(hdri.clone());
         }
@@ -375,6 +380,7 @@ mod tests {
 
     const A_MANIFEST: &str = r#"{
         "version": 1,
+        "camera": "cameras/rig.camera.json",
         "environment": {"hdri": "hdri/sky.hdr", "sun_illuminance_lux": 100000.0,
                         "sun_elevation_deg": 38.0, "sun_azimuth_deg": 135.0,
                         "fog_visibility_m": 450.0},
@@ -391,7 +397,7 @@ mod tests {
 
     fn with_models(models: &str) -> String {
         format!(
-            r#"{{"version": 1, "environment": {{"hdri": null, "sun_illuminance_lux": 1.0,
+            r#"{{"version": 1, "camera": "cameras/rig.camera.json", "environment": {{"hdri": null, "sun_illuminance_lux": 1.0,
                 "sun_elevation_deg": 1.0, "sun_azimuth_deg": 1.0, "fog_visibility_m": 1.0}},
                 "models": {models}}}"#
         )
@@ -432,6 +438,7 @@ mod tests {
         assert_eq!(
             manifest.asset_paths(),
             vec![
+                "cameras/rig.camera.json",
                 "hdri/sky.hdr",
                 "models/car.glb",
                 "models/rubble.glb",
@@ -523,7 +530,7 @@ mod tests {
 
     fn with_elements(elements: &str) -> String {
         format!(
-            r#"{{"version": 1, "environment": {{"hdri": null, "sun_illuminance_lux": 1.0,
+            r#"{{"version": 1, "camera": "cameras/rig.camera.json", "environment": {{"hdri": null, "sun_illuminance_lux": 1.0,
                 "sun_elevation_deg": 1.0, "sun_azimuth_deg": 1.0, "fog_visibility_m": 1.0}},
                 "materials": {{"concrete": {{"color": [0.5, 0.5, 0.5]}}}},
                 "elements": {elements}}}"#
@@ -570,11 +577,11 @@ mod tests {
     }
 
     #[test]
-    fn a_solid_material_needs_no_texture_and_names_no_asset() {
+    fn a_solid_material_needs_no_texture_and_names_no_asset_file() {
         let manifest = SceneManifest::from_json(&with_elements("[]")).expect("valid");
 
         assert_eq!(manifest.materials["concrete"].base_color, None);
-        assert!(manifest.asset_paths().is_empty());
+        assert_eq!(manifest.asset_paths(), vec!["cameras/rig.camera.json"]);
     }
 
 }

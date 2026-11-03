@@ -2,10 +2,15 @@
 
 import math
 
+import numpy as np
 import pytest
-from surmap.simulation.bevy_ground_truth import left_eye_optical_pose, project_box
-from surmap.simulation.bevy_wire import GroundTruthBox
 
+from surmap.simulation.bevy_ground_truth import (
+    box_surface_distance,
+    left_eye_optical_pose,
+    project_box,
+)
+from surmap.simulation.bevy_wire import GroundTruthBox
 from surmap.simulation.calibration import StereoCalibrationSpec
 from surmap.types import Pose, Vec3
 
@@ -94,3 +99,36 @@ def test_a_box_behind_the_camera_projects_to_no_polygon() -> None:
 
     # Then there is nothing to draw
     assert polygon == ()
+
+
+def a_two_metre_cube() -> GroundTruthBox:
+    return GroundTruthBox(
+        id="car-1", kind="car", min_enu=Vec3(0.0, 0.0, 0.0), max_enu=Vec3(2.0, 2.0, 2.0)
+    )
+
+
+def test_points_on_a_box_face_are_at_zero_distance_from_its_surface() -> None:
+    # Given a 2 m cube resting on the ground and points on its top, its side and inside it
+    box = GroundTruthBox(
+        id="car-1", kind="car", min_enu=Vec3(0.0, 0.0, 0.0), max_enu=Vec3(2.0, 2.0, 2.0)
+    )
+    points = np.array([[1.0, 1.0, 2.0], [0.0, 1.0, 1.0], [1.0, 1.0, 1.0]])
+
+    # When each point's distance to the box surface is measured
+    distances = box_surface_distance(points, box)
+
+    # Then face points are on it, and the centre is one metre in
+    np.testing.assert_allclose(distances, [0.0, 0.0, 1.0], atol=1e-9)
+
+
+def test_a_point_outside_a_box_is_at_its_euclidean_distance() -> None:
+    # Given the same cube and a point 0.3 m above one top corner and 0.4 m out
+    box = GroundTruthBox(
+        id="car-1", kind="car", min_enu=Vec3(0.0, 0.0, 0.0), max_enu=Vec3(2.0, 2.0, 2.0)
+    )
+
+    # When its distance to the surface is measured
+    distances = box_surface_distance(np.array([[2.4, 2.0, 2.3]]), box)
+
+    # Then it is the straight-line distance to that corner
+    np.testing.assert_allclose(distances, [0.5], atol=1e-9)
