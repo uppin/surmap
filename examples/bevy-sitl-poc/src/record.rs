@@ -9,8 +9,7 @@ use std::path::{Path, PathBuf};
 
 use bevy::app::AppExit;
 use bevy::prelude::*;
-use bevy::render::render_resource::TextureFormat;
-use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
+use bevy::render::gpu_readback::{Readback, ReadbackComplete};
 use image::{codecs::jpeg::JpegEncoder, GrayImage};
 
 use crate::calibration::CameraProfile;
@@ -46,6 +45,9 @@ pub struct SimTime(pub Option<f32>);
 /// Frames to wait after the scene loaded, and after each pose change.
 const FIRST_SETTLE: u32 = 90;
 const STEP_SETTLE: u32 = 3;
+/// Progress line every N frames; a warning after this many seconds without one.
+const PROGRESS_EVERY: u32 = 10;
+const STALL_S: f64 = 10.0;
 
 #[derive(Resource)]
 pub struct Recorder {
@@ -57,11 +59,15 @@ pub struct Recorder {
     left: Option<Vec<u8>>,
     right: Option<Vec<u8>>,
     lines: Vec<String>,
+    /// Wall-clock seconds at the start and at the last written frame.
+    started_at: f64,
+    last_frame_at: f64,
+    stall_warned: bool,
 }
 
 impl Recorder {
     pub fn new(plan: RecordPlan) -> Self {
-        Self { plan, frame: 0, wait: FIRST_SETTLE, started: false, requested: false, left: None, right: None, lines: Vec::new() }
+        Self { plan, frame: 0, wait: FIRST_SETTLE, started: false, requested: false, left: None, right: None, lines: Vec::new(), started_at: 0.0, last_frame_at: 0.0, stall_warned: false }
     }
 }
 
@@ -71,26 +77,21 @@ enum Eye {
     Right,
 }
 
-/// Packed grey8 from a captured eye image (BGRA or RGBA, sRGB bytes).
-fn grey(image: &Image) -> Vec<u8> {
-    let size = image.texture_descriptor.size;
-    let data = image.data.as_deref().expect("captured image has data");
-    match image.texture_descriptor.format {
-        TextureFormat::Bgra8UnormSrgb | TextureFormat::Bgra8Unorm => wire::bgra_to_gray8(data, size.width, size.height, size.width * 4),
-        _ => {
-            let swapped: Vec<u8> = data.chunks_exact(4).flat_map(|p| [p[2], p[1], p[0], p[3]]).collect();
-            wire::bgra_to_gray8(&swapped, size.width, size.height, size.width * 4)
-        }
-    }
+/// GPU readbacks pad each row to 256 bytes.
+fn padded_row_bytes(width: u32) -> u32 {
+    (width * 4).div_ceil(256) * 256
 }
 
-fn on_eye_captured(captured: On<ScreenshotCaptured>, eyes: Query<&Eye>, mut recorder: ResMut<Recorder>) {
-    let pixels = grey(&captured.image);
-    match eyes.get(captured.entity) {
-        Ok(Eye::Left) => recorder.left = Some(pixels),
-        Ok(Eye::Right) => recorder.right = Some(pixels),
-        Err(_) => {}
+/// An eye readback landed: keep its grey frame, stop reading back.
+fn on_eye_read(read: On<ReadbackComplete>, eyes: Query<&Eye>, rig: Res<CameraProfile>, mut recorder: ResMut<Recorder>, mut commands: Commands) {
+    let Ok(eye) = eyes.get(read.entity) else { return };
+    let pixels = wire::bgra_to_gray8(&read.data, rig.width, rig.height, padded_row_bytes(rig.width));
+    match eye {
+        Eye::Left if recorder.left.is_none() => recorder.left = Some(pixels),
+        Eye::Right if recorder.right.is_none() => recorder.right = Some(pixels),
+        _ => {}
     }
+    commands.entity(read.entity).despawn();
 }
 
 fn save(path: &Path, pixels: Vec<u8>, rig: &CameraProfile, jpeg: bool) {
@@ -131,6 +132,7 @@ pub fn record_frames(
     feeds: Option<Res<StereoFeeds>>,
     rig: Option<Res<CameraProfile>>,
     truth: Res<GroundTruth>,
+    clock: Res<Time<Real>>,
     mut exit: MessageWriter<AppExit>,
 ) {
     let (Some(mut rec), Some(scene)) = (recorder, scene) else { return };
@@ -148,7 +150,15 @@ pub fn record_frames(
         std::fs::create_dir_all(dir.join("frames/left")).expect("capture dir");
         std::fs::create_dir_all(dir.join("frames/right")).expect("capture dir");
         rec.started = true;
+        rec.started_at = clock.elapsed_secs_f64();
+        rec.last_frame_at = rec.started_at;
+        info!("recording {} frames at {} Hz from t={} s into {}", rec.plan.frames, rec.plan.rate_hz, rec.plan.start_s, dir.display());
         sim_time.0 = Some(rec.plan.t_at(0));
+    }
+    let now = clock.elapsed_secs_f64();
+    if now - rec.last_frame_at > STALL_S && !rec.stall_warned {
+        warn!("recording stalled: no frame for {:.0} s at frame {}/{}", now - rec.last_frame_at, rec.frame, rec.plan.frames);
+        rec.stall_warned = true;
     }
     if rec.frame == rec.plan.frames {
         write_capture_files(&rec.plan, &rig, &truth, &rec.lines);
@@ -161,8 +171,10 @@ pub fn record_frames(
         return;
     }
     if !rec.requested {
+        // Readback works on the offscreen targets whatever the window does
+        // (window screenshots stalled with a hidden window).
         for (eye, target) in [(Eye::Left, feeds.left.clone()), (Eye::Right, feeds.right.clone())] {
-            commands.spawn((Screenshot::image(target), eye)).observe(on_eye_captured);
+            commands.spawn((Readback::texture(target), eye)).observe(on_eye_read);
         }
         rec.requested = true;
         return;
@@ -182,6 +194,12 @@ pub fn record_frames(
             .to_string(),
     );
     rec.frame += 1;
+    rec.last_frame_at = now;
+    rec.stall_warned = false;
+    if rec.frame % PROGRESS_EVERY == 0 || rec.frame == rec.plan.frames {
+        let rate = f64::from(rec.frame) / (now - rec.started_at).max(1e-6);
+        info!("recorded frame {}/{} (sim t={:.1} s) at {:.2} frames/s", rec.frame, rec.plan.frames, t_s, rate);
+    }
     rec.requested = false;
     rec.wait = STEP_SETTLE;
     sim_time.0 = Some(rec.plan.t_at(rec.frame));
@@ -196,6 +214,11 @@ mod tests {
         let plan = RecordPlan { dir: PathBuf::from("c"), frames: 3, rate_hz: 10.0, start_s: 30.0, jpeg: false };
 
         assert_eq!([plan.t_at(0), plan.t_at(1), plan.t_at(2)], [30.0, 30.1, 30.2]);
+    }
+
+    #[test]
+    fn readback_rows_are_padded_to_256_bytes() {
+        assert_eq!((padded_row_bytes(640), padded_row_bytes(100)), (2560, 512));
     }
 
     #[test]

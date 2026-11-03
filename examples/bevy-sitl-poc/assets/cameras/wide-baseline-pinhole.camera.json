@@ -1,0 +1,23 @@
+{
+  "id": "wide-baseline-pinhole-v1",
+  "model": "pinhole",
+  "width": 640,
+  "height": 480,
+  "fx": 381.36,
+  "fy": 381.36,
+  "cx": 320.0,
+  "cy": 240.0,
+  "distortion": [
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "baseline_m": 0.3,
+  "rate_hz": 10.0,
+  "mount": {
+    "forward_m": 0.3,
+    "up_m": 0.1,
+    "pitch_deg": 35.0
+  }
+}

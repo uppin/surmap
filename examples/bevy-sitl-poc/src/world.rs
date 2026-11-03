@@ -23,6 +23,7 @@ use crate::scene_manifest::{
     Person, SceneManifest,
 };
 use crate::rig::{ProfileAsset, RigSource};
+use crate::shots::RunMode;
 use crate::sky::SkySource;
 use crate::textures::{load_texture_set, tiled_material, TextureSetHandles};
 use crate::wire::GroundTruthObject;
@@ -148,13 +149,15 @@ pub fn build_world(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut truth: ResMut<GroundTruth>,
+    mode: Res<RunMode>,
 ) {
     if state.built {
         return;
     }
     let Some(ManifestAsset(manifest)) = manifests.get(&state.manifest) else { return };
     let library = Library::load(manifest, &assets, &mut state.pending);
-    let profile: Handle<ProfileAsset> = assets.load(manifest.camera.clone());
+    let camera = mode.camera.clone().unwrap_or_else(|| manifest.camera.clone());
+    let profile: Handle<ProfileAsset> = assets.load(camera);
     state.pending.push(profile.clone().untyped());
     commands.insert_resource(RigSource(profile));
     spawn_sun_and_haze(&mut commands, &assets, &mut state.pending, &manifest.environment);

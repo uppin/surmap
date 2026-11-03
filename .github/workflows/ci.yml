@@ -84,10 +84,10 @@ jobs:
       - name: Build streaming image
         run: uv run python scripts/build_rtabmap_stream.py
 
-      - name: Real RTAB-Map streaming e2e
+      - name: Real RTAB-Map streaming e2e (EuRoC + Bevy simulation captures)
         env:
           SURMAP_REQUIRE_RTABMAP_STREAM_E2E: "1"
-        run: uv run pytest tests/test_slam_streaming_e2e.py -q
+        run: uv run pytest tests/test_slam_streaming_e2e.py tests/test_bevy_sim_rtabmap_e2e.py -q
 
   coral-e2e:
     # Real detector network (CPU twin of the Edge-TPU artifact; no

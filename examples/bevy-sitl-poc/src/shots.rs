@@ -33,6 +33,8 @@ pub struct RunMode {
     pub flight: FlightMode,
     pub screenshot: Option<ShotPlan>,
     pub record: Option<RecordPlan>,
+    /// `--camera cameras/<id>.camera.json`: another profile than the scene's.
+    pub camera: Option<String>,
 }
 
 impl RunMode {
@@ -76,7 +78,12 @@ impl RunMode {
         };
         let scripted = screenshot.is_some() || record.is_some();
         let flight = if scripted { FlightMode::SurveyLoop } else { flight };
-        Ok(Self { flight, screenshot, record })
+        let camera = match value("--camera") {
+            None => None,
+            Some(Some(path)) => Some(path),
+            Some(None) => return Err("--camera needs a profile path".into()),
+        };
+        Ok(Self { flight, screenshot, record, camera })
     }
 
     /// No window chrome: stills and recordings run unattended.
@@ -214,7 +221,7 @@ mod tests {
     fn no_flags_fly_manually_without_stills() {
         let mode = RunMode::from_args(&args(&[])).expect("valid");
 
-        assert_eq!(mode, RunMode { flight: FlightMode::Manual, screenshot: None, record: None });
+        assert_eq!(mode, RunMode { flight: FlightMode::Manual, screenshot: None, record: None, camera: None });
     }
 
     #[test]
@@ -239,6 +246,13 @@ mod tests {
             mode.record,
             Some(RecordPlan { dir: PathBuf::from("cap"), frames: 120, rate_hz: 10.0, start_s: 30.0, jpeg: true })
         );
+    }
+
+    #[test]
+    fn a_camera_override_names_another_profile() {
+        let mode = RunMode::from_args(&args(&["--camera", "cameras/wide.camera.json"])).expect("valid");
+
+        assert_eq!(mode.camera.as_deref(), Some("cameras/wide.camera.json"));
     }
 
     #[test]
