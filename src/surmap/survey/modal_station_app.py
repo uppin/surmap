@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 
 import modal
 
@@ -71,8 +72,10 @@ image = (
         "regex",
         "timm>=1.0.17",
     )
+    # surmap's dependencies into the same interpreter as torch and sam3 (a uv_sync venv would
+    # not see them), then surmap itself with its data files.
     .pip_install_from_pyproject("pyproject.toml")
-    .add_local_python_source("surmap")
+    .add_local_python_source("surmap", ignore=["**/__pycache__"])
 )
 
 volume = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
@@ -83,6 +86,8 @@ volume = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
     gpu=_GPU,
     secrets=[modal.Secret.from_name(SURVEY_SECRET), modal.Secret.from_name(HF_SECRET)],
     volumes={MODEL_MOUNT: volume},
+    cpu=4.0,
+    memory=16384,
     timeout=_TIMEOUT_S,
     scaledown_window=_SCALEDOWN_S,
     max_containers=1,
@@ -91,4 +96,5 @@ volume = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
 @modal.web_server(STATION_PORT, startup_timeout=600)
 def serve() -> None:
     """Start the station server; Modal routes the app's HTTPS URL (and its WebSockets) to it."""
-    subprocess.Popen(station_command(_LABEL))
+    # This function's interpreter, with surmap on its path.
+    subprocess.Popen([sys.executable, *station_command(_LABEL)[1:]])

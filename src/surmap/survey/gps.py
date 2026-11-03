@@ -28,6 +28,11 @@ class PoseTimeline:
         self._times.insert(index, t_ns)
         self._frames.insert(index, (frame_id, position))
 
+    @property
+    def latest_t_ns(self) -> int | None:
+        """The time of the latest posed frame, or None before the first pose."""
+        return self._times[-1] if self._times else None
+
     def nearest(self, t_ns: int, max_gap_ns: int = MAX_ANCHOR_GAP_NS) -> tuple[int, Vec3] | None:
         """The posed frame nearest to `t_ns` within `max_gap_ns`; ties go to the earlier frame."""
         index = bisect.bisect_left(self._times, t_ns)
@@ -49,3 +54,23 @@ def gps_anchor(fix: survey_pb2.GpsFix, timeline: PoseTimeline) -> survey_pb2.Cm5
         anchor.frame_id = frame_id
         anchor.map_position.CopyFrom(survey_pb2.Point3(x=position.x, y=position.y, z=position.z))
     return survey_pb2.Cm5Response(gps_anchor=anchor)
+
+
+@dataclass
+class PendingFixes:
+    """Fixes waiting for their anchor. A fix is answered once a pose at or after its time has
+    landed — no later pose can be nearer — or when the stream ends."""
+
+    _fixes: list[survey_pb2.GpsFix] = field(default_factory=list)
+
+    def add(self, fix: survey_pb2.GpsFix) -> None:
+        self._fixes.append(fix)
+
+    def resolve(
+        self, timeline: PoseTimeline, *, final: bool = False
+    ) -> list[survey_pb2.Cm5Response]:
+        """Anchors for every fix that can be answered now (every fix, when `final`)."""
+        latest = timeline.latest_t_ns
+        ready = [fix for fix in self._fixes if final or (latest is not None and latest >= fix.t_ns)]
+        self._fixes = [fix for fix in self._fixes if fix not in ready]
+        return [gps_anchor(fix, timeline) for fix in ready]

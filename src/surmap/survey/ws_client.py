@@ -83,6 +83,33 @@ _STREAM_ANALYSIS = _method(
 )
 
 
+# A server refusing the bearer token says this, then closes with this code (see surmap.rpc).
+_UNAUTHORIZED_TEXT = "unauthorized"
+_UNAUTHORIZED_CLOSE_CODE = 4401
+
+
+async def _await_greeting(
+    socket: websockets.ClientConnection, address: str, timeout_s: float
+) -> None:
+    """Wait for the server's first frame: empty when the socket is open for calls, the text
+    `unauthorized` (or, with no proxy between, a 4401 close) when the token was refused."""
+    try:
+        greeting = await asyncio.wait_for(socket.recv(), timeout_s)
+    except websockets.ConnectionClosed as closed:
+        if closed.rcvd is not None and closed.rcvd.code == _UNAUTHORIZED_CLOSE_CODE:
+            raise PermissionError(f"{address} refused the survey token") from None
+        raise OSError(f"{address} closed the WebSocket before any call: {closed}") from None
+    except TimeoutError:
+        await socket.close()
+        raise OSError(f"{address} opened a WebSocket but never greeted it") from None
+    if greeting == _UNAUTHORIZED_TEXT:
+        await socket.close()
+        raise PermissionError(f"{address} refused the survey token")
+    if greeting not in (b"", ""):
+        await socket.close()
+        raise OSError(f"{address} is not a survey server: unexpected first frame") from None
+
+
 class SurveyConnection:
     """Survey calls over one dialed socket; built by `open`."""
 
@@ -103,6 +130,8 @@ class SurveyConnection:
                 additional_headers=headers,
                 open_timeout=open_timeout_s,
                 max_size=_MAX_MESSAGE_BYTES,
+                # Modal's WebSocket edge refuses permessage-deflate; frames are protobuf anyway.
+                compression=None,
             )
         except websockets.InvalidStatus as refused:
             status = refused.response.status_code
@@ -113,6 +142,7 @@ class SurveyConnection:
             raise OSError(f"{address} answered HTTP {status}, not a WebSocket") from None
         except (TimeoutError, websockets.InvalidHandshake) as failed:
             raise OSError(f"{address} did not open a WebSocket: {failed}") from None
+        await _await_greeting(socket, address, open_timeout_s)
         peer = SocketRpcPeer(WebSocketFrames(socket), role=PeerRole.DIALER)
         serving = asyncio.create_task(peer.serve())
         try:

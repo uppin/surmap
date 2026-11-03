@@ -215,17 +215,34 @@ async def test_an_idle_socket_outlives_a_proxy_that_drops_idle_connections() -> 
     assert reply.value == "echo:late"
 
 
-async def test_a_websocket_without_the_token_is_refused() -> None:
+async def test_a_websocket_without_the_token_is_told_unauthorized_and_closed() -> None:
     # Given a host guarded by a bearer token
     service = echo_service()
     async with _serving(service, auth_token=TOKEN) as port:
         # When a client dials without the token
-        # Then the upgrade is refused with 401
-        with pytest.raises(websockets.InvalidStatus) as refused:
-            async with _dialed(f"ws://127.0.0.1:{port}{CONNECT_PATH}"):
-                pass
+        async with websockets.connect(f"ws://127.0.0.1:{port}{CONNECT_PATH}") as socket:
+            # Then it is told "unauthorized" as data, then closed with 4401. A proxy in front may
+            # rewrite an HTTP 401 on the upgrade and the close code, but passes the frame.
+            told = await asyncio.wait_for(socket.recv(), 5.0)
+            with pytest.raises(websockets.ConnectionClosed) as closed:
+                await socket.recv()
 
-    assert refused.value.response.status_code == 401
+    assert told == "unauthorized"
+    assert closed.value.rcvd is not None and closed.value.rcvd.code == 4401
+
+
+async def test_an_authorized_websocket_is_greeted_with_an_empty_frame() -> None:
+    # Given a host guarded by a bearer token
+    service = echo_service()
+    async with _serving(service, auth_token=TOKEN) as port:
+        # When a client dials with the token
+        headers = {"Authorization": f"Bearer {TOKEN}"}
+        url = f"ws://127.0.0.1:{port}{CONNECT_PATH}"
+        async with websockets.connect(url, additional_headers=headers) as socket:
+            # Then the first frame is empty: the socket is open for calls
+            first = await asyncio.wait_for(socket.recv(), 5.0)
+
+    assert first == b""
 
 
 async def test_a_websocket_with_the_token_is_served() -> None:

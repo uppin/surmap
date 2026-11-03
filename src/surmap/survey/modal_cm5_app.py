@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 
 import modal
 
@@ -41,14 +42,17 @@ image = (
     )
     .add_local_dir("deploy/rtabmap-stream", "/opt/surmap/deploy/rtabmap-stream", copy=True)
     .run_commands(f"RTABMAP_WORK={RTABMAP_WORK} bash /opt/surmap/scripts/build_rtabmap_native.sh")
-    .pip_install_from_pyproject("pyproject.toml")
-    .add_local_python_source("surmap")
+    # The locked dependencies (uv.lock), then surmap itself with its data files.
+    .uv_sync(extra_options="--no-dev")
+    .add_local_python_source("surmap", ignore=["**/__pycache__"])
 )
 
 
 @app.function(
     image=image,
     secrets=[modal.Secret.from_name(SURVEY_SECRET)],
+    cpu=4.0,
+    memory=8192,
     timeout=_TIMEOUT_S,
     scaledown_window=_SCALEDOWN_S,
     max_containers=1,
@@ -57,4 +61,5 @@ image = (
 @modal.web_server(CM5_PORT, startup_timeout=120)
 def serve() -> None:
     """Start the CM5 server; Modal routes the app's HTTPS URL (and its WebSockets) to it."""
-    subprocess.Popen(cm5_command())
+    # This function's interpreter: the image's uv environment, with surmap on its path.
+    subprocess.Popen([sys.executable, *cm5_command()[1:]])

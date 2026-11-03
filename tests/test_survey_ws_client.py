@@ -235,6 +235,30 @@ async def test_a_connection_without_the_token_is_refused() -> None:
                 pass
 
 
+async def test_the_connection_offers_no_compression_because_modal_refuses_it() -> None:
+    # Given a listener that records the WebSocket upgrade request and hangs up
+    upgrade = asyncio.get_running_loop().create_future()
+
+    async def record(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        upgrade.set_result((await reader.readuntil(b"\r\n\r\n")).decode().lower())
+        writer.close()
+
+    listener = await asyncio.start_server(record, "127.0.0.1", 0)
+    port = listener.sockets[0].getsockname()[1]
+    try:
+        # When a connection is opened to it
+        with pytest.raises(OSError):
+            async with SurveyConnection.open(f"127.0.0.1:{port}"):
+                pass
+        request = await upgrade
+    finally:
+        listener.close()
+        await listener.wait_closed()
+
+    # Then the upgrade asks for no permessage-deflate
+    assert "sec-websocket-extensions" not in request
+
+
 @pytest.mark.parametrize(
     ("address", "url"),
     [

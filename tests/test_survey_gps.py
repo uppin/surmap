@@ -7,9 +7,11 @@ no position at all.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterable
 
 from surmap.slam.base import FrameResult
+from surmap.slam.stream_protocol import OdomUpdate
 from surmap.survey.cm5_server import stream_survey
 from surmap.survey.object_points import InMemoryObjectPointSource
 from surmap.survey.v1 import survey_pb2
@@ -126,3 +128,79 @@ async def test_a_fix_mid_stream_adds_only_its_anchor_to_the_output() -> None:
 
     # Then the one response is the fix's anchor
     assert kinds == ["gps_anchor"]
+
+
+class LiveSlamAlongX:
+    """A live backend: a pair's result carries no pose; its odometry (x = frame id metres) lands
+    later, once `land(frame_id)` is called, as RTAB-Map's does while it catches up."""
+
+    def __init__(self) -> None:
+        self._t_ns: dict[int, int] = {}
+        self._landed: set[int] = set()
+
+    def land(self, frame_id: int) -> None:
+        self._landed.add(frame_id)
+
+    def process_frame(self, frame: StereoFramePair) -> FrameResult:
+        self._t_ns[frame.frame_id] = frame.t_ns
+        return FrameResult(frame.frame_id, frame.t_ns, None)
+
+    def frame_odometry(self, frame_id: int) -> OdomUpdate | None:
+        if frame_id not in self._landed:
+            return None
+        pose = Pose(Vec3(float(frame_id), 0.0, 0.0))
+        return OdomUpdate(frame_id, self._t_ns[frame_id], pose, False, 1.0)
+
+    def trajectory(self) -> list[Pose]:
+        return []
+
+    def close(self) -> None:
+        pass
+
+
+async def test_a_fix_sent_before_its_frames_pose_lands_is_anchored_once_it_does() -> None:
+    # Given a live backend whose pose for frame 1 has not landed when its fix arrives
+    slam = LiveSlamAlongX()
+
+    async def requests() -> AsyncIterable[survey_pb2.Cm5Request]:
+        yield a_config()
+        for request in a_pair(1, 1_000 * MS):
+            yield request
+        yield a_fix(1_000 * MS)
+        slam.land(1)
+        for request in a_pair(2, 1_100 * MS):
+            yield request
+
+    # When the stream is served
+    anchors = [
+        response.gps_anchor
+        async for response in stream_survey(requests(), slam, InMemoryObjectPointSource())
+        if response.WhichOneof("kind") == "gps_anchor"
+    ]
+
+    # Then the fix waited for frame 1's pose and was anchored to it
+    assert [(a.frame_id, a.map_position.x) for a in anchors] == [(1, 1.0)]
+
+
+async def test_odometry_landing_while_the_sender_is_idle_is_streamed_without_waiting() -> None:
+    # Given a live backend and a sender that sends one pair, then waits for its odometry
+    slam = LiveSlamAlongX()
+    odometry_seen = asyncio.Event()
+
+    async def requests() -> AsyncIterable[survey_pb2.Cm5Request]:
+        yield a_config()
+        for request in a_pair(1, 1_000 * MS):
+            yield request
+        slam.land(1)
+        # Nothing more is sent until frame 1's odometry has come back.
+        await asyncio.wait_for(odometry_seen.wait(), 5.0)
+
+    # When the stream is served
+    kinds: list[str | None] = []
+    async for response in stream_survey(requests(), slam, InMemoryObjectPointSource()):
+        kinds.append(response.WhichOneof("kind"))
+        if response.WhichOneof("kind") == "odom":
+            odometry_seen.set()
+
+    # Then the odometry arrived while the sender was idle
+    assert kinds == ["odom"]

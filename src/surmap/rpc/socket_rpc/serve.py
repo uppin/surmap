@@ -25,8 +25,9 @@ def connect_websocket_app(
     keepalive_s: float | None = None,
 ) -> Callable[[dict[str, Any], Any, Any], Awaitable[None]]:
     """An ASGI WebSocket app: accept, then answer the dialer's calls on `applications` (keyed by
-    fully-qualified service name) until the socket closes. Every `keepalive_s` it sends an empty
-    frame, so a proxy that drops connections idle on the server side keeps this one."""
+    fully-qualified service name) until the socket closes. The first frame it sends is empty —
+    the dialer's sign that the socket is open for calls — and so is one every `keepalive_s`,
+    so a proxy that drops connections idle on the server side keeps this one."""
 
     async def keep_alive(send: Any, interval_s: float) -> None:
         while True:
@@ -38,6 +39,7 @@ def connect_websocket_app(
         if message["type"] != "websocket.connect":
             return
         await send({"type": "websocket.accept"})
+        await send({"type": "websocket.send", "bytes": _KEEPALIVE_FRAME})
         peer = SocketRpcPeer(
             AsgiWebSocketFrames(receive, send), role=PeerRole.ACCEPTOR, applications=applications
         )

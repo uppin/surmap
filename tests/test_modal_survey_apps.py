@@ -104,6 +104,8 @@ def test_each_app_is_one_web_server_container_holding_the_token_secret(
     # Then it is one web-server container on the hosting port, reading the survey secret
     assert keyword_value(function, "max_containers") == 1
     assert keyword_value(function, "timeout") is not None
+    assert keyword_value(function, "cpu") is not None
+    assert keyword_value(function, "memory") is not None
     assert isinstance(web_server.args[0], ast.Name) and web_server.args[0].id == port_name
     text = source.read_text(encoding="utf-8")
     assert "SURVEY_SECRET" in text and "from_name(SURVEY_SECRET)" in text

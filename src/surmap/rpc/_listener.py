@@ -38,13 +38,23 @@ def _authorized(scope: dict[str, Any], token: str | None) -> bool:
     return False
 
 
-async def _refuse_websocket(scope: dict[str, Any], send: Any) -> None:
-    """Refuse the upgrade with HTTP 401 where the server supports denial responses, else close."""
-    if "websocket.http.response" in scope.get("extensions", {}):
-        await send({"type": "websocket.http.response.start", "status": 401, "headers": []})
-        await send({"type": "websocket.http.response.body", "body": b"", "more_body": False})
+# A WebSocket without the bearer token is refused inside the socket: told this text frame, then
+# closed with this code. A proxy in front (e.g. Modal's edge) turns an HTTP 401 on the upgrade
+# into an error of its own and rewrites close codes, but passes the frame.
+UNAUTHORIZED_TEXT = "unauthorized"
+UNAUTHORIZED_CLOSE_CODE = 4401
+
+
+async def _refuse_websocket(receive: Any, send: Any) -> None:
+    """Accept the upgrade, say it is unauthorized, close it; nothing on it is ever served."""
+    message = await receive()
+    if message["type"] != "websocket.connect":
         return
-    await send({"type": "websocket.close", "code": 1008})
+    await send({"type": "websocket.accept"})
+    await send({"type": "websocket.send", "text": UNAUTHORIZED_TEXT})
+    await send(
+        {"type": "websocket.close", "code": UNAUTHORIZED_CLOSE_CODE, "reason": UNAUTHORIZED_TEXT}
+    )
 
 
 async def _send_response(send: Any, response: HttpResponse) -> None:
@@ -79,7 +89,7 @@ def build_listener_app(
                 await send({"type": "websocket.close", "code": 1008})
                 return
             if not _authorized(scope, auth_token):
-                await _refuse_websocket(scope, send)
+                await _refuse_websocket(receive, send)
                 return
             await ws_app(scope, receive, send)
             return

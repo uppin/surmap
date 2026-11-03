@@ -28,6 +28,11 @@ contract change (GPS on the wire), and two new Modal deploy targets; touches `su
   - [x] `scripts/verify_cm5.py` / `scripts/verify_station.py` on the WebSocket client, URL addresses, `--token`; a refused stream fails its check instead of crashing
   - [x] `scripts/build_rtabmap_native.sh` runs as root without `sudo` (image builds)
   - [x] Modal apps `modal_cm5_app.py` (CPU, native RTAB-Map) and `modal_station_app.py` (GPU, SAM 3.1): `web_server`, one container, token secret; commands in `surmap.survey.modal_hosting`
+  - [x] Found on Modal (V4 run): the client offered `permessage-deflate`, which Modal's edge refuses — `compression=None`
+  - [x] Found on Modal: the edge turns an HTTP 401 on the upgrade into a 500 and rewrites close codes to 1000 — a tokenless socket is now accepted, told the text frame `unauthorized`, then closed (4401); an authorized one is greeted with an empty frame, which `SurveyConnection.open` waits for
+  - [x] Found on Modal: with RTAB-Map slower than the sender, fixes were answered before any pose landed — a fix now waits for a pose at or after its time (or the stream's end), and an idle survey stream drains odometry, keyframes and fixes every 0.1 s
+  - [x] `scripts/verify_cm5.py --simulated [--hold-s S]`: cameras and GPS over RPC, region query on the same connection, no Coral; health waits 60 s for a cold start
+  - [x] CM5 image: `uv_sync(--no-dev)` from `uv.lock`, the whole `surmap` package (data files too), started with the function's interpreter; explicit `cpu` / `memory` on both apps
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs, then open the PR ready ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/modal.md` — hosting the CM5 sim and the station, the token secret, URLs

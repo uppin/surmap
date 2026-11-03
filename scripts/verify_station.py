@@ -45,6 +45,8 @@ from surmap.survey.ws_client import SurveyConnection, health_url  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "euroc_v101_rtabmap"
+# Long enough for a serverless host (e.g. Modal) to cold-start the server.
+_HEALTH_TIMEOUT_S = 60
 FRAME_WIDTH = 376
 FRAME_HEIGHT = 240
 
@@ -180,7 +182,7 @@ def verify(
     results: list[CheckResult] = []
     rates: list[Rate] = []
     try:
-        with urllib.request.urlopen(health_url(address), timeout=10) as response:
+        with urllib.request.urlopen(health_url(address), timeout=_HEALTH_TIMEOUT_S) as response:
             status = int(response.status)  # type: ignore[attr-defined]
         results.append(CheckResult("health", status == 200, f"GET /health/is_alive -> {status}"))
     except Exception as exc:  # a dead server fails every later check too

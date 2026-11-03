@@ -36,7 +36,7 @@ from surmap.slam.regions import (
 )
 from surmap.slam.stream_protocol import KeyframeUpdate, OdomUpdate, Rectification
 from surmap.survey.designations import object_designation, video_designation
-from surmap.survey.gps import PoseTimeline, gps_anchor
+from surmap.survey.gps import PendingFixes, PoseTimeline
 from surmap.survey.moving_stream import _encoding_name as _encoding_name
 from surmap.survey.moving_stream import stream_moving_areas as stream_moving_areas
 from surmap.survey.object_points import InMemoryObjectPointSource, ObjectPointSource
@@ -65,6 +65,37 @@ _REGION_STATUS = {
     RegionStatus.NO_POSE: survey_pb2.REGION_STATUS_NO_POSE,
     RegionStatus.INVALID_QUERY: survey_pb2.REGION_STATUS_INVALID_QUERY,
 }
+
+
+# A survey stream with no request for this long still drains what a live backend produced since
+# (odometry, keyframes, the GPS anchors waiting for them).
+IDLE_DRAIN_S = 0.1
+
+
+async def _with_idle_ticks(
+    requests: AsyncIterable[survey_pb2.Cm5Request], idle_s: float
+) -> AsyncIterator[survey_pb2.Cm5Request | None]:
+    """`requests`, with a `None` whenever `idle_s` passes without one. The pending read is kept
+    across ticks, never cancelled."""
+    iterator = aiter(requests)
+    pending: asyncio.Future[survey_pb2.Cm5Request] | None = None
+    try:
+        while True:
+            if pending is None:
+                pending = asyncio.ensure_future(anext(iterator))
+            done, _ = await asyncio.wait({pending}, timeout=idle_s)
+            if not done:
+                yield None
+                continue
+            try:
+                request = pending.result()
+            except StopAsyncIteration:
+                return
+            pending = None
+            yield request
+    finally:
+        if pending is not None and not pending.done():
+            pending.cancel()
 
 
 # The local streaming backend stores at most this many points per
@@ -228,6 +259,7 @@ async def _stream_survey(
     odom_pending: set[int] = set()
     rectification_sent = False
     timeline = PoseTimeline()
+    fixes = PendingFixes()
 
     def drain_odom() -> list[survey_pb2.Cm5Response]:
         """Odometry responses for pending frames whose odometry landed."""
@@ -258,7 +290,38 @@ async def _stream_survey(
             responses.append(_odom_response(update, rectification))
         return responses
 
-    async for request in requests:
+    def drain_keyframes() -> list[survey_pb2.Cm5Response]:
+        """Scene batches for keyframes that landed. New keyframes only: placing their local
+        points costs O(new), unlike re-scanning the whole map snapshot per pair (which grows
+        with the cloud and throttles the stream)."""
+        poll_updates = getattr(slam, "poll_updates", None)
+        if not callable(poll_updates):
+            return []
+        responses: list[survey_pb2.Cm5Response] = []
+        for update in poll_updates():
+            if not isinstance(update, KeyframeUpdate):
+                continue
+            fresh = emitter.emit(1, _placed_keyframe_points(update))
+            if fresh:
+                responses.append(
+                    survey_pb2.Cm5Response(
+                        points=survey_pb2.PointBatch(
+                            designation=1,
+                            frame_id=update.frame_id,
+                            t_ns=update.t_ns,
+                            points=[survey_pb2.Point3(x=p.x, y=p.y, z=p.z) for p in fresh],
+                        )
+                    )
+                )
+        return responses
+
+    async for request in _with_idle_ticks(requests, IDLE_DRAIN_S):
+        if request is None:
+            # The sender is idle: stream what a live backend produced meanwhile.
+            if config is not None:
+                for response in [*drain_odom(), *drain_keyframes(), *fixes.resolve(timeline)]:
+                    yield response
+            continue
         if config is None:
             if request.WhichOneof("kind") != "config":
                 raise ValueError("first request must be config")
@@ -282,7 +345,9 @@ async def _stream_survey(
                 poll_fn()
             continue
         if request.WhichOneof("kind") == "gps":
-            yield gps_anchor(request.gps, timeline)
+            fixes.add(request.gps)
+            for response in fixes.resolve(timeline):
+                yield response
             continue
         if request.WhichOneof("kind") != "frame":
             continue
@@ -318,29 +383,14 @@ async def _stream_survey(
         # backend's result has no pose yet): odometry that has landed
         # since (pose + tracked keypoints for the video overlay) and
         # the map snapshot growing behind it.
-        for response in drain_odom():
+        for response in [*drain_odom(), *drain_keyframes()]:
             yield response
-        # New keyframes only: placing their local points costs
-        # O(new), unlike re-scanning the whole map snapshot per pair
-        # (which grows with the cloud and throttles the stream).
-        poll_updates = getattr(slam, "poll_updates", None)
-        if callable(poll_updates):
-            for update in poll_updates():
-                if not isinstance(update, KeyframeUpdate):
-                    continue
-                fresh = emitter.emit(1, _placed_keyframe_points(update))
-                if fresh:
-                    yield survey_pb2.Cm5Response(
-                        points=survey_pb2.PointBatch(
-                            designation=1,
-                            frame_id=update.frame_id,
-                            t_ns=update.t_ns,
-                            points=[survey_pb2.Point3(x=p.x, y=p.y, z=p.z) for p in fresh],
-                        )
-                    )
+        if result.pose is not None:
+            timeline.add(pair.frame_id, pair.t_ns, result.pose.position)
+        for response in fixes.resolve(timeline):
+            yield response
         if result.pose is None:
             continue
-        timeline.add(pair.frame_id, pair.t_ns, result.pose.position)
         scene_points = list(result.static_points)
         calibration = config.calibration
         rig: StereoRig | None = None
@@ -404,6 +454,9 @@ async def _stream_survey(
                 yield response
         for response in drain_odom():
             yield response
+    # A fix still waiting for a later pose is answered with what the stream had.
+    for response in fixes.resolve(timeline, final=True):
+        yield response
 
 
 async def stream_detections(
