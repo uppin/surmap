@@ -6,13 +6,22 @@ import { MapPane } from "@/components/MapPane";
 import { ModelPicker } from "@/components/ModelPicker";
 import { Transcript } from "@/components/Transcript";
 import type { ChatPort, MapSceneView } from "@/ports";
-import { chatReducer, initialChatState, isTurnActive } from "@/view-model/chat-reducer";
+import {
+  chatReducer,
+  initialChatState,
+  isAwaitingReply,
+  isTurnActive,
+} from "@/view-model/chat-reducer";
 
 export interface ChatPageProps {
   port: ChatPort;
   /** The agent server the port talks to; relative geometry URLs resolve against it. */
   serverUrl: string;
   conversationId: string;
+  /** The model to start on, kept when the server lists it; otherwise the server's default. */
+  initialModelId?: string | null;
+  /** Called with the model the conversation's turns will use, whenever it is set or changes. */
+  onModelChange?: (modelId: string) => void;
 }
 
 /**
@@ -21,12 +30,22 @@ export interface ChatPageProps {
  * because the server answers `WatchConversation` with `NOT_FOUND` before the first turn.
  */
 export function ChatPage(props: ChatPageProps): ReactNode {
-  const { port, conversationId } = props;
-  const [state, dispatch] = useReducer(chatReducer, conversationId, initialChatState);
+  const { port, conversationId, onModelChange } = props;
+  const [state, dispatch] = useReducer(
+    chatReducer,
+    { conversationId, modelId: props.initialModelId ?? null },
+    ({ conversationId, modelId }) => initialChatState(conversationId, modelId),
+  );
   const [onServer, setOnServer] = useState(false);
   const [mapScene, setMapScene] = useState<MapSceneView | null>(null);
   const [now, setNow] = useState(0);
   const turn = useRef<AbortController | null>(null);
+
+  // Only once models load: before then the model is the URL's unchecked preference.
+  const modelInUse = state.models.length > 0 ? state.modelId : null;
+  useEffect(() => {
+    if (modelInUse !== null) onModelChange?.(modelInUse);
+  }, [modelInUse, onModelChange]);
 
   useEffect(() => {
     const clock = window.setInterval(() => setNow(Date.now()), 1000);
@@ -163,7 +182,11 @@ export function ChatPage(props: ChatPageProps): ReactNode {
       </header>
       <MapPane scene={mapScene} />
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem]">
-        <Transcript items={state.transcript} serverUrl={props.serverUrl} />
+        <Transcript
+          items={state.transcript}
+          serverUrl={props.serverUrl}
+          awaitingReply={isAwaitingReply(state)}
+        />
         <JobsPanel jobs={state.jobs} now={now} onCancel={cancelJob} />
       </div>
       <Composer busy={isTurnActive(state)} onSend={startTurn} onSteer={steer} onStop={stop} />
