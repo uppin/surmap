@@ -18,7 +18,6 @@ use bevy_rapier3d::prelude::*;
 use std::collections::BTreeMap;
 
 use crate::actors::{self, Figure};
-use crate::behaviour::Tree;
 use crate::scene_manifest::{
     BoxElement, Building, CollapsedBuilding, Element, Environment, ManifestError, ModelInstance, PbrTextureSet,
     Person, SceneManifest,
@@ -370,7 +369,7 @@ impl Builder<'_, '_, '_> {
         let skin = self.materials.add(self.library.material(&e.skin, Vec2::ONE, None, None));
         let body = self.meshes.add(Capsule3d::new(0.17, 1.05));
         let head = self.meshes.add(Sphere::new(0.13));
-        let tree = e.behaviour.clone().map(|root| Tree { root });
+        let tree = e.behaviour.clone();
         let figure = Figure::new(&e.id, e.position_enu, tree);
         let [x, y, z] = e.position_enu;
         self.commands
