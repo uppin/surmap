@@ -1,7 +1,9 @@
-"""Muse on the Meta Responses API as the agent's chat model: request/reply mapping, tools, usage.
+"""Muse chat models over the fake Meta server on a real loopback socket.
 
-Offline tests replay hand-built Responses bodies (`tests/fixtures/agent/`) through a recording
-transport. The live test is gated on `SURMAP_LIVE_META=1` and spends one short tool round trip.
+The adapter's real transport (`UrllibMetaMuseTransport`) sends real bytes to `tests/fake_meta.py`;
+nothing leaves loopback. The pure request / reply mapping is pinned in
+`tests/test_agent_llm_meta_mapping.py`. The live test is gated on `SURMAP_LIVE_META=1`, reads
+`MODEL_API_KEY` from the shell or the project `.env`, and spends one short tool round trip.
 """
 
 from __future__ import annotations
@@ -11,144 +13,164 @@ import os
 from pathlib import Path
 
 import pytest
-from langchain_core.messages import (
-    AIMessage,
-    BaseMessage,
-    HumanMessage,
-    SystemMessage,
-    ToolCall,
-    ToolMessage,
-)
+from langchain_core.messages import AIMessage, HumanMessage, ToolCall, ToolMessage
+from pydantic import SecretStr
 
-from surmap.agent.llm.meta import (
-    MetaResponsesChatModel,
-    MetaResponsesError,
-    parse_responses,
-    responses_request,
-)
+from surmap.agent.llm.meta import MetaResponsesChatModel, MetaResponsesError, ReasoningEffort
 from surmap.env import load_env
-from surmap.usage import BudgetExceeded, UsageLedger
+from surmap.usage import BudgetExceeded, UsageLedger, UsageRecord, UsageSink
 from tests.agent_llm_fakes import (
     ECHO_PORTABLE_TOOL,
     ECHO_RESPONSES_TOOL,
-    FIXTURE_KEY,
     ROOF_JPEG_B64,
-    RecordingMetaTransport,
-    a_muse_model,
-    a_recorded_reply,
-    a_reply,
     echo_tool,
-    input_types,
     item_of_type,
     round_trip,
 )
+from tests.fake_meta import (
+    FAKE_META_KEY,
+    FakeMetaScript,
+    answering,
+    calling,
+    reasoning_only,
+    serving,
+)
 
-AGENT_PROMPT = "You are SurMap's survey agent."
+QUESTION = "Who is on the roof?"
+ROOF_ANSWER = "Two people are on the roof of the collapsed block."
+
+
+def a_muse_model(
+    base_url: str,
+    *,
+    usage_sink: UsageSink | None = None,
+    before_call: UsageLedger | None = None,
+    model: str = "muse-wonder-1.0",
+    reasoning_effort: ReasoningEffort = "medium",
+    max_output_tokens: int = 8192,
+) -> MetaResponsesChatModel:
+    """Muse on the fake Meta server, keyed with the fake key, over its real transport."""
+    return MetaResponsesChatModel(
+        model=model,
+        reasoning_effort=reasoning_effort,
+        max_output_tokens=max_output_tokens,
+        base_url=base_url,
+        api_key=SecretStr(FAKE_META_KEY),
+        usage_sink=usage_sink,
+        before_call=before_call.check if before_call is not None else None,
+    )
 
 
 def the_echo_call(call_id: str = "call_echo_1", text: str = "surmap-ping") -> ToolCall:
     return ToolCall(name="echo", args={"text": text}, id=call_id, type="tool_call")
 
 
-def an_echo_conversation() -> list[BaseMessage]:
-    """System prompt, a question, Muse calling `echo`, its result, and Muse's answer."""
-    return [
-        SystemMessage(content=AGENT_PROMPT),
-        HumanMessage(content="Echo surmap-ping."),
-        AIMessage(content="", tool_calls=[the_echo_call()]),
-        ToolMessage(content="surmap-ping", tool_call_id="call_echo_1"),
-        AIMessage(content="It returned surmap-ping."),
-    ]
+class RecordingSink:
+    def __init__(self) -> None:
+        self.records: list[UsageRecord] = []
+
+    def __call__(self, record: UsageRecord) -> None:
+        self.records.append(record)
 
 
-def a_request(*messages: BaseMessage) -> dict[str, object]:
-    """The Responses body for `messages` with the agent's defaults and no tools bound."""
-    return responses_request(
-        messages, [], model="muse-wonder-1.0", effort="medium", max_output_tokens=8192
+# --- the request ------------------------------------------------------------------------------
+
+
+def test_a_turn_is_posted_to_the_responses_path_of_the_base_url() -> None:
+    # Given the fake answering with text
+    script = FakeMetaScript(rounds=[answering(ROOF_ANSWER)])
+    with serving(script) as base:
+        # When one turn runs
+        a_muse_model(base).invoke(QUESTION)
+
+    # Then exactly one request was posted to /v1/responses
+    assert [(r.method, r.path) for r in script.requests] == [("POST", "/v1/responses")]
+
+
+def test_the_default_base_url_is_the_meta_model_api() -> None:
+    # When Muse is made without a base URL (no request is made)
+    model = MetaResponsesChatModel()
+
+    # Then it posts to the Meta Model API
+    assert model.base_url == "https://api.meta.ai/v1"
+
+
+def test_the_key_travels_only_in_the_bearer_header() -> None:
+    # Given the fake answering with text
+    script = FakeMetaScript(rounds=[answering(ROOF_ANSWER)])
+    with serving(script) as base:
+        # When one turn runs
+        a_muse_model(base).invoke(QUESTION)
+
+    # Then the key is the bearer token and appears nowhere in the body
+    assert script.last_request.header("authorization") == f"Bearer {FAKE_META_KEY}"
+    assert FAKE_META_KEY not in json.dumps(dict(script.last_request.body))
+
+
+def test_the_request_carries_the_models_effort_and_output_cap() -> None:
+    # Given Muse Spark configured for low effort and a 2048-token cap
+    script = FakeMetaScript(rounds=[answering(ROOF_ANSWER)])
+    with serving(script) as base:
+        model = a_muse_model(
+            base, model="muse-spark-1.3", reasoning_effort="low", max_output_tokens=2048
+        )
+
+        # When one turn runs
+        model.invoke(QUESTION)
+
+    # Then the request names that model, effort and cap, and does not stream
+    sent = script.last_request.body
+    assert (sent["model"], sent["reasoning"], sent["max_output_tokens"], sent["stream"]) == (
+        "muse-spark-1.3",
+        {"effort": "low"},
+        2048,
+        False,
     )
 
 
-# --- request mapping ------------------------------------------------------------------------
+def test_a_bound_langchain_tool_is_sent_as_a_responses_function_tool() -> None:
+    # Given Muse with the echo tool bound
+    script = FakeMetaScript(rounds=[answering("ok")])
+    with serving(script) as base:
+        # When one turn runs
+        a_muse_model(base).bind_tools([echo_tool()]).invoke("Echo surmap-ping.")
+
+    # Then echo is offered as a flat Responses function tool with its JSON schema
+    assert script.last_request.body["tools"] == [ECHO_RESPONSES_TOOL]
 
 
-def test_a_whole_conversation_maps_to_one_responses_request() -> None:
-    # Given a conversation in which Muse called echo and answered with its result
-    conversation = an_echo_conversation()
+def test_the_runtimes_portable_tool_dict_is_sent_as_a_responses_function_tool() -> None:
+    # Given Muse bound to echo in the provider-portable shape the agent runtime hands over
+    script = FakeMetaScript(rounds=[answering("ok")])
+    with serving(script) as base:
+        # When one turn runs
+        a_muse_model(base).bind_tools([ECHO_PORTABLE_TOOL]).invoke("Echo surmap-ping.")
 
-    # When it is mapped to a Responses request offering echo
-    body = responses_request(
-        conversation,
-        [ECHO_RESPONSES_TOOL],
-        model="muse-wonder-1.0",
-        effort="medium",
-        max_output_tokens=8192,
-    )
-
-    # Then the system prompt is the instructions and every turn is one input item, in order
-    assert body == {
-        "model": "muse-wonder-1.0",
-        "instructions": AGENT_PROMPT,
-        "input": [
-            {
-                "type": "message",
-                "role": "user",
-                "content": [{"type": "input_text", "text": "Echo surmap-ping."}],
-            },
-            {
-                "type": "function_call",
-                "call_id": "call_echo_1",
-                "name": "echo",
-                "arguments": '{"text": "surmap-ping"}',
-            },
-            {"type": "function_call_output", "call_id": "call_echo_1", "output": "surmap-ping"},
-            {
-                "type": "message",
-                "role": "assistant",
-                "content": [{"type": "output_text", "text": "It returned surmap-ping."}],
-            },
-        ],
-        "tools": [ECHO_RESPONSES_TOOL],
-        "stream": False,
-        "reasoning": {"effort": "medium"},
-        "max_output_tokens": 8192,
-    }
+    # Then the nested function definition is flattened into a Responses function tool
+    assert script.last_request.body["tools"] == [ECHO_RESPONSES_TOOL]
 
 
-def test_an_ai_tool_call_and_its_tool_result_share_one_call_id() -> None:
-    # Given Muse called echo as call_7 and the tool answered that call
+def test_a_tool_result_is_sent_as_a_function_call_output_with_the_call_s_id() -> None:
+    # Given a history in which Muse called echo as call_7 and the tool answered it
     history = [
         HumanMessage(content="Echo hello."),
         AIMessage(content="", tool_calls=[the_echo_call("call_7", "hello")]),
         ToolMessage(content="hello", tool_call_id="call_7"),
     ]
+    script = FakeMetaScript(rounds=[answering("It returned hello.")])
+    with serving(script) as base:
+        # When the next turn runs
+        a_muse_model(base).bind_tools([echo_tool()]).invoke(history)
 
-    # When the history is mapped to a request
-    body = a_request(*history)
-
-    # Then the function_call and its function_call_output carry the same call id
-    call_ids = [item["call_id"] for item in item_of_type(body, "function_call")]
-    output_ids = [item["call_id"] for item in item_of_type(body, "function_call_output")]
-    assert (call_ids, output_ids) == (["call_7"], ["call_7"])
-
-
-def test_ai_text_beside_tool_calls_is_sent_before_the_calls() -> None:
-    # Given Muse said something and asked for two tools in one reply
-    reply = AIMessage(
-        content="Looking up the recorded runs first.",
-        tool_calls=[
-            ToolCall(name="list_runs", args={}, id="call_runs_1", type="tool_call"),
-            ToolCall(name="get_run", args={"run_id": "run-7"}, id="call_run_2", type="tool_call"),
-        ],
-    )
-
-    # When that reply is mapped back into a request
-    body = a_request(HumanMessage(content="What did run 7 find?"), reply)
-
-    # Then the assistant text comes first, then each call in the order Muse made them
-    assert input_types(body) == ["message", "message", "function_call", "function_call"]
+    # Then the posted function_call and function_call_output share call_7
+    body = script.last_request.body
+    assert [i["call_id"] for i in item_of_type(body, "function_call")] == ["call_7"]
+    assert item_of_type(body, "function_call_output") == [
+        {"type": "function_call_output", "call_id": "call_7", "output": "hello"}
+    ]
 
 
-def test_a_human_image_block_becomes_an_input_image_data_url() -> None:
+def test_an_image_block_is_posted_as_an_input_image_data_url() -> None:
     # Given a question about a JPEG frame, sent as a standard image content block
     question = HumanMessage(
         content=[
@@ -156,148 +178,43 @@ def test_a_human_image_block_becomes_an_input_image_data_url() -> None:
             {"type": "image", "base64": ROOF_JPEG_B64, "mime_type": "image/jpeg"},
         ]
     )
-
-    # When it is mapped to a request
-    body = a_request(question)
+    script = FakeMetaScript(rounds=[answering(ROOF_ANSWER)])
+    with serving(script) as base:
+        # When one turn runs
+        a_muse_model(base).invoke([question])
 
     # Then the frame travels as an input_image data URL after the question text
-    assert item_of_type(body, "message")[0]["content"] == [
+    assert item_of_type(script.last_request.body, "message")[0]["content"] == [
         {"type": "input_text", "text": "What is on the roof?"},
         {"type": "input_image", "image_url": f"data:image/jpeg;base64,{ROOF_JPEG_B64}"},
     ]
 
 
-def test_an_openai_style_image_url_part_is_sent_as_its_data_url() -> None:
-    # Given a frame attached as an OpenAI-style image_url part
-    data_url = f"data:image/jpeg;base64,{ROOF_JPEG_B64}"
-    question = HumanMessage(content=[{"type": "image_url", "image_url": {"url": data_url}}])
-
-    # When it is mapped to a request
-    body = a_request(question)
-
-    # Then the same data URL is sent as the input_image
-    assert item_of_type(body, "message")[0]["content"] == [
-        {"type": "input_image", "image_url": data_url}
-    ]
+# --- the reply --------------------------------------------------------------------------------
 
 
-def test_a_history_without_a_system_message_sends_no_instructions() -> None:
-    # Given a history that is only a question
-    question = HumanMessage(content="How many runs are recorded?")
+def test_a_turns_tool_call_reaches_the_caller_as_an_ai_message() -> None:
+    # Given the fake calling echo(text="surmap-ping")
+    script = FakeMetaScript(rounds=[calling("echo", "call_echo_1", text="surmap-ping")])
+    with serving(script) as base:
+        # When one turn runs with echo bound
+        reply = a_muse_model(base).bind_tools([echo_tool()]).invoke("Echo surmap-ping.")
 
-    # When it is mapped to a request
-    body = a_request(question)
-
-    # Then the request has no instructions field
-    assert "instructions" not in body
-
-
-def test_a_request_with_no_bound_tools_sends_no_tools_field() -> None:
-    # Given a question and no tools bound
-    question = HumanMessage(content="How many runs are recorded?")
-
-    # When it is mapped to a request
-    body = a_request(question)
-
-    # Then the request offers no tools at all
-    assert "tools" not in body
+    # Then the caller gets that tool call to run
+    assert reply.tool_calls == [the_echo_call("call_echo_1", "surmap-ping")]
 
 
-# --- tool binding ---------------------------------------------------------------------------
+def test_a_text_reply_is_the_answer_with_its_usage_metadata() -> None:
+    # Given the fake answering in text: 812 in, 64 out of which 40 reasoning
+    script = FakeMetaScript(rounds=[answering(ROOF_ANSWER)])
+    with serving(script) as base:
+        # When one turn runs
+        reply = a_muse_model(base).invoke(QUESTION)
 
-
-def test_a_bound_langchain_tool_is_sent_as_a_responses_function_tool() -> None:
-    # Given Muse with the echo tool bound
-    transport = RecordingMetaTransport.replying("text")
-    model = a_muse_model(transport).bind_tools([echo_tool()])
-
-    # When one turn runs
-    model.invoke("Echo surmap-ping.")
-
-    # Then echo is offered as a flat Responses function tool with its JSON schema
-    assert transport.last_body["tools"] == [ECHO_RESPONSES_TOOL]
-
-
-def test_the_runtimes_portable_tool_dict_is_sent_as_a_responses_function_tool() -> None:
-    # Given Muse bound to echo in the provider-portable shape the agent runtime hands over
-    transport = RecordingMetaTransport.replying("text")
-    model = a_muse_model(transport).bind_tools([ECHO_PORTABLE_TOOL])
-
-    # When one turn runs
-    model.invoke("Echo surmap-ping.")
-
-    # Then the nested function definition is flattened into a Responses function tool
-    assert transport.last_body["tools"] == [ECHO_RESPONSES_TOOL]
-
-
-# --- reply mapping --------------------------------------------------------------------------
-
-
-def test_a_text_reply_becomes_the_message_content() -> None:
-    # Given the recorded reply that answers in text after reasoning
-    body = a_recorded_reply("text")
-
-    # When it is parsed
-    message = parse_responses(body, requested_model="muse-wonder-1.0")
-
-    # Then the answer is the output text, with no tool calls
-    assert (message.content, message.tool_calls) == (
-        "Two people are on the roof of the collapsed block.",
-        [],
-    )
-
-
-def test_a_function_call_item_becomes_a_tool_call_with_dict_arguments() -> None:
-    # Given the recorded reply that calls echo(text="surmap-ping") as call_echo_1
-    body = a_recorded_reply("one_call")
-
-    # When it is parsed
-    message = parse_responses(body, requested_model="muse-wonder-1.0")
-
-    # Then the message asks for exactly that call, with its arguments decoded
-    assert message.tool_calls == [the_echo_call("call_echo_1", "surmap-ping")]
-
-
-def test_two_function_calls_keep_their_order_beside_the_text() -> None:
-    # Given the recorded reply that says one line and calls list_runs then get_run(run-7)
-    body = a_recorded_reply("two_calls")
-
-    # When it is parsed
-    message = parse_responses(body, requested_model="muse-wonder-1.0")
-
-    # Then the text and both calls survive, in Muse's order
-    assert message.content == "Looking up the recorded runs first."
-    assert [(call["id"], call["name"], call["args"]) for call in message.tool_calls] == [
-        ("call_runs_1", "list_runs", {}),
-        ("call_run_2", "get_run", {"run_id": "run-7"}),
-    ]
-
-
-def test_unparseable_arguments_become_an_invalid_tool_call() -> None:
-    # Given a reply whose echo call carries arguments that are not JSON
-    body = a_reply(
-        {"type": "function_call", "call_id": "call_bad", "name": "echo", "arguments": "{text:"}
-    )
-
-    # When it is parsed
-    message = parse_responses(body, requested_model="muse-wonder-1.0")
-
-    # Then the call is kept as invalid, with its raw arguments, instead of being dropped
-    assert (message.tool_calls, [call["args"] for call in message.invalid_tool_calls]) == (
-        [],
-        ["{text:"],
-    )
-
-
-def test_usage_becomes_the_messages_usage_metadata() -> None:
-    # Given the recorded text reply: 812 in, 64 out of which 40 reasoning
-    body = a_recorded_reply("text")
-
-    # When it is parsed
-    message = parse_responses(body, requested_model="muse-wonder-1.0")
-
-    # Then the token counts are on the message in LangChain's usage shape
-    assert message.usage_metadata == {
+    # Then the text is the answer and the counts are on the message
+    assert isinstance(reply, AIMessage)
+    assert reply.content == ROOF_ANSWER
+    assert reply.usage_metadata == {
         "input_tokens": 812,
         "output_tokens": 64,
         "total_tokens": 876,
@@ -305,165 +222,124 @@ def test_usage_becomes_the_messages_usage_metadata() -> None:
     }
 
 
-def test_the_reply_names_the_requested_model_when_the_body_does_not() -> None:
-    # Given a reply body that does not say which model answered
-    body = a_reply({"type": "message", "content": [{"type": "output_text", "text": "Done."}]})
+async def test_an_async_turn_answers_like_a_sync_one() -> None:
+    # Given the fake answering with text
+    script = FakeMetaScript(rounds=[answering(ROOF_ANSWER)])
+    with serving(script) as base:
+        # When one turn runs asynchronously
+        reply = await a_muse_model(base).ainvoke(QUESTION)
 
-    # When it is parsed for a muse-spark-1.3 request
-    message = parse_responses(body, requested_model="muse-spark-1.3")
-
-    # Then the message is attributed to the requested model
-    assert message.response_metadata["model_name"] == "muse-spark-1.3"
-
-
-def test_a_body_without_an_output_list_is_refused() -> None:
-    # Given an error-shaped body with no output list
-    body: dict[str, object] = {"error": {"message": "tools are not supported"}}
-
-    # When it is parsed, then a named Meta Responses error is raised
-    with pytest.raises(MetaResponsesError, match="output"):
-        parse_responses(body, requested_model="muse-wonder-1.0")
+    # Then it answers with that text
+    assert reply.content == ROOF_ANSWER
 
 
-# --- the model end to end over a fake transport ----------------------------------------------
+def test_an_empty_reply_is_asked_for_once_more() -> None:
+    # Given the fake first spending its budget reasoning, then answering
+    script = FakeMetaScript(rounds=[reasoning_only(), answering(ROOF_ANSWER)])
+    with serving(script) as base:
+        # When one turn runs
+        reply = a_muse_model(base).invoke(QUESTION)
+
+    # Then the second answer is returned after exactly two requests
+    assert (reply.content, len(script.responses_requests)) == (ROOF_ANSWER, 2)
 
 
-def test_a_turn_is_posted_to_the_meta_responses_endpoint() -> None:
-    # Given Muse over a recording transport
-    transport = RecordingMetaTransport.replying("text")
+def test_two_empty_replies_raise_a_named_error() -> None:
+    # Given the fake returning nothing, every time
+    script = FakeMetaScript(rounds=[reasoning_only()])
+    with serving(script) as base:
+        model = a_muse_model(base)
 
-    # When one turn runs
-    a_muse_model(transport).invoke("Who is on the roof?")
+        # When one turn runs, then it fails naming the empty output after one retry
+        with pytest.raises(MetaResponsesError, match="no output"):
+            model.invoke(QUESTION)
 
-    # Then exactly one request went to the Responses endpoint
-    assert transport.urls == ["https://api.meta.ai/v1/responses"]
-
-
-def test_the_request_carries_the_models_effort_and_output_cap() -> None:
-    # Given Muse Spark configured for low effort and a 2048-token cap
-    transport = RecordingMetaTransport.replying("text")
-    model = a_muse_model(
-        transport, model="muse-spark-1.3", reasoning_effort="low", max_output_tokens=2048
-    )
-
-    # When one turn runs
-    model.invoke("Who is on the roof?")
-
-    # Then the request names that model, effort and cap
-    sent = transport.last_body
-    assert (sent["model"], sent["reasoning"], sent["max_output_tokens"]) == (
-        "muse-spark-1.3",
-        {"effort": "low"},
-        2048,
-    )
+    # And it asked exactly twice
+    assert len(script.responses_requests) == 2
 
 
-def test_the_key_travels_only_in_the_bearer_header() -> None:
-    # Given Muse keyed with the fixture key
-    transport = RecordingMetaTransport.replying("text")
-
-    # When one turn runs
-    a_muse_model(transport).invoke("Who is on the roof?")
-
-    # Then the key is the bearer token and appears nowhere in the body
-    assert transport.headers[0]["Authorization"] == f"Bearer {FIXTURE_KEY}"
-    assert FIXTURE_KEY not in json.dumps(transport.last_body)
-
-
-def test_a_missing_key_is_refused_before_any_request(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Given no MODEL_API_KEY in the environment and none given to the model
-    monkeypatch.delenv("MODEL_API_KEY", raising=False)
-    transport = RecordingMetaTransport.replying("text")
-    model = MetaResponsesChatModel(transport=transport)
-
-    # When a turn is attempted, then it is refused by naming the missing key
-    with pytest.raises(MetaResponsesError, match="MODEL_API_KEY"):
-        model.invoke("Who is on the roof?")
-
-    # And nothing was sent
-    assert transport.calls == 0
-
-
-def test_a_turns_tool_call_reaches_the_caller_as_an_ai_message() -> None:
-    # Given Muse whose reply calls echo(text="surmap-ping")
-    transport = RecordingMetaTransport.replying("one_call")
-
-    # When one turn runs with echo bound
-    reply = a_muse_model(transport).bind_tools([echo_tool()]).invoke("Echo surmap-ping.")
-
-    # Then the caller gets that tool call to run
-    assert reply.tool_calls == [the_echo_call("call_echo_1", "surmap-ping")]
+# --- usage and budget -------------------------------------------------------------------------
 
 
 def test_every_response_is_recorded_in_the_usage_ledger(tmp_path: Path) -> None:
-    # Given Muse writing usage to a ledger, answering with the 876-token text reply
+    # Given Muse writing usage to a ledger, and the fake answering with 876 tokens
     ledger = UsageLedger(tmp_path / "usage.jsonl")
-    transport = RecordingMetaTransport.replying("text")
-
-    # When one turn runs
-    a_muse_model(transport, usage_sink=ledger).invoke("Who is on the roof?")
+    script = FakeMetaScript(rounds=[answering(ROOF_ANSWER)])
+    with serving(script) as base:
+        # When one turn runs
+        a_muse_model(base, usage_sink=ledger).invoke(QUESTION)
 
     # Then the ledger holds one Meta call of 876 tokens
     assert (ledger.calls("meta"), ledger.total_tokens("meta")) == (1, 876)
 
 
+def test_a_response_s_reasoning_tokens_are_recorded_under_meta() -> None:
+    # Given the fake answering with 30 in, 9 out of which 5 reasoning
+    sink = RecordingSink()
+    script = FakeMetaScript(
+        rounds=[answering("ok", input_tokens=30, output_tokens=9, reasoning_tokens=5)]
+    )
+    with serving(script) as base:
+        # When one turn runs
+        a_muse_model(base, usage_sink=sink).invoke(QUESTION)
+
+    # Then one record names Meta, the model and every count
+    assert [
+        (r.provider, r.model, r.input_tokens, r.output_tokens, r.reasoning_tokens)
+        for r in sink.records
+    ] == [("meta", "muse-wonder-1.0", 30, 9, 5)]
+
+
 def test_a_spent_meta_budget_refuses_the_turn_before_any_request(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Given a Meta budget of one call, already spent in the ledger
+    # Given a Meta budget of one call, spent on the fake
     monkeypatch.setenv("SURMAP_BUDGET_META_CALLS", "1")
     ledger = UsageLedger(tmp_path / "usage.jsonl")
-    spent = RecordingMetaTransport.replying("text")
-    a_muse_model(spent, usage_sink=ledger).invoke("Who is on the roof?")
-    transport = RecordingMetaTransport.replying("text")
-    model = a_muse_model(transport, usage_sink=ledger).model_copy(
-        update={"before_call": ledger.check}
-    )
+    script = FakeMetaScript(rounds=[answering(ROOF_ANSWER)])
+    with serving(script) as base:
+        model = a_muse_model(base, usage_sink=ledger, before_call=ledger)
+        model.invoke(QUESTION)
 
-    # When another turn is attempted, then the budget refuses it
-    with pytest.raises(BudgetExceeded):
-        model.invoke("Who is on the roof?")
+        # When another turn is attempted, then the budget refuses it
+        with pytest.raises(BudgetExceeded):
+            model.invoke(QUESTION)
+
+    # And only the first turn reached the server
+    assert len(script.responses_requests) == 1
+
+
+# --- errors and the key -----------------------------------------------------------------------
+
+
+def test_a_missing_key_is_refused_before_any_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Given no MODEL_API_KEY in the environment and none given to the model
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    script = FakeMetaScript(rounds=[answering(ROOF_ANSWER)])
+    with serving(script) as base:
+        model = MetaResponsesChatModel(base_url=base)
+
+        # When a turn is attempted, then it is refused by naming the missing key
+        with pytest.raises(MetaResponsesError, match="MODEL_API_KEY"):
+            model.invoke(QUESTION)
 
     # And nothing was sent
-    assert transport.calls == 0
+    assert script.requests == []
 
 
-def test_an_empty_reply_is_asked_for_once_more() -> None:
-    # Given Muse that first spends its budget reasoning, then answers
-    transport = RecordingMetaTransport.replying("empty", "text")
+def test_an_error_status_names_its_status_and_not_the_key() -> None:
+    # Given the fake failing every request
+    script = FakeMetaScript(status=500)
+    with serving(script) as base:
+        # When one turn runs, then it fails with the status
+        with pytest.raises(MetaResponsesError, match="HTTP 500") as raised:
+            a_muse_model(base).invoke(QUESTION)
 
-    # When one turn runs
-    reply = a_muse_model(transport).invoke("Who is on the roof?")
-
-    # Then the second answer is returned after exactly two requests
-    assert (reply.content, transport.calls) == (
-        "Two people are on the roof of the collapsed block.",
-        2,
-    )
+    # And the error does not hold the key
+    assert FAKE_META_KEY not in str(raised.value)
 
 
-def test_two_empty_replies_raise_a_named_error() -> None:
-    # Given Muse that returns nothing twice
-    transport = RecordingMetaTransport.replying("empty", "empty")
-    model = a_muse_model(transport)
-
-    # When one turn runs, then it fails naming the empty output after one retry
-    with pytest.raises(MetaResponsesError, match="no output"):
-        model.invoke("Who is on the roof?")
-
-
-async def test_an_async_turn_answers_like_a_sync_one() -> None:
-    # Given Muse over a recording transport
-    transport = RecordingMetaTransport.replying("text")
-
-    # When one turn runs asynchronously
-    reply = await a_muse_model(transport).ainvoke("Who is on the roof?")
-
-    # Then it answers with the recorded text
-    assert reply.content == "Two people are on the roof of the collapsed block."
-
-
-# --- live -----------------------------------------------------------------------------------
+# --- live -------------------------------------------------------------------------------------
 
 
 @pytest.mark.skipif(

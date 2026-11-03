@@ -382,20 +382,37 @@ The `openai` client also reads `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`
 from the environment and would send them as headers; leave them unset
 when running the agent on Fireworks.
 
-**Tests.** `tests/fake_fireworks.py` is a fake Fireworks provider on a
-real loopback socket (`HypercornHost` port 0, in a thread):
-`serving(FakeFireworksScript(rounds=[…]))` yields its base URL, answers
-`POST /v1/chat/completions` with a whole `chat.completion` or SSE
-chunks (by the request's `stream` flag), `GET /v1/models` from
-`served_models`, and records every request. It proves the real client
-and a stub of the documented wire format agree; agreement with
-Fireworks itself is the live check below.
+### Tests: fake provider servers
+
+Every provider is tested against a **fake provider server**: a scripted
+HTTP stub on a real loopback socket (`HypercornHost` port 0, in its own
+thread) speaking that provider's wire format. The adapter keeps its
+real client, pointed at the stub through its base-URL setting, so a
+client-library upgrade that changes the bytes on the wire fails a test.
+
+| Module | Speaks | Adapter's real client, pointed by |
+|---|---|---|
+| `tests/fake_fireworks.py` | `POST /v1/chat/completions` (whole `chat.completion`, or SSE chunks when `stream`), `GET /v1/models` | `ChatOpenAI` → `openai` → `httpx`; `base_url` / `SURMAP_FIREWORKS_URL` |
+| `tests/fake_meta.py` | `POST /v1/responses` (whole JSON: `reasoning`, `message` / `output_text`, `function_call` items; usage with reasoning tokens) | `UrllibMetaMuseTransport`; `MetaResponsesChatModel.base_url`, `ChatModelRegistry(meta_base_url=…)` |
+| `tests/fake_ollama.py` | `POST /api/chat` (newline-delimited JSON, or one whole reply when `stream: false`, incl. `tool_calls`), `GET /api/tags` | `ChatOllama` → `ollama` → `httpx`, and `UrllibOllamaTagsTransport`; `SURMAP_OLLAMA_URL` |
+
+They share `tests/fake_llm_server.py`: `serving(script)` yields the
+base URL; a script's `rounds` answer one request each (the last
+repeats), a non-200 `status` answers with the provider's error body,
+and every request is recorded (method, path, case-insensitive headers,
+JSON body). `tests/test_agent_server_app.py` runs one whole agent turn
+per provider (`list_demos`, then an answer). The pure Responses mapping
+is unit-tested in `tests/test_agent_llm_meta_mapping.py`.
+
+**The limit:** a fake proves the real client and a stub of the
+documented format agree — not that the provider does. The gated live
+checks below are that.
 
 ### Live checks
 
 | Check | Command | Result on the dev host |
 |---|---|---|
-| Muse tool round trip (`echo`) | `SURMAP_LIVE_META=1 uv run pytest -q tests/test_agent_llm_meta.py -k live` (key from the shell or `.env`) | **Not run — no `MODEL_API_KEY` on the dev host. Live Meta function-tool support is unverified**: the request and reply shapes follow the OpenAI-style Responses API and are pinned only by hand-built fixtures |
+| Muse tool round trip (`echo`) | `SURMAP_LIVE_META=1 uv run pytest -q tests/test_agent_llm_meta.py -k live` (key from the shell or `.env`) | **Not run — no `MODEL_API_KEY` on the dev host. Live Meta function-tool support is unverified**: the request and reply shapes follow the OpenAI-style Responses API and are pinned by hand-built fixtures and the fake Meta server (client ↔ stub only) |
 | Fireworks tool round trip (`echo`) | `SURMAP_LIVE_FIREWORKS=1 uv run pytest -q tests/test_agent_llm_fireworks.py -k live` (key from the shell or `.env`; `SURMAP_FIREWORKS_MODEL` picks the model, default `llama-v3p3-70b-instruct`) | **Not run — no `FIREWORKS_API_KEY` on the dev host**; offline coverage is the fake provider |
 | Ollama tool round trip | `SURMAP_LIVE_OLLAMA=1 SURMAP_OLLAMA_MODEL=<model> uv run pytest -q tests/test_agent_llm_registry.py -k live` | Passed against `fastcontext-tools:latest` |
 

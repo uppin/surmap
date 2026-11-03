@@ -28,8 +28,8 @@ from surmap.agent.server.app import (
 from surmap.agent.services import Handler
 from surmap.rpc.hosts.in_memory import InMemoryHost
 from surmap.usage import BudgetExceeded, UsageLedger
+from tests import fake_meta, fake_ollama
 from tests.agent_fakes import ScriptedChatModel, answer
-from tests.agent_llm_fakes import FakeOllamaTags, RecordingMetaTransport
 from tests.agent_server_fakes import (
     CHAT_SERVICE,
     JOB_CONTRACTS,
@@ -49,9 +49,12 @@ from tests.fake_fireworks import (
     calling,
     serving,
 )
+from tests.fake_meta import FAKE_META_KEY, FakeMetaScript
+from tests.fake_ollama import FakeOllamaScript, a_closed_ollama_url
 
 MUSE = "meta:muse-wonder-1.0"
 FIREWORKS = f"fireworks:{FAKE_FIREWORKS_MODEL}"
+LLAMA = "ollama:llama3.2:3b"
 
 
 async def a_run_echoing_its_id(request: pb.GetRunRequest, _ctx: object) -> pb.GetRunResponse:
@@ -68,7 +71,7 @@ def a_server_answering_with(model: ScriptedChatModel) -> InMemoryHost[None]:
         config,
         workspace=EmptyWorkspace(),
         geometry=NoGlbs(),
-        registry=ChatModelRegistry(environ={}, ollama_transport=FakeOllamaTags("scripted")),
+        registry=ChatModelRegistry(environ={"SURMAP_OLLAMA_URL": a_closed_ollama_url()}),
         survey_handlers=echoing_survey_handlers(),
     )
     return InMemoryHost(description, None)
@@ -84,19 +87,45 @@ async def one_turn(server: InMemoryHost[None], text: str) -> list[chat_pb2.TurnE
     return await asyncio.wait_for(read(), STEP_TIMEOUT_S)
 
 
-def a_keyed_registry(transport: RecordingMetaTransport) -> ChatModelRegistry:
+def a_keyed_registry(meta_base_url: str) -> ChatModelRegistry:
     return ChatModelRegistry(
-        environ={"MODEL_API_KEY": "sk-fixture-agent-key"},
-        meta_transport=transport,
-        ollama_transport=FakeOllamaTags(),
+        environ={"MODEL_API_KEY": FAKE_META_KEY, "SURMAP_OLLAMA_URL": a_closed_ollama_url()},
+        meta_base_url=meta_base_url,
     )
 
 
 def a_fireworks_registry(base_url: str) -> ChatModelRegistry:
     return ChatModelRegistry(
-        environ={"FIREWORKS_API_KEY": FAKE_FIREWORKS_KEY, "SURMAP_FIREWORKS_URL": base_url},
-        ollama_transport=FakeOllamaTags(),
+        environ={
+            "FIREWORKS_API_KEY": FAKE_FIREWORKS_KEY,
+            "SURMAP_FIREWORKS_URL": base_url,
+            "SURMAP_OLLAMA_URL": a_closed_ollama_url(),
+        },
     )
+
+
+def an_ollama_registry(base_url: str) -> ChatModelRegistry:
+    return ChatModelRegistry(environ={"SURMAP_OLLAMA_URL": base_url})
+
+
+async def a_whole_turn(
+    tmp_path: Path, model_id: str, registry: ChatModelRegistry
+) -> list[chat_pb2.TurnEvent]:
+    """One user turn on `model_id` from `registry`, over the tiny scene's workspace."""
+    with a_tool_rig(tmp_path) as rig:
+        description = build_agent_description(
+            AgentServerConfig(model_id=model_id),
+            workspace=rig.workspace,
+            geometry=rig.workspace.geometry,
+            registry=registry,
+        )
+        return await one_turn(InMemoryHost(description, None), "what demos can you run?")
+
+
+def the_tool_call_then_stop(events: list[chat_pb2.TurnEvent]) -> list[str]:
+    """The turn's event kinds without text deltas; asserts it stopped normally."""
+    assert events[-1].turn_finished.reason == chat_pb2.TurnFinished.STOP
+    return [e.WhichOneof("event") for e in events if e.WhichOneof("event") != "text_delta"]
 
 
 def without_env(monkeypatch: pytest.MonkeyPatch, *names: str) -> None:
@@ -200,8 +229,10 @@ def models_listed_by_main(monkeypatch: pytest.MonkeyPatch) -> tuple[list[str], d
     seen: list[str] = []
     keys: dict[str, str] = {}
 
+    monkeypatch.setenv("SURMAP_OLLAMA_URL", a_closed_ollama_url())
+
     async def listing(config: AgentServerConfig) -> None:
-        registry = ChatModelRegistry(ollama_transport=FakeOllamaTags.unreachable())
+        registry = ChatModelRegistry()
         seen.extend(info.id for info in registry.available())
         keys.update({name: os.environ.get(name, "") for name in DOTENV_KEYS})
 
@@ -256,17 +287,18 @@ def test_a_muse_model_with_its_budget_spent_refuses_before_sending(
 ) -> None:
     # Given a Muse budget of zero calls
     monkeypatch.setenv("SURMAP_BUDGET_META_CALLS", "0")
-    transport = RecordingMetaTransport.replying("text")
-    model = default_model_factory(a_keyed_registry(transport), UsageLedger(tmp_path / "u.jsonl"))(
-        MUSE
-    )
+    script = FakeMetaScript(rounds=[fake_meta.answering("ok")])
+    with fake_meta.serving(script) as base:
+        model = default_model_factory(a_keyed_registry(base), UsageLedger(tmp_path / "u.jsonl"))(
+            MUSE
+        )
 
-    # When the agent calls it
-    with pytest.raises(BudgetExceeded):
-        model.invoke("what demos can you run?")
+        # When the agent calls it
+        with pytest.raises(BudgetExceeded):
+            model.invoke("what demos can you run?")
 
     # Then nothing was sent
-    assert transport.calls == 0
+    assert script.requests == []
 
 
 def test_a_muse_model_records_its_usage_in_the_ledger(
@@ -275,12 +307,11 @@ def test_a_muse_model_records_its_usage_in_the_ledger(
     # Given no Muse budget, and a ledger
     monkeypatch.delenv("SURMAP_BUDGET_META_CALLS", raising=False)
     ledger = UsageLedger(tmp_path / "u.jsonl")
-    model = default_model_factory(
-        a_keyed_registry(RecordingMetaTransport.replying("text")), ledger
-    )(MUSE)
+    with fake_meta.serving(FakeMetaScript(rounds=[fake_meta.answering("ok")])) as base:
+        model = default_model_factory(a_keyed_registry(base), ledger)(MUSE)
 
-    # When the agent calls it once
-    model.invoke("what demos can you run?")
+        # When the agent calls it once
+        model.invoke("what demos can you run?")
 
     # Then the ledger counts that call
     assert ledger.calls("meta") == 1
@@ -350,6 +381,52 @@ async def test_a_whole_turn_on_a_fireworks_model_lists_the_demos_and_stops(
         "turn_finished",
     ]
     assert events[-1].turn_finished.reason == chat_pb2.TurnFinished.STOP
+    assert len(script.chat_requests) == 2
+
+
+async def test_a_whole_turn_on_a_muse_model_lists_the_demos_and_stops(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Given the agent defaulting to Muse on the fake Meta server, scripted to call list_demos and
+    # then answer
+    monkeypatch.delenv("SURMAP_BUDGET_META_CALLS", raising=False)
+    monkeypatch.setenv("SURMAP_USAGE_LOG", str(tmp_path / "usage.jsonl"))
+    script = FakeMetaScript(
+        rounds=[fake_meta.calling("list_demos", "call-1"), fake_meta.answering("Ready.")]
+    )
+    with fake_meta.serving(script) as base:
+        # When the user writes
+        events = await a_whole_turn(tmp_path, MUSE, a_keyed_registry(base))
+
+    # Then list_demos ran as a tool call, its result went back under call-1, and the turn stopped
+    assert the_tool_call_then_stop(events) == [
+        "user_message",
+        "tool_call_started",
+        "tool_call_finished",
+        "turn_finished",
+    ]
+    answered = script.responses_requests[1].body["input"]
+    assert isinstance(answered, list)
+    assert [i["call_id"] for i in answered if i["type"] == "function_call_output"] == ["call-1"]
+
+
+async def test_a_whole_turn_on_an_ollama_model_lists_the_demos_and_stops(tmp_path: Path) -> None:
+    # Given the agent defaulting to an Ollama model on the fake Ollama server, scripted to call
+    # list_demos and then answer
+    script = FakeOllamaScript(
+        rounds=[fake_ollama.calling("list_demos"), fake_ollama.answering("Ready.")]
+    )
+    with fake_ollama.serving(script) as base:
+        # When the user writes
+        events = await a_whole_turn(tmp_path, LLAMA, an_ollama_registry(base))
+
+    # Then list_demos ran as a tool call and the turn stopped normally after two chat requests
+    assert the_tool_call_then_stop(events) == [
+        "user_message",
+        "tool_call_started",
+        "tool_call_finished",
+        "turn_finished",
+    ]
     assert len(script.chat_requests) == 2
 
 

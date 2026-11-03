@@ -3,8 +3,8 @@
 The server is the loopback Ollama API the labelling clients already use (`SURMAP_OLLAMA_URL`
 overrides `http://127.0.0.1:11434`); no key exists or is sent. `ollama_models` asks
 `GET /api/tags` which models the server holds. `OllamaTransport` in `surmap.labelling.ollama` is a
-POST-only seam, so the tag listing has its own one-method GET protocol beside it; tests substitute
-a fake and nothing here opens a socket under test.
+POST-only seam, so the tag listing has its own one-method GET protocol beside it. Tests point
+`SURMAP_OLLAMA_URL` at a fake Ollama server on loopback (`tests/fake_ollama.py`).
 """
 
 from __future__ import annotations
