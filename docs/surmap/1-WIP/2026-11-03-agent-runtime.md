@@ -8,12 +8,15 @@
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-03 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file + discovery (commit 1)
+- [wf 1] ✅ 2026-11-03 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file + discovery (commit 1 `d790f2a`)
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
+- [wf 2] ✅ 2026-11-03 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 42 failing — commit 2
+  - [x] Create failing acceptance tests
+  - [x] Run acceptance tests (verify they fail)
+  - [x] TDD Red — write failing unit/integration tests
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Milestone 1: `langgraph`, `langchain-core` added to `pyproject.toml` / `uv.lock`; mypy strict clean
   - [ ] Milestone 2: `JobRunner` — policy resolution, sync wait with timeout, FAIL/DETACH, ASYNC, cancel, notices
@@ -35,7 +38,7 @@ Full codebase exploration that grounded this plan:
 
 ## Stack Context
 
-**Stack**: survey agent · slug **`#survey-agent`** — this PR is **4 of 9** · #pending
+**Stack**: survey agent · slug **`#survey-agent`** — this PR is **4 of 9** · [#80](https://github.com/uppin/surmap/pull/80)
 **Branch**: `pr-4-survey-agent` · **Base**: `pr-3-survey-agent`
 **Successor**: `pr-5-survey-agent`
 **Kind**: Feature · behaviour-adds
@@ -47,15 +50,21 @@ and real tools (n7) plug in through the `BaseChatModel` and `ToolContract` + han
 
 ### Owned API surface
 
-- `surmap.agent.runtime.jobs`: `JobRunner`, `Job`, `JobState`, `JobNotice`, `ToolOutcome`
-  (`Completed | Detached | Failed`)
-- `surmap.agent.runtime.graph`: `build_turn_graph(model, tools, pending, caps)`, `TurnCaps`
-- `surmap.agent.runtime.session`: `AgentSession` (`run_turn`, `steer`, `cancel`, `idle_events`),
-  `ConversationStore` protocol + `InMemoryConversationStore`
+- `surmap.agent.runtime.jobs`: `JobRunner(timeout_scale=1.0, clock=time.monotonic)` (`call`,
+  `detach_blocking`, `wait → JobWait`, `get`, `jobs`, `cancel`, `cancel_all`, `notices`), `Job`,
+  `JobState`, `JobNotice`, `JobWait`, `ToolHandler`, `ToolOutcome` (`Completed | Detached | Failed`)
+- `surmap.agent.runtime.graph`: `build_turn_graph(model, tools, pending, caps) → TurnGraph`,
+  `TurnCaps` (+ `from_env`, `SURMAP_AGENT_MAX_ROUNDS`), `TurnState`, `turn_input`, `PendingDrain`
+- `surmap.agent.runtime.session`: `AgentSession` (`run_turn`, `steer → SteerQueued | TurnStarted`,
+  `cancel`, `idle_events`), `ConversationStore` protocol + `InMemoryConversationStore`
 - `surmap.agent.runtime.events`: `TextDelta`, `ToolCallStarted`, `ToolCallFinished`, `JobUpdate`,
-  `SteerApplied`, `TurnFinished`, `TurnError`
-- `surmap.agent.runtime.tools`: `bind_contract_tool(contract, handler, runner)`, `job_tools(runner)`
-- `tests/agent_fakes.py`: `ScriptedChatModel`, `FakeToolHandler` (with hold/release for timing)
+  `SteerApplied`, `TurnFinished(FinishReason)`, `TurnError`, `TurnEvent`
+- `surmap.agent.runtime.tools`: `BoundTool` (`model_schema`, `prepare → PreparedCall`, `run`),
+  `bind_contract_tool(contract, handler, runner, *, resolve=resolve_execution)`,
+  `job_tools(runner, contracts, *, resolve=resolve_execution)`, `ExecutionResolver`
+- `tests/agent_fakes.py` (test infrastructure, implemented in the red commit): `ScriptedChatModel`,
+  `FakeToolHandler` (hold/release), `a_tool_contract`, `agent_job_contracts`, `resolve_locally`,
+  `a_session`, `until_held`, event and history readers
 
 ### Green wave
 
@@ -191,7 +200,31 @@ Completed, Detached (steer or DETACH timeout) or Failed (FAIL timeout → task c
   - steer while idle starts a turn
   - cancel ends the turn and cancels running jobs; completed rounds stay in history
 
+### Red step (commit 2)
+
+42 tests, all failing with `NotImplementedError` raised by this node's own stubs (`tools.py`
+`bind_contract_tool` / `job_tools`, `jobs.py` `JobRunner.call`, `graph.py`); none reaches n1's
+`resolve_execution` stub — every test injects `tests.agent_fakes.resolve_locally`.
+
+- `tests/test_agent_runtime.py` — 15 (8 acceptance through `AgentSession`; graph, `TurnCaps`,
+  `BoundTool` units)
+- `tests/test_agent_jobs.py` — 21 (6 acceptance through `AgentSession`; `JobRunner` and job-tool units)
+- `tests/test_agent_steering.py` — 6 acceptance (steer detach, `SteerApplied`, detached job keeps
+  running, idle steer starts a turn, cancel, completed rounds kept)
+
+Baseline before: 1344 passed, 7 skipped, 78 inherited known-red (n1 32, n3 46); after: the same
+plus these 42.
+
 ## Decisions & Trade-offs
+
+- **Timeouts are scaled by the runner, not the policy** (red step): n1's `ExecutionPolicy.timeout_s`
+  is an `int`, so `JobRunner(timeout_scale=…)` sets the seconds one unit lasts; tests use 0.05.
+- **The resolver is injected** (`resolve=` on `bind_contract_tool` / `job_tools`, defaulting to
+  n1's `resolve_execution`), so this node greens before n1 does.
+- **`job_tools` takes the `AgentJobs` contracts** rather than building its own, so the job tools'
+  descriptions and schemas stay the proto's; n8 passes `tool_contracts(AgentJobs)`.
+- **Idle steer returns the new turn's events** (`TurnStarted(events)`); a running-turn steer
+  returns `SteerQueued(detached=n)`.
 
 - **Every call is a job.** One mechanism for sync, async, detach and steering; "sync" is the tool
   node waiting on the job. Costs a job id for trivial calls; they are cheap.
