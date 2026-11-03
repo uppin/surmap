@@ -30,6 +30,14 @@ PROTO_PACKAGE_DIR = "surmap/agent/v1"
 OUT = ROOT / "src/surmap/agent/proto"
 DESCRIPTOR_SET = OUT / "agent_descriptor_set.binpb"
 _MODULE_LEVEL_CLASSVAR = re.compile(r"^([A-Z0-9_]+_FIELD_NUMBER): _ClassVar\[int\]$", re.MULTILINE)
+# Top-level extensions, per proto: (extension, extended message, value message) in stub terms.
+# protoc types them as a plain FieldDescriptor; HasExtension/Extensions need the typed handle.
+_EXTENSIONS = {
+    "execution": (("default_execution", "_descriptor_pb2.MethodOptions", "ExecutionPolicy"),),
+}
+_EXTENSION_IMPORT = (
+    "from google.protobuf.internal.extension_dict import _ExtensionFieldDescriptor\n"
+)
 
 
 def main() -> int:
@@ -57,7 +65,7 @@ def main() -> int:
                 target = OUT / f"{name}{suffix}"
                 shutil.copyfile(generated / f"{name}{suffix}", target)
                 _relocate(target)
-            _fix_pyi(OUT / f"{name}_pb2.pyi")
+            _fix_pyi(OUT / f"{name}_pb2.pyi", _EXTENSIONS.get(name, ()))
     return 0
 
 
@@ -73,14 +81,27 @@ def _relocate(path: pathlib.Path) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _fix_pyi(pyi: pathlib.Path) -> None:
+def _fix_pyi(pyi: pathlib.Path, extensions: tuple[tuple[str, str, str], ...]) -> None:
     """Make the generated stub pass mypy strict.
 
-    Bare `Mapping` gets its type arguments, and a top-level extension's field number (which
-    protoc annotates `ClassVar` outside any class) becomes a plain `int`.
+    Bare `Mapping` gets its type arguments, a top-level extension's field number (which
+    protoc annotates `ClassVar` outside any class) becomes a plain `int`, and each top-level
+    extension is typed as the extension handle `HasExtension` and `Extensions` accept.
     """
     text = pyi.read_text(encoding="utf-8")
     text = _MODULE_LEVEL_CLASSVAR.sub(r"\1: int", text)
+    for extension, extended, value in extensions:
+        plain = f"\n{extension}: _descriptor.FieldDescriptor\n"
+        if plain not in text:
+            raise RuntimeError(f"{pyi.name}: no top-level extension {extension} to type")
+        text = text.replace(
+            plain, f"\n{extension}: _ExtensionFieldDescriptor[{extended}, {value}]\n"
+        )
+        if _EXTENSION_IMPORT not in text:
+            text = text.replace(
+                "from google.protobuf import descriptor as _descriptor\n",
+                "from google.protobuf import descriptor as _descriptor\n" + _EXTENSION_IMPORT,
+            )
     if "_Mapping]" in text:
         text = text.replace("_Mapping]", "_Mapping[str, _Any]]")
         text = text.replace(

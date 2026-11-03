@@ -15,7 +15,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, TypeVar, cast
+from typing import TypeVar
 
 from google.protobuf.descriptor import (
     Descriptor,
@@ -27,10 +27,6 @@ from google.protobuf.descriptor import (
 from google.protobuf.descriptor_pb2 import DescriptorProto, FileDescriptorSet
 
 from surmap.agent.proto import execution_pb2
-
-if TYPE_CHECKING:
-    from google.protobuf.descriptor_pb2 import MethodOptions
-    from google.protobuf.internal.extension_dict import _ExtensionFieldDescriptor
 
 __all__ = [
     "ExecutionMode",
@@ -66,12 +62,6 @@ _INTEGER_TYPES = frozenset(
     }
 )
 _NUMBER_TYPES = frozenset({FieldDescriptor.TYPE_DOUBLE, FieldDescriptor.TYPE_FLOAT})
-# The generated stub types the extension as a plain FieldDescriptor; at runtime it is the typed
-# extension handle that HasExtension and Extensions take.
-_DEFAULT_EXECUTION = cast(
-    "_ExtensionFieldDescriptor[MethodOptions, execution_pb2.ExecutionPolicy]",
-    execution_pb2.default_execution,
-)
 
 
 class ExecutionMode(Enum):
@@ -174,11 +164,11 @@ def _snake_case(name: str) -> str:
 
 
 def _declares_default(method: MethodDescriptor) -> bool:
-    return method.GetOptions().HasExtension(_DEFAULT_EXECUTION)
+    return method.GetOptions().HasExtension(execution_pb2.default_execution)
 
 
 def _default_execution(method: MethodDescriptor) -> ExecutionPolicy:
-    declared = method.GetOptions().Extensions[_DEFAULT_EXECUTION]
+    declared = method.GetOptions().Extensions[execution_pb2.default_execution]
     mode = execution_pb2.ExecutionMode.Name(declared.mode)
     on_timeout = execution_pb2.OnTimeout.Name(declared.on_timeout)
     if mode not in ExecutionMode.__members__ or on_timeout not in OnTimeout.__members__:

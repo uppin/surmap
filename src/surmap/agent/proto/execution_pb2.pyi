@@ -1,6 +1,7 @@
 from google.protobuf import descriptor_pb2 as _descriptor_pb2
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
+from google.protobuf.internal.extension_dict import _ExtensionFieldDescriptor
 from google.protobuf import message as _message
 from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
@@ -37,7 +38,7 @@ SUCCEEDED: JobStatus
 FAILED: JobStatus
 CANCELLED: JobStatus
 DEFAULT_EXECUTION_FIELD_NUMBER: int
-default_execution: _descriptor.FieldDescriptor
+default_execution: _ExtensionFieldDescriptor[_descriptor_pb2.MethodOptions, ExecutionPolicy]
 
 class ExecutionPolicy(_message.Message):
     __slots__ = ("mode", "timeout_s", "on_timeout")
