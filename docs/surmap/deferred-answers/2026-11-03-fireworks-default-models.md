@@ -1,7 +1,7 @@
 # 2026-11-03 — Fireworks default models and picker order
 
 **Kind:** Product
-**Source:** `docs/surmap/1-WIP/2026-11-03-agent-fireworks-provider.md` (PR pending)
+**Source:** `docs/surmap/1-WIP/2026-11-03-agent-fireworks-provider.md` (PR #87)
 **Asked by:** `/plan-red` row 1, under `/yolo`
 **Status:** Awaiting review
 **Decision:** b) three tool-capable chat models; Fireworks after Muse, before Ollama

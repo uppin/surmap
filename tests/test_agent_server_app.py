@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -39,8 +40,18 @@ from tests.agent_server_fakes import (
     NoGlbs,
     turn_event,
 )
+from tests.agent_tool_fakes import a_tool_rig
+from tests.fake_fireworks import (
+    FAKE_FIREWORKS_KEY,
+    FAKE_FIREWORKS_MODEL,
+    FakeFireworksScript,
+    answering,
+    calling,
+    serving,
+)
 
 MUSE = "meta:muse-wonder-1.0"
+FIREWORKS = f"fireworks:{FAKE_FIREWORKS_MODEL}"
 
 
 async def a_run_echoing_its_id(request: pb.GetRunRequest, _ctx: object) -> pb.GetRunResponse:
@@ -79,6 +90,20 @@ def a_keyed_registry(transport: RecordingMetaTransport) -> ChatModelRegistry:
         meta_transport=transport,
         ollama_transport=FakeOllamaTags(),
     )
+
+
+def a_fireworks_registry(base_url: str) -> ChatModelRegistry:
+    return ChatModelRegistry(
+        environ={"FIREWORKS_API_KEY": FAKE_FIREWORKS_KEY, "SURMAP_FIREWORKS_URL": base_url},
+        ollama_transport=FakeOllamaTags(),
+    )
+
+
+def without_env(monkeypatch: pytest.MonkeyPatch, *names: str) -> None:
+    """Unset `names` so that whatever sets them later is undone after the test."""
+    for name in names:
+        monkeypatch.setenv(name, "")
+        monkeypatch.delenv(name)
 
 
 # --- command line --------------------------------------------------------------------------
@@ -123,6 +148,17 @@ def test_flags_set_the_port_model_history_and_fake_sam() -> None:
     )
 
 
+def test_a_fireworks_model_id_is_taken_whole_from_the_command_line() -> None:
+    # Given a Fireworks model id, slashes and all
+    argv = [f"--model={FIREWORKS}"]
+
+    # When the command line is read
+    config = config_from_args(argv, environ={})
+
+    # Then the config's default model is that id
+    assert config.model_id == FIREWORKS
+
+
 def test_cors_origins_come_from_the_environment_without_blank_entries() -> None:
     # Given two origins, comma-separated with a trailing comma
     environ = {"SURMAP_AGENT_CORS_ORIGINS": "http://localhost:5173, http://127.0.0.1:5173,"}
@@ -148,6 +184,68 @@ def test_ctrl_c_stops_the_agent_with_a_line_and_no_traceback(
 
     # Then it returns normally and says it stopped
     assert "survey agent stopped" in capsys.readouterr().out
+
+
+# --- the project .env ----------------------------------------------------------------------
+
+DOTENV_KEYS = ("MODEL_API_KEY", "FIREWORKS_API_KEY", "SURMAP_FIREWORKS_MODELS")
+
+
+def a_project_env(directory: Path, **entries: str) -> None:
+    (directory / ".env").write_text("".join(f"{k}={v}\n" for k, v in entries.items()))
+
+
+def models_listed_by_main(monkeypatch: pytest.MonkeyPatch) -> tuple[list[str], dict[str, str]]:
+    """Run `main` with `serve` replaced: the model ids the process would list, and its keys."""
+    seen: list[str] = []
+    keys: dict[str, str] = {}
+
+    async def listing(config: AgentServerConfig) -> None:
+        registry = ChatModelRegistry(ollama_transport=FakeOllamaTags.unreachable())
+        seen.extend(info.id for info in registry.available())
+        keys.update({name: os.environ.get(name, "") for name in DOTENV_KEYS})
+
+    monkeypatch.setattr(agent_main, "serve", listing)
+    agent_main.main(["--sam-fake"])
+    return seen, keys
+
+
+def test_main_reads_muse_and_fireworks_keys_from_the_project_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Given no keys in the shell and a project .env holding both, naming one Fireworks model
+    without_env(monkeypatch, *DOTENV_KEYS)
+    a_project_env(
+        tmp_path,
+        MODEL_API_KEY="sk-dotenv-muse",
+        FIREWORKS_API_KEY=FAKE_FIREWORKS_KEY,
+        SURMAP_FIREWORKS_MODELS=FAKE_FIREWORKS_MODEL,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    # When the agent process starts there
+    listed, _keys = models_listed_by_main(monkeypatch)
+
+    # Then Muse and the Fireworks model are offered
+    assert listed == [MUSE, FIREWORKS]
+
+
+def test_a_shell_export_wins_over_the_project_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Given FIREWORKS_API_KEY exported in the shell and a different one in the project .env
+    without_env(monkeypatch, *DOTENV_KEYS)
+    monkeypatch.setenv("FIREWORKS_API_KEY", "fw-from-the-shell")
+    a_project_env(
+        tmp_path, FIREWORKS_API_KEY=FAKE_FIREWORKS_KEY, SURMAP_FIREWORKS_MODELS=FAKE_FIREWORKS_MODEL
+    )
+    monkeypatch.chdir(tmp_path)
+
+    # When the agent process starts there
+    _listed, keys = models_listed_by_main(monkeypatch)
+
+    # Then the shell's key is the one in force
+    assert keys["FIREWORKS_API_KEY"] == "fw-from-the-shell"
 
 
 # --- models --------------------------------------------------------------------------------
@@ -186,6 +284,73 @@ def test_a_muse_model_records_its_usage_in_the_ledger(
 
     # Then the ledger counts that call
     assert ledger.calls("meta") == 1
+
+
+def test_a_fireworks_model_with_its_budget_spent_refuses_before_sending(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Given a Fireworks budget of zero calls
+    monkeypatch.setenv("SURMAP_BUDGET_FIREWORKS_CALLS", "0")
+    script = FakeFireworksScript(rounds=[answering("ok")])
+    with serving(script) as base:
+        model = default_model_factory(
+            a_fireworks_registry(base), UsageLedger(tmp_path / "u.jsonl")
+        )(FIREWORKS)
+
+        # When the agent calls it
+        with pytest.raises(BudgetExceeded):
+            model.invoke("what demos can you run?")
+
+    # Then nothing was sent
+    assert script.chat_requests == []
+
+
+def test_a_fireworks_model_records_its_usage_in_the_ledger(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Given no Fireworks budget, and a ledger
+    monkeypatch.delenv("SURMAP_BUDGET_FIREWORKS_CALLS", raising=False)
+    ledger = UsageLedger(tmp_path / "u.jsonl")
+    with serving(FakeFireworksScript(rounds=[answering("ok")])) as base:
+        model = default_model_factory(a_fireworks_registry(base), ledger)(FIREWORKS)
+
+        # When the agent calls it once
+        model.invoke("what demos can you run?")
+
+    # Then the ledger counts that call
+    assert ledger.calls("fireworks") == 1
+
+
+async def test_a_whole_turn_on_a_fireworks_model_lists_the_demos_and_stops(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Given the agent over the tiny scene, defaulting to a Fireworks model on the fake provider,
+    # scripted to call list_demos and then answer
+    monkeypatch.delenv("SURMAP_BUDGET_FIREWORKS_CALLS", raising=False)
+    monkeypatch.setenv("SURMAP_USAGE_LOG", str(tmp_path / "usage.jsonl"))
+    script = FakeFireworksScript(
+        rounds=[calling("list_demos", "call-1"), answering("The tiny scene is ready.")]
+    )
+    with serving(script) as base, a_tool_rig(tmp_path) as rig:
+        description = build_agent_description(
+            AgentServerConfig(model_id=FIREWORKS),
+            workspace=rig.workspace,
+            geometry=rig.workspace.geometry,
+            registry=a_fireworks_registry(base),
+        )
+
+        # When the user writes
+        events = await one_turn(InMemoryHost(description, None), "what demos can you run?")
+
+    # Then list_demos ran as a tool call and the turn stopped normally
+    assert [e.WhichOneof("event") for e in events if e.WhichOneof("event") != "text_delta"] == [
+        "user_message",
+        "tool_call_started",
+        "tool_call_finished",
+        "turn_finished",
+    ]
+    assert events[-1].turn_finished.reason == chat_pb2.TurnFinished.STOP
+    assert len(script.chat_requests) == 2
 
 
 # --- the wired server ----------------------------------------------------------------------

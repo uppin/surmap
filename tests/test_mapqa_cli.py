@@ -86,3 +86,25 @@ def test_cli_ask_voice_prints_the_answer(
     printed: object = json.loads(capsys.readouterr().out)
     assert isinstance(printed, dict)
     assert printed["landmark_ids"] == ["4"]
+
+
+def test_cli_ask_reads_the_muse_key_from_the_project_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Given no MODEL_API_KEY in the shell and a project .env holding one
+    monkeypatch.setenv("MODEL_API_KEY", "")
+    monkeypatch.delenv("MODEL_API_KEY")
+    (tmp_path / ".env").write_text("MODEL_API_KEY=sk-dotenv-mapqa\n")
+    monkeypatch.chdir(tmp_path)
+    transport = RecordingTransport([responses_reply(answer_json("Nobody is on the roof.", [], []))])
+
+    # When the ask command runs there without an explicit key
+    code = main(
+        ["ask", "--snapshot", str(EXAMPLE), "--question", "Who is on the roof?"],
+        transport=transport,
+    )
+
+    # Then it asked Muse with the key from the file
+    assert code == 0
+    _url, headers, _body = transport.calls[0]
+    assert headers["Authorization"] == "Bearer sk-dotenv-mapqa"

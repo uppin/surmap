@@ -22,6 +22,7 @@ from typing import Literal
 from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import SecretStr
 
+from surmap.agent.llm.fireworks import FireworksModelsTransport
 from surmap.agent.llm.meta import (
     AGENT_META_MODEL_ENV,
     DEFAULT_AGENT_META_MODEL,
@@ -42,7 +43,7 @@ from surmap.usage import UsageSink
 
 __all__ = ["ChatModelRegistry", "ModelInfo", "Provider", "UnknownModelProvider"]
 
-Provider = Literal["meta", "ollama"]
+Provider = Literal["meta", "fireworks", "ollama"]
 
 _MODEL_API_KEY_ENV = "MODEL_API_KEY"
 
@@ -71,6 +72,7 @@ class ChatModelRegistry:
         environ: Mapping[str, str] | None = None,
         ollama_transport: OllamaTagsTransport | None = None,
         meta_transport: MetaMuseTransport | None = None,
+        fireworks_transport: FireworksModelsTransport | None = None,
         usage_sink: UsageSink | None = None,
     ) -> None:
         """`environ` defaults to `os.environ`; the transports to the stdlib ones.
@@ -80,6 +82,7 @@ class ChatModelRegistry:
         self._environ = environ
         self._ollama_transport = ollama_transport
         self._meta_transport = meta_transport
+        self._fireworks_transport = fireworks_transport
         self._usage_sink = usage_sink
 
     def available(self) -> tuple[ModelInfo, ...]:

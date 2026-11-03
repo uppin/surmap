@@ -13,12 +13,12 @@
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Fake Fireworks provider `tests/fake_fireworks.py` (real loopback socket, scripted rounds, recorded requests, JSON and SSE replies)
-  - [ ] Stubs with real signatures in `src/surmap/agent/llm/fireworks.py`; `langchain-openai` added to `pyproject.toml` / `uv.lock`
-  - [ ] Create failing acceptance tests
-  - [ ] Run acceptance tests (verify they fail)
-  - [ ] TDD Red — write failing unit/integration tests
+- [wf 2] ✅ 2026-11-03 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 25 failing on own stubs, 3 guards passing, 1 live skipped — commit 2
+  - [x] Fake Fireworks provider `tests/fake_fireworks.py` (real loopback socket, scripted rounds, recorded requests, JSON and SSE replies)
+  - [x] Stubs with real signatures in `src/surmap/agent/llm/fireworks.py`; `langchain-openai` added to `pyproject.toml` / `uv.lock`
+  - [x] Create failing acceptance tests
+  - [x] Run acceptance tests (verify they fail)
+  - [x] TDD Red — write failing unit/integration tests
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Milestone 1: `FireworksChatModel` — request, tool calls (whole and streamed), usage, budget gate, redacted errors
   - [ ] Milestone 2: registry — `fireworks:` listing (override → `GET /models` → built-in list) and `build`
@@ -166,6 +166,26 @@ test.
   - `main()` reads `.env`: Fireworks and Muse are listed; a shell export wins over the file
 - `tests/test_mapqa_cli.py`
   - `ask` with no explicit key uses `MODEL_API_KEY` from `.env`
+
+### Red step (commit 2)
+
+25 tests fail on this PR's own stubs (`NotImplementedError` in `fireworks.py`, the registry's
+`UnknownModelProvider` for `fireworks:`, the missing `load_env()` calls); none reaches anything
+else. Three new tests already pass and stay as guards: no key → no Fireworks listing, the
+`--model fireworks:<id>` config, and the shell beating `.env`. The live Fireworks test is skipped
+unless `SURMAP_LIVE_FIREWORKS=1`.
+
+- `tests/test_agent_llm_fireworks.py` — 13 offline + 1 live: request path, model and bearer;
+  OpenAI `tools`; `tool_calls` whole and streamed; streamed text; usage whole and streamed;
+  budget refusal; 401 / 500 redaction; missing key; cleartext URL; `repr`
+- `tests/test_agent_llm_registry.py` — 7 failing + 1 guard: override list, `GET /models`,
+  unreachable fallback, order; `build` with slashes, secret key, configured URL
+- `tests/test_agent_server_app.py` — 4 failing + 2 guards: `.env` listing, budget, ledger, the
+  whole turn on the fake
+- `tests/test_mapqa_cli.py` — 1 failing: `ask` keyed from `.env`
+
+Baseline before: 1631 passed, 33 skipped (with this PR's guards); after red: the same plus 25
+failing.
 
 ## Deferred Answers
 
