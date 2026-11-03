@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 from langchain_core.messages import SystemMessage
 
+from surmap.agent import __main__ as agent_main
 from surmap.agent.__main__ import config_from_args
 from surmap.agent.llm.registry import ChatModelRegistry
 from surmap.agent.proto import chat_pb2
@@ -131,6 +132,22 @@ def test_cors_origins_come_from_the_environment_without_blank_entries() -> None:
 
     # Then both origins are allowed, and nothing else
     assert config.cors_origins == ("http://localhost:5173", "http://127.0.0.1:5173")
+
+
+def test_ctrl_c_stops_the_agent_with_a_line_and_no_traceback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Given a server that is interrupted by Ctrl-C while serving
+    async def interrupted(config: AgentServerConfig) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(agent_main, "serve", interrupted)
+
+    # When the agent runs
+    agent_main.main(["--sam-fake"])
+
+    # Then it returns normally and says it stopped
+    assert "survey agent stopped" in capsys.readouterr().out
 
 
 # --- models --------------------------------------------------------------------------------

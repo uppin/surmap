@@ -83,8 +83,13 @@ async def serve(config: AgentServerConfig) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    """Parse the command line and serve until signalled."""
-    asyncio.run(serve(config_from_args(argv)))
+    """Parse the command line and serve until signalled; Ctrl-C stops it cleanly — `serve`
+    has already stopped the host when `asyncio.run` re-raises the interrupt."""
+    config = config_from_args(argv)
+    try:
+        asyncio.run(serve(config))
+    except KeyboardInterrupt:
+        print("survey agent stopped", flush=True)
 
 
 if __name__ == "__main__":
