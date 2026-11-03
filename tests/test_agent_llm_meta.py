@@ -26,7 +26,7 @@ from surmap.agent.llm.meta import (
     parse_responses,
     responses_request,
 )
-from surmap.usage import UsageLedger
+from surmap.usage import BudgetExceeded, UsageLedger
 from tests.agent_llm_fakes import (
     ECHO_PORTABLE_TOOL,
     ECHO_RESPONSES_TOOL,
@@ -404,6 +404,27 @@ def test_every_response_is_recorded_in_the_usage_ledger(tmp_path: Path) -> None:
 
     # Then the ledger holds one Meta call of 876 tokens
     assert (ledger.calls("meta"), ledger.total_tokens("meta")) == (1, 876)
+
+
+def test_a_spent_meta_budget_refuses_the_turn_before_any_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given a Meta budget of one call, already spent in the ledger
+    monkeypatch.setenv("SURMAP_BUDGET_META_CALLS", "1")
+    ledger = UsageLedger(tmp_path / "usage.jsonl")
+    spent = RecordingMetaTransport.replying("text")
+    a_muse_model(spent, usage_sink=ledger).invoke("Who is on the roof?")
+    transport = RecordingMetaTransport.replying("text")
+    model = a_muse_model(transport, usage_sink=ledger).model_copy(
+        update={"before_call": ledger.check}
+    )
+
+    # When another turn is attempted, then the budget refuses it
+    with pytest.raises(BudgetExceeded):
+        model.invoke("Who is on the roof?")
+
+    # And nothing was sent
+    assert transport.calls == 0
 
 
 def test_an_empty_reply_is_asked_for_once_more() -> None:

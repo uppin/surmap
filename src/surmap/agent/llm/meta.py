@@ -56,6 +56,7 @@ from pydantic import Field, SecretStr, SkipValidation
 
 from surmap.labelling.meta_muse import (
     META_MODEL_API_BASE_URL,
+    BeforeCall,
     MetaMuseSceneError,
     MetaMuseTransport,
     UrllibMetaMuseTransport,
@@ -103,6 +104,8 @@ class MetaResponsesChatModel(BaseChatModel):
     """`None` uses the stdlib transport that refuses redirects."""
     usage_sink: SkipValidation[UsageSink] | None = Field(default=None, exclude=True)
     """Receives one `UsageRecord` per response; normally a `UsageLedger`."""
+    before_call: SkipValidation[BeforeCall] | None = Field(default=None, exclude=True)
+    """Runs with `"meta"` before every request and may raise; normally `UsageLedger.check`."""
 
     @property
     def _llm_type(self) -> str:
@@ -171,6 +174,8 @@ class MetaResponsesChatModel(BaseChatModel):
         return key
 
     def _reply(self, url: str, headers: Mapping[str, str], body: Mapping[str, object]) -> AIMessage:
+        if self.before_call is not None:
+            self.before_call(META_PROVIDER)
         transport = self.transport if self.transport is not None else UrllibMetaMuseTransport()
         try:
             payload = transport.post_json(url, headers, body)
