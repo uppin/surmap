@@ -296,7 +296,7 @@ pub struct Person {
     pub skin: String,
     /// What the person does over time; standing still when absent.
     #[serde(default)]
-    pub behaviour: Option<crate::behaviour::Node>,
+    pub behaviour: Option<crate::behaviour::Tree>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -396,15 +396,15 @@ impl SceneManifest {
 
     /// Each behaviour tree is valid for what it drives: a person's walks, the wind's own veer.
     fn validate_behaviours(&self) -> Result<(), ManifestError> {
-        use crate::behaviour::{validate_node, Target};
+        use crate::behaviour::Target;
         let refused = |who: String| move |reason: String| ManifestError::Invalid(format!("{who}: {reason}"));
         if let Some(tree) = self.weather.as_ref().and_then(|w| w.wind.behaviour.as_ref()) {
-            validate_node(tree, Target::Wind).map_err(refused("the wind's behaviour".into()))?;
+            tree.validate(Target::Wind).map_err(refused("the wind's behaviour".into()))?;
         }
         for element in &self.elements {
             if let Element::Person(person) = element {
                 if let Some(tree) = &person.behaviour {
-                    validate_node(tree, Target::Object)
+                    tree.validate(Target::Object)
                         .map_err(refused(format!("person {} behaviour", person.id)))?;
                 }
             }

@@ -365,7 +365,7 @@ fn a_person_carries_its_behaviour_tree() {
     let manifest = SceneManifest::from_json(&text).expect("valid");
 
     assert!(matches!(&manifest.elements[0], Element::Person(p)
-        if matches!(p.behaviour.as_ref().map(|b| &b.kind), Some(crate::behaviour::Kind::Wander { seed: 7, .. }))));
+        if matches!(p.behaviour.as_ref().map(|b| &b.root.kind), Some(crate::behaviour::Kind::Wander { seed: 7, .. }))));
 }
 
 #[test]

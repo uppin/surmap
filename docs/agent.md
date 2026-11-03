@@ -192,8 +192,9 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
   new version; credits derived from the CC BY assets a scenario uses.
 - **Scenarios** are the simulation's own `scene.json` manifests (`surmap.simulation.scenario_manifest`
   validates them by the renderer's rules). Presets: `earthquake-block` (the shipped scene),
-  `empty-lot`, `wildfire-edge` (pine stands in dry grass, a westerly, a fire at their upwind edge)
-  and `flood-street` (the block in rain and fog).
+  `empty-lot`, `wildfire-edge` (pine stands in dry grass, a westerly, a fire at their upwind edge),
+  `wildfire-evacuation` (the edge with three people who wander and flee the fire, and a wind that
+  veers) and `flood-street` (the block in rain and fog).
 - **Weather and fire**: `set_weather` sets rain (mm/h), fog visibility and the one wind (where it
   blows from, speed, gusts) that sways the vegetation and drives the fire and its smoke;
   `add_fire` lights a fire (ignition, start, spread rate, maximum radius, smoke) and `remove_fire`
@@ -201,6 +202,16 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
   density, seed). Every edit is a pure function in `scenario_manifest` (`set_weather`, `add_fire`,
   `remove_fire`), validated before it is stored. Fields and the models behind them:
   [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *Weather, wind and fire*.
+- **Behaviour trees**: `set_behaviour` gives a target — a `person` element's id, or `wind` — a
+  whole tree as JSON (`tree_json`); `update_behaviour_node` replaces the node with a given `id`
+  (and its subtree) in a target's tree (`node_json`); `get_behaviour` returns a target's tree as
+  JSON, empty when it has none. A tree that is not valid for its target (a person may not
+  `set_wind`; the wind's tree only composites, decorators, `time_after`, `idle` and `set_wind`), an unknown target or node id, or text that
+  is not a JSON object is `INVALID_ARGUMENT` with the reason; every edit is a new scenario
+  version. The edits are pure functions (`scenario_manifest.set_behaviour`,
+  `update_behaviour_node`; the rules in `surmap.simulation.behaviour_tree`). `add_element`'s
+  `person` takes a `skin` material (`skin` when empty). Node kinds, the tick and the recorded tracks:
+  [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *Behaviour trees*.
 - **Serving** (`surmap.agent.server.sim_routes`): `/sim/assets/scenarios/<id>.json` (latest
   version), `/sim/assets/library/…`, `/sim/assets/…` (the PoC's assets) and, with `--sim-dist`,
   the built page at `/sim/`; the page opens `?scenario=<id>`. One origin, no CORS.
