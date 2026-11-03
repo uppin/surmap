@@ -14,6 +14,7 @@ import numpy as np
 from PIL import Image
 
 from surmap.demo.history import RunHistoryStore
+from surmap.demo.runs import PlaybackControls
 from surmap.demo.server import (
     MOVING_ALPHA,
     MOVING_COLOUR,
@@ -22,7 +23,6 @@ from surmap.demo.server import (
     CloudPose,
     DemoEvent,
     DemoPlayer,
-    PlaybackControls,
     make_demo_server,
     render_cloud_view,
     surface_tint,
