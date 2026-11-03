@@ -1,7 +1,7 @@
 ---
 name: behaviour-modifiers
 description: >-
-  The one registry of agent behaviour modifiers — the `#tags` a developer writes in an invocation or a `[wf]` row's `Run with` to change how any command or skill behaves: `#yolo` (fully autonomous: never ask, record each question as a deferred answer, relay it to a supervisor when there is one, bound every tool output), `#ask` (a `#yolo` run that may still ask the developer), `#automerge` (merge intent for `/yolo`), `#composer-subagent` / `#composer` (offload implementation rows to Muse's Composer) and `#coder` (the same on a Coder workspace). Defines where a modifier comes from, which modifiers imply others, how an orchestrator passes them to its subagents, and how they differ from the bot control tokens posted to GitHub (`#skipreview`, `#forcemerge`, `#rebuild`). Use when an invocation, a row or the user's words carry a `#tag`, when briefing a subagent, or when asked what a tag does.
+  The one registry of agent behaviour modifiers — the `#tags` a developer writes in an invocation or a `[wf]` row's `Run with` to change how any command or skill behaves: `#yolo` (fully autonomous: never ask, record each question as a deferred answer, relay it to a supervisor when there is one, bound every tool output), `#ask` (a `#yolo` run that may still ask the developer), `#automerge` (merge intent for `/yolo`), `#composer-subagent` / `#composer` (offload implementation rows to Muse's Composer), `#coder` (the same on a Coder workspace) and `#muse` (offload them to Muse Code's headless `muse exec` CLI, e.g. for `/yolo-pr-stack`'s subagents). Defines where a modifier comes from, which modifiers imply others, how an orchestrator passes them to its subagents, and how they differ from the bot control tokens posted to GitHub (`#skipreview`, `#forcemerge`, `#rebuild`). Use when an invocation, a row or the user's words carry a `#tag`, when briefing a subagent, or when asked what a tag does.
 ---
 
 # Behaviour modifiers — the `#tags` that change how a flow runs
@@ -19,6 +19,7 @@ file says what each modifier **is**, so that a tag means the same thing in every
 | `#automerge` | Merge intent: `/yolo` runs its post-wrap **Land** | — | `.agents/commands/yolo.md` § *Land* |
 | `#composer-subagent` (alias `#composer`) | Offload the implementation rows (`/green`, `/green-100`, `/code-restructuring`, `/pr-wrap`, `/fix-pr`) to the Muse agent on Composer, driven by a Sonnet · low subagent | — | `.agents/skills/composer-subagent/SKILL.md` |
 | `#coder` | The same offload, on a Coder workspace | `#composer-subagent` | `.agents/skills/coder-remote/SKILL.md` |
+| `#muse` | Offload the same implementation rows to Muse Code run headless (`muse exec --json`, one session per stage continued with `--session-id`), driven by a Sonnet · low subagent, on this machine. Built for `/yolo-pr-stack` (§ *Muse mode*); an alternative to `#composer-subagent`, never combined with `#coder` | — | `.agents/skills/muse-subagent/SKILL.md` |
 
 **Commands that imply a modifier.** A command can carry a modifier without the tag being written:
 
@@ -61,7 +62,7 @@ on one line, with what they mean for that subagent:
 Modifiers: #yolo (no questions — record deferred answers and relay them to me; bound every tool output), #composer
 ```
 
-`/yolo-pr-stack`'s stage briefs, `composer-subagent`'s driver brief and any fork or fresh agent a
+`/yolo-pr-stack`'s stage briefs, `composer-subagent`'s and `muse-subagent`'s driver briefs and any fork or fresh agent a
 flow starts all carry that line. A subagent never adds a modifier its brief did not name.
 
 ## Rules
@@ -83,5 +84,5 @@ flow starts all carry that line. A subagent never adds a modifier its brief did 
 `/pr-wrap`, `/fix-pr`
 **Skills**: [`pr-lifecycle`](../pr-lifecycle/SKILL.md) (rows, tags, halts, summary),
 [`deferred-work`](../deferred-work/SKILL.md) (the deferred-answer record),
-[`composer-subagent`](../composer-subagent/SKILL.md), [`coder-remote`](../coder-remote/SKILL.md),
+[`composer-subagent`](../composer-subagent/SKILL.md), [`muse-subagent`](../muse-subagent/SKILL.md), [`coder-remote`](../coder-remote/SKILL.md),
 [`pr`](../pr/SKILL.md) (control tokens)
