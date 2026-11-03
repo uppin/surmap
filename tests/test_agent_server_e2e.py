@@ -24,9 +24,9 @@ from surmap.agent.server.app import AgentServerConfig, build_agent_description
 from surmap.objects3d import read_glb_header, write_glb
 from surmap.rpc.hosts.hypercorn import HypercornHost
 from tests.agent_fakes import ScriptedChatModel, answer, calling, tool_call
-from tests.agent_llm_fakes import FakeOllamaTags
 from tests.agent_server_fakes import STEP_TIMEOUT_S, finished_call, kinds
 from tests.agent_tool_fakes import TINY_SCENE, ToolRig, a_recorded_run, a_tool_rig, image_format
+from tests.fake_ollama import a_closed_ollama_url
 
 UI_ORIGIN = "http://localhost:5173"
 STREAM_TURN = "/surmap.agent.v1.ChatService/StreamTurn"
@@ -103,7 +103,7 @@ async def a_running_agent(tmp_path: Path, model: ScriptedChatModel) -> AsyncIter
             config,
             workspace=rig.workspace,
             geometry=rig.workspace.geometry,
-            registry=ChatModelRegistry(environ={}, ollama_transport=FakeOllamaTags("scripted")),
+            registry=ChatModelRegistry(environ={"SURMAP_OLLAMA_URL": a_closed_ollama_url()}),
         )
         host = HypercornHost(description, None, host="127.0.0.1", port=0)
         ports = await host.start()

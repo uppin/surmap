@@ -84,6 +84,7 @@ class ChatModelRegistry:
         environ: Mapping[str, str] | None = None,
         ollama_transport: OllamaTagsTransport | None = None,
         meta_transport: MetaMuseTransport | None = None,
+        meta_base_url: str | None = None,
         fireworks_transport: FireworksModelsTransport | None = None,
         usage_sink: UsageSink | None = None,
     ) -> None:
@@ -95,6 +96,7 @@ class ChatModelRegistry:
         self._environ = environ
         self._ollama_transport = ollama_transport
         self._meta_transport = meta_transport
+        self._meta_base_url = meta_base_url
         self._fireworks_transport = fireworks_transport
         self._usage_sink = usage_sink
 
@@ -134,6 +136,8 @@ class ChatModelRegistry:
         """The chat model for `model_id`; `UnknownModelProvider` for any other provider."""
         provider, _, model = model_id.partition(":")
         if provider == META_PROVIDER and model:
+            if self._meta_base_url is not None:
+                raise NotImplementedError("meta_base_url is the green step")
             return MetaResponsesChatModel(
                 model=model,
                 api_key=SecretStr(self._env().get(_MODEL_API_KEY_ENV, "")),

@@ -1,7 +1,9 @@
 """Which chat models the agent may use, and building one by id; plus the local Ollama model.
 
-The Ollama server is a fake `GET /api/tags`; the environment is injected. The live test is gated on
-`SURMAP_LIVE_OLLAMA=1` with `SURMAP_OLLAMA_MODEL` naming a tool-capable model `ollama list` holds.
+Every provider is a fake server on a real loopback socket (`tests/fake_meta.py`,
+`tests/fake_fireworks.py`, `tests/fake_ollama.py`) reached through the adapters' real clients; the
+environment is injected. The live test is gated on `SURMAP_LIVE_OLLAMA=1` with
+`SURMAP_OLLAMA_MODEL` naming a tool-capable model `ollama list` holds.
 """
 
 from __future__ import annotations
@@ -18,21 +20,17 @@ from surmap.agent.llm.fireworks import (
     UrllibFireworksModelsTransport,
 )
 from surmap.agent.llm.meta import MetaResponsesChatModel
-from surmap.agent.llm.ollama import ollama_chat_model, ollama_models
 from surmap.agent.llm.registry import ChatModelRegistry, ModelInfo, UnknownModelProvider
-from tests.agent_llm_fakes import (
-    ECHO_PORTABLE_TOOL,
-    FakeOllamaTags,
-    RecordingMetaTransport,
-    bound_tool_names,
-    round_trip,
-)
+from tests import fake_meta, fake_ollama
+from tests.agent_llm_fakes import ECHO_PORTABLE_TOOL, round_trip
 from tests.fake_fireworks import (
     FAKE_FIREWORKS_KEY,
     FakeFireworksScript,
     a_closed_base_url,
     serving,
 )
+from tests.fake_meta import FakeMetaScript
+from tests.fake_ollama import FakeOllamaScript, a_closed_ollama_url
 
 REGISTRY_KEY = "sk-registry-key"
 MUSE_WONDER = ModelInfo(id="meta:muse-wonder-1.0", provider="meta", model="muse-wonder-1.0")
@@ -49,14 +47,14 @@ def on_fireworks(model: str) -> ModelInfo:
 def a_registry(
     *,
     environ: dict[str, str] | None = None,
-    ollama: FakeOllamaTags | None = None,
-    meta: RecordingMetaTransport | None = None,
+    ollama: str | None = None,
+    meta: str | None = None,
 ) -> ChatModelRegistry:
-    """A registry over an empty environment and a stopped Ollama server unless told otherwise."""
+    """A registry over `environ`, the Ollama server at `ollama` (else a stopped one) and Muse at
+    `meta` (else the Meta Model API, never called here)."""
     return ChatModelRegistry(
-        environ=environ if environ is not None else {},
-        ollama_transport=ollama if ollama is not None else FakeOllamaTags.unreachable(),
-        meta_transport=meta if meta is not None else RecordingMetaTransport(),
+        environ={"SURMAP_OLLAMA_URL": ollama or a_closed_ollama_url(), **(environ or {})},
+        meta_base_url=meta,
         fireworks_transport=UrllibFireworksModelsTransport(timeout_s=2.0),
     )
 
@@ -77,10 +75,11 @@ def test_a_keyed_environment_lists_muse_wonder() -> None:
 
 def test_without_a_model_api_key_muse_is_not_listed() -> None:
     # Given no MODEL_API_KEY and an Ollama server holding llama3.2:3b
-    registry = a_registry(ollama=FakeOllamaTags.holding("llama3.2:3b"))
+    with fake_ollama.serving(FakeOllamaScript(held_models=["llama3.2:3b"])) as ollama:
+        registry = a_registry(ollama=ollama)
 
-    # When the available models are listed
-    listed = registry.available()
+        # When the available models are listed
+        listed = registry.available()
 
     # Then only the local model is offered
     assert listed == (LLAMA,)
@@ -101,13 +100,12 @@ def test_the_agent_meta_model_variable_names_the_listed_muse_model() -> None:
 
 def test_muse_is_listed_before_every_model_the_ollama_server_holds() -> None:
     # Given a key and an Ollama server holding two models
-    registry = a_registry(
-        environ={"MODEL_API_KEY": REGISTRY_KEY},
-        ollama=FakeOllamaTags.holding("llama3.2:3b", "qwen2.5vl:7b"),
-    )
+    script = FakeOllamaScript(held_models=["llama3.2:3b", "qwen2.5vl:7b"])
+    with fake_ollama.serving(script) as ollama:
+        registry = a_registry(environ={"MODEL_API_KEY": REGISTRY_KEY}, ollama=ollama)
 
-    # When the available models are listed
-    listed = registry.available()
+        # When the available models are listed
+        listed = registry.available()
 
     # Then Muse comes first, then the local models in the server's order
     assert listed == (MUSE_WONDER, LLAMA, QWEN_VL)
@@ -115,7 +113,7 @@ def test_muse_is_listed_before_every_model_the_ollama_server_holds() -> None:
 
 def test_a_stopped_ollama_server_lists_no_local_models() -> None:
     # Given no key and an Ollama server that does not answer
-    registry = a_registry(ollama=FakeOllamaTags.unreachable())
+    registry = a_registry(ollama=a_closed_ollama_url())
 
     # When the available models are listed
     listed = registry.available()
@@ -126,14 +124,15 @@ def test_a_stopped_ollama_server_lists_no_local_models() -> None:
 
 def test_the_tags_are_asked_of_the_configured_ollama_server() -> None:
     # Given SURMAP_OLLAMA_URL points at a second local server
-    tags = FakeOllamaTags.holding("llama3.2:3b")
-    registry = a_registry(environ={"SURMAP_OLLAMA_URL": "http://127.0.0.1:11500"}, ollama=tags)
+    script = FakeOllamaScript(held_models=["llama3.2:3b"])
+    with fake_ollama.serving(script) as ollama:
+        registry = a_registry(environ={"SURMAP_OLLAMA_URL": ollama})
 
-    # When the available models are listed
-    registry.available()
+        # When the available models are listed
+        registry.available()
 
     # Then that server's /api/tags was asked, once
-    assert tags.urls == ["http://127.0.0.1:11500/api/tags"]
+    assert [(r.method, r.path) for r in script.requests] == [("GET", "/api/tags")]
 
 
 # --- available: Fireworks -------------------------------------------------------------------
@@ -202,17 +201,18 @@ def test_an_unreachable_endpoint_lists_the_built_in_fireworks_models() -> None:
 
 def test_muse_comes_first_then_fireworks_then_the_local_models() -> None:
     # Given both keys and an Ollama server holding one model
-    registry = a_registry(
-        environ={
-            "MODEL_API_KEY": REGISTRY_KEY,
-            "FIREWORKS_API_KEY": FAKE_FIREWORKS_KEY,
-            "SURMAP_FIREWORKS_MODELS": FW_LLAMA,
-        },
-        ollama=FakeOllamaTags.holding("llama3.2:3b"),
-    )
+    with fake_ollama.serving(FakeOllamaScript(held_models=["llama3.2:3b"])) as ollama:
+        registry = a_registry(
+            environ={
+                "MODEL_API_KEY": REGISTRY_KEY,
+                "FIREWORKS_API_KEY": FAKE_FIREWORKS_KEY,
+                "SURMAP_FIREWORKS_MODELS": FW_LLAMA,
+            },
+            ollama=ollama,
+        )
 
-    # When the available models are listed
-    listed = registry.available()
+        # When the available models are listed
+        listed = registry.available()
 
     # Then hosted models lead, Muse before Fireworks
     assert listed == (MUSE_WONDER, on_fireworks(FW_LLAMA), LLAMA)
@@ -233,27 +233,32 @@ def test_an_ollama_id_builds_chat_ollama_for_that_model() -> None:
     assert model.model == "llama3.2:3b"
 
 
-def test_a_built_ollama_model_binds_the_agents_tools() -> None:
-    # Given an Ollama model from the registry
-    model = a_registry().build("ollama:llama3.2:3b")
+def test_a_built_ollama_model_offers_the_agents_tools_to_ollama() -> None:
+    # Given an Ollama model from the registry, on the fake Ollama server
+    script = FakeOllamaScript(rounds=[fake_ollama.answering("ok")])
+    with fake_ollama.serving(script) as ollama:
+        model = a_registry(ollama=ollama).build("ollama:llama3.2:3b")
 
-    # When the runtime binds echo in its provider-portable shape
-    bound = model.bind_tools([ECHO_PORTABLE_TOOL])
+        # When the runtime binds echo in its provider-portable shape and a turn runs
+        model.bind_tools([ECHO_PORTABLE_TOOL]).invoke("Echo surmap-ping.")
 
-    # Then echo is the tool that will be offered to Ollama
-    assert bound_tool_names(bound) == ["echo"]
+    # Then echo is the tool offered to Ollama
+    assert script.last_chat.body["tools"] == [ECHO_PORTABLE_TOOL]
 
 
 def test_a_built_ollama_model_talks_to_the_configured_server() -> None:
     # Given SURMAP_OLLAMA_URL points at a second local server
-    registry = a_registry(environ={"SURMAP_OLLAMA_URL": "http://127.0.0.1:11500"})
+    script = FakeOllamaScript(rounds=[fake_ollama.answering("ok")])
+    with fake_ollama.serving(script) as ollama:
+        registry = a_registry(environ={"SURMAP_OLLAMA_URL": ollama})
 
-    # When an Ollama id is built
-    model = registry.build("ollama:llama3.2:3b")
+        # When a turn runs on the Ollama model it builds
+        model = registry.build("ollama:llama3.2:3b")
+        model.invoke("Who is on the roof?")
 
-    # Then that model is served from there
+    # Then that server was asked for llama3.2:3b
     assert isinstance(model, ChatOllama)
-    assert model.base_url == "http://127.0.0.1:11500"
+    assert (script.last_chat.path, script.last_chat.body["model"]) == ("/api/chat", "llama3.2:3b")
 
 
 def test_a_meta_id_builds_muse_for_that_model() -> None:
@@ -268,16 +273,18 @@ def test_a_meta_id_builds_muse_for_that_model() -> None:
     assert model.model == "muse-spark-1.3"
 
 
-def test_a_built_muse_model_answers_through_the_registry_transport_with_its_key() -> None:
-    # Given a keyed registry whose Meta transport replies with the recorded text answer
-    meta = RecordingMetaTransport.replying("text")
-    registry = a_registry(environ={"MODEL_API_KEY": REGISTRY_KEY}, meta=meta)
+def test_a_built_muse_model_answers_from_the_registry_s_base_url_with_its_key() -> None:
+    # Given a keyed registry whose Muse base URL is the fake Meta server
+    script = FakeMetaScript(rounds=[fake_meta.answering("Two people.")])
+    with fake_meta.serving(script) as meta:
+        registry = a_registry(environ={"MODEL_API_KEY": REGISTRY_KEY}, meta=meta)
 
-    # When a turn runs on the Muse model it builds
-    registry.build("meta:muse-wonder-1.0").invoke("Who is on the roof?")
+        # When a turn runs on the Muse model it builds
+        registry.build("meta:muse-wonder-1.0").invoke("Who is on the roof?")
 
-    # Then the request went through that transport, keyed from the registry's environment
-    assert meta.headers[0]["Authorization"] == f"Bearer {REGISTRY_KEY}"
+    # Then the request reached that server, keyed from the registry's environment
+    assert script.last_request.path == "/v1/responses"
+    assert script.last_request.header("authorization") == f"Bearer {REGISTRY_KEY}"
 
 
 def test_a_fireworks_id_builds_that_model_split_at_the_first_colon_only() -> None:
@@ -331,31 +338,6 @@ def test_an_unknown_provider_is_refused_by_name() -> None:
     # When a Baseten id is built, then it is refused naming the provider
     with pytest.raises(UnknownModelProvider, match="baseten"):
         registry.build("baseten:muse-spark-open")
-
-
-# --- the Ollama module directly ---------------------------------------------------------------
-
-
-def test_an_ollama_model_defaults_to_the_loopback_server(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Given SURMAP_OLLAMA_URL is not set
-    monkeypatch.delenv("SURMAP_OLLAMA_URL", raising=False)
-
-    # When an Ollama chat model is made
-    model = ollama_chat_model("llama3.2:3b")
-
-    # Then it talks to Ollama's loopback default
-    assert model.base_url == "http://127.0.0.1:11434"
-
-
-def test_ollama_models_names_what_api_tags_lists_in_server_order() -> None:
-    # Given an Ollama server holding two models
-    tags = FakeOllamaTags.holding("qwen2.5vl:7b", "llama3.2:3b")
-
-    # When its models are read
-    names = ollama_models(tags, base_url="http://127.0.0.1:11434")
-
-    # Then both names come back in the server's order
-    assert names == ("qwen2.5vl:7b", "llama3.2:3b")
 
 
 # --- live -----------------------------------------------------------------------------------

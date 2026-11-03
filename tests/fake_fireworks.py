@@ -1,7 +1,8 @@
 """A fake Fireworks provider on a real loopback socket. Not collected by pytest.
 
-`serving(script)` runs a local HTTP stub of Fireworks' OpenAI-compatible API on `HypercornHost`
-port 0, in its own thread and event loop, and yields its base URL (`http://127.0.0.1:<port>/v1`).
+`serving(script)` runs a local HTTP stub of Fireworks' OpenAI-compatible API on the shared fake
+server core (`tests/fake_llm_server.py`: `HypercornHost` port 0, its own thread and event loop) and
+yields its base URL (`http://127.0.0.1:<port>/v1`).
 The adapter's real client (`ChatOpenAI` → `openai` → `httpx`) talks to it and parses real bytes, so
 a client upgrade that changes the wire format fails a test.
 
@@ -18,17 +19,20 @@ format. Agreement with Fireworks itself is the gated live test (`SURMAP_LIVE_FIR
 
 from __future__ import annotations
 
-import asyncio
 import json
-import socket
-import threading
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
-from surmap.rpc.description import HttpRoute, ServerDescription
-from surmap.rpc.hosts.hypercorn import HypercornHost
+from surmap.rpc.description import HttpRoute
 from surmap.rpc.http import HttpRequest, HttpResponse
+from tests.fake_llm_server import (
+    ProviderScript,
+    RecordedRequest,
+    a_closed_port,
+    json_response,
+    serving_routes,
+)
 
 __all__ = [
     "FAKE_FIREWORKS_KEY",
@@ -50,7 +54,6 @@ __all__ = [
 
 FAKE_FIREWORKS_KEY = "fw-fake-test-key-0123"
 FAKE_FIREWORKS_MODEL = "accounts/fireworks/models/llama-v3p3-70b-instruct"
-_START_TIMEOUT_S = 10.0
 
 
 @dataclass(frozen=True)
@@ -86,62 +89,22 @@ def calling(name: str, call_id: str, **arguments: object) -> Round:
     return Round(tool_calls=(FakeToolCall(id=call_id, name=name, arguments=arguments),))
 
 
-@dataclass(frozen=True)
-class RecordedRequest:
-    """One request the stub received."""
-
-    method: str
-    path: str
-    headers: Mapping[str, str]
-    body: Mapping[str, object]
-
-    def header(self, name: str) -> str | None:
-        """A header's value, looked up case-insensitively."""
-        wanted = name.lower()
-        for key, value in self.headers.items():
-            if key.lower() == wanted:
-                return value
-        return None
-
-
 @dataclass
-class FakeFireworksScript:
+class FakeFireworksScript(ProviderScript[Round]):
     """What the stub answers, and every request it received."""
 
     rounds: Sequence[Round] = (Round(content="ok"),)
-    status: int = 200
-    """A non-200 status answers every chat request with an error body."""
     served_models: Sequence[str] = ()
-    requests: list[RecordedRequest] = field(default_factory=list)
-    _served: int = field(default=0, init=False, repr=False)
 
     @property
     def chat_requests(self) -> list[RecordedRequest]:
-        return [r for r in self.requests if r.path.endswith("/chat/completions")]
+        return self.requests_to("/chat/completions")
 
     @property
     def last_chat(self) -> RecordedRequest:
         chats = self.chat_requests
         assert chats, "no chat request was sent"
         return chats[-1]
-
-    def next_round(self) -> Round:
-        assert self.rounds, "the script has no rounds"
-        index = min(self._served, len(self.rounds) - 1)
-        self._served += 1
-        return self.rounds[index]
-
-    def record(self, request: HttpRequest) -> None:
-        body: object = json.loads(request.body) if request.body else {}
-        assert isinstance(body, dict), f"request body is not a JSON object: {request.body!r}"
-        self.requests.append(
-            RecordedRequest(
-                method=request.method,
-                path=request.path,
-                headers=dict(request.headers),
-                body=body,
-            )
-        )
 
 
 # --- reply bodies -----------------------------------------------------------------------------
@@ -251,19 +214,11 @@ def _error(status: int) -> dict[str, object]:
 # --- the stub ---------------------------------------------------------------------------------
 
 
-def _json_response(status: int, payload: Mapping[str, object]) -> HttpResponse:
-    return HttpResponse(
-        status=status,
-        body=json.dumps(payload).encode("utf-8"),
-        headers={"content-type": "application/json"},
-    )
-
-
 def _routes(script: FakeFireworksScript) -> tuple[HttpRoute[None], ...]:
     async def chat(request: HttpRequest) -> HttpResponse:
         script.record(request)
         if script.status != 200:
-            return _json_response(script.status, _error(script.status))
+            return json_response(script.status, _error(script.status))
         body = script.last_chat.body
         model = str(body.get("model", ""))
         reply = script.next_round()
@@ -275,12 +230,12 @@ def _routes(script: FakeFireworksScript) -> tuple[HttpRoute[None], ...]:
                 body=_sse(_frames(reply, model, with_usage=with_usage)),
                 headers={"content-type": "text/event-stream"},
             )
-        return _json_response(200, _completion(reply, model))
+        return json_response(200, _completion(reply, model))
 
     async def models(request: HttpRequest) -> HttpResponse:
         script.record(request)
         data = [{"id": name, "object": "model"} for name in script.served_models]
-        return _json_response(200, {"object": "list", "data": data})
+        return json_response(200, {"object": "list", "data": data})
 
     return (
         HttpRoute(method="POST", path="/v1/chat/completions", handler=lambda _c: chat),
@@ -291,40 +246,10 @@ def _routes(script: FakeFireworksScript) -> tuple[HttpRoute[None], ...]:
 @contextmanager
 def serving(script: FakeFireworksScript) -> Iterator[str]:
     """Serve `script` on a loopback port in a background thread; yield its base URL."""
-    host = HypercornHost(ServerDescription[None](http_routes=_routes(script)), None, port=0)
-    loop = asyncio.new_event_loop()
-    started = threading.Event()
-    ports: list[int] = []
-    failures: list[BaseException] = []
-
-    def run() -> None:
-        asyncio.set_event_loop(loop)
-        try:
-            ports.append(loop.run_until_complete(host.start()).public)
-        except BaseException as exc:  # surfaced to the caller below
-            failures.append(exc)
-            started.set()
-            return
-        started.set()
-        loop.run_forever()
-
-    thread = threading.Thread(target=run, name="fake-fireworks", daemon=True)
-    thread.start()
-    assert started.wait(_START_TIMEOUT_S), "the fake Fireworks provider did not start"
-    if failures:
-        raise failures[0]
-    try:
-        yield f"http://127.0.0.1:{ports[0]}/v1"
-    finally:
-        asyncio.run_coroutine_threadsafe(host.stop(), loop).result(_START_TIMEOUT_S)
-        loop.call_soon_threadsafe(loop.stop)
-        thread.join(_START_TIMEOUT_S)
-        loop.close()
+    with serving_routes(_routes(script), name="fake-fireworks") as root:
+        yield f"{root}/v1"
 
 
 def a_closed_base_url() -> str:
     """A loopback base URL nothing listens on: a port bound and released."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
-    return f"http://127.0.0.1:{port}/v1"
+    return f"http://127.0.0.1:{a_closed_port()}/v1"

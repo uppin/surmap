@@ -17,13 +17,13 @@ Base: `feat/agent-fireworks-provider` (PR #87). Repoint to `main` once #87 merge
   - [x] Replacements planned (step 5)
   - [x] Design findings recorded (step 6) — D1: the registry has no Muse base-URL seam
   - [x] Changeset, rows and their TODOs written (step 8)
-- [wf 2] ⬜ `/plan-red` Red — replacement tests against the fake servers, committed ·
-  - [ ] Shared core `tests/fake_llm_server.py` (thread + `HypercornHost` port 0, rounds, status, recorded requests, case-insensitive headers, closed port); `tests/fake_fireworks.py` rebuilt on it, its tests unchanged and green
-  - [ ] `tests/fake_meta.py` — `POST /v1/responses` whole JSON: `message`/`output_text` and `function_call` items, usage incl. reasoning tokens
-  - [ ] `tests/fake_ollama.py` — `POST /api/chat` NDJSON streaming and `stream:false` whole replies incl. `tool_calls`; `GET /api/tags`
-  - [ ] Replacement tests (V1-characterisation) in `tests/test_agent_llm_meta.py`, `tests/test_agent_llm_registry.py`, `tests/test_agent_server_app.py`, `tests/test_agent_server_e2e.py`
-  - [ ] One whole agent turn per provider through `build_agent_description` (Muse, Ollama)
-  - [ ] Red only where D1's seam is missing (registry-built Muse on a fake base URL); everything else green when written
+- [wf 2] ✅ 2026-11-03 `/plan-red` Red — replacement tests against the fake servers, committed · 4 red on the `meta_base_url` stub (registry-built Muse), every other replacement green when written (V1); Fireworks 14 passed unchanged
+  - [x] Shared core `tests/fake_llm_server.py` (thread + `HypercornHost` port 0, rounds, status, recorded requests, case-insensitive headers, closed port); `tests/fake_fireworks.py` rebuilt on it, its tests unchanged and green
+  - [x] `tests/fake_meta.py` — `POST /v1/responses` whole JSON: `message`/`output_text` and `function_call` items, usage incl. reasoning tokens
+  - [x] `tests/fake_ollama.py` — `POST /api/chat` NDJSON streaming and `stream:false` whole replies incl. `tool_calls`; `GET /api/tags`
+  - [x] Replacement tests (V1-characterisation) in `tests/test_agent_llm_meta.py`, `tests/test_agent_llm_registry.py`, `tests/test_agent_server_app.py`, `tests/test_agent_server_e2e.py`
+  - [x] One whole agent turn per provider through `build_agent_description` (Muse, Ollama)
+  - [x] Red only where D1's seam is missing (registry-built Muse on a fake base URL); everything else green when written
 - [wf 3] ⬜ `/green-100` Green — replacements pass, equivalence proven, old fake-transport tests deleted ·
   - [ ] D1: `ChatModelRegistry(meta_base_url=…)` hands the base URL to every Muse model it builds (default unchanged)
   - [ ] Every replacement test green
