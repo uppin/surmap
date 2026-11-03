@@ -156,3 +156,23 @@ async def test_cancel_keeps_the_rounds_that_completed_in_the_conversation() -> N
     # Then the question and the completed first round stay in the conversation
     assert human_texts(rig.history) == ["Compare run-6 with a new run"]
     assert "run-6" in tool_message_for(rig.history, "call-1").text
+
+
+async def test_a_turn_its_reader_abandons_cancels_the_call_it_was_waiting_on() -> None:
+    # Given a turn blocked on a demo that holds
+    demo = FakeToolHandler.holding({"run_id": "run-7"})
+    model = ScriptedChatModel.replying(run_the_demo("call-1"), answer("Never said."))
+    rig = a_session(model, (RUN_DEMO, demo))
+    turn = asyncio.create_task(collect(rig.session.run_turn("Run the EuRoC demo")))
+    await until_held(demo, turn)
+
+    # When the reader of the turn's events goes away without cancelling the session
+    turn.cancel()
+    await asyncio.wait({turn})
+    await rig.runner.wait(["j-1"], "all", timeout_s=1.0)
+
+    # Then the call nobody waits for any more was cancelled, not left running unreported
+    assert demo.was_cancelled
+    job = rig.runner.get("j-1")
+    assert job is not None
+    assert job.state is JobState.CANCELLED

@@ -3,8 +3,9 @@
 "Sync" only means the caller waits for the job. A SYNC call waits up to its timeout; when the
 timeout passes first, `OnTimeout.FAIL` cancels the job and reports a timeout, `OnTimeout.DETACH`
 returns a job handle and leaves the job running. An ASYNC call returns a handle at once. Steering
-detaches every waiting SYNC call (`detach_blocking`). When a detached or async job ends, a
-`JobNotice` is queued on `notices` for the conversation to read.
+detaches every waiting SYNC call (`detach_blocking`); a SYNC call whose caller is cancelled while
+it waits is cancelled with it. When a detached or async job ends, a `JobNotice` is queued on
+`notices` for the conversation to read.
 """
 
 from __future__ import annotations
@@ -189,6 +190,11 @@ class JobRunner:
         }
         try:
             await asyncio.wait(waiting, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+        except asyncio.CancelledError:
+            # The caller went away mid-wait: nobody will read this result and, never detached,
+            # it would end unreported — so the job ends with its caller.
+            task.cancel()
+            raise
         finally:
             entry.blocking = False
             for pending in waiting:
