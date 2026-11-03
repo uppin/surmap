@@ -1,0 +1,216 @@
+syntax = "proto3";
+
+package surmap.agent.v1;
+
+import "surmap/agent/v1/execution.proto";
+
+/*
+The chat service the browser talks to. A conversation is a sequence of
+turns; each turn streams TurnEvents as the agent writes text and calls
+tools. Between turns, a finished job may start a turn of its own; a client
+keeps a WatchConversation stream open to receive those.
+
+This service is not a tool: its rpcs carry no default_execution.
+*/
+
+service ChatService {
+  // Sends the user's message and streams the turn it starts, until the turn finishes.
+  rpc StreamTurn(StreamTurnRequest) returns (stream TurnEvent);
+
+  // Streams the events of turns that start while no StreamTurn is open, such as a turn started
+  // by a finished job, until the client disconnects.
+  rpc WatchConversation(WatchConversationRequest) returns (stream TurnEvent);
+
+  // Adds guidance to the running turn; blocking tool calls detach to jobs so the agent can act
+  // on it.
+  rpc Steer(SteerRequest) returns (SteerResponse);
+
+  // Cancels the running turn and its blocking tool calls.
+  rpc CancelTurn(CancelTurnRequest) returns (CancelTurnResponse);
+
+  // Lists the chat models this server can run a conversation on.
+  rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
+
+  // Returns every event of a conversation so far, in order, so a reloaded page can redraw it.
+  rpc GetConversation(GetConversationRequest) returns (GetConversationResponse);
+}
+
+message StreamTurnRequest {
+  // The conversation to continue; a new one is started when it does not exist.
+  string conversation_id = 1;
+  // The user's message.
+  string text = 2;
+  // The model to answer with, a ChatModel id; the server's default when absent.
+  optional string model_id = 3;
+}
+
+message WatchConversationRequest {
+  // The conversation to watch.
+  string conversation_id = 1;
+}
+
+message SteerRequest {
+  // The conversation whose running turn is steered.
+  string conversation_id = 1;
+  // The guidance, as the user wrote it.
+  string text = 2;
+}
+
+message SteerResponse {
+  // Whether a turn was running to take the guidance.
+  bool accepted = 1;
+}
+
+message CancelTurnRequest {
+  // The conversation whose running turn is cancelled.
+  string conversation_id = 1;
+}
+
+message CancelTurnResponse {
+  // Whether a turn was running to cancel.
+  bool cancelled = 1;
+}
+
+message ListModelsRequest {}
+
+// A model a conversation can run on.
+message ChatModel {
+  // Identifies the model in StreamTurnRequest.model_id.
+  string id = 1;
+  // Who serves it, e.g. "muse" or "ollama".
+  string provider = 2;
+  // Human-readable name.
+  string display_name = 3;
+  // Whether the model can be reached now.
+  bool available = 4;
+  // Why it cannot be reached, when it cannot; empty otherwise.
+  string detail = 5;
+}
+
+message ListModelsResponse {
+  // Every model this server is configured with.
+  repeated ChatModel models = 1;
+  // The model a turn uses when none is named.
+  string default_model_id = 2;
+}
+
+message GetConversationRequest {
+  // The conversation to read.
+  string conversation_id = 1;
+}
+
+message GetConversationResponse {
+  // The conversation read.
+  string conversation_id = 1;
+  // Every event so far, in order.
+  repeated TurnEvent events = 2;
+}
+
+// The user's message that started a turn, as recorded in the conversation.
+message UserMessage {
+  // The message text.
+  string text = 1;
+}
+
+// The agent started a tool call.
+message ToolCallStarted {
+  // Identifies the call within the turn.
+  string call_id = 1;
+  // The tool's snake_case name, e.g. "run_demo".
+  string tool = 2;
+  // The model's arguments as JSON, without the execution override.
+  string arguments_json = 3;
+  // The execution the call runs with: the rpc default merged with the model's override.
+  ExecutionPolicy execution = 4;
+}
+
+// A tool call ended, or detached to a job.
+message ToolCallFinished {
+  // How the call ended.
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    // It returned a result.
+    SUCCEEDED = 1;
+    // It failed or timed out.
+    FAILED = 2;
+    // It keeps running as a job; see `job`.
+    DETACHED = 3;
+    // It was cancelled with the turn.
+    CANCELLED = 4;
+  }
+
+  // The call that ended.
+  string call_id = 1;
+  // How it ended.
+  Status status = 2;
+  // The tool's response, or error, as JSON.
+  string result_json = 3;
+  // An image the tool returned, e.g. a frame; absent when it returned none.
+  optional bytes image = 4;
+  // The image's media type, e.g. "image/jpeg".
+  optional string media_type = 5;
+  // The job the call became; present when status is DETACHED or the call ran ASYNC.
+  optional JobHandle job = 6;
+}
+
+// The turn took steering guidance.
+message SteerApplied {
+  // The guidance, as the user wrote it.
+  string text = 1;
+  // Tool calls that detached to jobs so the agent could act on it.
+  repeated string detached_call_ids = 2;
+}
+
+// The turn ended.
+message TurnFinished {
+  // Why it ended.
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    // The model finished its answer.
+    STOP = 1;
+    // The model hit its output limit.
+    LENGTH = 2;
+    // The user cancelled the turn.
+    CANCELLED = 3;
+    // An error ended the turn; an `error` event precedes this one.
+    ERROR = 4;
+  }
+
+  // Why it ended.
+  Reason reason = 1;
+}
+
+// Something went wrong in the turn.
+message TurnError {
+  // What went wrong, for the user.
+  string message = 1;
+}
+
+// One thing that happened in a turn.
+message TurnEvent {
+  // The conversation the event belongs to.
+  string conversation_id = 1;
+  // The turn the event belongs to.
+  string turn_id = 2;
+  // Position of the event in the conversation, from 1, with no gaps.
+  uint64 seq = 3;
+  // What happened.
+  oneof event {
+    // The next piece of the agent's answer text.
+    string text_delta = 10;
+    // The agent started a tool call.
+    ToolCallStarted tool_call_started = 11;
+    // A tool call ended or detached.
+    ToolCallFinished tool_call_finished = 12;
+    // A job changed state.
+    JobHandle job_update = 13;
+    // The turn took steering guidance.
+    SteerApplied steer_applied = 14;
+    // The turn ended.
+    TurnFinished turn_finished = 15;
+    // Something went wrong in the turn.
+    TurnError error = 16;
+    // The user's message that started the turn; recorded so GetConversation can replay it.
+    UserMessage user_message = 17;
+  }
+}

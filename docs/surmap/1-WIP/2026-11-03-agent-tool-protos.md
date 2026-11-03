@@ -8,12 +8,15 @@
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-03 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file + discovery (commit 1)
+- [wf 1] ✅ 2026-11-03 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file + discovery (commit 1 `1b059ac`)
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
+- [wf 2] ✅ 2026-11-03 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 32 failing — commit 2
+  - [x] Create failing acceptance tests
+  - [x] Run acceptance tests (verify they fail)
+  - [x] TDD Red — write failing unit/integration tests
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Milestone 1: `proto/surmap/agent/v1/{execution,survey_tools,jobs,chat}.proto` compile; `scripts/gen_agent_rpc.py` writes `_pb2.py`, `.pyi` and `agent_descriptor_set.binpb`
   - [ ] Milestone 2: `surmap.agent.contracts` builds one `ToolContract` per tool rpc from the descriptor set (name, description, schema, default execution)
@@ -33,7 +36,7 @@ Full codebase exploration that grounded this plan:
 
 ## Stack Context
 
-**Stack**: survey agent · slug **`#survey-agent`** — this PR is **1 of 9** · #pending
+**Stack**: survey agent · slug **`#survey-agent`** — this PR is **1 of 9** · [#76](https://github.com/uppin/surmap/pull/76)
 **Branch**: `pr-1-survey-agent` · **Base**: `origin/main`
 **Successor**: `pr-2-survey-agent`
 **Kind**: Feature · behaviour-adds
@@ -154,6 +157,27 @@ Each response that can finish after a detach is an ordinary message; the runtime
 `JobHandle` when it detaches. `ChatService.StreamTurn` streams `TurnEvent { oneof text_delta,
 tool_call_started, tool_call_finished, job_update, steer_applied, turn_finished, error }`.
 
+As written in the red commit (the protos and generated code are real there; only the Python logic
+is stubbed):
+
+- **`ChatService`** has six rpcs: `StreamTurn` and `WatchConversation` (both server-streaming
+  `TurnEvent`; the second carries job-event turns that start while no `StreamTurn` is open),
+  `Steer`, `CancelTurn`, `ListModels` and `GetConversation` (the conversation's past events, for a
+  reloaded page). The last two are what the chat server (n8) serves; they are added here so it
+  compiles against them. `TurnEvent` also carries `user_message`, so `GetConversation` can replay
+  the user's side of a conversation.
+- **Enum scoping:** top-level enum values are unprefixed (`SYNC`, `FAIL`, `RUNNING`, `ALL`,
+  `LINEAR`, …) so the model writes plain names; enums whose values would collide in the package
+  are nested — `RunInfo.Status`, `ToolCallFinished.Status`, `TurnFinished.Reason`. A tool schema's
+  string enum omits the `*_UNSPECIFIED` zero value.
+- **Generated location:** the proto package stays `surmap.agent.v1`; `gen_agent_rpc.py` compiles to
+  a scratch directory and copies the modules into `src/surmap/agent/proto/`, rewriting only their
+  import lines, and fixes the `.pyi` stubs for mypy strict (typed `Mapping`; the extension's
+  module-level field number).
+- **Schema rules the tests pin:** a singular field without presence is `required`; `optional`
+  fields, oneof members, messages and repeated fields are not; every object has
+  `additionalProperties: false`; 64-bit integers are JSON `integer`.
+
 ```python
 @dataclass(frozen=True)
 class ToolContract:
@@ -172,6 +196,9 @@ class ToolContract:
 - `proto/surmap/agent/v1/*.proto` (new), `scripts/gen_agent_rpc.py` (new)
 - `src/surmap/agent/__init__.py`, `contracts.py`, `services.py`, `proto/` (new)
 - `pyproject.toml` — ruff per-file ignores for `src/surmap/agent/proto/*_pb2.py*`
+- `tests/test_agent_contracts.py`, `tests/test_agent_services.py` (new);
+  `tests/agent_schema.py` — the JSON Schema subset checker the contract tests use (no validator
+  dependency)
 
 ## Verification
 

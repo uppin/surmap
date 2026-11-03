@@ -33,8 +33,9 @@ next to handlers drifts; deriving them from proto keeps one source.
   - `survey_tools.proto` — service `SurveyTools`: `ListDemos`, `RunDemo`, `GetRun`, `PromptSam`,
     `FindObjects`, `GetObject`, `GetObjectGeometry`, `GetFrame`.
   - `jobs.proto` — service `AgentJobs`: `WaitForJobs`, `GetJob`, `CancelJob`, `ListJobs`.
-  - `chat.proto` — service `ChatService`: `StreamTurn` (server streaming `TurnEvent`), `Steer`,
-    `CancelTurn`, `ListModels`.
+  - `chat.proto` — service `ChatService`: `StreamTurn` (server streaming `TurnEvent`),
+    `WatchConversation` (server streaming `TurnEvent` for job-event turns while idle), `Steer`,
+    `CancelTurn`, `ListModels`, `GetConversation` (the conversation's past events).
 - `scripts/gen_agent_rpc.py` — compiles the package (`_pb2.py`, `.pyi`) and writes a descriptor
   set with source info.
 - `surmap.agent.contracts` — `ToolContract` per tool rpc: snake_case name, description from the
