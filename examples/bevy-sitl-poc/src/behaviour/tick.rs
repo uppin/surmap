@@ -7,7 +7,7 @@ use super::geometry::{contains, nearest, point_in_disc};
 use super::{Kind, Node, Status, SucceedOn, Tree, World};
 use crate::wind::WindModel;
 
-/// A body within this distance of its goal has arrived (changeset § *Behaviour-tree JSON*).
+/// A body within this distance of its goal has arrived (`move_to`).
 const ARRIVED_M: f32 = 0.25;
 /// Vertices a fire's front is sampled at for the distance tests.
 const FRONT_POINTS: usize = 48;

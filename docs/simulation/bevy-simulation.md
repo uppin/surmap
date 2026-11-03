@@ -176,6 +176,138 @@ reads as a saturated glow under the smoke, without resolvable tongues at survey 
 (`src/surmap/docs/todo/2026-11-03-flame-tongue-flipbook-sprites.md`). Open work:
 `src/surmap/docs/todo/2026-11-03-{flame-tongue-flipbook-sprites,per-stand-grass-seed,fire-light-visibility,fire-perimeter-capture-end-to-end,fire-eye-mount-pitch}.md`.
 
+## Behaviour trees
+
+People in a scenario act by behaviour trees, and the wind has a tree of its own, so a scenario's
+wind can veer and strengthen over time — and n3's vegetation, fire spread, flame lean and smoke
+follow it through the one `WindModel`. A tree is inline JSON in the manifest: declaring or
+changing one is a data edit, never a rebuild. Moving people are layered ground truth for the
+survey; they are never written into the static scene or RTAB-Map's map
+([architecture.md](../architecture.md) §1), and nothing here moves the drone.
+
+Why this shape: a tree is inline JSON, not a node file, so one manifest stays the whole scenario
+the station versions (reuse is the agent copying a tree). The runtime is hand-rolled (a few
+hundred lines, pure) rather than a crate: the node set is small, determinism and `wasm32` are
+required, and the tree must be the manifest's JSON. The wind is a target like a person, so a
+wind driven by a tree needs no second mechanism.
+
+### In the manifest
+
+A `person` element takes `"behaviour": <node>`; the wind takes `weather.wind.behaviour` and
+starts from the weather's `from_deg`, `speed_m_s` and `gust_m_s`. Every node is an object whose
+`"node"` names its kind, with an optional `"id"` — unique within its tree, the address
+`update_behaviour_node` edits by.
+
+```json
+{"kind": "person", "id": "evacuee-1", "position_enu": [-16.0, 52.0, 0.0],
+ "coat": "coat_orange", "skin": "skin",
+ "behaviour": {"node": "repeat", "child": {"node": "selector", "id": "root", "children": [
+   {"node": "sequence", "id": "escape", "children": [
+     {"node": "near_fire", "id": "smell-fire", "within_m": 20.0},
+     {"node": "flee_from_fire", "id": "run", "speed_m_s": 3.0, "clearance_m": 30.0}]},
+   {"node": "wander", "id": "mill-about", "radius_m": 6.0, "speed_m_s": 0.8, "seed": 7}]}}}
+```
+
+| Node | Fields | Ticks to |
+|---|---|---|
+| `sequence` | `children` | the first child that does not succeed; a running child holds the sequence on it; success when all succeed |
+| `selector` | `children` | the first child that does not fail; children after it start afresh, so a higher choice that becomes possible again takes over |
+| `parallel` | `children`, `succeed_on` `all` \| `one` | ticks every unfinished child each tick; `all`: failure on the first loss, success when all win; `one`: success on the first win, failure when all lose |
+| `repeat` | `child`, `times` (omitted = forever) | restarts the child on success; fails when it fails |
+| `invert` | `child` | swaps success and failure |
+| `time_after` | `s` | success once simulation time ≥ `s`, else failure |
+| `near_fire` | `within_m` | success when any burning front is within `within_m`, or the body stands in burning ground |
+| `near_object` | `object`, `within_m` | success when the body named `object` is within `within_m` |
+| `wind_above` | `speed_m_s` | success when the current wind speed exceeds it |
+| `idle` | `s` | running for `s` seconds, then success |
+| `move_to` | `enu` `[e, n]`, `speed_m_s` | running until within 0.25 m, then success |
+| `follow_path` | `enu` `[[e, n], …]`, `speed_m_s` | `move_to` each point in turn |
+| `wander` | `radius_m`, `speed_m_s`, `seed` | never ends: walks to seeded points (splitmix64) in the disc around where it started |
+| `flee_from_fire` | `speed_m_s`, `clearance_m` | walks away from the nearest front point (out of burning ground first); success once `clearance_m` clear |
+| `set_wind` | `from_deg`, `speed_m_s`, `gust_m_s`, `over_s` | ramps the wind linearly to these over `over_s`, the short way round the compass; success when reached |
+
+- **Targets.** A person's tree may not use `set_wind`. The wind's tree may use only the
+  composites, the decorators, `time_after`, `idle` and `set_wind`.
+- **Ranges.** Composites non-empty; `times` ≥ 1; `within_m`, `idle.s`, every walking speed,
+  `radius_m` and `over_s` > 0; `time_after.s`, `wind_above.speed_m_s`, `clearance_m` and the
+  wind's `speed_m_s`/`gust_m_s` ≥ 0; every point finite; `seed` a whole number ≥ 0. Unknown kinds
+  and fields are refused by name. The renderer (`behaviour/validate.rs`) and the station
+  (`surmap.simulation.behaviour_tree`) apply the same rules.
+
+### The tick (`behaviour.rs`, pure)
+
+A fixed 10 Hz in simulation time, on the renderer's `SimTime`, so a recording replays
+identically: same seeds, same tracks. Bodies move on the ground plane at their `speed_m_s`.
+A root that finishes is not restarted — wrap it in `repeat`.
+
+- `Tree` deserializes from the manifest's JSON (it is its root `Node`);
+  `tree.validate(Target::Object | Target::Wind)` checks it.
+- `Runner::new(tree, position: Vec2, wind: WindModel)`; `runner.tick(&World, dt)` →
+  `Status::{Running, Success, Failure}`; `runner.position` (ENU m), `runner.wind`, and
+  `runner.action()` — the running leaf's kind (`"flee_from_fire"`, …), `None` once finished.
+- `World { t_s, fires: &[FireSpec], burning_areas: &[Vec<Vec2>], wind: &WindModel, objects:
+  &[(String, Vec2)] }`. A wildfire's front is its perimeter sampled at 48 points; a point is
+  burning when inside it (`FireSpec::burnt`).
+- **`World.burning_areas` is a public seam.** It is other burning ground — ENU polygons such
+  as burning buildings' footprints — that `near_fire` and `flee_from_fire` treat exactly like a
+  wildfire's perimeter (a test pins it). This PR passes it empty; the building presets with fire
+  (#104, n5 of `#sim-disaster-2`) fill it.
+- Layout: `behaviour.rs` (node, tree and world types), `behaviour/validate.rs`,
+  `behaviour/tick.rs` (each node's semantics and the `Runner`), `behaviour/geometry.rs` (the
+  seeded wander stream, distances to fronts, containment).
+
+`actors.rs` runs it in the app: every tick up to the simulation's moment, the wind's runner
+first — its wind becomes `Wildfire::wind`, so this tick's vegetation, fire and particles see
+it — then every person, each sensing the others' positions. A person faces the way it walks,
+its yaw eased, and bobs while it walks; standing (`idle`, a finished tree) it does not.
+
+### The figure (`assets/behaviour/person.figure.json`)
+
+| Field | Meaning (shipped) |
+|---|---|
+| `yaw_ease_s` | seconds a turn takes to ease to the new heading, the short way round (0.3) |
+| `bob_m` | height of a step's bob (0.03) |
+| `steps_per_s` | steps per second at `reference_speed_m_s`; faster walking steps faster in proportion (2) |
+| `reference_speed_m_s` | the speed `steps_per_s` is quoted at (1.4) |
+
+Each figure's bob has its own phase, derived from its id. The figure itself is the capsule and
+sphere every `person` has; it shows no front, so the turn is not visible yet
+(`src/surmap/docs/todo/2026-11-03-figure-facing-cue.md`).
+
+### Presets, ground truth and stills
+
+The preset `wildfire-evacuation` is `wildfire-edge` plus three people in orange coats at the
+west stand's downwind edge (`evacuee-1..3` at ENU (−16, 52/60/68), wander seeds 7–9), each
+running the tree above — wander 6 m at 0.8 m/s; when the front comes within 20 m, flee at
+3 m/s until 30 m clear; then wander again, and flee again if the front returns — and a wind
+tree `sequence[idle 20 s, set_wind 300° 10 m/s gust 3 over 30 s]`: the 6 m/s westerly holds,
+then veers and builds.
+
+Every capture adds `object_tracks.jsonl`, one line per frame:
+`{"t_ns": n, "wind_enu": [ve, vn], "objects": [{"id": "evacuee-1", "enu": [e, n, u], "action": "flee_from_fire"}]}`
+— the wind's velocity and every person with a tree, sorted by id (`action` is `null` once its
+tree finished). `load_bevy_capture(dir).object_tracks` (`t_ns` → id → `Vec3`) and `.wind`
+(`t_ns` → `(ve, vn)`) read it; both are empty without the file.
+
+A still of a scene with people adds `people.png` (1280×720, 50° field of view): from 25 m
+south-west of the people's centroid and 12 m up, looking at their chests, following them while
+the scene settles.
+
+### Verified
+
+Rust tests pin every node kind, determinism of a seeded wander, a fleeing person never inside
+the burnt area over 120 s, burning ground in `burning_areas` fled like a front, the wind ramp
+and its short way round, the manifest rules per target and the golden
+`tests/fixtures/sim_scenario/wildfire-evacuation.json` the station writes; the figure's turn,
+bob and track line. Python tests pin validation and edits, the preset, the three tools, the
+capture tracks, and an agent turn on a real socket that gives a hiker and the wind their trees.
+Native recordings of the preset, read with `load_bevy_capture`, show the evacuees wander and
+then flee, the wind at 275° at 25 s and ≈ 287° at 36.9 s, and no evacuee inside the recorded
+burnt area over 40–70 s. The planner reviewed native stills at t = 10 and t = 60 in two passes:
+`people.png` at t = 60 frames the three evacuees in the grass, and the overview shows the front
+pushed north-east by the veered wind. Open work:
+`src/surmap/docs/todo/2026-11-03-figure-facing-cue.md`.
+
 ## The stereo rig: one camera profile
 
 `cameras/elp-stereo-pinhole.camera.json` (the SurMap ELP rig): 640×480, fx = fy = 381.36,
@@ -206,6 +338,8 @@ BEVY_ASSET_ROOT=$PWD cargo run --release -- --screenshot shots --at 20
 # ...of a stored scenario; with fires, the overview looks at the first ignition and a
 # fourth still, fire-eye.png, shows the fire through the rig's intrinsics from 40 m south, 15 m up:
 BEVY_ASSET_ROOT=$PWD cargo run --release -- --screenshot shots --at 40 --scenario wildfire-edge
+# ...with people, a fifth still, people.png, follows them from 25 m south-west, 12 m up:
+BEVY_ASSET_ROOT=$PWD cargo run --release -- --screenshot shots --at 60 --scenario wildfire-evacuation
 # a stereo capture RTAB-Map can replay (hidden window, GPU readback, progress logged):
 BEVY_ASSET_ROOT=$PWD cargo run --release -- --record cap --frames 90 --start 15.5 --jpeg \
   [--rate-hz 10] [--camera cameras/wide-baseline-pinhole.camera.json]
@@ -215,8 +349,8 @@ BEVY_ASSET_ROOT=$PWD cargo run --release -- --record cap --frames 90 --start 15.
 (1.5 m/s, 7 ± 1.5 m up, ≤ 10.7 °/s yaw, 182 m, 121 s); stills and recordings imply it. A
 capture holds `camera.json`, `calibration.json`, `ground_truth.json` (ENU boxes of every
 ground-truth element and model), `frames.jsonl` (each frame's rig pose in ENU), grey8
-frames and, with fires, `fire_perimeter.jsonl`; `surmap.simulation.bevy_capture.load_bevy_capture`
-reads it.
+frames, `object_tracks.jsonl` (the wind and every person with a behaviour tree) and, with
+fires, `fire_perimeter.jsonl`; `surmap.simulation.bevy_capture.load_bevy_capture` reads it.
 
 Verified natively (Metal) throughout; the browser build compiles for `wasm32` but the
 runtime-scene version has not been checked in Chrome yet (visual checkpoint V5,

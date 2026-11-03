@@ -1,4 +1,4 @@
-//! Moving people at run time (changeset § *Runtime*; visual spec § *People* and *Wind*). A person
+//! Moving people at run time (docs/simulation/bevy-simulation.md § *Behaviour trees*). A person
 //! with a behaviour tree is ticked at the fixed rate on the simulation clock, faces the way it
 //! walks with its yaw eased over `yaw_ease_s`, and bobs while it walks. The scenario's wind tree
 //! drives `Wildfire::wind`, so vegetation, fire and particles follow it. Every number lives in
@@ -119,8 +119,8 @@ pub struct Body {
     pub action: Option<String>,
 }
 
-/// One `object_tracks.jsonl` line (changeset § *Ground truth*): the frame's time, the wind's
-/// velocity (ENU m/s) and each moving body, by id.
+/// One `object_tracks.jsonl` line (bevy-simulation.md § *Presets, ground truth and stills*): the
+/// frame's time, the wind's velocity (ENU m/s) and each moving body, by id.
 pub fn track_line(t_ns: u64, wind: Vec2, bodies: &[Body]) -> String {
     let mut sorted: Vec<&Body> = bodies.iter().collect();
     sorted.sort_by(|a, b| a.id.cmp(&b.id));

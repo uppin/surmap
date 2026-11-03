@@ -1,4 +1,4 @@
-"""Behaviour trees in a scenario (changeset § Behaviour-tree JSON; the renderer: `behaviour.rs`).
+"""Behaviour trees in a scenario (bevy-simulation.md § Behaviour trees; renderer: `behaviour.rs`).
 
 The node rules per target (a person, or the wind), reading a target's tree, replacing a node by
 its id, and the trees of the `wildfire-evacuation` preset. Pure: the manifest edits that store a

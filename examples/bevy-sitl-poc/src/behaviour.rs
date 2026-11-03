@@ -1,6 +1,7 @@
-//! Behaviour trees for scenario objects and the wind (changeset § *Behaviour-tree JSON*): parsed
-//! from the manifest's inline JSON, ticked at a fixed rate in simulation time. Pure, so a run is
-//! deterministic and the recorder's tracks come from the same place the renderer moves bodies.
+//! Behaviour trees for scenario objects and the wind (docs/simulation/bevy-simulation.md
+//! § *Behaviour trees*): parsed from the manifest's inline JSON, ticked at a fixed rate in
+//! simulation time. Pure, so a run is deterministic and the recorder's tracks come from the same
+//! place the renderer moves bodies.
 
 use bevy::math::Vec2;
 use serde::de::Error as _;
