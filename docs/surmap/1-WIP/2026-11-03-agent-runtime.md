@@ -8,7 +8,7 @@
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-03 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file + discovery (commit 1 `d790f2a`)
+- [wf 1] ✅ 2026-11-03 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file + discovery (commit 1 `0275c54`)
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
@@ -17,13 +17,13 @@
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Milestone 1: `langgraph`, `langchain-core` added to `pyproject.toml` / `uv.lock`; mypy strict clean
-  - [ ] Milestone 2: `JobRunner` — policy resolution, sync wait with timeout, FAIL/DETACH, ASYNC, cancel, notices
-  - [ ] Milestone 3: graph — model/tools/cut_off nodes, pending-message drain, round and repeated-failure caps
-  - [ ] Milestone 4: `AgentSession` — `run_turn` event stream, `steer`, `cancel`, idle job-event signal
-  - [ ] Milestone 5: built-in job tools (`wait_for_jobs`, `get_job`, `cancel_job`, `list_jobs`)
-  - [ ] Acceptance: `tests/test_agent_runtime.py`, `tests/test_agent_jobs.py`, `tests/test_agent_steering.py` pass
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · 42/42 green; full suite 1441 passed, 30 skipped; ruff format/check and mypy strict clean
+  - [x] Milestone 1: `langgraph`, `langchain-core` added to `pyproject.toml` / `uv.lock`; mypy strict clean
+  - [x] Milestone 2: `JobRunner` — policy resolution, sync wait with timeout, FAIL/DETACH, ASYNC, cancel, notices
+  - [x] Milestone 3: graph — model/tools/cut_off nodes, pending-message drain, round and repeated-failure caps
+  - [x] Milestone 4: `AgentSession` — `run_turn` event stream, `steer`, `cancel`, idle job-event signal
+  - [x] Milestone 5: built-in job tools (`wait_for_jobs`, `get_job`, `cancel_job`, `list_jobs`)
+  - [x] Acceptance: `tests/test_agent_runtime.py`, `tests/test_agent_jobs.py`, `tests/test_agent_steering.py` pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/agent.md` — add "Runtime" section: graph, execution policy table, job notices, steering, caps and env vars
@@ -212,7 +212,8 @@ Completed, Detached (steer or DETACH timeout) or Failed (FAIL timeout → task c
 - `tests/test_agent_steering.py` — 6 acceptance (steer detach, `SteerApplied`, detached job keeps
   running, idle steer starts a turn, cancel, completed rounds kept)
 
-Baseline before: 1344 passed, 7 skipped, 78 inherited known-red (n1 32, n3 46); after: the same
+Baseline before: 1344 passed, 7 skipped, 78 inherited known-red (n1 32, n3 46) — those 78 were red
+when the red step ran and are green on the current base (after the mid-pass rebase); after: the same
 plus these 42.
 
 ## Decisions & Trade-offs
