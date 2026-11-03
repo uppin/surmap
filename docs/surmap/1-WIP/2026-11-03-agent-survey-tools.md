@@ -17,14 +17,14 @@
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Milestone 1: `SurveyWorkspace` port + adapter over `DemoRunHost` and `RunHistoryStore` (headless start, wait for end)
-  - [ ] Milestone 2: `list_demos`, `run_demo`, `get_run`
-  - [ ] Milestone 3: `prompt_sam` on a recorded run's frames
-  - [ ] Milestone 4: `find_objects`, `get_object`, `get_object_geometry` (summaries via `surmap.objects3d`, GLB store)
-  - [ ] Milestone 5: `get_frame` with crop by box or object, max side, image result
-  - [ ] Milestone 6: `survey_tool_handlers(workspace)` plugs into `survey_tools_module` and the runtime's tool binding
-  - [ ] Acceptance: `tests/test_agent_tools_demo.py`, `tests/test_agent_tools_objects.py`, `tests/test_agent_tools_frames.py` pass
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · 66/66 green @ 57b10c9; full suite 1547 passed, 32 skipped, 0 failed (skips are environment-gated e2e fixtures); ruff format/check and mypy strict clean
+  - [x] Milestone 1: `SurveyWorkspace` port + adapter over `DemoRunHost` and `RunHistoryStore` (headless start, wait for end)
+  - [x] Milestone 2: `list_demos`, `run_demo`, `get_run`
+  - [x] Milestone 3: `prompt_sam` on a recorded run's frames
+  - [x] Milestone 4: `find_objects`, `get_object`, `get_object_geometry` (summaries via `surmap.objects3d`, GLB store)
+  - [x] Milestone 5: `get_frame` with crop by box or object, max side, image result
+  - [x] Milestone 6: `survey_tool_handlers(workspace)` plugs into `survey_tools_module` (mounted in the tests through `InMemoryHost`); the runtime's `bind_contract_tool` binding stays with n8
+  - [x] Acceptance: `tests/test_agent_tools_demo.py`, `tests/test_agent_tools_objects.py`, `tests/test_agent_tools_frames.py` pass (66 passed)
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/agent.md` — "Tools" section: one row per tool with arguments, result and default execution
@@ -235,3 +235,37 @@ cancel it; a cancelled job stops the engine.
   `CANCELLED` (the history does not tell a cancel from a failure).
 - **`get_run.prompt`** for a run this workspace did not start is the concept from its title
   (`… · SAM: <prompt>`), the only place the history keeps it.
+
+### Decided without review (green step)
+
+- **Per-call `fps` and `max_frames` go through the host's own engine path.** `DemoRunHost.start_run`
+  reads only the host-wide `player_options`, so `DemoWorkspace` builds the run itself: `DemoPlayer`
+  gets those options with this call's values overlaid, through `DemoRunHost._take_over` and
+  `_RunEngine`. Both are private to n2's module; n2's file is not edited. The options bag is typed
+  `dict[str, Any]` at that one boundary.
+- **History reads are raw.** Objects, object boxes and surface tracks read `surface_points` and the
+  SAM event through `RunHistoryStore.exclusive()`; no history method was added. An object's points,
+  label and moving flag come from all its rows, its frames and times from the timeline.
+- **Refusals.** `RunBusy` (the previous run did not stop in time) maps to `UNAVAILABLE`; a
+  non-positive `fps` to `INVALID_ARGUMENT`; `max_frames` of 0 on `prompt_sam` to `INVALID_ARGUMENT`.
+  Explicit `frame_ids` are capped like `max_frames`: the first eight, sorted and de-duplicated.
+- **SAM input is the frame's pixels.** Frames are decoded to RGB and passed as `raw_rgb` (the live
+  path's encoding), not re-encoded, so boxes stay in the frame's own pixel space.
+- **Crop helpers not reused.** `segbench.fusion.crop_jpeg` cannot downscale and re-encodes at
+  quality 90; `mission.demo.detection_crop_jpeg` returns undecodable bytes unchanged and never
+  refuses an empty crop. `frame_image` needs one encode, a `max_side` step and a `ValueError` for a
+  crop outside the image, so it is a small Pillow function of its own.
+- **Geometry URIs.** `surmap-glb://<run>/<object>.glb`. `GeometryStore` checks both key parts
+  against `[A-Za-z0-9_-]+`, so no URI can name a path outside its root. Every summary a handler
+  returns publishes its GLB once (`has` short-circuits), so any URI in a response resolves.
+- **Neighbours.** `get_object` fills them (the default 5 m, the 5 nearest) from summaries of the
+  whole run; `find_objects` returns none, to keep its list compact.
+- **Defaults and status.** `scenes()` reports the host's resolved prompt (honouring a launcher
+  `sam_label`), else the scene's own. Status: `running` → `RUNNING`, `completed` → `FINISHED`,
+  `interrupted` → `CANCELLED`, anything else → `FAILED`. `RunInfo.frames` is the history's
+  `frame_count`; `RunInfo.objects` counts objects that have points. A frame index is the frame's
+  position in the playback timeline.
+- **Detector access.** `detect` runs in a worker thread and holds a lock around `reset` and
+  `track`, because a video SAM detector is one stateful session.
+- **Port docstring.** `run_demo` now documents `RunBusy` and the `fps` `ValueError`; no other port
+  change.
