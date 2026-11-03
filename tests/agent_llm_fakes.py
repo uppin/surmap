@@ -1,10 +1,11 @@
-"""Test doubles and builders for the agent's chat models. Not collected by pytest.
+"""Builders shared by the agent's chat-model tests. Not collected by pytest.
 
-`RecordingMetaTransport` replays Meta Responses bodies in order and records every request.
-`FakeOllamaTags` answers `GET /api/tags`, or fails like a stopped server. The recorded bodies
-live in `tests/fixtures/agent/meta_responses_<name>.json`; their function-call shape follows the
-OpenAI-style Responses API until the live Muse check confirms Meta's. `round_trip` is the live
-driver: it lets a real model call `echo` once and feeds the result back.
+The `echo` tool in each shape the adapters see it, the hand-built Meta Responses bodies in
+`tests/fixtures/agent/meta_responses_<name>.json` (their function-call shape follows the
+OpenAI-style Responses API until the live Muse check confirms Meta's) and readers for a Responses
+request's `input` items. `round_trip` is the live driver: it lets a real model call `echo` once and
+feeds the result back. The fake provider servers are `tests/fake_meta.py`,
+`tests/fake_fireworks.py` and `tests/fake_ollama.py`.
 """
 
 from __future__ import annotations
@@ -18,27 +19,16 @@ from typing import cast
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
-from langchain_core.runnables import RunnableBinding
 from langchain_core.tools import StructuredTool
-from pydantic import SecretStr
-
-from surmap.agent.llm.meta import MetaResponsesChatModel, ReasoningEffort
-from surmap.labelling.ollama import OllamaError
-from surmap.usage import UsageSink
 
 __all__ = [
     "ECHO_PARAMETERS",
     "ECHO_PORTABLE_TOOL",
     "ECHO_RESPONSES_TOOL",
-    "FIXTURE_KEY",
     "ROOF_JPEG_B64",
-    "FakeOllamaTags",
-    "RecordingMetaTransport",
     "RoundTrip",
-    "a_muse_model",
     "a_recorded_reply",
     "a_reply",
-    "bound_tool_names",
     "echo_tool",
     "input_types",
     "item_of_type",
@@ -46,7 +36,6 @@ __all__ = [
 ]
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "agent"
-FIXTURE_KEY = "sk-fixture-agent-key"
 ROOF_JPEG_B64 = base64.b64encode(b"\xff\xd8\xff\xe0 roof frame").decode("ascii")
 
 ECHO_PARAMETERS: dict[str, object] = {
@@ -123,99 +112,6 @@ def input_types(body: Mapping[str, object]) -> list[str]:
     items = body["input"]
     assert isinstance(items, list)
     return [str(item.get("type")) for item in items if isinstance(item, dict)]
-
-
-class RecordingMetaTransport:
-    """Stands in for `MetaMuseTransport`: replies in order, records every request."""
-
-    def __init__(self, *replies: Mapping[str, object]) -> None:
-        self._replies = list(replies)
-        self.urls: list[str] = []
-        self.headers: list[dict[str, str]] = []
-        self.bodies: list[dict[str, object]] = []
-
-    @classmethod
-    def replying(cls, *names: str) -> RecordingMetaTransport:
-        """Replays the recorded bodies with these fixture names."""
-        return cls(*(a_recorded_reply(name) for name in names))
-
-    @property
-    def calls(self) -> int:
-        return len(self.bodies)
-
-    @property
-    def last_body(self) -> dict[str, object]:
-        assert self.bodies, "no request was sent"
-        return self.bodies[-1]
-
-    def post_json(
-        self, url: str, headers: Mapping[str, str], body: Mapping[str, object]
-    ) -> Mapping[str, object]:
-        self.urls.append(url)
-        self.headers.append(dict(headers))
-        self.bodies.append(json.loads(json.dumps(body)))
-        assert self._replies, f"no reply left for {url}"
-        return self._replies.pop(0)
-
-
-def a_muse_model(
-    transport: RecordingMetaTransport,
-    *,
-    usage_sink: UsageSink | None = None,
-    model: str = "muse-wonder-1.0",
-    reasoning_effort: ReasoningEffort = "medium",
-    max_output_tokens: int = 8192,
-) -> MetaResponsesChatModel:
-    """Muse over a recording transport, keyed with the fixture key."""
-    return MetaResponsesChatModel(
-        model=model,
-        reasoning_effort=reasoning_effort,
-        max_output_tokens=max_output_tokens,
-        api_key=SecretStr(FIXTURE_KEY),
-        transport=transport,
-        usage_sink=usage_sink,
-    )
-
-
-# --- Ollama ---------------------------------------------------------------------------------
-
-
-class FakeOllamaTags:
-    """Answers `GET /api/tags` with these model names, or fails like a stopped server."""
-
-    def __init__(self, *models: str, reachable: bool = True) -> None:
-        self._models = models
-        self._reachable = reachable
-        self.urls: list[str] = []
-
-    @classmethod
-    def holding(cls, *models: str) -> FakeOllamaTags:
-        return cls(*models)
-
-    @classmethod
-    def unreachable(cls) -> FakeOllamaTags:
-        return cls(reachable=False)
-
-    def get_json(self, url: str) -> Mapping[str, object]:
-        self.urls.append(url)
-        if not self._reachable:
-            raise OllamaError("Ollama request failed — is `ollama serve` running on this machine?")
-        return {
-            "models": [
-                {"name": name, "model": name, "size": 2_019_393_189} for name in self._models
-            ]
-        }
-
-
-def bound_tool_names(bound: object) -> list[str]:
-    """The function names a `bind_tools` result will send to its model."""
-    assert isinstance(bound, RunnableBinding)
-    tools = bound.kwargs["tools"]
-    names: list[str] = []
-    for tool in tools:
-        function = tool.get("function", tool)
-        names.append(str(function["name"]))
-    return names
 
 
 # --- live driver ----------------------------------------------------------------------------

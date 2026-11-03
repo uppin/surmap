@@ -49,7 +49,7 @@ from surmap.agent.llm.ollama import (
     ollama_chat_model,
     ollama_models,
 )
-from surmap.labelling.meta_muse import MetaMuseTransport
+from surmap.labelling.meta_muse import META_MODEL_API_BASE_URL, MetaMuseTransport
 from surmap.labelling.ollama import DEFAULT_OLLAMA_URL
 from surmap.usage import UsageSink
 
@@ -90,7 +90,8 @@ class ChatModelRegistry:
     ) -> None:
         """`environ` defaults to `os.environ`; the transports to the stdlib ones.
 
-        `meta_transport` and `usage_sink` are handed to every Muse model `build` returns;
+        `meta_transport`, `meta_base_url` (default the Meta Model API) and `usage_sink` are handed
+        to every Muse model `build` returns;
         `usage_sink` to every Fireworks model too. `fireworks_transport` lists Fireworks models.
         """
         self._environ = environ
@@ -136,10 +137,9 @@ class ChatModelRegistry:
         """The chat model for `model_id`; `UnknownModelProvider` for any other provider."""
         provider, _, model = model_id.partition(":")
         if provider == META_PROVIDER and model:
-            if self._meta_base_url is not None:
-                raise NotImplementedError("meta_base_url is the green step")
             return MetaResponsesChatModel(
                 model=model,
+                base_url=self._meta_base_url or META_MODEL_API_BASE_URL,
                 api_key=SecretStr(self._env().get(_MODEL_API_KEY_ENV, "")),
                 transport=self._meta_transport,
                 usage_sink=self._usage_sink,

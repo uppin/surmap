@@ -24,12 +24,12 @@ Base: `feat/agent-fireworks-provider` (PR #87). Repoint to `main` once #87 merge
   - [x] Replacement tests (V1-characterisation) in `tests/test_agent_llm_meta.py`, `tests/test_agent_llm_registry.py`, `tests/test_agent_server_app.py`, `tests/test_agent_server_e2e.py`
   - [x] One whole agent turn per provider through `build_agent_description` (Muse, Ollama)
   - [x] Red only where D1's seam is missing (registry-built Muse on a fake base URL); everything else green when written
-- [wf 3] ⬜ `/green-100` Green — replacements pass, equivalence proven, old fake-transport tests deleted ·
-  - [ ] D1: `ChatModelRegistry(meta_base_url=…)` hands the base URL to every Muse model it builds (default unchanged)
-  - [ ] Every replacement test green
-  - [ ] Old fake-transport tests deleted; `RecordingMetaTransport`, `FakeOllamaTags`, `a_muse_model`, `bound_tool_names` removed from `tests/agent_llm_fakes.py` when unused
-  - [ ] Equivalence: old → new title mapping one-to-one (table below), and `--cov=surmap.agent.llm` line coverage after ≥ before per module
-  - [ ] Out-of-scope TODO recorded: non-agent clients (`labelling/{meta_muse,ollama,baseten_muse,modal_muse}.py`, `mapqa/client.py`) onto fake servers
+- [wf 3] ✅ 2026-11-03 `/green-100` Green — replacements pass, equivalence proven, old fake-transport tests deleted · 4/4 red green unedited; titles 72 → 88 (69 kept, 3 renamed 1:1, 16 added, 0 dropped); `surmap.agent.llm` 84 % → 89 % (ollama 55 → 90, meta 91 → 92, fireworks 82 = 82, registry 100 = 100)
+  - [x] D1: `ChatModelRegistry(meta_base_url=…)` hands the base URL to every Muse model it builds (default unchanged)
+  - [x] Every replacement test green
+  - [x] Old fake-transport tests deleted; `RecordingMetaTransport`, `FakeOllamaTags`, `a_muse_model`, `bound_tool_names` removed from `tests/agent_llm_fakes.py` when unused
+  - [x] Equivalence: old → new title mapping one-to-one (table below), and `--cov=surmap.agent.llm` line coverage after ≥ before per module
+  - [x] Out-of-scope TODO recorded (`src/surmap/docs/todo/2026-11-03-non-agent-clients-on-fake-servers.md`): non-agent clients (`labelling/{meta_muse,ollama,baseten_muse,modal_muse}.py`, `mapqa/client.py`) onto fake servers
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (coverage before/after, mapping table)
   - [ ] `docs/agent.md` — Models: a testing note covering all three fake providers and their limit
