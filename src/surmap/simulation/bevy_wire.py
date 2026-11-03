@@ -1,0 +1,205 @@
+"""Browser-to-bridge wire format for the Bevy stereo stream.
+
+Every message is a little-endian ``u32`` header length, a compact JSON
+header, then (pairs only) the left and right grey8 payloads.
+"""
+
+from __future__ import annotations
+
+import json
+import struct
+from dataclasses import dataclass
+
+from surmap.simulation.calibration import StereoCalibrationSpec
+from surmap.types import Pose, Vec3
+
+
+class BevyWireError(ValueError):
+    """A message that does not follow the Bevy wire format."""
+
+
+@dataclass(frozen=True)
+class GroundTruthBox:
+    id: str
+    kind: str
+    min_enu: Vec3
+    max_enu: Vec3
+
+
+@dataclass(frozen=True)
+class BevyHello:
+    calibration_id: str
+    rate_hz: float
+    calibration: StereoCalibrationSpec
+    objects: tuple[GroundTruthBox, ...]
+
+
+@dataclass(frozen=True)
+class BevyPair:
+    frame_id: int
+    t_ns: int
+    width: int
+    height: int
+    encoding: str
+    pose_enu: Pose
+    left_data: bytes
+    right_data: bytes
+
+
+@dataclass(frozen=True)
+class BridgeStatus:
+    frames: int
+    posed: int
+    lost: bool
+    keyframes: int
+    dropped: int
+
+
+def encode_status(status: BridgeStatus) -> str:
+    return json.dumps(
+        {
+            "type": "status",
+            "frames": status.frames,
+            "posed": status.posed,
+            "lost": status.lost,
+            "keyframes": status.keyframes,
+            "dropped": status.dropped,
+        },
+        separators=(",", ":"),
+    )
+
+
+def _obj(value: object, what: str) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise BevyWireError(f"{what} must be a JSON object")
+    result: dict[str, object] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise BevyWireError(f"{what} keys must be strings")
+        result[key] = item
+    return result
+
+
+def _req(obj: dict[str, object], key: str) -> object:
+    if key not in obj:
+        raise BevyWireError(f"missing field {key!r}")
+    return obj[key]
+
+
+def _str(obj: dict[str, object], key: str) -> str:
+    value = _req(obj, key)
+    if not isinstance(value, str):
+        raise BevyWireError(f"field {key!r} must be a string")
+    return value
+
+
+def _int(obj: dict[str, object], key: str) -> int:
+    value = _req(obj, key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise BevyWireError(f"field {key!r} must be an integer")
+    return value
+
+
+def _float(obj: dict[str, object], key: str) -> float:
+    value = _req(obj, key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise BevyWireError(f"field {key!r} must be a number")
+    return float(value)
+
+
+def _numbers(value: object, count: int, what: str) -> tuple[float, ...]:
+    if not isinstance(value, list) or len(value) != count:
+        raise BevyWireError(f"{what} must be {count} numbers")
+    out: list[float] = []
+    for item in value:
+        if isinstance(item, bool) or not isinstance(item, (int, float)):
+            raise BevyWireError(f"{what} must be {count} numbers")
+        out.append(float(item))
+    return tuple(out)
+
+
+def _vec3(value: object, what: str) -> Vec3:
+    x, y, z = _numbers(value, 3, what)
+    return Vec3(x, y, z)
+
+
+def decode_bevy_message(message: bytes) -> BevyHello | BevyPair:
+    if len(message) < 4:
+        raise BevyWireError("message shorter than its header length")
+    (header_len,) = struct.unpack_from("<I", message, 0)
+    header_end = 4 + header_len
+    if len(message) < header_end:
+        raise BevyWireError("message shorter than its header length")
+    try:
+        raw_header: object = json.loads(message[4:header_end].decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise BevyWireError(f"header is not JSON: {exc}") from exc
+    header = _obj(raw_header, "header")
+    kind = _str(header, "type")
+    if kind == "hello":
+        return _decode_hello(header)
+    if kind == "pair":
+        return _decode_pair(header, message[header_end:])
+    raise BevyWireError(f"unknown message type {kind!r}")
+
+
+def _decode_hello(header: dict[str, object]) -> BevyHello:
+    calibration_id = _str(header, "calibration_id")
+    rate_hz = _float(header, "rate_hz")
+    raw_cal = _obj(_req(header, "calibration"), "calibration")
+    calibration = StereoCalibrationSpec(
+        calibration_id=calibration_id,
+        width=_int(raw_cal, "width"),
+        height=_int(raw_cal, "height"),
+        fx=_float(raw_cal, "fx"),
+        fy=_float(raw_cal, "fy"),
+        cx=_float(raw_cal, "cx"),
+        cy=_float(raw_cal, "cy"),
+        baseline_m=_float(raw_cal, "baseline_m"),
+        rate_hz=rate_hz,
+    )
+    raw_objects = _req(header, "objects")
+    if not isinstance(raw_objects, list):
+        raise BevyWireError("objects must be a list")
+    objects: list[GroundTruthBox] = []
+    for raw in raw_objects:
+        obj = _obj(raw, "ground-truth object")
+        objects.append(
+            GroundTruthBox(
+                id=_str(obj, "id"),
+                kind=_str(obj, "kind"),
+                min_enu=_vec3(_req(obj, "min_enu"), "min_enu"),
+                max_enu=_vec3(_req(obj, "max_enu"), "max_enu"),
+            )
+        )
+    return BevyHello(
+        calibration_id=calibration_id,
+        rate_hz=rate_hz,
+        calibration=calibration,
+        objects=tuple(objects),
+    )
+
+
+def _decode_pair(header: dict[str, object], payload: bytes) -> BevyPair:
+    width = _int(header, "width")
+    height = _int(header, "height")
+    if width <= 0 or height <= 0:
+        raise BevyWireError("pair dimensions must be positive")
+    frame_bytes = width * height
+    if len(payload) < 2 * frame_bytes:
+        raise BevyWireError("pair payload shorter than its frame")
+    pose_numbers = _numbers(_req(header, "pose_enu"), 7, "pose_enu")
+    pose = Pose(
+        Vec3(pose_numbers[0], pose_numbers[1], pose_numbers[2]),
+        (pose_numbers[3], pose_numbers[4], pose_numbers[5], pose_numbers[6]),
+    )
+    return BevyPair(
+        frame_id=_int(header, "frame_id"),
+        t_ns=_int(header, "t_ns"),
+        width=width,
+        height=height,
+        encoding=_str(header, "encoding"),
+        pose_enu=pose,
+        left_data=payload[:frame_bytes],
+        right_data=payload[frame_bytes : 2 * frame_bytes],
+    )

@@ -22,15 +22,20 @@ PRD: `PRD-2026-11-03-bevy-photoreal-rtabmap-stream.md` · Discovery:
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green #muse` Green — implement until every red test passes ·
-  - [ ] M1 Rust contracts: `scene_manifest.rs`, `wire.rs`, `flight.rs` stubs implemented; `cargo test --locked` green
-  - [ ] M2 Python contracts: `bevy_wire`, `bevy_capture`, `bevy_ground_truth`, `trajectory_eval`, `sim_assets`, `bevy_bridge` green
+- [wf 3] ⏳ `/green #muse` Green — implement until every red test passes ·
+  - [x] Red verified, failing tests reviewed (green step 1)
+  - [ ] Every red test this row owns passes with production-quality code (green step 2)
+  - [ ] Planner's milestones and wiring TODOs done or deferred with a record (green step 3)
+  - [ ] Prerequisites Outcomes and deferred-work records reconciled (green step 3.5)
+  - [ ] Committed and pushed with the row (green step 4)
+  - [x] M1 Rust contracts: `scene_manifest.rs`, `wire.rs`, `flight.rs` stubs implemented; `cargo test --locked` green — 25 passed, only the shipped-manifest test red (waits for M3, expected). Survey loop: rounded rectangle ENU corners (-14, 8), (14, 8), (14, 78), (-14, 78), radius 8 m, CCW from (0, 8) east at 1.5 m/s, altitude 7 ± 1.5 m (period = loop period); corner yaw rate 1.5/8 = 0.1875 rad/s = 10.7 deg/s, within the 30 deg/s limit
+  - [x] M2 Python contracts: `bevy_wire`, `bevy_capture`, `bevy_ground_truth`, `trajectory_eval`, `sim_assets`, `bevy_bridge` green — 35 passed; only the shipped-scene pin test red (waits for M3, expected)
   - [ ] M3 Runtime content per the visual spec (`2026-11-03-bevy-photoreal-rtabmap-stream-visual-spec.md` §2–§4, §6): asset shortlist → planner picks → `assets/scene.json` + `assets/assets.lock.json` (CC0 only, pinned sha256, ≤ 150 MB), `scripts/fetch_sim_assets.py`, `.gitignore` for fetched binaries; world spawned from the manifest at runtime (`AssetServer`, `AssetMetaCheck::Never`); models `.glb` or `.gltf` (planner contract change: the manifest test refuses other extensions, e.g. `.obj`); Rapier colliders per instance
   - [ ] M4 Photo-realism exactly per the visual spec §3, §5, §7, §8 — checkpoints V1–V5 reviewed by the planner (`--screenshot <dir> --at <t>`); the implementer makes no visual choice the spec does not state
   - [ ] M5 Capture: eye targets get `COPY_SRC`, `Readback` at `rate_hz` (10), grey8 conversion, ground-truth rig pose; scripted `survey-loop` flight (`?flight=` / `--flight`)
   - [ ] M6 Streaming: wasm WebSocket client (`?bridge=ws://127.0.0.1:8773`), hello + pairs, status overlay from the bridge's replies; `scripts/serve_bevy_sim.py` (static `dist/` + `assets/` on 8772, bridge on 8773, `--record <dir>`)
   - [ ] M7 Native recorder `--record <dir> --flight survey-loop --frames N`; record `tests/fixtures/bevy_sim_capture/` (≤ 6 MB, JPEG q90 frames ok) and its README (command, commit, asset lock hash)
-  - [ ] Planner fixes to the red acceptance test: no `# type: ignore` (filter posed results with a typed comprehension); the queried object is the ground-truth object whose `project_box` polygon lies fully inside the recent frame's image and is largest — the test asserts one exists; `survey-loop` and the capture window are planned so a car is framed near the end
+  - [x] Planner fixes to the red acceptance test: no `# type: ignore` (filter posed results with a typed comprehension); the queried object is the ground-truth object whose `project_box` polygon lies fully inside the recent frame's image and is largest — the test asserts one exists; `survey-loop` and the capture window are planned so a car is framed near the end — done; the test stays red (capture fixture missing, M7, expected). Asset shortlist built per visual spec §2 (29 previews + index.md in the scratchpad shortlist directory); no realistic CC0 vehicle found on Poly Haven (only `covered_car`, a car under a cover) — planner picks next turn
   - [ ] M8 Acceptance `tests/test_bevy_sim_rtabmap_e2e.py` green against the real sidecar; CI `rtabmap-stream-e2e` runs it
   - [ ] All four gates green (`ruff check`, `ruff format --check`, `mypy`, `pytest`) and `cargo test --locked` + `trunk build index.html --release` in the PoC
 - [wf 4] ⬜ `/pr-wrap #muse` Wrap — validate, clean up, verification, docs ·

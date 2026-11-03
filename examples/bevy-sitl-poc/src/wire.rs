@@ -33,6 +33,40 @@ pub struct PairHeader {
     pub pose_enu: [f64; 7],
 }
 
+#[derive(Serialize)]
+struct HelloHeader<'a> {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    calibration_id: &'a str,
+    rate_hz: f32,
+    calibration: &'a StereoCalibration,
+    objects: &'a [GroundTruthObject],
+}
+
+#[derive(Serialize)]
+struct PairHeaderJson {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    frame_id: u64,
+    t_ns: u64,
+    width: u32,
+    height: u32,
+    encoding: &'static str,
+    pose_enu: [f64; 7],
+}
+
+fn frame(header_json: String, payloads: &[&[u8]]) -> Vec<u8> {
+    let header = header_json.as_bytes();
+    let mut out =
+        Vec::with_capacity(4 + header.len() + payloads.iter().map(|p| p.len()).sum::<usize>());
+    out.extend_from_slice(&(header.len() as u32).to_le_bytes());
+    out.extend_from_slice(header);
+    for payload in payloads {
+        out.extend_from_slice(payload);
+    }
+    out
+}
+
 /// The session opener: calibration and ground-truth objects.
 pub fn encode_hello(
     calibration_id: &str,
@@ -40,28 +74,81 @@ pub fn encode_hello(
     calibration: &StereoCalibration,
     objects: &[GroundTruthObject],
 ) -> Vec<u8> {
-    let _ = (calibration_id, rate_hz, calibration, objects);
-    todo!("encode the hello message")
+    let header = HelloHeader {
+        kind: "hello",
+        calibration_id,
+        rate_hz,
+        calibration,
+        objects,
+    };
+    frame(
+        serde_json::to_string(&header).expect("hello header serializes"),
+        &[],
+    )
 }
 
 /// One stereo pair; panics if a payload is not `width * height` bytes.
 pub fn encode_pair(header: &PairHeader, left_gray: &[u8], right_gray: &[u8]) -> Vec<u8> {
-    let _ = (header, left_gray, right_gray);
-    todo!("encode a pair message")
+    let expected = (header.width as usize) * (header.height as usize);
+    assert!(
+        left_gray.len() == expected && right_gray.len() == expected,
+        "payload must be width * height bytes: left {} right {} expected {expected}",
+        left_gray.len(),
+        right_gray.len()
+    );
+    let json = PairHeaderJson {
+        kind: "pair",
+        frame_id: header.frame_id,
+        t_ns: header.t_ns,
+        width: header.width,
+        height: header.height,
+        encoding: "gray8",
+        pose_enu: header.pose_enu,
+    };
+    frame(
+        serde_json::to_string(&json).expect("pair header serializes"),
+        &[left_gray, right_gray],
+    )
 }
 
 /// BGRA8 (as read back, rows `row_bytes` apart) → tightly packed grey8,
 /// BT.601 luma `(299 R + 587 G + 114 B + 500) / 1000` on the stored bytes.
 pub fn bgra_to_gray8(bgra: &[u8], width: u32, height: u32, row_bytes: u32) -> Vec<u8> {
-    let _ = (bgra, width, height, row_bytes);
-    todo!("convert BGRA rows to grey8")
+    let (w, h, stride) = (width as usize, height as usize, row_bytes as usize);
+    let mut out = Vec::with_capacity(w * h);
+    for row in 0..h {
+        let start = row * stride;
+        for col in 0..w {
+            let i = start + col * 4;
+            let (b, g, r) = (
+                u32::from(bgra[i]),
+                u32::from(bgra[i + 1]),
+                u32::from(bgra[i + 2]),
+            );
+            out.push(((299 * r + 587 * g + 114 * b + 500) / 1000) as u8);
+        }
+    }
+    out
 }
 
 /// The rig's Bevy transform (x right/east, y up, -z north; the rig looks
 /// down its own -z) as the wire's ENU pose of its forward-left-up frame.
 pub fn rig_pose_enu(translation: Vec3, rotation: Quat) -> [f64; 7] {
-    let _ = (translation, rotation);
-    todo!("map a Bevy rig transform to an ENU FLU pose")
+    use bevy::math::{DMat3, DQuat, DVec3};
+    let to_enu = |v: Vec3| DVec3::new(f64::from(v.x), f64::from(-v.z), f64::from(v.y));
+    let forward = to_enu(rotation * Vec3::NEG_Z);
+    let left = to_enu(rotation * Vec3::NEG_X);
+    let up = to_enu(rotation * Vec3::Y);
+    let quat = DQuat::from_mat3(&DMat3::from_cols(forward, left, up));
+    [
+        f64::from(translation.x),
+        f64::from(-translation.z),
+        f64::from(translation.y),
+        quat.x,
+        quat.y,
+        quat.z,
+        quat.w,
+    ]
 }
 
 #[cfg(test)]
@@ -95,7 +182,10 @@ mod tests {
         let near = |a: &[f64], e: &[f64]| a.iter().zip(e).all(|(a, e)| (a - e).abs() < 1e-5);
         let flipped: Vec<f64> = expected[3..].iter().map(|v| -v).collect();
         let rotation = near(&actual[3..], &expected[3..]) || near(&actual[3..], &flipped);
-        assert!(near(&actual[..3], &expected[..3]) && rotation, "pose {actual:?} != {expected:?}");
+        assert!(
+            near(&actual[..3], &expected[..3]) && rotation,
+            "pose {actual:?} != {expected:?}"
+        );
     }
 
     #[test]
@@ -125,7 +215,9 @@ mod tests {
 
     #[test]
     fn grey_conversion_weights_red_green_and_blue_like_bt601() {
-        let pure_red_green_blue_white = [0, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255];
+        let pure_red_green_blue_white = [
+            0, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255, 255, 255, 255, 255,
+        ];
 
         let grey = bgra_to_gray8(&pure_red_green_blue_white, 4, 1, 16);
 

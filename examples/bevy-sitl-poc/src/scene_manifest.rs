@@ -80,23 +80,81 @@ pub enum ManifestError {
 
 impl SceneManifest {
     /// Parse and validate: version 1, unique model ids, every asset path
-    /// relative to `assets/` (no leading `/`, no `..`), models end `.glb`.
+    /// relative to `assets/` (no leading `/`, no `..`), models end `.glb` or `.gltf`.
     pub fn from_json(text: &str) -> Result<Self, ManifestError> {
-        let _ = text;
-        todo!("parse and validate the scene manifest")
+        let manifest: Self =
+            serde_json::from_str(text).map_err(|e| ManifestError::Json(e.to_string()))?;
+        if manifest.version != 1 {
+            return Err(ManifestError::UnsupportedVersion(manifest.version));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for model in &manifest.models {
+            if !seen.insert(model.id.clone()) {
+                return Err(ManifestError::DuplicateId(model.id.clone()));
+            }
+        }
+        for path in manifest.referenced_paths() {
+            validate_asset_path(&path)?;
+        }
+        for model in &manifest.models {
+            if !(model.glb.ends_with(".glb") || model.glb.ends_with(".gltf")) {
+                return Err(ManifestError::BadAssetPath(model.glb.clone()));
+            }
+        }
+        Ok(manifest)
+    }
+
+    fn referenced_paths(&self) -> Vec<String> {
+        let mut paths = Vec::new();
+        if let Some(hdri) = &self.environment.hdri {
+            paths.push(hdri.clone());
+        }
+        for material in self.materials.values() {
+            paths.push(material.base_color.clone());
+            if let Some(normal) = &material.normal {
+                paths.push(normal.clone());
+            }
+            if let Some(roughness) = &material.roughness {
+                paths.push(roughness.clone());
+            }
+        }
+        for model in &self.models {
+            paths.push(model.glb.clone());
+        }
+        paths
     }
 
     /// Every asset path the manifest references (HDRI, textures, GLBs), sorted, unique.
     pub fn asset_paths(&self) -> Vec<String> {
-        todo!("collect the referenced asset paths")
+        self.referenced_paths()
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect()
     }
+}
+
+fn validate_asset_path(path: &str) -> Result<(), ManifestError> {
+    if path.is_empty()
+        || path.starts_with('/')
+        || path.split('/').any(|part| part == ".." || part.is_empty())
+    {
+        return Err(ManifestError::BadAssetPath(path.to_string()));
+    }
+    Ok(())
 }
 
 impl ModelInstance {
     /// ENU position → Bevy `(x, z, -y)`; yaw is counter-clockwise from
     /// east about up, which is a rotation about Bevy +y; uniform scale.
     pub fn bevy_transform(&self) -> Transform {
-        todo!("place the instance in Bevy coordinates")
+        Transform::from_translation(bevy::math::Vec3::new(
+            self.position_enu[0],
+            self.position_enu[2],
+            -self.position_enu[1],
+        ))
+        .with_rotation(bevy::math::Quat::from_rotation_y(self.yaw_deg.to_radians()))
+        .with_scale(bevy::math::Vec3::splat(self.scale))
     }
 }
 
@@ -138,7 +196,10 @@ mod tests {
 
         let rubble = &manifest.models[1];
         assert_eq!(manifest.models.len(), 2);
-        assert_eq!((rubble.id.as_str(), rubble.scale, rubble.yaw_deg), ("rubble-1", 2.0, 0.0));
+        assert_eq!(
+            (rubble.id.as_str(), rubble.scale, rubble.yaw_deg),
+            ("rubble-1", 2.0, 0.0)
+        );
         assert_eq!(rubble.collider, ColliderKind::Trimesh);
         assert!(!rubble.ground_truth);
     }
@@ -163,7 +224,10 @@ mod tests {
     fn a_future_manifest_version_is_refused() {
         let text = A_MANIFEST.replacen("\"version\": 1", "\"version\": 2", 1);
 
-        assert_eq!(SceneManifest::from_json(&text), Err(ManifestError::UnsupportedVersion(2)));
+        assert_eq!(
+            SceneManifest::from_json(&text),
+            Err(ManifestError::UnsupportedVersion(2))
+        );
     }
 
     #[test]
@@ -179,7 +243,8 @@ mod tests {
 
     #[test]
     fn a_path_escaping_the_assets_directory_is_refused() {
-        let escaping = r#"[{"id": "x", "glb": "../secret.glb", "position_enu": [0,0,0], "collider": "none"}]"#;
+        let escaping =
+            r#"[{"id": "x", "glb": "../secret.glb", "position_enu": [0,0,0], "collider": "none"}]"#;
 
         assert_eq!(
             SceneManifest::from_json(&with_models(escaping)),
@@ -188,12 +253,13 @@ mod tests {
     }
 
     #[test]
-    fn a_model_that_is_not_a_glb_is_refused() {
-        let gltf = r#"[{"id": "x", "glb": "models/x.gltf", "position_enu": [0,0,0], "collider": "none"}]"#;
+    fn a_model_that_is_not_gltf_is_refused() {
+        let obj =
+            r#"[{"id": "x", "glb": "models/x.obj", "position_enu": [0,0,0], "collider": "none"}]"#;
 
         assert_eq!(
-            SceneManifest::from_json(&with_models(gltf)),
-            Err(ManifestError::BadAssetPath("models/x.gltf".into()))
+            SceneManifest::from_json(&with_models(obj)),
+            Err(ManifestError::BadAssetPath("models/x.obj".into()))
         );
     }
 
@@ -203,7 +269,9 @@ mod tests {
 
         let transform = car.bevy_transform();
 
-        assert!(transform.translation.abs_diff_eq(Vec3::new(3.0, 0.0, -12.0), 1e-5));
+        assert!(transform
+            .translation
+            .abs_diff_eq(Vec3::new(3.0, 0.0, -12.0), 1e-5));
     }
 
     #[test]
@@ -212,7 +280,10 @@ mod tests {
 
         let east_after_yaw = car.bevy_transform().rotation * Vec3::X;
 
-        assert!(east_after_yaw.abs_diff_eq(Vec3::NEG_Z, 1e-5), "{east_after_yaw:?}");
+        assert!(
+            east_after_yaw.abs_diff_eq(Vec3::NEG_Z, 1e-5),
+            "{east_after_yaw:?}"
+        );
     }
 
     #[test]
@@ -222,6 +293,9 @@ mod tests {
 
         let manifest = SceneManifest::from_json(&text).expect("shipped manifest validates");
 
-        assert!(manifest.models.iter().any(|m| m.ground_truth), "a ground-truth object exists");
+        assert!(
+            manifest.models.iter().any(|m| m.ground_truth),
+            "a ground-truth object exists"
+        );
     }
 }
