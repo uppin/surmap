@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file surmap/agent/v1/survey_tools.proto.
  */
 export const file_surmap_agent_v1_survey_tools: GenFile = /*@__PURE__*/
-  fileDesc("CiJzdXJtYXAvYWdlbnQvdjEvc3VydmV5X3Rvb2xzLnByb3RvEg9zdXJtYXAuYWdlbnQudjEiJwoEVmVjMxIJCgF4GAEgASgBEgkKAXkYAiABKAESCQoBehgDIAEoASI6CghQaXhlbEJveBIKCgJ4MBgBIAEoAhIKCgJ5MBgCIAEoAhIKCgJ4MRgDIAEoAhIKCgJ5MRgEIAEoAiIiCgpQaXhlbFBvaW50EgkKAXgYASABKAISCQoBeRgCIAEoAiISChBMaXN0RGVtb3NSZXF1ZXN0In4KCURlbW9TY2VuZRIKCgJpZBgBIAEoCRINCgV0aXRsZRgCIAEoCRIWCg5kZWZhdWx0X3Byb21wdBgDIAEoCRIQCghwcmVwYXJlZBgEIAEoCBIaCg1jYWNoZWRfcnVuX2lkGAUgASgJSACIAQFCEAoOX2NhY2hlZF9ydW5faWQiPwoRTGlzdERlbW9zUmVzcG9uc2USKgoGc2NlbmVzGAEgAygLMhouc3VybWFwLmFnZW50LnYxLkRlbW9TY2VuZSKDAQoOUnVuRGVtb1JlcXVlc3QSDwoHZGF0YXNldBgBIAEoCRITCgZwcm9tcHQYAiABKAlIAIgBARIXCgptYXhfZnJhbWVzGAMgASgNSAGIAQESEAoDZnBzGAQgASgBSAKIAQFCCQoHX3Byb21wdEINCgtfbWF4X2ZyYW1lc0IGCgRfZnBzIuQBCgdSdW5JbmZvEg4KBnJ1bl9pZBgBIAEoCRIPCgdkYXRhc2V0GAIgASgJEg4KBnByb21wdBgDIAEoCRIOCgZmcmFtZXMYBCABKA0SDwoHb2JqZWN0cxgFIAEoDRIvCgZzdGF0dXMYBiABKA4yHy5zdXJtYXAuYWdlbnQudjEuUnVuSW5mby5TdGF0dXMiVgoGU3RhdHVzEhYKElNUQVRVU19VTlNQRUNJRklFRBAAEgsKB1JVTk5JTkcQARIMCghGSU5JU0hFRBACEg0KCUNBTkNFTExFRBADEgoKBkZBSUxFRBAEInMKD1J1bkRlbW9SZXNwb25zZRIOCgZydW5faWQYASABKAkSDgoGZnJhbWVzGAIgASgNEg8KB29iamVjdHMYAyABKA0SLwoGc3RhdHVzGAQgASgOMh8uc3VybWFwLmFnZW50LnYxLlJ1bkluZm8uU3RhdHVzIh8KDUdldFJ1blJlcXVlc3QSDgoGcnVuX2lkGAEgASgJIjcKDkdldFJ1blJlc3BvbnNlEiUKA3J1bhgBIAEoCzIYLnN1cm1hcC5hZ2VudC52MS5SdW5JbmZvIm4KEFByb21wdFNhbVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEg8KB2NvbmNlcHQYAiABKAkSEQoJZnJhbWVfaWRzGAMgAygEEhcKCm1heF9mcmFtZXMYBCABKA1IAIgBAUINCgtfbWF4X2ZyYW1lcyKiAQoMU2FtRGV0ZWN0aW9uEhQKDGRldGVjdGlvbl9pZBgBIAEoCRINCgVsYWJlbBgCIAEoCRINCgVzY29yZRgDIAEoAhIrCghib3hfeHl4eRgEIAEoCzIZLnN1cm1hcC5hZ2VudC52MS5QaXhlbEJveBIxCgxtYXNrX3BvbHlnb24YBSADKAsyGy5zdXJtYXAuYWdlbnQudjEuUGl4ZWxQb2ludCJnChJTYW1GcmFtZURldGVjdGlvbnMSEAoIZnJhbWVfaWQYASABKAQSDAoEdF9ucxgCIAEoBBIxCgpkZXRlY3Rpb25zGAMgAygLMh0uc3VybWFwLmFnZW50LnYxLlNhbURldGVjdGlvbiJIChFQcm9tcHRTYW1SZXNwb25zZRIzCgZmcmFtZXMYASADKAsyIy5zdXJtYXAuYWdlbnQudjEuU2FtRnJhbWVEZXRlY3Rpb25zItcBChJGaW5kT2JqZWN0c1JlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhIKBWxhYmVsGAIgASgJSACIAQESKAoEbmVhchgDIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzSAGIAQESFQoIcmFkaXVzX20YBCABKAFIAogBARITCgZtb3ZpbmcYBSABKAhIA4gBARISCgVsaW1pdBgGIAEoDUgEiAEBQggKBl9sYWJlbEIHCgVfbmVhckILCglfcmFkaXVzX21CCQoHX21vdmluZ0IICgZfbGltaXQibgoLT3JpZW50ZWRCb3gSJQoGY2VudHJlGAEgASgLMhUuc3VybWFwLmFnZW50LnYxLlZlYzMSJgoHZXh0ZW50cxgCIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzEhAKCHJvdGF0aW9uGAMgAygBIlgKCU5laWdoYm91chIKCgJpZBgBIAEoCRISCgpkaXN0YW5jZV9tGAIgASgBEisKCHJlbGF0aW9uGAMgASgOMhkuc3VybWFwLmFnZW50LnYxLlJlbGF0aW9uIpsECg1PYmplY3RTdW1tYXJ5EgoKAmlkGAEgASgJEg0KBWxhYmVsGAIgASgJEhIKCmNvbmZpZGVuY2UYAyABKAISDQoFZnJhbWUYBCABKAkSDwoHdXBfYXhpcxgFIAEoCRINCgV1bml0cxgGIAEoCRIQCghuX3BvaW50cxgHIAEoDRIPCgduX2ZhY2VzGAggASgNEicKCGNlbnRyb2lkGAkgASgLMhUuc3VybWFwLmFnZW50LnYxLlZlYzMSJwoIYWFiYl9taW4YCiABKAsyFS5zdXJtYXAuYWdlbnQudjEuVmVjMxInCghhYWJiX21heBgLIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzEikKA29iYhgMIAEoCzIcLnN1cm1hcC5hZ2VudC52MS5PcmllbnRlZEJveBIQCghoZWlnaHRfbRgNIAEoARIUCgxmb290cHJpbnRfbTIYDiABKAESJQoFc2hhcGUYDyABKA4yFi5zdXJtYXAuYWdlbnQudjEuU2hhcGUSFwoPb2JzZXJ2ZWRfZnJhbWVzGBAgASgNEhIKCnRfZmlyc3RfbnMYESABKAQSEQoJdF9sYXN0X25zGBIgASgEEi4KCm5laWdoYm91cnMYEyADKAsyGi5zdXJtYXAuYWdlbnQudjEuTmVpZ2hib3VyEhQKDGdlb21ldHJ5X3VyaRgUIAEoCRIOCgZtb3ZpbmcYFSABKAgiRgoTRmluZE9iamVjdHNSZXNwb25zZRIvCgdvYmplY3RzGAEgAygLMh4uc3VybWFwLmFnZW50LnYxLk9iamVjdFN1bW1hcnkiNQoQR2V0T2JqZWN0UmVxdWVzdBIOCgZydW5faWQYASABKAkSEQoJb2JqZWN0X2lkGAIgASgJIkMKEUdldE9iamVjdFJlc3BvbnNlEi4KBm9iamVjdBgBIAEoCzIeLnN1cm1hcC5hZ2VudC52MS5PYmplY3RTdW1tYXJ5IocBChhHZXRPYmplY3RHZW9tZXRyeVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhEKCW9iamVjdF9pZBgCIAEoCRIXCgptYXhfcG9pbnRzGAMgASgNSACIAQESFAoHdm94ZWxfbRgEIAEoAUgBiAEBQg0KC19tYXhfcG9pbnRzQgoKCF92b3hlbF9tIlsKGUdldE9iamVjdEdlb21ldHJ5UmVzcG9uc2USEAoIb2JqX3RleHQYASABKAkSFAoMZ2VvbWV0cnlfdXJpGAIgASgJEhYKDmRlY2ltYXRlZF9mcm9tGAMgASgNIvcBCg9HZXRGcmFtZVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhUKC2ZyYW1lX2luZGV4GAIgASgNSAASEgoIZnJhbWVfaWQYAyABKARIABIOCgR0X25zGAQgASgESAASLQoIY3JvcF9ib3gYBSABKAsyGS5zdXJtYXAuYWdlbnQudjEuUGl4ZWxCb3hIARIYCg5jcm9wX29iamVjdF9pZBgGIAEoCUgBEhMKBnBhZF9weBgHIAEoDUgCiAEBEhUKCG1heF9zaWRlGAggASgNSAOIAQFCBAoCYXRCBgoEY3JvcEIJCgdfcGFkX3B4QgsKCV9tYXhfc2lkZSKiAQoQR2V0RnJhbWVSZXNwb25zZRIQCghmcmFtZV9pZBgBIAEoBBIMCgR0X25zGAIgASgEEg0KBXdpZHRoGAMgASgNEg4KBmhlaWdodBgEIAEoDRIsCgZzb3VyY2UYBSABKA4yHC5zdXJtYXAuYWdlbnQudjEuRnJhbWVTb3VyY2USDQoFaW1hZ2UYBiABKAwSEgoKbWVkaWFfdHlwZRgHIAEoCSpGCgVTaGFwZRIVChFTSEFQRV9VTlNQRUNJRklFRBAAEgoKBkxJTkVBUhABEgoKBlBMQU5BUhACEg4KClZPTFVNRVRSSUMQAypVCghSZWxhdGlvbhIYChRSRUxBVElPTl9VTlNQRUNJRklFRBAAEgkKBUFCT1ZFEAESCQoFQkVMT1cQAhILCgdORVhUX1RPEAMSDAoIT1ZFUkxBUFMQBCpCCgtGcmFtZVNvdXJjZRIcChhGUkFNRV9TT1VSQ0VfVU5TUEVDSUZJRUQQABIICgRGVUxMEAESCwoHRElTUExBWRACMpkGCgtTdXJ2ZXlUb29scxJeCglMaXN0RGVtb3MSIS5zdXJtYXAuYWdlbnQudjEuTGlzdERlbW9zUmVxdWVzdBoiLnN1cm1hcC5hZ2VudC52MS5MaXN0RGVtb3NSZXNwb25zZSIKyvMYBggBEAoYARJYCgdSdW5EZW1vEh8uc3VybWFwLmFnZW50LnYxLlJ1bkRlbW9SZXF1ZXN0GiAuc3VybWFwLmFnZW50LnYxLlJ1bkRlbW9SZXNwb25zZSIKyvMYBggBEB4YAhJVCgZHZXRSdW4SHi5zdXJtYXAuYWdlbnQudjEuR2V0UnVuUmVxdWVzdBofLnN1cm1hcC5hZ2VudC52MS5HZXRSdW5SZXNwb25zZSIKyvMYBggBEAoYARJeCglQcm9tcHRTYW0SIS5zdXJtYXAuYWdlbnQudjEuUHJvbXB0U2FtUmVxdWVzdBoiLnN1cm1hcC5hZ2VudC52MS5Qcm9tcHRTYW1SZXNwb25zZSIKyvMYBggBEDwYAhJkCgtGaW5kT2JqZWN0cxIjLnN1cm1hcC5hZ2VudC52MS5GaW5kT2JqZWN0c1JlcXVlc3QaJC5zdXJtYXAuYWdlbnQudjEuRmluZE9iamVjdHNSZXNwb25zZSIKyvMYBggBEA8YARJeCglHZXRPYmplY3QSIS5zdXJtYXAuYWdlbnQudjEuR2V0T2JqZWN0UmVxdWVzdBoiLnN1cm1hcC5hZ2VudC52MS5HZXRPYmplY3RSZXNwb25zZSIKyvMYBggBEAoYARJ2ChFHZXRPYmplY3RHZW9tZXRyeRIpLnN1cm1hcC5hZ2VudC52MS5HZXRPYmplY3RHZW9tZXRyeVJlcXVlc3QaKi5zdXJtYXAuYWdlbnQudjEuR2V0T2JqZWN0R2VvbWV0cnlSZXNwb25zZSIKyvMYBggBEA8YARJbCghHZXRGcmFtZRIgLnN1cm1hcC5hZ2VudC52MS5HZXRGcmFtZVJlcXVlc3QaIS5zdXJtYXAuYWdlbnQudjEuR2V0RnJhbWVSZXNwb25zZSIKyvMYBggBEA8YAWIGcHJvdG8z", [file_surmap_agent_v1_execution]);
+  fileDesc("CiJzdXJtYXAvYWdlbnQvdjEvc3VydmV5X3Rvb2xzLnByb3RvEg9zdXJtYXAuYWdlbnQudjEiJwoEVmVjMxIJCgF4GAEgASgBEgkKAXkYAiABKAESCQoBehgDIAEoASI6CghQaXhlbEJveBIKCgJ4MBgBIAEoAhIKCgJ5MBgCIAEoAhIKCgJ4MRgDIAEoAhIKCgJ5MRgEIAEoAiIiCgpQaXhlbFBvaW50EgkKAXgYASABKAISCQoBeRgCIAEoAiISChBMaXN0RGVtb3NSZXF1ZXN0In4KCURlbW9TY2VuZRIKCgJpZBgBIAEoCRINCgV0aXRsZRgCIAEoCRIWCg5kZWZhdWx0X3Byb21wdBgDIAEoCRIQCghwcmVwYXJlZBgEIAEoCBIaCg1jYWNoZWRfcnVuX2lkGAUgASgJSACIAQFCEAoOX2NhY2hlZF9ydW5faWQiPwoRTGlzdERlbW9zUmVzcG9uc2USKgoGc2NlbmVzGAEgAygLMhouc3VybWFwLmFnZW50LnYxLkRlbW9TY2VuZSKDAQoOUnVuRGVtb1JlcXVlc3QSDwoHZGF0YXNldBgBIAEoCRITCgZwcm9tcHQYAiABKAlIAIgBARIXCgptYXhfZnJhbWVzGAMgASgNSAGIAQESEAoDZnBzGAQgASgBSAKIAQFCCQoHX3Byb21wdEINCgtfbWF4X2ZyYW1lc0IGCgRfZnBzIuQBCgdSdW5JbmZvEg4KBnJ1bl9pZBgBIAEoCRIPCgdkYXRhc2V0GAIgASgJEg4KBnByb21wdBgDIAEoCRIOCgZmcmFtZXMYBCABKA0SDwoHb2JqZWN0cxgFIAEoDRIvCgZzdGF0dXMYBiABKA4yHy5zdXJtYXAuYWdlbnQudjEuUnVuSW5mby5TdGF0dXMiVgoGU3RhdHVzEhYKElNUQVRVU19VTlNQRUNJRklFRBAAEgsKB1JVTk5JTkcQARIMCghGSU5JU0hFRBACEg0KCUNBTkNFTExFRBADEgoKBkZBSUxFRBAEInMKD1J1bkRlbW9SZXNwb25zZRIOCgZydW5faWQYASABKAkSDgoGZnJhbWVzGAIgASgNEg8KB29iamVjdHMYAyABKA0SLwoGc3RhdHVzGAQgASgOMh8uc3VybWFwLmFnZW50LnYxLlJ1bkluZm8uU3RhdHVzIh8KDUdldFJ1blJlcXVlc3QSDgoGcnVuX2lkGAEgASgJIjcKDkdldFJ1blJlc3BvbnNlEiUKA3J1bhgBIAEoCzIYLnN1cm1hcC5hZ2VudC52MS5SdW5JbmZvIm4KEFByb21wdFNhbVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEg8KB2NvbmNlcHQYAiABKAkSEQoJZnJhbWVfaWRzGAMgAygEEhcKCm1heF9mcmFtZXMYBCABKA1IAIgBAUINCgtfbWF4X2ZyYW1lcyKiAQoMU2FtRGV0ZWN0aW9uEhQKDGRldGVjdGlvbl9pZBgBIAEoCRINCgVsYWJlbBgCIAEoCRINCgVzY29yZRgDIAEoAhIrCghib3hfeHl4eRgEIAEoCzIZLnN1cm1hcC5hZ2VudC52MS5QaXhlbEJveBIxCgxtYXNrX3BvbHlnb24YBSADKAsyGy5zdXJtYXAuYWdlbnQudjEuUGl4ZWxQb2ludCJnChJTYW1GcmFtZURldGVjdGlvbnMSEAoIZnJhbWVfaWQYASABKAQSDAoEdF9ucxgCIAEoBBIxCgpkZXRlY3Rpb25zGAMgAygLMh0uc3VybWFwLmFnZW50LnYxLlNhbURldGVjdGlvbiJIChFQcm9tcHRTYW1SZXNwb25zZRIzCgZmcmFtZXMYASADKAsyIy5zdXJtYXAuYWdlbnQudjEuU2FtRnJhbWVEZXRlY3Rpb25zItcBChJGaW5kT2JqZWN0c1JlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhIKBWxhYmVsGAIgASgJSACIAQESKAoEbmVhchgDIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzSAGIAQESFQoIcmFkaXVzX20YBCABKAFIAogBARITCgZtb3ZpbmcYBSABKAhIA4gBARISCgVsaW1pdBgGIAEoDUgEiAEBQggKBl9sYWJlbEIHCgVfbmVhckILCglfcmFkaXVzX21CCQoHX21vdmluZ0IICgZfbGltaXQibgoLT3JpZW50ZWRCb3gSJQoGY2VudHJlGAEgASgLMhUuc3VybWFwLmFnZW50LnYxLlZlYzMSJgoHZXh0ZW50cxgCIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzEhAKCHJvdGF0aW9uGAMgAygBIlgKCU5laWdoYm91chIKCgJpZBgBIAEoCRISCgpkaXN0YW5jZV9tGAIgASgBEisKCHJlbGF0aW9uGAMgASgOMhkuc3VybWFwLmFnZW50LnYxLlJlbGF0aW9uIpsECg1PYmplY3RTdW1tYXJ5EgoKAmlkGAEgASgJEg0KBWxhYmVsGAIgASgJEhIKCmNvbmZpZGVuY2UYAyABKAISDQoFZnJhbWUYBCABKAkSDwoHdXBfYXhpcxgFIAEoCRINCgV1bml0cxgGIAEoCRIQCghuX3BvaW50cxgHIAEoDRIPCgduX2ZhY2VzGAggASgNEicKCGNlbnRyb2lkGAkgASgLMhUuc3VybWFwLmFnZW50LnYxLlZlYzMSJwoIYWFiYl9taW4YCiABKAsyFS5zdXJtYXAuYWdlbnQudjEuVmVjMxInCghhYWJiX21heBgLIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzEikKA29iYhgMIAEoCzIcLnN1cm1hcC5hZ2VudC52MS5PcmllbnRlZEJveBIQCghoZWlnaHRfbRgNIAEoARIUCgxmb290cHJpbnRfbTIYDiABKAESJQoFc2hhcGUYDyABKA4yFi5zdXJtYXAuYWdlbnQudjEuU2hhcGUSFwoPb2JzZXJ2ZWRfZnJhbWVzGBAgASgNEhIKCnRfZmlyc3RfbnMYESABKAQSEQoJdF9sYXN0X25zGBIgASgEEi4KCm5laWdoYm91cnMYEyADKAsyGi5zdXJtYXAuYWdlbnQudjEuTmVpZ2hib3VyEhQKDGdlb21ldHJ5X3VyaRgUIAEoCRIOCgZtb3ZpbmcYFSABKAgiRgoTRmluZE9iamVjdHNSZXNwb25zZRIvCgdvYmplY3RzGAEgAygLMh4uc3VybWFwLmFnZW50LnYxLk9iamVjdFN1bW1hcnkiNQoQR2V0T2JqZWN0UmVxdWVzdBIOCgZydW5faWQYASABKAkSEQoJb2JqZWN0X2lkGAIgASgJIkMKEUdldE9iamVjdFJlc3BvbnNlEi4KBm9iamVjdBgBIAEoCzIeLnN1cm1hcC5hZ2VudC52MS5PYmplY3RTdW1tYXJ5IocBChhHZXRPYmplY3RHZW9tZXRyeVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhEKCW9iamVjdF9pZBgCIAEoCRIXCgptYXhfcG9pbnRzGAMgASgNSACIAQESFAoHdm94ZWxfbRgEIAEoAUgBiAEBQg0KC19tYXhfcG9pbnRzQgoKCF92b3hlbF9tIlsKGUdldE9iamVjdEdlb21ldHJ5UmVzcG9uc2USEAoIb2JqX3RleHQYASABKAkSFAoMZ2VvbWV0cnlfdXJpGAIgASgJEhYKDmRlY2ltYXRlZF9mcm9tGAMgASgNIvcBCg9HZXRGcmFtZVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhUKC2ZyYW1lX2luZGV4GAIgASgNSAASEgoIZnJhbWVfaWQYAyABKARIABIOCgR0X25zGAQgASgESAASLQoIY3JvcF9ib3gYBSABKAsyGS5zdXJtYXAuYWdlbnQudjEuUGl4ZWxCb3hIARIYCg5jcm9wX29iamVjdF9pZBgGIAEoCUgBEhMKBnBhZF9weBgHIAEoDUgCiAEBEhUKCG1heF9zaWRlGAggASgNSAOIAQFCBAoCYXRCBgoEY3JvcEIJCgdfcGFkX3B4QgsKCV9tYXhfc2lkZSJJCg9EYXRhc2V0R2VvUG9pbnQSCwoDbG9uGAEgASgBEgsKA2xhdBgCIAEoARISCgVhbHRfbRgDIAEoAUgAiAEBQggKBl9hbHRfbSJACg5EYXRhc2V0TGljZW5zZRIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgthdHRyaWJ1dGlvbhgDIAEoCSLPAwoMRGF0YXNldEVudHJ5EgoKAmlkGAEgASgJEg0KBXRpdGxlGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhAKCHByb3ZpZGVyGAQgASgJEjAKB2xpY2Vuc2UYBSABKAsyHy5zdXJtYXAuYWdlbnQudjEuRGF0YXNldExpY2Vuc2USMgoIbW9kYWxpdHkYBiABKA4yIC5zdXJtYXAuYWdlbnQudjEuRGF0YXNldE1vZGFsaXR5EhQKDG9mZmljaWFsX3VybBgHIAEoCRIWCg5kZWZhdWx0X3Byb21wdBgIIAEoCRIQCghwcmVwYXJlZBgJIAEoCBITCgtmcmFtZV9jb3VudBgKIAEoDRIbChN0aHVtYm5haWxfYXZhaWxhYmxlGAsgASgIEhYKDmxvY2F0aW9uX2xhYmVsGAwgASgJEjkKCmdwc19jZW50cmUYDSABKAsyIC5zdXJtYXAuYWdlbnQudjEuRGF0YXNldEdlb1BvaW50SACIAQESMwoJZ3BzX3RyYWNrGA4gAygLMiAuc3VybWFwLmFnZW50LnYxLkRhdGFzZXRHZW9Qb2ludBIOCgZjcmVkaXQYDyABKAlCDQoLX2dwc19jZW50cmUiFQoTTGlzdERhdGFzZXRzUmVxdWVzdCJHChRMaXN0RGF0YXNldHNSZXNwb25zZRIvCghkYXRhc2V0cxgBIAMoCzIdLnN1cm1hcC5hZ2VudC52MS5EYXRhc2V0RW50cnkiJwoRR2V0RGF0YXNldFJlcXVlc3QSEgoKZGF0YXNldF9pZBgBIAEoCSIrChVQcmVwYXJlRGF0YXNldFJlcXVlc3QSEgoKZGF0YXNldF9pZBgBIAEoCSJBCg9EYXRhc2V0UmVzcG9uc2USLgoHZGF0YXNldBgBIAEoCzIdLnN1cm1hcC5hZ2VudC52MS5EYXRhc2V0RW50cnkiZgoRUnVuUnRhYm1hcFJlcXVlc3QSDwoHZGF0YXNldBgBIAEoCRIXCgptYXhfZnJhbWVzGAIgASgNSACIAQESEAoDZnBzGAMgASgBSAGIAQFCDQoLX21heF9mcmFtZXNCBgoEX2ZwcyI7ChJSdW5SdGFibWFwUmVzcG9uc2USJQoDcnVuGAEgASgLMhguc3VybWFwLmFnZW50LnYxLlJ1bkluZm8icwoWUnVuU2FtT25EYXRhc2V0UmVxdWVzdBIPCgdkYXRhc2V0GAEgASgJEhQKB2NvbmNlcHQYAiABKAlIAIgBARIXCgptYXhfZnJhbWVzGAMgASgNSAGIAQFCCgoIX2NvbmNlcHRCDQoLX21heF9mcmFtZXMiYgoXUnVuU2FtT25EYXRhc2V0UmVzcG9uc2USEgoKZGF0YXNldF9pZBgBIAEoCRIzCgZmcmFtZXMYAiADKAsyIy5zdXJtYXAuYWdlbnQudjEuU2FtRnJhbWVEZXRlY3Rpb25zIqIBChBHZXRGcmFtZVJlc3BvbnNlEhAKCGZyYW1lX2lkGAEgASgEEgwKBHRfbnMYAiABKAQSDQoFd2lkdGgYAyABKA0SDgoGaGVpZ2h0GAQgASgNEiwKBnNvdXJjZRgFIAEoDjIcLnN1cm1hcC5hZ2VudC52MS5GcmFtZVNvdXJjZRINCgVpbWFnZRgGIAEoDBISCgptZWRpYV90eXBlGAcgASgJKkYKBVNoYXBlEhUKEVNIQVBFX1VOU1BFQ0lGSUVEEAASCgoGTElORUFSEAESCgoGUExBTkFSEAISDgoKVk9MVU1FVFJJQxADKlUKCFJlbGF0aW9uEhgKFFJFTEFUSU9OX1VOU1BFQ0lGSUVEEAASCQoFQUJPVkUQARIJCgVCRUxPVxACEgsKB05FWFRfVE8QAxIMCghPVkVSTEFQUxAEKkIKC0ZyYW1lU291cmNlEhwKGEZSQU1FX1NPVVJDRV9VTlNQRUNJRklFRBAAEggKBEZVTEwQARILCgdESVNQTEFZEAIqQAoPRGF0YXNldE1vZGFsaXR5EhgKFE1PREFMSVRZX1VOU1BFQ0lGSUVEEAASCAoER1JFWRABEgkKBUNPTE9SEAIynwoKC1N1cnZleVRvb2xzEl4KCUxpc3REZW1vcxIhLnN1cm1hcC5hZ2VudC52MS5MaXN0RGVtb3NSZXF1ZXN0GiIuc3VybWFwLmFnZW50LnYxLkxpc3REZW1vc1Jlc3BvbnNlIgrK8xgGCAEQChgBElgKB1J1bkRlbW8SHy5zdXJtYXAuYWdlbnQudjEuUnVuRGVtb1JlcXVlc3QaIC5zdXJtYXAuYWdlbnQudjEuUnVuRGVtb1Jlc3BvbnNlIgrK8xgGCAEQHhgCElUKBkdldFJ1bhIeLnN1cm1hcC5hZ2VudC52MS5HZXRSdW5SZXF1ZXN0Gh8uc3VybWFwLmFnZW50LnYxLkdldFJ1blJlc3BvbnNlIgrK8xgGCAEQChgBEl4KCVByb21wdFNhbRIhLnN1cm1hcC5hZ2VudC52MS5Qcm9tcHRTYW1SZXF1ZXN0GiIuc3VybWFwLmFnZW50LnYxLlByb21wdFNhbVJlc3BvbnNlIgrK8xgGCAEQPBgCEmQKC0ZpbmRPYmplY3RzEiMuc3VybWFwLmFnZW50LnYxLkZpbmRPYmplY3RzUmVxdWVzdBokLnN1cm1hcC5hZ2VudC52MS5GaW5kT2JqZWN0c1Jlc3BvbnNlIgrK8xgGCAEQDxgBEl4KCUdldE9iamVjdBIhLnN1cm1hcC5hZ2VudC52MS5HZXRPYmplY3RSZXF1ZXN0GiIuc3VybWFwLmFnZW50LnYxLkdldE9iamVjdFJlc3BvbnNlIgrK8xgGCAEQChgBEnYKEUdldE9iamVjdEdlb21ldHJ5Eikuc3VybWFwLmFnZW50LnYxLkdldE9iamVjdEdlb21ldHJ5UmVxdWVzdBoqLnN1cm1hcC5hZ2VudC52MS5HZXRPYmplY3RHZW9tZXRyeVJlc3BvbnNlIgrK8xgGCAEQDxgBElsKCEdldEZyYW1lEiAuc3VybWFwLmFnZW50LnYxLkdldEZyYW1lUmVxdWVzdBohLnN1cm1hcC5hZ2VudC52MS5HZXRGcmFtZVJlc3BvbnNlIgrK8xgGCAEQDxgBEmcKDExpc3REYXRhc2V0cxIkLnN1cm1hcC5hZ2VudC52MS5MaXN0RGF0YXNldHNSZXF1ZXN0GiUuc3VybWFwLmFnZW50LnYxLkxpc3REYXRhc2V0c1Jlc3BvbnNlIgrK8xgGCAEQChgBEl4KCkdldERhdGFzZXQSIi5zdXJtYXAuYWdlbnQudjEuR2V0RGF0YXNldFJlcXVlc3QaIC5zdXJtYXAuYWdlbnQudjEuRGF0YXNldFJlc3BvbnNlIgrK8xgGCAEQChgBEmYKDlByZXBhcmVEYXRhc2V0EiYuc3VybWFwLmFnZW50LnYxLlByZXBhcmVEYXRhc2V0UmVxdWVzdBogLnN1cm1hcC5hZ2VudC52MS5EYXRhc2V0UmVzcG9uc2UiCsrzGAYIARAeGAISYQoKUnVuUnRhYm1hcBIiLnN1cm1hcC5hZ2VudC52MS5SdW5SdGFibWFwUmVxdWVzdBojLnN1cm1hcC5hZ2VudC52MS5SdW5SdGFibWFwUmVzcG9uc2UiCsrzGAYIARAeGAIScAoPUnVuU2FtT25EYXRhc2V0Eicuc3VybWFwLmFnZW50LnYxLlJ1blNhbU9uRGF0YXNldFJlcXVlc3QaKC5zdXJtYXAuYWdlbnQudjEuUnVuU2FtT25EYXRhc2V0UmVzcG9uc2UiCsrzGAYIARA8GAJiBnByb3RvMw", [file_surmap_agent_v1_execution]);
 
 /**
  * A point or extent in the object's coordinate frame, in its units.
@@ -1072,6 +1072,395 @@ export const GetFrameRequestSchema: GenMessage<GetFrameRequest> = /*@__PURE__*/
   messageDesc(file_surmap_agent_v1_survey_tools, 24);
 
 /**
+ * A WGS84 position for a dataset's GPS map preview.
+ *
+ * @generated from message surmap.agent.v1.DatasetGeoPoint
+ */
+export type DatasetGeoPoint = Message<"surmap.agent.v1.DatasetGeoPoint"> & {
+  /**
+   * Longitude, degrees east.
+   *
+   * @generated from field: double lon = 1;
+   */
+  lon: number;
+
+  /**
+   * Latitude, degrees north.
+   *
+   * @generated from field: double lat = 2;
+   */
+  lat: number;
+
+  /**
+   * Altitude above sea level, metres; absent when the fix has none.
+   *
+   * @generated from field: optional double alt_m = 3;
+   */
+  altM?: number | undefined;
+};
+
+/**
+ * Describes the message surmap.agent.v1.DatasetGeoPoint.
+ * Use `create(DatasetGeoPointSchema)` to create a new message.
+ */
+export const DatasetGeoPointSchema: GenMessage<DatasetGeoPoint> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 25);
+
+/**
+ * A dataset's licence as the gallery shows it.
+ *
+ * @generated from message surmap.agent.v1.DatasetLicense
+ */
+export type DatasetLicense = Message<"surmap.agent.v1.DatasetLicense"> & {
+  /**
+   * Licence name, e.g. "CC BY-NC-SA 3.0".
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * Canonical licence URL.
+   *
+   * @generated from field: string url = 2;
+   */
+  url: string;
+
+  /**
+   * The credit line to show with the data.
+   *
+   * @generated from field: string attribution = 3;
+   */
+  attribution: string;
+};
+
+/**
+ * Describes the message surmap.agent.v1.DatasetLicense.
+ * Use `create(DatasetLicenseSchema)` to create a new message.
+ */
+export const DatasetLicenseSchema: GenMessage<DatasetLicense> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 26);
+
+/**
+ * One dataset of the gallery catalogue.
+ *
+ * @generated from message surmap.agent.v1.DatasetEntry
+ */
+export type DatasetEntry = Message<"surmap.agent.v1.DatasetEntry"> & {
+  /**
+   * The dataset id the run tools take, e.g. "kitti-2011-09-26-drive-0009-color".
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * Human-readable title.
+   *
+   * @generated from field: string title = 2;
+   */
+  title: string;
+
+  /**
+   * What the dataset contains.
+   *
+   * @generated from field: string description = 3;
+   */
+  description: string;
+
+  /**
+   * Who publishes it, e.g. "KITTI"; a new source names itself here.
+   *
+   * @generated from field: string provider = 4;
+   */
+  provider: string;
+
+  /**
+   * Its licence; always present, "not specified" when the source gives none.
+   *
+   * @generated from field: surmap.agent.v1.DatasetLicense license = 5;
+   */
+  license?: DatasetLicense | undefined;
+
+  /**
+   * Grey or colour frames.
+   *
+   * @generated from field: surmap.agent.v1.DatasetModality modality = 6;
+   */
+  modality: DatasetModality;
+
+  /**
+   * The dataset's official page.
+   *
+   * @generated from field: string official_url = 7;
+   */
+  officialUrl: string;
+
+  /**
+   * The SAM concept this dataset is run with when none is given.
+   *
+   * @generated from field: string default_prompt = 8;
+   */
+  defaultPrompt: string;
+
+  /**
+   * Whether its data is downloaded and prepared.
+   *
+   * @generated from field: bool prepared = 9;
+   */
+  prepared: boolean;
+
+  /**
+   * Prepared stereo pairs; 0 when not prepared.
+   *
+   * @generated from field: uint32 frame_count = 10;
+   */
+  frameCount: number;
+
+  /**
+   * Whether a thumbnail frame is available from the agent server.
+   *
+   * @generated from field: bool thumbnail_available = 11;
+   */
+  thumbnailAvailable: boolean;
+
+  /**
+   * Where it was recorded, e.g. "Karlsruhe, Germany (approx.)".
+   *
+   * @generated from field: string location_label = 12;
+   */
+  locationLabel: string;
+
+  /**
+   * Centre of its GPS track, or its approximate centre before preparation.
+   *
+   * @generated from field: optional surmap.agent.v1.DatasetGeoPoint gps_centre = 13;
+   */
+  gpsCentre?: DatasetGeoPoint | undefined;
+
+  /**
+   * Its GPS track (downsampled), in order, for a map preview; empty without GPS.
+   *
+   * @generated from field: repeated surmap.agent.v1.DatasetGeoPoint gps_track = 14;
+   */
+  gpsTrack: DatasetGeoPoint[];
+
+  /**
+   * The short credit line, as on the demo page.
+   *
+   * @generated from field: string credit = 15;
+   */
+  credit: string;
+};
+
+/**
+ * Describes the message surmap.agent.v1.DatasetEntry.
+ * Use `create(DatasetEntrySchema)` to create a new message.
+ */
+export const DatasetEntrySchema: GenMessage<DatasetEntry> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 27);
+
+/**
+ * @generated from message surmap.agent.v1.ListDatasetsRequest
+ */
+export type ListDatasetsRequest = Message<"surmap.agent.v1.ListDatasetsRequest"> & {
+};
+
+/**
+ * Describes the message surmap.agent.v1.ListDatasetsRequest.
+ * Use `create(ListDatasetsRequestSchema)` to create a new message.
+ */
+export const ListDatasetsRequestSchema: GenMessage<ListDatasetsRequest> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 28);
+
+/**
+ * @generated from message surmap.agent.v1.ListDatasetsResponse
+ */
+export type ListDatasetsResponse = Message<"surmap.agent.v1.ListDatasetsResponse"> & {
+  /**
+   * Every dataset in the catalogue, in catalogue order.
+   *
+   * @generated from field: repeated surmap.agent.v1.DatasetEntry datasets = 1;
+   */
+  datasets: DatasetEntry[];
+};
+
+/**
+ * Describes the message surmap.agent.v1.ListDatasetsResponse.
+ * Use `create(ListDatasetsResponseSchema)` to create a new message.
+ */
+export const ListDatasetsResponseSchema: GenMessage<ListDatasetsResponse> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 29);
+
+/**
+ * @generated from message surmap.agent.v1.GetDatasetRequest
+ */
+export type GetDatasetRequest = Message<"surmap.agent.v1.GetDatasetRequest"> & {
+  /**
+   * The dataset to return.
+   *
+   * @generated from field: string dataset_id = 1;
+   */
+  datasetId: string;
+};
+
+/**
+ * Describes the message surmap.agent.v1.GetDatasetRequest.
+ * Use `create(GetDatasetRequestSchema)` to create a new message.
+ */
+export const GetDatasetRequestSchema: GenMessage<GetDatasetRequest> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 30);
+
+/**
+ * @generated from message surmap.agent.v1.PrepareDatasetRequest
+ */
+export type PrepareDatasetRequest = Message<"surmap.agent.v1.PrepareDatasetRequest"> & {
+  /**
+   * The dataset to download and prepare.
+   *
+   * @generated from field: string dataset_id = 1;
+   */
+  datasetId: string;
+};
+
+/**
+ * Describes the message surmap.agent.v1.PrepareDatasetRequest.
+ * Use `create(PrepareDatasetRequestSchema)` to create a new message.
+ */
+export const PrepareDatasetRequestSchema: GenMessage<PrepareDatasetRequest> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 31);
+
+/**
+ * @generated from message surmap.agent.v1.DatasetResponse
+ */
+export type DatasetResponse = Message<"surmap.agent.v1.DatasetResponse"> & {
+  /**
+   * The dataset.
+   *
+   * @generated from field: surmap.agent.v1.DatasetEntry dataset = 1;
+   */
+  dataset?: DatasetEntry | undefined;
+};
+
+/**
+ * Describes the message surmap.agent.v1.DatasetResponse.
+ * Use `create(DatasetResponseSchema)` to create a new message.
+ */
+export const DatasetResponseSchema: GenMessage<DatasetResponse> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 32);
+
+/**
+ * @generated from message surmap.agent.v1.RunRtabmapRequest
+ */
+export type RunRtabmapRequest = Message<"surmap.agent.v1.RunRtabmapRequest"> & {
+  /**
+   * The dataset to run: a DatasetEntry id from list_datasets.
+   *
+   * @generated from field: string dataset = 1;
+   */
+  dataset: string;
+
+  /**
+   * Stop after this many frames; the whole dataset when absent.
+   *
+   * @generated from field: optional uint32 max_frames = 2;
+   */
+  maxFrames?: number | undefined;
+
+  /**
+   * Playback rate in frames per second; the dataset's native rate when absent.
+   *
+   * @generated from field: optional double fps = 3;
+   */
+  fps?: number | undefined;
+};
+
+/**
+ * Describes the message surmap.agent.v1.RunRtabmapRequest.
+ * Use `create(RunRtabmapRequestSchema)` to create a new message.
+ */
+export const RunRtabmapRequestSchema: GenMessage<RunRtabmapRequest> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 33);
+
+/**
+ * @generated from message surmap.agent.v1.RunRtabmapResponse
+ */
+export type RunRtabmapResponse = Message<"surmap.agent.v1.RunRtabmapResponse"> & {
+  /**
+   * The recorded run RTAB-Map produced.
+   *
+   * @generated from field: surmap.agent.v1.RunInfo run = 1;
+   */
+  run?: RunInfo | undefined;
+};
+
+/**
+ * Describes the message surmap.agent.v1.RunRtabmapResponse.
+ * Use `create(RunRtabmapResponseSchema)` to create a new message.
+ */
+export const RunRtabmapResponseSchema: GenMessage<RunRtabmapResponse> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 34);
+
+/**
+ * @generated from message surmap.agent.v1.RunSamOnDatasetRequest
+ */
+export type RunSamOnDatasetRequest = Message<"surmap.agent.v1.RunSamOnDatasetRequest"> & {
+  /**
+   * The dataset to segment: a DatasetEntry id from list_datasets.
+   *
+   * @generated from field: string dataset = 1;
+   */
+  dataset: string;
+
+  /**
+   * The text concept to segment, e.g. "car"; the dataset's default prompt when absent.
+   *
+   * @generated from field: optional string concept = 2;
+   */
+  concept?: string | undefined;
+
+  /**
+   * The most frames to segment, evenly spaced; at most 8.
+   *
+   * @generated from field: optional uint32 max_frames = 3;
+   */
+  maxFrames?: number | undefined;
+};
+
+/**
+ * Describes the message surmap.agent.v1.RunSamOnDatasetRequest.
+ * Use `create(RunSamOnDatasetRequestSchema)` to create a new message.
+ */
+export const RunSamOnDatasetRequestSchema: GenMessage<RunSamOnDatasetRequest> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 35);
+
+/**
+ * @generated from message surmap.agent.v1.RunSamOnDatasetResponse
+ */
+export type RunSamOnDatasetResponse = Message<"surmap.agent.v1.RunSamOnDatasetResponse"> & {
+  /**
+   * The dataset segmented.
+   *
+   * @generated from field: string dataset_id = 1;
+   */
+  datasetId: string;
+
+  /**
+   * One entry per frame segmented, in frame order.
+   *
+   * @generated from field: repeated surmap.agent.v1.SamFrameDetections frames = 2;
+   */
+  frames: SamFrameDetections[];
+};
+
+/**
+ * Describes the message surmap.agent.v1.RunSamOnDatasetResponse.
+ * Use `create(RunSamOnDatasetResponseSchema)` to create a new message.
+ */
+export const RunSamOnDatasetResponseSchema: GenMessage<RunSamOnDatasetResponse> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 36);
+
+/**
  * @generated from message surmap.agent.v1.GetFrameResponse
  */
 export type GetFrameResponse = Message<"surmap.agent.v1.GetFrameResponse"> & {
@@ -1130,7 +1519,7 @@ export type GetFrameResponse = Message<"surmap.agent.v1.GetFrameResponse"> & {
  * Use `create(GetFrameResponseSchema)` to create a new message.
  */
 export const GetFrameResponseSchema: GenMessage<GetFrameResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 25);
+  messageDesc(file_surmap_agent_v1_survey_tools, 37);
 
 /**
  * What an object's extent looks like.
@@ -1250,6 +1639,38 @@ export const FrameSourceSchema: GenEnum<FrameSource> = /*@__PURE__*/
   enumDesc(file_surmap_agent_v1_survey_tools, 2);
 
 /**
+ * Whether a dataset's frames are grey or colour.
+ *
+ * @generated from enum surmap.agent.v1.DatasetModality
+ */
+export enum DatasetModality {
+  /**
+   * @generated from enum value: MODALITY_UNSPECIFIED = 0;
+   */
+  MODALITY_UNSPECIFIED = 0,
+
+  /**
+   * Single-channel grey frames (KITTI image_00/01, EuRoC, NTU VIRAL).
+   *
+   * @generated from enum value: GREY = 1;
+   */
+  GREY = 1,
+
+  /**
+   * Colour frames (KITTI image_02/03); SAM segments them in colour.
+   *
+   * @generated from enum value: COLOR = 2;
+   */
+  COLOR = 2,
+}
+
+/**
+ * Describes the enum surmap.agent.v1.DatasetModality.
+ */
+export const DatasetModalitySchema: GenEnum<DatasetModality> = /*@__PURE__*/
+  enumDesc(file_surmap_agent_v1_survey_tools, 3);
+
+/**
  * @generated from service surmap.agent.v1.SurveyTools
  */
 export const SurveyTools: GenService<{
@@ -1340,6 +1761,62 @@ export const SurveyTools: GenService<{
     methodKind: "unary";
     input: typeof GetFrameRequestSchema;
     output: typeof GetFrameResponseSchema;
+  },
+  /**
+   * Lists every dataset in the gallery catalogue: provider, licence, grey or colour modality,
+   * whether it is prepared, and its GPS centre and track for a map preview. A new data source
+   * appears here by registering one dataset; no new tool is needed.
+   *
+   * @generated from rpc surmap.agent.v1.SurveyTools.ListDatasets
+   */
+  listDatasets: {
+    methodKind: "unary";
+    input: typeof ListDatasetsRequestSchema;
+    output: typeof ListDatasetsResponseSchema;
+  },
+  /**
+   * Returns one dataset of the gallery catalogue by id, with the same fields list_datasets gives.
+   *
+   * @generated from rpc surmap.agent.v1.SurveyTools.GetDataset
+   */
+  getDataset: {
+    methodKind: "unary";
+    input: typeof GetDatasetRequestSchema;
+    output: typeof DatasetResponseSchema;
+  },
+  /**
+   * Downloads and prepares one dataset so it can be run or segmented. Preparing can take
+   * minutes for a large dataset: by default it detaches to a job after 30 s.
+   *
+   * @generated from rpc surmap.agent.v1.SurveyTools.PrepareDataset
+   */
+  prepareDataset: {
+    methodKind: "unary";
+    input: typeof PrepareDatasetRequestSchema;
+    output: typeof DatasetResponseSchema;
+  },
+  /**
+   * Runs RTAB-Map (no SAM) on a dataset and returns when the recorded run ends. Runs take
+   * minutes: by default it detaches to a job after 30 s; follow it with wait_for_jobs.
+   *
+   * @generated from rpc surmap.agent.v1.SurveyTools.RunRtabmap
+   */
+  runRtabmap: {
+    methodKind: "unary";
+    input: typeof RunRtabmapRequestSchema;
+    output: typeof RunRtabmapResponseSchema;
+  },
+  /**
+   * Segments a text concept with SAM directly on a dataset's frames, without RTAB-Map and
+   * without a recorded run. Picks up to 8 evenly spaced frames unless frame timestamps are
+   * not needed; by default it detaches to a job after 60 s.
+   *
+   * @generated from rpc surmap.agent.v1.SurveyTools.RunSamOnDataset
+   */
+  runSamOnDataset: {
+    methodKind: "unary";
+    input: typeof RunSamOnDatasetRequestSchema;
+    output: typeof RunSamOnDatasetResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_surmap_agent_v1_survey_tools, 0);

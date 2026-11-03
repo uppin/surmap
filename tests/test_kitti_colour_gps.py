@@ -35,6 +35,12 @@ def _png(mode: str, pixel: object) -> bytes:
     return buffer.getvalue()
 
 
+def _write(archive: zipfile.ZipFile, name: str, data: bytes | str) -> None:
+    """One zip entry at a fixed date, so two builds of a fixture are byte-identical."""
+    info = zipfile.ZipInfo(name, date_time=(2011, 9, 26, 0, 0, 0))
+    archive.writestr(info, data)
+
+
 def _drive_zip(path: Path) -> None:
     with zipfile.ZipFile(path, "w") as archive:
         for camera, mode, pixel in (
@@ -44,18 +50,20 @@ def _drive_zip(path: Path) -> None:
             ("image_03", "RGB", (30, 30, 200)),
         ):
             for index in (0, 1):
-                archive.writestr(f"{DRIVE}/{camera}/data/{index:010d}.png", _png(mode, pixel))
-            archive.writestr(
+                _write(archive, f"{DRIVE}/{camera}/data/{index:010d}.png", _png(mode, pixel))
+            _write(
+                archive,
                 f"{DRIVE}/{camera}/timestamps.txt",
                 "".join(f"2011-09-26 {stamp}\n" for stamp in STAMPS),
             )
         for index, (lat, lon) in enumerate(((49.01, 8.42), (49.02, 8.43))):
-            archive.writestr(
+            _write(
+                archive,
                 f"{DRIVE}/oxts/data/{index:010d}.txt",
                 f"{lat} {lon} 112.0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
             )
-        archive.writestr(
-            f"{DRIVE}/oxts/timestamps.txt", "".join(f"2011-09-26 {s}\n" for s in STAMPS)
+        _write(
+            archive, f"{DRIVE}/oxts/timestamps.txt", "".join(f"2011-09-26 {s}\n" for s in STAMPS)
         )
 
 
@@ -63,7 +71,7 @@ def _spec(tmp_path: Path, dataset_id: str) -> tuple[DatasetSpec, dict[str, Path]
     drive, calib = tmp_path / f"{dataset_id}.zip", tmp_path / "calib.zip"
     _drive_zip(drive)
     with zipfile.ZipFile(calib, "w") as archive:
-        archive.writestr("2011_09_26/calib_cam_to_cam.txt", CALIB)
+        _write(archive, "2011_09_26/calib_cam_to_cam.txt", CALIB)
 
     def asset(path: Path, url: str) -> ZipAsset:
         data = path.read_bytes()
