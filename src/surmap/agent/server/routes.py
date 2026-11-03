@@ -132,6 +132,7 @@ def _dataset_json(entry: GalleryEntry) -> dict[str, object]:
         "prepared": entry.prepared,
         "frame_count": entry.frame_count,
         "thumbnail_available": entry.thumbnail_available,
+        "thumbnail_url": entry.thumbnail_url,
         "location_label": entry.location_label,
         "gps_centre": (
             {"lon": entry.gps_centre.lon, "lat": entry.gps_centre.lat}

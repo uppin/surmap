@@ -19,6 +19,7 @@ function aDataset(overrides: Partial<DatasetView> = {}): DatasetView {
     prepared: true,
     frameCount: 447,
     thumbnailAvailable: true,
+    thumbnailUrl: "",
     locationLabel: "Karlsruhe, Germany (approx.)",
     gpsCentre: { lon: 8.425, lat: 49.015 },
     gpsTrack: [
@@ -72,6 +73,23 @@ describe("dataset gallery", () => {
     // Then the agent is asked with the split SAM tool and the default concept
     expect(onRun).toHaveBeenCalledWith(expect.stringContaining("run_sam_on_dataset"));
     expect(onRun).toHaveBeenCalledWith(expect.stringContaining('"car"'));
+  });
+
+  it("filters the gallery by search text and modality", async () => {
+    // Given colour and grey datasets
+    const datasets = [
+      aDataset(),
+      aDataset({ id: "euroc-v1-01-easy", title: "EuRoC V1_01_easy", modality: "grey" }),
+    ];
+    render(<DatasetGallery datasets={datasets} serverUrl="http://127.0.0.1:8780" onRun={() => {}} />);
+
+    // When the search names only EuRoC
+    await userEvent.type(screen.getByLabelText("Search datasets"), "EuRoC");
+
+    // Then only its card remains
+    expect(screen.getByText("EuRoC V1_01_easy")).toBeVisible();
+    expect(screen.queryByText(/KITTI drive 0009/)).not.toBeInTheDocument();
+    expect(screen.getByText(/1 of 2 datasets/)).toBeVisible();
   });
 
   it("shows a grey badge and no-GPS note for an indoor grey dataset", () => {

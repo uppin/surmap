@@ -30,8 +30,9 @@
 State A: three demo scenes, KITTI grey only, no licence/thumbnail/GPS in any
 catalogue, combined `run_demo` only, no gallery page.
 State B: extensible catalogue with provider/licence/modality/location/GPS;
-KITTI drive in grey and colour (shared download, both runnable, colour SAM
-frames); KITTI GPS track extracted from `oxts`; agent tools to list/prepare
+all 156 public KITTI raw drives in grey and colour (shared download per
+drive, both runnable, colour SAM frames; generated registry, SHA learned
+on first fetch); KITTI GPS track extracted from `oxts`; agent tools to list/prepare
 datasets and run RTAB-Map-only or SAM-only; chat gallery with thumbnail,
 licence and GPS map preview per dataset.
 

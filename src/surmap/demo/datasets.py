@@ -156,6 +156,9 @@ class DatasetSpec:
     # Downloads are stored under this id when set, so grey/colour variants
     # of one drive share the one large zip instead of fetching it twice.
     download_id: str = ""
+    # A thumbnail the source itself publishes (KITTI's bucket thumbnails);
+    # shown before the dataset is prepared, when set.
+    thumbnail_url: str = ""
 
 
 # The registry. The EuRoC zip is byte-identical between the official
@@ -393,6 +396,72 @@ DATASETS: dict[str, DatasetSpec] = {
         location_label="NTU campus, Singapore",
     ),
 }
+
+
+def _register_kitti_raw() -> None:
+    """Add every public KITTI raw drive (generated registry) in grey and colour.
+
+    Hand-written entries above win (drive 0009 keeps its upfront-pinned SHA);
+    generated drives pin only their size and learn their SHA on first fetch.
+    """
+    from surmap.demo.kitti_raw import KITTI_CALIB, KITTI_DRIVES
+
+    licence = LicenseInfo(
+        name="CC BY-NC-SA 3.0",
+        url="https://creativecommons.org/licenses/by-nc-sa/3.0/",
+        attribution=(
+            "KITTI raw data, Geiger, Lenz, Stiller and Urtasun (KIT and Toyota "
+            "Technological Institute), CC BY-NC-SA 3.0, for academic use — "
+            "cvlibs.net/datasets/kitti"
+        ),
+    )
+    for drive, size in KITTI_DRIVES:
+        if drive == "2011_09_26_drive_0009":
+            continue  # hand-written above, with its SHA pinned upfront
+        calib_url, calib_size, calib_sha = KITTI_CALIB[drive[:10]]
+        base = f"kitti-{drive}"
+        zip_url = (
+            f"https://s3.eu-central-1.amazonaws.com/avg-kitti/raw_data/{drive}/{drive}_sync.zip"
+        )
+        for suffix, modality, cameras in (
+            ("", ImageModality.GREY, ("00", "01")),
+            ("-color", ImageModality.COLOR, ("02", "03")),
+        ):
+            dataset_id = base + suffix
+            if dataset_id in DATASETS:
+                continue
+            pretty = drive.replace("_", "-")
+            DATASETS[dataset_id] = DatasetSpec(
+                dataset_id=dataset_id,
+                title=f"KITTI {pretty}" + (" (colour)" if suffix else ""),
+                description=f"KITTI raw drive {drive}, synced+rectified stereo at 10 Hz.",
+                zip_url=zip_url,
+                zip_size_bytes=size,
+                zip_sha256="",
+                official_url="https://www.cvlibs.net/datasets/kitti/raw_data.php",
+                dataset_format="kitti-raw",
+                calibration=ZipAsset(url=calib_url, size_bytes=calib_size, sha256=calib_sha),
+                display_size=(620, 188),
+                fps=10.0,
+                depth_stops_m=(5.0, 15.0, 40.0),
+                max_map_depth_m=30.0,
+                credit="KITTI (Geiger et al.), CC BY-NC-SA 3.0",
+                sam_prompt="car",
+                provider="KITTI",
+                license=licence,
+                modality=modality,
+                kitti_cameras=cameras,
+                location_label="Karlsruhe area, Germany (approx.)",
+                gps_centre=(8.4059, 49.0069),
+                download_id=base if suffix else "",
+                thumbnail_url=(
+                    "https://s3.eu-central-1.amazonaws.com/avg-kitti/raw_data/"
+                    f"{drive}/thumbnails/00.jpg"
+                ),
+            )
+
+
+_register_kitti_raw()
 
 
 def default_cache_dir() -> Path:
@@ -804,8 +873,20 @@ def _fetch_verified(
     report(PrepareProgress("verifying", 0, 1))
     if target.stat().st_size != size_bytes:
         raise ValueError(f"{target} has the wrong size; refusing to use it")
-    if _sha256(target) != sha256:
-        raise ValueError(f"{target} failed SHA-256 verification; refusing to use it")
+    if sha256:
+        if _sha256(target) != sha256:
+            raise ValueError(f"{target} failed SHA-256 verification; refusing to use it")
+    else:
+        # No pinned SHA (generated registry entries): trust on first use.
+        # The first verified download's SHA is recorded next to the zip and
+        # every later use — including the other modality sharing it — must match.
+        learned = target.with_name(target.name + ".sha256")
+        digest = _sha256(target)
+        if learned.is_file():
+            if learned.read_text(encoding="utf-8").strip() != digest:
+                raise ValueError(f"{target} failed SHA-256 verification; refusing to use it")
+        else:
+            learned.write_text(digest + "\n", encoding="utf-8")
     report(PrepareProgress("verifying", 1, 1))
 
 

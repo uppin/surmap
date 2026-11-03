@@ -36,8 +36,26 @@ export function datasetRunPrompt(dataset: DatasetView, mode: DatasetRunMode): st
   return `Run the dataset "${dataset.id}" (${dataset.title}) with RTAB-Map and SAM looking for "${dataset.defaultPrompt}". Use run_demo, then tell me the run id, frame and object counts.`;
 }
 
-/** The thumbnail image URL for a prepared dataset, against the agent server. */
+/** The thumbnail image URL: the source's own when it publishes one, else the prepared frame. */
 export function datasetThumbnailUrl(serverUrl: string, dataset: DatasetView): string | null {
+  if (dataset.thumbnailUrl) return dataset.thumbnailUrl;
   if (!dataset.thumbnailAvailable) return null;
   return `${serverUrl.replace(/\/$/, "")}/datasets/${encodeURIComponent(dataset.id)}/thumbnail.jpg`;
+}
+
+/** The datasets matching a gallery search and modality filter, in catalogue order. */
+export function filterDatasets(
+  datasets: DatasetView[],
+  query: string,
+  modality: "all" | "grey" | "color",
+): DatasetView[] {
+  const needle = query.trim().toLowerCase();
+  return datasets.filter((dataset) => {
+    if (modality !== "all" && dataset.modality !== modality) return false;
+    if (!needle) return true;
+    return [dataset.id, dataset.title, dataset.provider, dataset.locationLabel]
+      .join(" ")
+      .toLowerCase()
+      .includes(needle);
+  });
 }

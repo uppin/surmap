@@ -91,6 +91,8 @@ export interface DatasetView {
   prepared: boolean;
   frameCount: number;
   thumbnailAvailable: boolean;
+  /** A thumbnail the source itself publishes; empty when it has none. */
+  thumbnailUrl: string;
   locationLabel: string;
   gpsCentre: { lon: number; lat: number } | null;
   gpsTrack: { lon: number; lat: number }[];

@@ -27,6 +27,17 @@ export function ChatPage(props: ChatPageProps): ReactNode {
   const [onServer, setOnServer] = useState(false);
   const [mapScene, setMapScene] = useState<MapSceneView | null>(null);
   const [datasets, setDatasets] = useState<DatasetView[]>([]);
+  const [screen, setScreen] = useState<"chat" | "gallery">(() =>
+    new URLSearchParams(window.location.search).get("screen") === "gallery" ? "gallery" : "chat",
+  );
+
+  const showScreen = (next: "chat" | "gallery") => {
+    setScreen(next);
+    const params = new URLSearchParams(window.location.search);
+    if (next === "gallery") params.set("screen", "gallery");
+    else params.delete("screen");
+    window.history.replaceState({}, "", `${window.location.pathname}?${params}`);
+  };
   const [now, setNow] = useState(0);
   const turn = useRef<AbortController | null>(null);
 
@@ -163,26 +174,58 @@ export function ChatPage(props: ChatPageProps): ReactNode {
     });
   };
 
+  const runFromGallery = (text: string) => {
+    showScreen("chat");
+    startTurn(text);
+  };
+
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-5xl flex-col gap-4 p-4">
+    <main
+      className={`mx-auto flex min-h-svh w-full flex-col gap-4 p-4 ${screen === "gallery" ? "max-w-7xl" : "max-w-5xl"}`}
+    >
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col">
           <h1 className="text-lg font-semibold">Survey agent</h1>
           <p className="text-xs text-muted-foreground">{props.serverUrl}</p>
         </div>
-        <ModelPicker
-          models={state.models}
-          value={state.modelId}
-          onChange={(modelId) => dispatch({ type: "model_selected", modelId })}
-        />
+        <div className="flex items-center gap-3">
+          <nav aria-label="Screens" className="flex gap-1 rounded-md border p-1">
+            <button
+              type="button"
+              aria-pressed={screen === "chat"}
+              className={`rounded px-3 py-1 text-sm ${screen === "chat" ? "bg-primary text-primary-foreground" : ""}`}
+              onClick={() => showScreen("chat")}
+            >
+              Chat
+            </button>
+            <button
+              type="button"
+              aria-pressed={screen === "gallery"}
+              className={`rounded px-3 py-1 text-sm ${screen === "gallery" ? "bg-primary text-primary-foreground" : ""}`}
+              onClick={() => showScreen("gallery")}
+            >
+              Dataset gallery
+            </button>
+          </nav>
+          <ModelPicker
+            models={state.models}
+            value={state.modelId}
+            onChange={(modelId) => dispatch({ type: "model_selected", modelId })}
+          />
+        </div>
       </header>
-      <MapPane scene={mapScene} />
-      <DatasetGallery datasets={datasets} serverUrl={props.serverUrl} onRun={startTurn} />
-      <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem]">
-        <Transcript items={state.transcript} serverUrl={props.serverUrl} />
-        <JobsPanel jobs={state.jobs} now={now} onCancel={cancelJob} />
-      </div>
-      <Composer busy={isTurnActive(state)} onSend={startTurn} onSteer={steer} onStop={stop} />
+      {screen === "gallery" ? (
+        <DatasetGallery datasets={datasets} serverUrl={props.serverUrl} onRun={runFromGallery} />
+      ) : (
+        <>
+          <MapPane scene={mapScene} />
+          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem]">
+            <Transcript items={state.transcript} serverUrl={props.serverUrl} />
+            <JobsPanel jobs={state.jobs} now={now} onCancel={cancelJob} />
+          </div>
+          <Composer busy={isTurnActive(state)} onSend={startTurn} onSteer={steer} onStop={stop} />
+        </>
+      )}
     </main>
   );
 }

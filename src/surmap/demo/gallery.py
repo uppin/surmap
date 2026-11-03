@@ -56,6 +56,7 @@ class GalleryEntry:
     location_label: str
     gps_centre: GeoPoint | None
     gps_track: tuple[GeoPoint, ...]
+    thumbnail_url: str = ""
 
 
 def gallery_entries(
@@ -126,6 +127,7 @@ def _entry(spec: DatasetSpec, prepared: PreparedDataset | None) -> GalleryEntry:
         prepared=prepared is not None,
         frame_count=len(prepared.timestamps_ns) if prepared is not None else 0,
         thumbnail_available=prepared is not None and bool(prepared.timestamps_ns),
+        thumbnail_url=spec.thumbnail_url,
         location_label=spec.location_label,
         gps_centre=centre,
         gps_track=track,

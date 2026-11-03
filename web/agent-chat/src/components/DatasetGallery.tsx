@@ -1,7 +1,12 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { datasetRunPrompt, datasetThumbnailUrl, gpsPreviewPoints } from "@/lib/dataset-gallery";
+import {
+  datasetRunPrompt,
+  datasetThumbnailUrl,
+  filterDatasets,
+  gpsPreviewPoints,
+} from "@/lib/dataset-gallery";
 import type { DatasetRunMode, DatasetView } from "@/ports";
 
 export interface DatasetGalleryProps {
@@ -13,6 +18,8 @@ export interface DatasetGalleryProps {
 
 /** The dataset gallery: one card per registered dataset, whatever its source. */
 export function DatasetGallery(props: DatasetGalleryProps): ReactNode {
+  const [query, setQuery] = useState("");
+  const [modality, setModality] = useState<"all" | "grey" | "color">("all");
   if (props.datasets.length === 0) {
     return (
       <section aria-label="Dataset gallery" className="flex flex-col gap-2">
@@ -21,19 +28,44 @@ export function DatasetGallery(props: DatasetGalleryProps): ReactNode {
       </section>
     );
   }
+  const shown = filterDatasets(props.datasets, query, modality);
   return (
     <section aria-label="Dataset gallery" className="flex flex-col gap-2">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold">Dataset gallery</h2>
         <p className="text-xs text-muted-foreground">
-          Grey and colour datasets. Run buttons ask the agent to use its RTAB-Map / SAM tools.
+          {shown.length} of {props.datasets.length} datasets. Run buttons ask the agent to use its
+          RTAB-Map / SAM tools.
         </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        {props.datasets.map((dataset) => (
-          <DatasetCard key={dataset.id} dataset={dataset} serverUrl={props.serverUrl} onRun={props.onRun} />
-        ))}
+      <div className="flex flex-wrap gap-2">
+        <input
+          aria-label="Search datasets"
+          className="min-w-52 flex-1 rounded-md border bg-background px-2 py-1.5 text-sm"
+          placeholder="Search datasets, e.g. 2011_09_26 drive 0009"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <select
+          aria-label="Modality filter"
+          className="rounded-md border bg-background px-2 py-1.5 text-sm"
+          value={modality}
+          onChange={(event) => setModality(event.target.value as "all" | "grey" | "color")}
+        >
+          <option value="all">Grey + colour</option>
+          <option value="grey">Grey only</option>
+          <option value="color">Colour only</option>
+        </select>
       </div>
+      {shown.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No datasets match that search.</p>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {shown.map((dataset) => (
+            <DatasetCard key={dataset.id} dataset={dataset} serverUrl={props.serverUrl} onRun={props.onRun} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

@@ -57,13 +57,17 @@ async def test_list_demos_offers_every_scene_with_its_default_sam_prompt(tmp_pat
         response = await list_demos(pb.ListDemosRequest(), rig.workspace)
 
     # Then every scene is offered with the concept SAM looks for by default
-    assert prompts_by_scene(response) == {
+    prompts = prompts_by_scene(response)
+    assert {
         TINY_SCENE: "object",
         "euroc-v1-01-easy": "box",
         "kitti-2011-09-26-drive-0009": "car",
         "kitti-2011-09-26-drive-0009-color": "car",
         "ntu-viral-sbs-01": "person",
-    }
+    }.items() <= prompts.items()
+    # And every generated KITTI drive is offered too, in grey and colour
+    assert prompts["kitti-2011_09_26_drive_0001"] == "car"
+    assert prompts["kitti-2011_09_26_drive_0001-color"] == "car"
 
 
 async def test_list_demos_says_only_the_cached_scene_is_prepared(tmp_path: Path) -> None:
@@ -73,13 +77,15 @@ async def test_list_demos_says_only_the_cached_scene_is_prepared(tmp_path: Path)
         response = await list_demos(pb.ListDemosRequest(), rig.workspace)
 
     # Then the tiny scene is prepared and the registry scenes still need a download
-    assert {scene.id: scene.prepared for scene in response.scenes} == {
+    prepared = {scene.id: scene.prepared for scene in response.scenes}
+    assert {
         TINY_SCENE: True,
         "euroc-v1-01-easy": False,
         "kitti-2011-09-26-drive-0009": False,
         "kitti-2011-09-26-drive-0009-color": False,
         "ntu-viral-sbs-01": False,
-    }
+    }.items() <= prepared.items()
+    assert prepared["kitti-2011_09_26_drive_0001"] is False
 
 
 async def test_list_demos_names_a_scene_s_recorded_run_once_it_has_one(tmp_path: Path) -> None:

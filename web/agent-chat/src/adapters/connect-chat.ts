@@ -33,6 +33,7 @@ interface DatasetJson {
   prepared: boolean;
   frame_count: number;
   thumbnail_available: boolean;
+  thumbnail_url: string;
   location_label: string;
   gps_centre: { lon: number; lat: number } | null;
   gps_track: { lon: number; lat: number }[];
@@ -112,6 +113,7 @@ function datasetView(json: DatasetJson): DatasetView {
     prepared: json.prepared,
     frameCount: json.frame_count,
     thumbnailAvailable: json.thumbnail_available,
+    thumbnailUrl: json.thumbnail_url ?? "",
     locationLabel: json.location_label,
     gpsCentre: json.gps_centre,
     gpsTrack: json.gps_track,
