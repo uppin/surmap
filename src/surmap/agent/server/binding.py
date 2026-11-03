@@ -31,7 +31,9 @@ IMAGE_KEY = "image"
 """Where a bound tool's result carries the image its response returned."""
 
 _SURVEY_SERVICE = "surmap.agent.v1.SurveyTools"
+_MAP_SERVICE = "surmap.agent.v1.MapTools"
 _JOBS_SERVICE = "surmap.agent.v1.AgentJobs"
+_HANDLER_SERVICES = (_SURVEY_SERVICE, _MAP_SERVICE)
 
 
 @dataclass(frozen=True)
@@ -62,11 +64,11 @@ def agent_tools(
     """
     bound: list[BoundTool] = []
     for contract in contracts:
-        if contract.service != _SURVEY_SERVICE:
+        if contract.service not in _HANDLER_SERVICES:
             continue
         handler = handlers.get(contract.method)
         if handler is None:
-            raise ValueError(f"no handler serves the SurveyTools rpc {contract.method}")
+            raise ValueError(f"no handler serves the {contract.service} rpc {contract.method}")
         tool_handler = _tool_handler(handler, _request_type(contract))
         bound.append(bind_contract_tool(contract, tool_handler, runner, resolve=resolve))
     jobs = [contract for contract in contracts if contract.service == _JOBS_SERVICE]

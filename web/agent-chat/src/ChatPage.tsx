@@ -2,9 +2,10 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { Composer } from "@/components/Composer";
 import { JobsPanel } from "@/components/JobsPanel";
+import { MapPane } from "@/components/MapPane";
 import { ModelPicker } from "@/components/ModelPicker";
 import { Transcript } from "@/components/Transcript";
-import type { ChatPort } from "@/ports";
+import type { ChatPort, MapSceneView } from "@/ports";
 import { chatReducer, initialChatState, isTurnActive } from "@/view-model/chat-reducer";
 
 export interface ChatPageProps {
@@ -23,6 +24,7 @@ export function ChatPage(props: ChatPageProps): ReactNode {
   const { port, conversationId } = props;
   const [state, dispatch] = useReducer(chatReducer, conversationId, initialChatState);
   const [onServer, setOnServer] = useState(false);
+  const [mapScene, setMapScene] = useState<MapSceneView | null>(null);
   const [now, setNow] = useState(0);
   const turn = useRef<AbortController | null>(null);
 
@@ -30,6 +32,26 @@ export function ChatPage(props: ChatPageProps): ReactNode {
     const clock = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(clock);
   }, []);
+
+  // The map scene lives server-side and the agent edits it mid-turn; poll it so
+  // placements, moves, camera navigation and routes appear without a reload.
+  useEffect(() => {
+    let current = true;
+    const poll = () => {
+      port.getMapScene().then(
+        (scene) => {
+          if (current) setMapScene((prev) => (prev?.revision === scene.revision ? prev : scene));
+        },
+        () => {},
+      );
+    };
+    poll();
+    const timer = window.setInterval(poll, 2000);
+    return () => {
+      current = false;
+      window.clearInterval(timer);
+    };
+  }, [port]);
 
   useEffect(() => {
     let current = true;
@@ -139,6 +161,7 @@ export function ChatPage(props: ChatPageProps): ReactNode {
           onChange={(modelId) => dispatch({ type: "model_selected", modelId })}
         />
       </header>
+      <MapPane scene={mapScene} />
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem]">
         <Transcript items={state.transcript} serverUrl={props.serverUrl} />
         <JobsPanel jobs={state.jobs} now={now} onCancel={cancelJob} />

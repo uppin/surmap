@@ -11,6 +11,7 @@ name, description, JSON Schema arguments and default execution policy.
 |---|---|
 | `proto/surmap/agent/v1/execution.proto` | `default_execution` method option, `ExecutionPolicy`, `ExecutionMode`, `OnTimeout`, `JobHandle` |
 | `proto/surmap/agent/v1/survey_tools.proto` | `SurveyTools` — demo, SAM, object and frame tools |
+| `proto/surmap/agent/v1/map_tools.proto` | `MapTools` — place/move GLB shapes, navigate the camera, draw routes, load layers on the embedded map |
 | `proto/surmap/agent/v1/jobs.proto` | `AgentJobs` — follow and cancel detached tool calls |
 | `proto/surmap/agent/v1/chat.proto` | `ChatService` — the browser's chat API (`StreamTurn`, `WatchConversation`, `Steer`, `CancelTurn`, `ListModels`, `GetConversation`), streaming `TurnEvent`s |
 | `src/surmap/agent/proto/` | Generated `_pb2.py` / `.pyi` and `agent_descriptor_set.binpb` (checked in) |
@@ -36,6 +37,18 @@ leading comment, and argument descriptions are the field comments.
 | `get_job` | `AgentJobs.GetJob` | SYNC · 10 s · FAIL |
 | `cancel_job` | `AgentJobs.CancelJob` | SYNC · 10 s · FAIL |
 | `list_jobs` | `AgentJobs.ListJobs` | SYNC · 10 s · FAIL |
+| `add_map_object` | `MapTools.AddMapObject` | SYNC · 10 s · FAIL |
+| `move_map_object` | `MapTools.MoveMapObject` | SYNC · 10 s · FAIL |
+| `remove_map_object` | `MapTools.RemoveMapObject` | SYNC · 10 s · FAIL |
+| `list_map_objects` | `MapTools.ListMapObjects` | SYNC · 10 s · FAIL |
+| `get_map_scene` | `MapTools.GetMapScene` | SYNC · 10 s · FAIL |
+| `navigate_map` | `MapTools.NavigateMap` | SYNC · 10 s · FAIL |
+| `show_route` | `MapTools.ShowRoute` | SYNC · 10 s · FAIL |
+| `update_route` | `MapTools.UpdateRoute` | SYNC · 10 s · FAIL |
+| `clear_route` | `MapTools.ClearRoute` | SYNC · 10 s · FAIL |
+| `list_map_layers` | `MapTools.ListMapLayers` | SYNC · 10 s · FAIL |
+| `load_map_layer` | `MapTools.LoadMapLayer` | SYNC · 10 s · FAIL |
+| `unload_map_layer` | `MapTools.UnloadMapLayer` | SYNC · 10 s · FAIL |
 
 Every tool rpc must declare `option (default_execution)`;
 `tool_contracts` refuses a service with an rpc that does not.
@@ -96,6 +109,26 @@ in the console) and publishes GLB through a `GeometryStore` (`tools/geometry.py`
 - **Errors.** `NOT_FOUND` — unknown scene, run, frame or object, or an object with no mask box on
   the frame; `INVALID_ARGUMENT` — `near` without `radius_m`, non-positive `fps`, `max_frames` 0,
   a crop outside the image; `UNAVAILABLE` — the previous run did not stop in time.
+
+## Map tools and layers (`surmap.agent.tools.map_handlers`, `map_layers`)
+
+`MapTools` edits a display scene in a `MapSceneStore` (in-memory, per
+`scene_id`, `default` when unnamed): placed GLB shapes (`geometry_uri` +
+lon/lat position, rotation, scale), the camera, and drawn route paths
+(display only — never a flight plan). Every change bumps the scene
+`revision`; the chat UI polls `get_map_scene` and redraws. Positions off the
+world, a non-positive scale, zoom outside 0..22, or a route under two points
+are `INVALID_ARGUMENT`; an unknown object, route or layer is `NOT_FOUND`; a
+reused object/route id is `ALREADY_EXISTS`.
+
+Layers are a port (`MapLayerCatalogue` in `tools/map_layers.py`): the native
+`OvertureLayerCatalogue` names OpenStreetMap raster tiles and the Overture
+PMTiles themes (release pinned, source layers `building` / `segment` /
+`place` / `water` verified against the tiles); `InMemoryLayerCatalogue` is
+the test adapter. A fresh scene loads the defaults — `osm` (OpenStreetMap)
+and `overture-buildings`; `load_map_layer` / `unload_map_layer` flip the
+rest. The chat pane renders the scene with MapLibre GL: OSM base, 3D
+buildings, loaded theme layers, route lines, and object markers.
 
 ## Regenerating the bindings
 

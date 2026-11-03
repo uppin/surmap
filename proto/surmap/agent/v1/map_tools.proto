@@ -1,0 +1,354 @@
+syntax = "proto3";
+
+package surmap.agent.v1;
+
+import "surmap/agent/v1/execution.proto";
+
+/*
+The survey agent's map tools: place GLB shapes on the embedded Overture
+basemap, move them, navigate the camera, and show or update route paths.
+Every rpc here is a model-facing tool: its snake_case name is the tool
+name, its leading comment the tool description, and its request message
+the tool's argument schema.
+
+Passive survey only (docs/architecture.md section 1): these tools edit a
+display scene and move its camera; none commands a vehicle, and a route
+here is a drawn path, never a flight plan.
+*/
+
+service MapTools {
+  // Places a GLB shape on the map at a lon/lat position and returns it. Give object_id to
+  // choose the id the other map tools use; one is generated when absent.
+  rpc AddMapObject(AddMapObjectRequest) returns (MapObjectResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Moves a placed object: its position, rotation, scale, or any combination of them.
+  rpc MoveMapObject(MoveMapObjectRequest) returns (MapObjectResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Removes a placed object from the map.
+  rpc RemoveMapObject(RemoveMapObjectRequest) returns (RemoveMapObjectResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Lists the objects placed on the map, in the order they were added.
+  rpc ListMapObjects(ListMapObjectsRequest) returns (ListMapObjectsResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Returns the whole map scene: its objects, camera and routes, with the revision the
+  // chat UI polls to redraw.
+  rpc GetMapScene(GetMapSceneRequest) returns (GetMapSceneResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Navigates the map camera to a centre, zoom, pitch or bearing; fields left out keep
+  // their current value. This moves the view, never a vehicle.
+  rpc NavigateMap(NavigateMapRequest) returns (NavigateMapResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Shows a new route path on the map from ordered waypoints and returns it. Give
+  // route_id to choose the id update_route and clear_route use.
+  rpc ShowRoute(ShowRouteRequest) returns (MapRouteResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Replaces an existing route's waypoints, name or colour.
+  rpc UpdateRoute(UpdateRouteRequest) returns (MapRouteResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Removes a route path from the map.
+  rpc ClearRoute(ClearRouteRequest) returns (ClearRouteResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Lists the map's layer catalogue: every layer that can be shown, whether it is
+  // loaded now, and the default OpenStreetMap base layer loaded on every fresh map.
+  rpc ListMapLayers(ListMapLayersRequest) returns (ListMapLayersResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Loads a catalogue layer onto the map so it is drawn; loading one already
+  // loaded leaves it as it is.
+  rpc LoadMapLayer(LoadMapLayerRequest) returns (MapLayerResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Unloads a layer from the map so it is no longer drawn; the OpenStreetMap base
+  // layer can be unloaded like any other.
+  rpc UnloadMapLayer(UnloadMapLayerRequest) returns (MapLayerResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+}
+
+// A WGS84 position on the map.
+message GeoPoint {
+  // Longitude, degrees east, -180..180.
+  double lon = 1;
+  // Latitude, degrees north, -90..90.
+  double lat = 2;
+  // Altitude above sea level, metres; the ground when absent.
+  optional double alt_m = 3;
+}
+
+// Where the map camera looks.
+message MapCamera {
+  // The centre of the view.
+  GeoPoint centre = 1;
+  // Zoom level, 0 (whole world) to 22 (a building).
+  double zoom = 2;
+  // Tilt from looking straight down, degrees, 0..85.
+  double pitch_deg = 3;
+  // Compass bearing of the view, degrees clockwise from north.
+  double bearing_deg = 4;
+}
+
+// One GLB shape placed on the map.
+message MapObject {
+  // Identifies the object for move_map_object and remove_map_object.
+  string id = 1;
+  // What the object is, e.g. "debris pile".
+  string label = 2;
+  // Where its GLB lives, e.g. a "surmap-glb://" URI or an http(s) URL.
+  string geometry_uri = 3;
+  // Where it sits on the map.
+  GeoPoint position = 4;
+  // Rotation about the vertical axis, degrees clockwise from north.
+  double rotation_deg = 5;
+  // Uniform scale relative to the GLB's own size; 1 is as modelled.
+  double scale = 6;
+}
+
+// One drawn route path: ordered waypoints joined in order.
+message MapRoute {
+  // Identifies the route for update_route and clear_route.
+  string id = 1;
+  // What the route shows, e.g. "cleared corridor".
+  string name = 2;
+  // The path's points, joined in order; at least two.
+  repeated GeoPoint waypoints = 3;
+  // Line colour as a CSS colour, e.g. "#f59e0b".
+  string color = 4;
+}
+
+// How a layer's data reaches the map.
+enum MapLayerKind {
+  MAP_LAYER_KIND_UNSPECIFIED = 0;
+  // Raster image tiles, e.g. OpenStreetMap's tile service.
+  RASTER = 1;
+  // Vector PMTiles, e.g. an Overture theme.
+  VECTOR = 2;
+}
+
+// One entry of the map's layer catalogue.
+message MapLayer {
+  // Identifies the layer for load_map_layer and unload_map_layer, e.g. "osm".
+  string id = 1;
+  // Human-readable name, e.g. "OpenStreetMap".
+  string name = 2;
+  // How its data reaches the map.
+  MapLayerKind kind = 3;
+  // Raster tile URL template, or the PMTiles archive URL for a vector layer.
+  string source_url = 4;
+  // Vector source layer inside the archive; empty for raster.
+  string source_layer = 5;
+  // Whether the layer is drawn on this scene now.
+  bool loaded = 6;
+  // Attribution the map shows while the layer is loaded.
+  string attribution = 7;
+  // Whether a fresh scene loads it without being asked.
+  bool is_default = 8;
+}
+
+// The whole display scene of one map.
+message MapScene {
+  // The scene these objects, camera and routes belong to.
+  string scene_id = 1;
+  // Objects placed on the map, in the order they were added.
+  repeated MapObject objects = 2;
+  // Where the camera looks.
+  MapCamera camera = 3;
+  // Route paths drawn on the map.
+  repeated MapRoute routes = 4;
+  // Bumps on every change; the chat UI redraws when it changes.
+  uint64 revision = 5;
+  // The layer catalogue with each layer's loaded state on this scene.
+  repeated MapLayer layers = 6;
+}
+
+message AddMapObjectRequest {
+  // The scene to place on; "default" when absent.
+  optional string scene_id = 1;
+  // The id the other map tools will use; generated when absent.
+  optional string object_id = 2;
+  // What the object is, e.g. "debris pile".
+  string label = 3;
+  // Where its GLB lives, e.g. a "surmap-glb://" URI or an http(s) URL.
+  string geometry_uri = 4;
+  // Where it sits on the map.
+  GeoPoint position = 5;
+  // Rotation about the vertical axis, degrees; north-up when absent.
+  optional double rotation_deg = 6;
+  // Uniform scale; 1 (as modelled) when absent.
+  optional double scale = 7;
+}
+
+message MapObjectResponse {
+  // The object as placed.
+  MapObject object = 1;
+  // The scene revision after this change.
+  uint64 revision = 2;
+}
+
+message MoveMapObjectRequest {
+  // The scene the object is on; "default" when absent.
+  optional string scene_id = 1;
+  // The object to move.
+  string object_id = 2;
+  // Its new position; kept when absent.
+  optional GeoPoint position = 3;
+  // Its new rotation, degrees; kept when absent.
+  optional double rotation_deg = 4;
+  // Its new scale; kept when absent.
+  optional double scale = 5;
+}
+
+message RemoveMapObjectRequest {
+  // The scene the object is on; "default" when absent.
+  optional string scene_id = 1;
+  // The object to remove.
+  string object_id = 2;
+}
+
+message RemoveMapObjectResponse {
+  // The removed object's id.
+  string object_id = 1;
+  // The scene revision after this change.
+  uint64 revision = 2;
+}
+
+message ListMapObjectsRequest {
+  // The scene to list; "default" when absent.
+  optional string scene_id = 1;
+}
+
+message ListMapObjectsResponse {
+  // The scene's objects, in the order they were added.
+  repeated MapObject objects = 1;
+  // The scene's current revision.
+  uint64 revision = 2;
+}
+
+message GetMapSceneRequest {
+  // The scene to return; "default" when absent.
+  optional string scene_id = 1;
+}
+
+message GetMapSceneResponse {
+  // The whole scene.
+  MapScene scene = 1;
+}
+
+message NavigateMapRequest {
+  // The scene to navigate; "default" when absent.
+  optional string scene_id = 1;
+  // The view's new centre; kept when absent.
+  optional GeoPoint centre = 2;
+  // The new zoom, 0..22; kept when absent.
+  optional double zoom = 3;
+  // The new tilt, degrees 0..85; kept when absent.
+  optional double pitch_deg = 4;
+  // The new bearing, degrees; kept when absent.
+  optional double bearing_deg = 5;
+}
+
+message NavigateMapResponse {
+  // The camera after navigating.
+  MapCamera camera = 1;
+  // The scene revision after this change.
+  uint64 revision = 2;
+}
+
+message ShowRouteRequest {
+  // The scene to draw on; "default" when absent.
+  optional string scene_id = 1;
+  // The id update_route and clear_route will use; generated when absent.
+  optional string route_id = 2;
+  // What the route shows, e.g. "cleared corridor".
+  string name = 3;
+  // The path's points, joined in order; at least two.
+  repeated GeoPoint waypoints = 4;
+  // Line colour as a CSS colour; amber when absent.
+  optional string color = 5;
+}
+
+message MapRouteResponse {
+  // The route as drawn.
+  MapRoute route = 1;
+  // The scene revision after this change.
+  uint64 revision = 2;
+}
+
+message UpdateRouteRequest {
+  // The scene the route is on; "default" when absent.
+  optional string scene_id = 1;
+  // The route to replace.
+  string route_id = 2;
+  // Its new name; kept when absent.
+  optional string name = 3;
+  // Its new waypoints, joined in order; kept when the list is empty.
+  repeated GeoPoint waypoints = 4;
+  // Its new line colour; kept when absent.
+  optional string color = 5;
+}
+
+message ListMapLayersRequest {
+  // The scene whose loaded state is listed; "default" when absent.
+  optional string scene_id = 1;
+}
+
+message ListMapLayersResponse {
+  // Every catalogue layer, with its loaded state on this scene.
+  repeated MapLayer layers = 1;
+  // The scene's current revision.
+  uint64 revision = 2;
+}
+
+message LoadMapLayerRequest {
+  // The scene to load onto; "default" when absent.
+  optional string scene_id = 1;
+  // The catalogue layer to load, e.g. "overture-transportation".
+  string layer_id = 2;
+}
+
+message UnloadMapLayerRequest {
+  // The scene to unload from; "default" when absent.
+  optional string scene_id = 1;
+  // The catalogue layer to unload, e.g. "osm".
+  string layer_id = 2;
+}
+
+message MapLayerResponse {
+  // The layer after the change.
+  MapLayer layer = 1;
+  // The scene revision after this change.
+  uint64 revision = 2;
+}
+
+message ClearRouteRequest {
+  // The scene the route is on; "default" when absent.
+  optional string scene_id = 1;
+  // The route to remove.
+  string route_id = 2;
+}
+
+message ClearRouteResponse {
+  // The removed route's id.
+  string route_id = 1;
+  // The scene revision after this change.
+  uint64 revision = 2;
+}

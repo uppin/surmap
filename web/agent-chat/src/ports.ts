@@ -30,6 +30,60 @@ export interface ModelInfo {
   isDefault: boolean;
 }
 
+/** A WGS84 position on the map, as the map pane draws it. */
+export interface MapPointView {
+  lon: number;
+  lat: number;
+  altM: number | null;
+}
+
+/** One GLB shape placed on the map by the agent. */
+export interface MapObjectView {
+  id: string;
+  label: string;
+  geometryUri: string;
+  position: MapPointView;
+  rotationDeg: number;
+  scale: number;
+}
+
+/** One route path drawn on the map by the agent. */
+export interface MapRouteView {
+  id: string;
+  name: string;
+  color: string;
+  waypoints: MapPointView[];
+}
+
+/** Where the map camera looks. */
+export interface MapCameraView {
+  centre: MapPointView;
+  zoom: number;
+  pitchDeg: number;
+  bearingDeg: number;
+}
+
+/** One catalogue layer and whether this scene draws it. */
+export interface MapLayerView {
+  id: string;
+  name: string;
+  kind: "RASTER" | "VECTOR";
+  sourceUrl: string;
+  sourceLayer: string;
+  loaded: boolean;
+  isDefault: boolean;
+}
+
+/** The whole display scene the map pane renders; `revision` bumps on every agent edit. */
+export interface MapSceneView {
+  sceneId: string;
+  revision: number;
+  camera: MapCameraView;
+  objects: MapObjectView[];
+  routes: MapRouteView[];
+  layers: MapLayerView[];
+}
+
 /**
  * Everything the chat UI asks of the agent server. Components and the view model never reach the
  * network except through this port; the Connect adapter implements it and tests fake it.
@@ -49,4 +103,6 @@ export interface ChatPort {
   listModels(): Promise<ModelInfo[]>;
   /** Every event of the conversation so far, in order, for redrawing it after a reload. */
   getConversation(conversationId: string): Promise<TurnEvent[]>;
+  /** The current map scene (objects, camera, routes); the pane polls it to redraw agent edits. */
+  getMapScene(): Promise<MapSceneView>;
 }

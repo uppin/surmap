@@ -21,7 +21,7 @@ from PIL import Image
 
 from surmap.agent.contracts import ToolContract, tool_contracts
 from surmap.agent.llm.registry import ModelInfo, UnknownModelProvider
-from surmap.agent.proto import chat_pb2, jobs_pb2, survey_tools_pb2
+from surmap.agent.proto import chat_pb2, jobs_pb2, map_tools_pb2, survey_tools_pb2
 from surmap.agent.runtime.jobs import JobRunner
 from surmap.agent.runtime.tools import BoundTool, bind_contract_tool, job_tools
 from surmap.agent.server.chat_service import agent_jobs_handlers, chat_handlers
@@ -45,6 +45,8 @@ __all__ = [
     "CHAT_SERVICE",
     "CONVERSATION",
     "JOB_CONTRACTS",
+    "MAP_CONTRACTS",
+    "MAP_TOOLS",
     "SCRIPTED_MODEL_ID",
     "STEP_TIMEOUT_S",
     "SURVEY_CONTRACTS",
@@ -66,7 +68,9 @@ __all__ = [
 CHAT_SERVICE = chat_pb2.DESCRIPTOR.services_by_name["ChatService"]
 AGENT_JOBS = jobs_pb2.DESCRIPTOR.services_by_name["AgentJobs"]
 SURVEY_TOOLS = survey_tools_pb2.DESCRIPTOR.services_by_name["SurveyTools"]
+MAP_TOOLS = map_tools_pb2.DESCRIPTOR.services_by_name["MapTools"]
 SURVEY_CONTRACTS: tuple[ToolContract, ...] = tool_contracts(SURVEY_TOOLS)
+MAP_CONTRACTS: tuple[ToolContract, ...] = tool_contracts(MAP_TOOLS)
 JOB_CONTRACTS: tuple[ToolContract, ...] = tool_contracts(AGENT_JOBS)
 
 CONVERSATION = "conv-1"

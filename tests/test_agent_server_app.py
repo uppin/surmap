@@ -33,6 +33,7 @@ from tests.agent_fakes import ScriptedChatModel, answer
 from tests.agent_server_fakes import (
     CHAT_SERVICE,
     JOB_CONTRACTS,
+    MAP_CONTRACTS,
     STEP_TIMEOUT_S,
     SURVEY_CONTRACTS,
     SURVEY_TOOLS,
@@ -445,7 +446,7 @@ async def test_the_agent_s_model_reads_the_survey_system_prompt_first() -> None:
     assert model.history_of_call(1)[0] == SystemMessage(content=SYSTEM_PROMPT)
 
 
-async def test_the_agent_s_model_is_offered_every_survey_and_job_tool() -> None:
+async def test_the_agent_s_model_is_offered_every_survey_map_and_job_tool() -> None:
     # Given the server answering with a scripted model
     model = ScriptedChatModel.replying(answer("Hello"))
     server = a_server_answering_with(model)
@@ -455,7 +456,7 @@ async def test_the_agent_s_model_is_offered_every_survey_and_job_tool() -> None:
 
     # Then the model was bound to all of them
     assert sorted(model.bound_tool_names[0]) == sorted(
-        contract.name for contract in (*SURVEY_CONTRACTS, *JOB_CONTRACTS)
+        contract.name for contract in (*SURVEY_CONTRACTS, *MAP_CONTRACTS, *JOB_CONTRACTS)
     )
 
 
