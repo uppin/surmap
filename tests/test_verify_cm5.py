@@ -38,6 +38,19 @@ def _load_verify() -> object:
 verify_cm5 = _load_verify()
 
 
+def _load_verify_simulated() -> object:
+    path = SCRIPT.with_name("verify_cm5_simulated.py")
+    spec = importlib.util.spec_from_file_location("verify_cm5_simulated", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["verify_cm5_simulated"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+verify_cm5_simulated = _load_verify_simulated()
+
+
 def a_detection_message(
     frame_id: int, *, label: str = "chair", score: float = 0.8, track_id: int = 1
 ) -> survey_pb2.FrameDetections:
@@ -317,7 +330,7 @@ async def test_verify_simulated_passes_against_a_cm5_fed_cameras_and_gps_over_rp
     async with running_ws_server(a_simulated_drone_cm5(), token="survey-secret") as address:
         # When the simulated-drone verification feeds it frames and GPS over one connection
         report = await asyncio.to_thread(
-            verify_cm5.verify_simulated,  # type: ignore[attr-defined]
+            verify_cm5_simulated.verify_simulated,  # type: ignore[attr-defined]
             address,
             EUROC,
             6,
@@ -338,7 +351,7 @@ async def test_verify_simulated_holds_the_stream_open_for_the_requested_time() -
     async with running_ws_server(a_simulated_drone_cm5()) as address:
         # When the verification is asked to keep its survey stream open for 2 s
         report = await asyncio.to_thread(
-            verify_cm5.verify_simulated,  # type: ignore[attr-defined]
+            verify_cm5_simulated.verify_simulated,  # type: ignore[attr-defined]
             address,
             EUROC,
             4,
@@ -358,7 +371,7 @@ async def test_verify_simulated_fails_the_region_check_on_a_cm5_without_region_p
     # Given a simulated-drone CM5 started without region points
     async with running_ws_server(a_simulated_drone_cm5(regions=False)) as address:
         report = await asyncio.to_thread(
-            verify_cm5.verify_simulated,  # type: ignore[attr-defined]
+            verify_cm5_simulated.verify_simulated,  # type: ignore[attr-defined]
             address,
             EUROC,
             4,

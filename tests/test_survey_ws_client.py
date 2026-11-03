@@ -269,4 +269,7 @@ async def test_the_connection_offers_no_compression_because_modal_refuses_it() -
     ],
 )
 def test_an_address_resolves_to_the_connect_websocket_url(address: str, url: str) -> None:
+    # Given an address as a user writes it
+    # When it is resolved
+    # Then it names the server's Connect WebSocket, secure for https and wss
     assert connect_url(address) == url

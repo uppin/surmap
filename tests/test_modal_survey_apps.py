@@ -16,7 +16,6 @@ from surmap.survey.cm5_main import build_parser as cm5_parser
 from surmap.survey.modal_hosting import (
     CM5_PORT,
     STATION_PORT,
-    SURVEY_SECRET,
     cm5_command,
     station_command,
 )
@@ -86,6 +85,9 @@ def test_the_station_command_serves_sam_on_every_interface() -> None:
 
 @pytest.mark.parametrize("command", [cm5_command(rtabmap_binary="/bin/x"), station_command()])
 def test_each_command_runs_a_survey_main_as_a_module(command: list[str]) -> None:
+    # Given a command an app runs
+    # When its program is read
+    # Then it runs one of the survey mains as a module (the app swaps in its own interpreter)
     assert command[:2] == ["python", "-m"]
     assert command[2] in {"surmap.survey.cm5_main", "surmap.survey.station_main"}
 
@@ -112,12 +114,11 @@ def test_each_app_is_one_web_server_container_holding_the_token_secret(
 
 
 def test_the_station_app_runs_on_a_gpu_and_the_cm5_app_does_not() -> None:
+    # Given both app files, which CI does not import
+    # When their function decorators are read
     station = decorator(module_function(STATION_APP, "serve"), "function")
     cm5 = decorator(module_function(CM5_APP, "serve"), "function")
 
+    # Then only the station asks for a GPU
     assert keyword_value(station, "gpu") is not None
     assert keyword_value(cm5, "gpu") is None
-
-
-def test_the_survey_secret_is_named_once_for_both_apps() -> None:
-    assert SURVEY_SECRET == "surmap-survey"

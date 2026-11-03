@@ -119,7 +119,51 @@ python -m surmap.survey.cm5_main     --host 0.0.0.0 --port 8080
 python -m surmap.survey.station_main --host 0.0.0.0 --port 8081
 ```
 
-Both serve `/health/is_alive` next to their Connect service.
+Both serve `/health/is_alive` next to their Connect service, and Connect
+twice: over HTTP (h1/h2c) and over one WebSocket at `/connect`
+([connectrpc.md](connectrpc.md#connect-over-one-websocket)). Every client in
+this repo — the demo's remote adapters and both verify scripts — uses the
+WebSocket, through `surmap.survey.ws_client.SurveyConnection`.
+
+`--auth-token <token>` (default `$SURMAP_SURVEY_TOKEN`) guards both: Connect
+calls and WebSocket upgrades need `Authorization: Bearer <token>`; health stays
+open. Clients send it with `--token` (verify scripts) or `token=` (adapters),
+default `$SURMAP_SURVEY_TOKEN`.
+
+A server address is `host:port`, or a `ws(s)://` / `http(s)://` URL, with or
+without `/connect`:
+
+```bash
+uv run python scripts/verify_cm5.py 10.88.77.237:8080
+uv run python scripts/verify_station.py wss://<station-host>/connect --token "$TOKEN"
+```
+
+### CM5 without a calibration dir: a simulated drone
+
+`--slam-backend streaming` no longer needs `--calibration-dir`. Without it the
+CM5 has no default backend: every survey stream must bring its camera
+definitions (`cam0_yaml` / `cam1_yaml` in `Cm5StreamConfig`) and gets a
+RTAB-Map backend of its own; a stream without them is refused. With
+`--region-points`, region queries go to the backend of the open survey stream
+that holds the frame. A simulator also sends GPS on the same stream
+(`GpsFix`; the CM5 answers each with a `GpsAnchorOut`, see
+[architecture.md](architecture.md) §10).
+
+```bash
+python -m surmap.survey.cm5_main --slam-backend streaming --region-points \
+    --rtabmap-native ~/.cache/surmap-rtabmap/stream-build/surmap-rtabmap-stream
+uv run python scripts/verify_cm5.py <cm5-address> --simulated [--hold-s 200]
+```
+
+`--simulated` sends the fixture's cameras and a GPS fix per pair, waits until
+every fix is anchored, then asks for region points on the last anchored frame
+over the same connection; it checks health, survey, gps and regions.
+`--hold-s` paces the frames so the survey stream stays open that long. Both
+verify scripts wait up to 60 s for health, which covers a serverless cold
+start.
+
+`scripts/build_rtabmap_native.sh` runs `sudo` only when it is not root, so a
+container image build (Modal) can run it as is.
 
 ## Current limitation
 

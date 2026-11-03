@@ -1,6 +1,9 @@
-# Modal: SAM 3.1 GPU and Muse Spark Open
+# Modal: SAM 3.1 GPU, Muse Spark Open, and the survey servers
 
-Two separate Modal products. Neither is called from CI. No token is
+Three uses of Modal: the SAM 3.1 GPU app and the Muse Spark Open shared
+endpoint (sections 1–4), and the survey servers — a simulated drone's CM5 and
+the station — as Modal web servers (section 5). The first two are separate
+Modal products. Neither is called from CI. No token is
 committed. `README.md` does not repeat these steps.
 
 SAM 3.1 runs as our own GPU app (`surmap-sam`): one L4 container, scale
@@ -137,3 +140,62 @@ prompt_tokens, completion_tokens, reasoning_tokens)` records the
 response counts. A `UsageLedger` can be passed as either hook
 (`check` before the call, the ledger itself as `on_usage`) without
 this package importing `surmap.usage`.
+
+## 5. The survey servers on Modal: a simulated drone and the station
+
+Two app files run the existing survey mains as `@modal.web_server` functions,
+one container each (`max_containers=1`: a survey's region queries must reach
+the server holding its frames). Clients reach them over the app's stable
+HTTPS URL with Connect over one WebSocket (`wss://<url>/connect`,
+[connectrpc.md](connectrpc.md#connect-over-one-websocket)), which Modal carries
+past its 150 s cap per HTTP request. What each app runs is
+`surmap.survey.modal_hosting` (`cm5_command`, `station_command`), tested in CI;
+the app files are read with the AST, because CI does not install `modal`.
+
+| App | File | Runs | Resources |
+|---|---|---|---|
+| `surmap-cm5-sim` | `src/surmap/survey/modal_cm5_app.py` | `cm5_main --slam-backend streaming --rtabmap-native … --region-points --detector none` on port 8080, no calibration dir: the simulator sends cameras and GPS over RPC | 4 CPU, 8 GiB; image builds RTAB-Map 0.23.1 natively (`scripts/build_rtabmap_native.sh`, about 15 min the first time), then `uv sync --no-dev` from `uv.lock` |
+| `surmap-station` | `src/surmap/survey/modal_station_app.py` | `station_main --detector sam31-torch` on port 8081, prompt `$SURMAP_STATION_LABEL` (default `object`) | L4 GPU (`SURMAP_MODAL_GPU`), 4 CPU, 16 GiB; checkpoint in Volume `surmap-sam3` with the `huggingface` secret, as `surmap-sam` |
+
+`SURMAP_MODAL_TIMEOUT` (default 86400 s) bounds a container, and so the longest
+survey stream; `SURMAP_MODAL_SCALEDOWN_WINDOW` (default 300 s) how long an
+idle one stays up.
+
+Create the token secret once per workspace; keep the token out of the repo:
+
+```bash
+read -rs SURMAP_SURVEY_TOKEN
+uvx modal secret create surmap-survey SURMAP_SURVEY_TOKEN="$SURMAP_SURVEY_TOKEN"
+```
+
+Run one ephemerally (it stops with the command) from the repo root, then
+verify it with the URL Modal prints:
+
+```bash
+SURMAP_MODAL_TIMEOUT=3600 uv run --with modal modal serve src/surmap/survey/modal_cm5_app.py
+uv run python scripts/verify_cm5.py wss://<url> --simulated --hold-s 200   # token from $SURMAP_SURVEY_TOKEN
+uv run --with modal modal serve src/surmap/survey/modal_station_app.py
+uv run python scripts/verify_station.py wss://<url> --expect-device gpu
+```
+
+`modal deploy` instead keeps an app up; stop it with
+`uvx modal app stop -y <app-id>` (`uvx modal app list` names them). The
+`modal-cloud` skill (`.agents/skills/modal-cloud/SKILL.md`) covers workspace
+choice, cost guardrails and cleanup.
+
+What Modal's edge does to these servers, and how the code meets it:
+
+- WebSockets only over HTTP/1.1, messages up to 2 MiB, no `permessage-deflate`
+  — `SurveyConnection` dials with `compression=None`; bodies go in 256 KiB chunks.
+- An HTTP 401 on the upgrade reaches the client as a 500, and close codes
+  arrive as 1000 — the servers refuse a missing token inside the socket (the
+  text frame `unauthorized`), which `SurveyConnection.open` raises as
+  `PermissionError`.
+- Endpoint URLs are public — the bearer token guards every Connect call; only
+  `/health/is_alive` answers without it.
+
+Verified on 2026-11-03 for the CM5 app only (`modal serve`, workspace
+`mantas-27062`): token refusal and acceptance, real RTAB-Map scene points, GPS
+anchors and region points over `wss://`, and one survey stream held for 205 s.
+The station app has not run on Modal yet.
+

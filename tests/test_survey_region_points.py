@@ -9,7 +9,7 @@ import pytest
 from surmap.rpc.hosts.in_memory import InMemoryHost
 from surmap.slam.regions import InMemoryRegionPointSource, RegionPointSource
 from surmap.survey.cm5_main import build_description, describe, main, streaming_backend
-from surmap.survey.cm5_server import stream_region_points
+from surmap.survey.cm5_service import stream_region_points
 from surmap.survey.v1 import survey_pb2
 from surmap.types import Vec3
 from tests.test_demo import CAM0_YAML
