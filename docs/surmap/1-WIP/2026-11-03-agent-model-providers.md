@@ -17,12 +17,12 @@
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Milestone 1: `MetaResponsesChatModel` request mapping (instructions, text, images, function_call, function_call_output, tools)
-  - [ ] Milestone 2: response mapping (text, tool calls, usage, ledger)
-  - [ ] Milestone 3: `ollama_chat_model` and `ChatModelRegistry`
-  - [ ] Milestone 4: live tool round trip on Muse (`SURMAP_LIVE_META=1`) — if the Responses API rejects function tools, halt this row ⛔ with the response body
-  - [ ] Acceptance: `tests/test_agent_llm_meta.py`, `tests/test_agent_llm_registry.py` pass
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · 39/39 green; full suite 1481 passed, 32 skipped, 0 failed; live Ollama `fastcontext-tools:latest` passed (`SURMAP_LIVE_OLLAMA=1`); live Muse skipped (no `MODEL_API_KEY` on this host); ruff format/check and mypy strict clean
+  - [x] Milestone 1: `MetaResponsesChatModel` request mapping (instructions, text, images, function_call, function_call_output, tools)
+  - [x] Milestone 2: response mapping (text, tool calls, usage, ledger)
+  - [x] Milestone 3: `ollama_chat_model` and `ChatModelRegistry`
+  - [x] Milestone 4: live tool round trip on Muse (`SURMAP_LIVE_META=1`) — if the Responses API rejects function tools, halt this row ⛔ with the response body — skipped: no MODEL_API_KEY on this host; offline mapping green, live Meta function-tool support still unverified
+  - [x] Acceptance: `tests/test_agent_llm_meta.py`, `tests/test_agent_llm_registry.py` pass
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (offline suite, plus the live Muse and Ollama results or why they were not run)
   - [ ] `docs/agent.md` — add "Models" section: ids, env vars, defaults, live checks
@@ -244,3 +244,5 @@ Baseline before: 1422 passed, 7 skipped, 42 inherited known-red (n4); after: the
 - **If Meta has no function tools**, the Green row halts ⛔ with the API's response; the developer
   then chooses (a JSON-mode tool emulation in this model, or another Muse route). Recorded here so
   the halt is expected, not a surprise.
+- **Live Muse check skipped** (`/green` milestone 4): skipped: no MODEL_API_KEY on this host; offline
+  mapping green, live Meta function-tool support still unverified.

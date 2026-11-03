@@ -14,19 +14,37 @@ refused by name.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
+from pydantic import SecretStr
 
-from surmap.agent.llm.ollama import OllamaTagsTransport
+from surmap.agent.llm.meta import (
+    AGENT_META_MODEL_ENV,
+    DEFAULT_AGENT_META_MODEL,
+    META_PROVIDER,
+    MetaResponsesChatModel,
+)
+from surmap.agent.llm.ollama import (
+    OLLAMA_URL_ENV,
+    OllamaTagsTransport,
+    UrllibOllamaTagsTransport,
+    ollama_base_url,
+    ollama_chat_model,
+    ollama_models,
+)
 from surmap.labelling.meta_muse import MetaMuseTransport
+from surmap.labelling.ollama import DEFAULT_OLLAMA_URL
 from surmap.usage import UsageSink
 
 __all__ = ["ChatModelRegistry", "ModelInfo", "Provider", "UnknownModelProvider"]
 
 Provider = Literal["meta", "ollama"]
+
+_MODEL_API_KEY_ENV = "MODEL_API_KEY"
 
 
 class UnknownModelProvider(ValueError):
@@ -66,8 +84,41 @@ class ChatModelRegistry:
 
     def available(self) -> tuple[ModelInfo, ...]:
         """Muse first (when keyed), then the Ollama server's models in its order."""
-        raise NotImplementedError  # TODO(pr-5): implement
+        environ = self._env()
+        listed: list[ModelInfo] = []
+        if environ.get(_MODEL_API_KEY_ENV, "").strip():
+            muse = environ.get(AGENT_META_MODEL_ENV, "").strip() or DEFAULT_AGENT_META_MODEL
+            listed.append(ModelInfo(id=f"{META_PROVIDER}:{muse}", provider="meta", model=muse))
+        tags = (
+            self._ollama_transport
+            if self._ollama_transport is not None
+            else UrllibOllamaTagsTransport()
+        )
+        for name in ollama_models(tags, base_url=self._ollama_url()):
+            listed.append(ModelInfo(id=f"ollama:{name}", provider="ollama", model=name))
+        return tuple(listed)
 
     def build(self, model_id: str) -> BaseChatModel:
         """The chat model for `model_id`; `UnknownModelProvider` for any other provider."""
-        raise NotImplementedError  # TODO(pr-5): implement
+        provider, _, model = model_id.partition(":")
+        if provider == META_PROVIDER and model:
+            return MetaResponsesChatModel(
+                model=model,
+                api_key=SecretStr(self._env().get(_MODEL_API_KEY_ENV, "")),
+                transport=self._meta_transport,
+                usage_sink=self._usage_sink,
+            )
+        if provider == "ollama" and model:
+            return ollama_chat_model(model, base_url=self._ollama_url())
+        raise UnknownModelProvider(
+            f"unknown model provider {provider!r} in {model_id!r}; "
+            "the agent builds meta:<model> and ollama:<model> ids"
+        )
+
+    def _env(self) -> Mapping[str, str]:
+        return os.environ if self._environ is None else self._environ
+
+    def _ollama_url(self) -> str:
+        # Read from the injected environment, never os.environ: the default is passed explicitly
+        # so ollama_base_url does not fall back to the process environment.
+        return ollama_base_url(self._env().get(OLLAMA_URL_ENV) or DEFAULT_OLLAMA_URL)
