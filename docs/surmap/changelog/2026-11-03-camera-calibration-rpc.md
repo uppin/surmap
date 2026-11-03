@@ -46,7 +46,9 @@ checkerboard (`SimulatedCheckerboard`, supersampled so corners are
 unbiased) renders known-truth stereo pairs; detected corners land
 within 0.25 px of truth, and solving from the detector's own corners
 recovers fx within 2% and the 7 cm baseline within 3%. Enable on the
-CM5 server with `--calibration`.
+CM5 server with `--calibration`; the host installs OpenCV through the
+`calibration` extra (`uv sync --extra calibration`), and the survey path stays
+free of it.
 
 Also fixes the P1 deferred from PR #89: the streaming sidecar now
 passes the odometry covariance to `Rtabmap::process` instead of

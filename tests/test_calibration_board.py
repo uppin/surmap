@@ -1,7 +1,7 @@
 """Simulated checkerboard: known rig + board pose -> stereo pair."""
 
 from surmap.calibration.board import CheckerboardSpec
-from surmap.calibration.simulated import BoardPose, SimulatedCheckerboard
+from surmap.calibration.simulated import BoardPose, SimulatedCheckerboard, StereoRig
 
 
 def a_board() -> CheckerboardSpec:
@@ -11,13 +11,7 @@ def a_board() -> CheckerboardSpec:
 def a_rig() -> SimulatedCheckerboard:
     return SimulatedCheckerboard(
         board=a_board(),
-        width=640,
-        height=480,
-        fx=381.36,
-        fy=381.36,
-        cx=320.0,
-        cy=240.0,
-        baseline_m=0.07,
+        rig=StereoRig(640, 480, fx=381.36, fy=381.36, cx=320.0, cy=240.0, baseline_m=0.07),
     )
 
 
@@ -33,6 +27,10 @@ def test_the_board_object_points_form_a_flat_grid() -> None:
     assert points[9] == (0.0, 0.025, 0.0)
 
 
+def all_inside_the_image(corners: tuple[tuple[float, float], ...]) -> bool:
+    return all(0.0 <= u < 640 and 0.0 <= v < 480 for u, v in corners)
+
+
 def test_a_centred_board_projects_inside_both_eyes() -> None:
     # Given a board 1 m ahead, centred
     rig = a_rig()
@@ -41,9 +39,9 @@ def test_a_centred_board_projects_inside_both_eyes() -> None:
     left, right = rig.project_corners(BoardPose(z_m=1.0))
 
     # Then every corner lands inside the 640x480 image in both eyes
-    for corners in (left, right):
-        assert len(corners) == 54
-        assert all(0.0 <= u < 640 and 0.0 <= v < 480 for u, v in corners)
+    assert len(left) == len(right) == 54
+    assert all_inside_the_image(left)
+    assert all_inside_the_image(right)
 
 
 def test_the_right_eye_sees_the_board_shifted_by_the_baseline_disparity() -> None:

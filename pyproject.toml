@@ -22,7 +22,6 @@ dependencies = [
     "meta-sam-parser>=0.1.0",
     "numpy>=2.4.6",
     "onnxruntime>=1.31.1",
-    "opencv-python-headless>=4.10",
     "pillow>=13.0.0",
     "protobuf>=6.33,<7",
     # connectrpc 0.12.1 imports protobuf.wkt.api_pb, removed after
@@ -32,9 +31,16 @@ dependencies = [
     "websockets>=14.0",
 ]
 
+[project.optional-dependencies]
+# OpenCV for the calibration sidecar only (`cm5_main --calibration`); the
+# survey path imports no cv2. `uv sync --extra calibration` on the host.
+calibration = ["opencv-python-headless>=4.10"]
+
 [dependency-groups]
 dev = [
     "mypy>=1.11",
+    # The calibration tests run the real OpenCV sidecar.
+    "opencv-python-headless>=4.10",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "ruff>=0.6",

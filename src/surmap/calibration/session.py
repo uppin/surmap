@@ -128,6 +128,25 @@ class MoveSuggestion:
     """The capture-plan viewpoint this suggests, or -1."""
 
 
+def _hold(cell: str, instruction: str) -> MoveSuggestion:
+    """A suggestion with no camera move: change the board, not the position."""
+    return MoveSuggestion(cell, 0.0, 0.0, 0.0, 0.0, instruction)
+
+
+_DONE = _hold(
+    "done", "Enough diverse views collected — finish the stream to solve the calibration."
+)
+_TILT_MORE = _hold(
+    "tilt",
+    "Tilt the board about 45° so one corner is farther from the camera, and hold "
+    "still; then turn a different corner away.",
+)
+_COME_NEARER = _hold("near", "Bring the board closer, until it fills most of the image.")
+_MOVE_FARTHER = _hold(
+    "far", "Move the board farther away, until it covers about a tenth of the image."
+)
+
+
 @dataclass(frozen=True)
 class ViewFeedback:
     frame_id: int
@@ -349,51 +368,24 @@ class CalibrationSession:
 
     def _suggest(self, current: ViewGeometry | None) -> MoveSuggestion:
         if self.ready:
-            return MoveSuggestion(
-                "done",
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                "Enough diverse views collected — finish the stream to solve the calibration.",
-            )
+            return _DONE
         planned = self._next_viewpoint()
         if planned is not None:
             return self._suggest_viewpoint(planned, current)
+        return self._fallback_suggestion(current)
+
+    def _fallback_suggestion(self, current: ViewGeometry | None) -> MoveSuggestion:
+        """Past the plan and still short of the bar: ask for what is missing."""
         x_ok, y_ok, size_ok, skew_ok = self._spread_ok()
         covered = set(self._cells)
         uncovered = [c for c in _CELLS if c[0] not in covered]
         if (not x_ok or not y_ok) and uncovered:
             return self._suggest_cell(uncovered[0], current)
         if not skew_ok:
-            return MoveSuggestion(
-                "tilt",
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                "Tilt the board about 30° (top or one side away from the camera) "
-                "and hold still; then tilt it the other way.",
-            )
+            return _TILT_MORE
         if not size_ok:
             nearest = max(g.size for g in self._geometry)
-            if nearest < 0.5:
-                return MoveSuggestion(
-                    "near",
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    "Bring the board closer, until it fills most of the image.",
-                )
-            return MoveSuggestion(
-                "far",
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                "Move the board farther away, until it covers about a tenth of the image.",
-            )
+            return _COME_NEARER if nearest < 0.5 else _MOVE_FARTHER
         return self._suggest_cell(uncovered[0] if uncovered else _CELLS[0], current)
 
     def _suggest_cell(

@@ -68,30 +68,32 @@ def _rotation(pose: BoardPose) -> NDArray[np.float64]:
     return np.asarray(rz @ rx @ ry, dtype=np.float64)
 
 
+@dataclass(frozen=True)
+class StereoRig:
+    """A stereo pair of identical cameras, `baseline_m` apart along x."""
+
+    width: int
+    height: int
+    fx: float
+    fy: float
+    cx: float
+    cy: float
+    baseline_m: float
+    lens: LensModel = LensModel.PINHOLE_RADTAN
+    distortion: tuple[float, ...] = ()
+    """In `lens`'s OpenCV order; empty for an ideal pinhole."""
+
+
 class SimulatedCheckerboard:
     """A checkerboard rendered through one declared stereo rig."""
 
-    def __init__(
-        self,
-        *,
-        board: CheckerboardSpec,
-        width: int,
-        height: int,
-        fx: float,
-        fy: float,
-        cx: float,
-        cy: float,
-        baseline_m: float,
-        lens: LensModel = LensModel.PINHOLE_RADTAN,
-        distortion: tuple[float, ...] = (),
-    ) -> None:
-        """`distortion` in `lens`'s OpenCV order; empty for an ideal pinhole."""
+    def __init__(self, *, board: CheckerboardSpec, rig: StereoRig) -> None:
         self._board = board
-        self._width, self._height = width, height
-        self._fx, self._fy, self._cx, self._cy = fx, fy, cx, cy
-        self._baseline = baseline_m
-        self._lens = lens
-        self._distortion = distortion
+        self._width, self._height = rig.width, rig.height
+        self._fx, self._fy, self._cx, self._cy = rig.fx, rig.fy, rig.cx, rig.cy
+        self._baseline = rig.baseline_m
+        self._lens = rig.lens
+        self._distortion = rig.distortion
 
     def _distort(self, x: float, y: float) -> tuple[float, float]:
         """Normalized image point through the lens (OpenCV's models)."""

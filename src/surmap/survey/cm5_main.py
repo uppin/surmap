@@ -286,7 +286,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--calibration",
         action="store_true",
-        help="enable CameraCalibrationService (checkerboard, OpenCV sidecar)",
+        help=(
+            "enable CameraCalibrationService (checkerboard, OpenCV sidecar; "
+            "needs `uv sync --extra calibration`)"
+        ),
     )
     return parser
 

@@ -42,6 +42,7 @@ computation is off unless its deploy option (or the matching
 | Object tracking / object points | `--object-tracking` | `--object-tracking` | off |
 | Moving areas | `--moving-areas` | `--moving-areas` | off |
 | Region points | `--region-points` | `--region-points` | off |
+| Camera calibration RPC ([camera-calibration.md](camera-calibration.md)) | — | `--calibration` (host needs `uv sync --extra calibration`) | off |
 
 Further deploy options: `--no-model` (no detector), `--coral-cpu`,
 `--slam sidecar|inmemory`, `--calibration-dir <remote-dir>`, and

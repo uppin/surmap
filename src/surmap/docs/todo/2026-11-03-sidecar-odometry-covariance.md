@@ -5,7 +5,7 @@
 **Packages:** deploy/rtabmap-stream, surmap.slam
 **Consent:** Developer, 2026-11-03: "let's wrap the PR with TODO and we'll address the correctness in next PRs".
 **Priority:** 1
-**Status:** Fixed in code (2026-11-03, camera-calibration-rpc changeset):
+**Status:** Fixed in code (2026-11-03, PR #103):
 `deploy/rtabmap-stream/main.cpp` now passes the odometry covariance
 to `Rtabmap::process`, prepared as RTAB-Map's `RtabmapThread` does
 (`odom_covariance.h`: sanity check, largest value carried across

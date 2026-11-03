@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import dataclasses
 import json
 import re
 import sys
@@ -36,16 +37,17 @@ from surmap.calibration.port import (
     CalibrationUnavailable,
     CalibrationView,
     CornerSet,
+    EncodedFrame,
     LensModel,
     StereoEstimate,
     UnreadableFrame,
 )
 
 INSTALL_HINT = (
-    "OpenCV is not importable in the calibration sidecar. Install the "
-    "sidecar environment with opencv-python-headless (see "
-    "src/surmap/calibration/opencv_sidecar.py), or run the RPC with a "
-    "different CheckerboardVision adapter."
+    "OpenCV is not importable in the calibration sidecar. Install SurMap's "
+    "calibration extra (`uv sync --extra calibration`, which adds "
+    "opencv-python-headless), or run the RPC with a different "
+    "CheckerboardVision adapter."
 )
 
 
@@ -202,6 +204,86 @@ def _fisheye_eye(
             del kept[int(match.group(1))]
 
 
+@dataclass(frozen=True)
+class _StereoSolve:
+    left: _Eye
+    right: _Eye
+    rms: float
+    rotation: Any
+    translation: Any
+    views_used: int
+    coefficients: int
+    """Distortion coefficients the lens model defines."""
+
+
+def _points(
+    views: tuple[CalibrationView, ...], board: CheckerboardSpec, lens: LensModel
+) -> tuple[list[Any], list[Any], list[Any]]:
+    """Object, left and right points in the layout the lens model's solver takes."""
+    import numpy as np
+
+    fisheye = lens is LensModel.FISHEYE
+    # cv::fisheye takes float64 points laid out 1xN (OpenCV 5 rejects Nx1).
+    dtype = np.float64 if fisheye else np.float32
+    layout = (1, -1) if fisheye else (-1, 1)
+    obj = [np.array(board.object_points(), dtype=dtype).reshape(*layout, 3) for _ in views]
+    left = [np.array(v.left, dtype=dtype).reshape(*layout, 2) for v in views]
+    right = [np.array(v.right, dtype=dtype).reshape(*layout, 2) for v in views]
+    return obj, left, right
+
+
+def _solve_fisheye(
+    obj: list[Any], left_pts: list[Any], right_pts: list[Any], size: tuple[int, int]
+) -> _StereoSolve:
+    cv2 = _load_cv2()
+    left, kept_left = _fisheye_eye(obj, left_pts, size)
+    right, kept_right = _fisheye_eye(obj, right_pts, size)
+    both = sorted(set(kept_left) & set(kept_right))
+    stereo = cv2.fisheye.stereoCalibrate(
+        [obj[i] for i in both],
+        [left_pts[i] for i in both],
+        [right_pts[i] for i in both],
+        left.camera,
+        left.distortion,
+        right.camera,
+        right.distortion,
+        size,
+        flags=_fisheye_flag("CALIB_FIX_INTRINSIC"),
+        criteria=_STEREO_CRITERIA,
+    )
+    return _StereoSolve(left, right, float(stereo[0]), stereo[5], stereo[6], len(both), 4)
+
+
+def _solve_pinhole(
+    obj: list[Any],
+    left_pts: list[Any],
+    right_pts: list[Any],
+    size: tuple[int, int],
+    lens: LensModel,
+) -> _StereoSolve:
+    cv2 = _load_cv2()
+    rational = lens is LensModel.PINHOLE_RATIONAL
+    # Radial-tangential holds k3 at 0: the EuRoC model SurMap exports
+    # carries k1, k2, p1, p2 only. Rational solves all eight.
+    model = cv2.CALIB_RATIONAL_MODEL if rational else cv2.CALIB_FIX_K3
+    left = _pinhole_eye(obj, left_pts, size, model)
+    right = _pinhole_eye(obj, right_pts, size, model)
+    stereo = cv2.stereoCalibrate(
+        obj,
+        left_pts,
+        right_pts,
+        left.camera,
+        left.distortion,
+        right.camera,
+        right.distortion,
+        size,
+        criteria=_STEREO_CRITERIA,
+        flags=cv2.CALIB_FIX_INTRINSIC | model,
+    )
+    coefficients = 8 if rational else 4
+    return _StereoSolve(left, right, float(stereo[0]), stereo[5], stereo[6], len(obj), coefficients)
+
+
 def calibrate_views(
     views: tuple[CalibrationView, ...],
     board: CheckerboardSpec,
@@ -210,57 +292,17 @@ def calibrate_views(
     lens: LensModel = LensModel.PINHOLE_RADTAN,
 ) -> StereoEstimate:
     """RTAB-Map's solve: each eye alone, then the extrinsic with intrinsics fixed."""
-    cv2 = _load_cv2()
     import numpy as np
 
-    fisheye = lens is LensModel.FISHEYE
-    # cv::fisheye takes float64 points laid out 1xN (OpenCV 5 rejects Nx1).
-    dtype = np.float64 if fisheye else np.float32
-    layout = (1, -1) if fisheye else (-1, 1)
-    obj = [np.array(board.object_points(), dtype=dtype).reshape(*layout, 3) for _ in views]
-    left_pts = [np.array(v.left, dtype=dtype).reshape(*layout, 2) for v in views]
-    right_pts = [np.array(v.right, dtype=dtype).reshape(*layout, 2) for v in views]
+    obj, left_pts, right_pts = _points(views, board, lens)
     size = (width, height)
-    if fisheye:
-        left, kept_left = _fisheye_eye(obj, left_pts, size)
-        right, kept_right = _fisheye_eye(obj, right_pts, size)
-        both = sorted(set(kept_left) & set(kept_right))
-        stereo = cv2.fisheye.stereoCalibrate(
-            [obj[i] for i in both],
-            [left_pts[i] for i in both],
-            [right_pts[i] for i in both],
-            left.camera,
-            left.distortion,
-            right.camera,
-            right.distortion,
-            size,
-            flags=_fisheye_flag("CALIB_FIX_INTRINSIC"),
-            criteria=_STEREO_CRITERIA,
-        )
-        rms_s, rot, trans, views_used = stereo[0], stereo[5], stereo[6], len(both)
-        coefficients = 4
+    if lens is LensModel.FISHEYE:
+        solve = _solve_fisheye(obj, left_pts, right_pts, size)
     else:
-        # Radial-tangential holds k3 at 0: the EuRoC model SurMap exports
-        # carries k1, k2, p1, p2 only. Rational solves all eight.
-        model = cv2.CALIB_RATIONAL_MODEL if lens is LensModel.PINHOLE_RATIONAL else cv2.CALIB_FIX_K3
-        left = _pinhole_eye(obj, left_pts, size, model)
-        right = _pinhole_eye(obj, right_pts, size, model)
-        stereo = cv2.stereoCalibrate(
-            obj,
-            left_pts,
-            right_pts,
-            left.camera,
-            left.distortion,
-            right.camera,
-            right.distortion,
-            size,
-            criteria=_STEREO_CRITERIA,
-            flags=cv2.CALIB_FIX_INTRINSIC | model,
-        )
-        rms_s, rot, trans, views_used = stereo[0], stereo[5], stereo[6], len(views)
-        coefficients = 8 if lens is LensModel.PINHOLE_RATIONAL else 4
-    kl, kr = left.camera, right.camera
-    t = np.asarray(trans, dtype=np.float64).ravel()
+        solve = _solve_pinhole(obj, left_pts, right_pts, size, lens)
+    kl, kr = solve.left.camera, solve.right.camera
+    t = np.asarray(solve.translation, dtype=np.float64).ravel()
+    n = solve.coefficients
     return StereoEstimate(
         left_fx=float(kl[0, 0]),
         left_fy=float(kl[1, 1]),
@@ -270,17 +312,68 @@ def calibrate_views(
         right_fy=float(kr[1, 1]),
         right_cx=float(kr[0, 2]),
         right_cy=float(kr[1, 2]),
-        distortion_left=tuple(float(x) for x in np.ravel(left.distortion)[:coefficients]),
-        distortion_right=tuple(float(x) for x in np.ravel(right.distortion)[:coefficients]),
-        rotation=tuple(float(x) for x in np.asarray(rot, dtype=np.float64).ravel()),
+        distortion_left=tuple(float(x) for x in np.ravel(solve.left.distortion)[:n]),
+        distortion_right=tuple(float(x) for x in np.ravel(solve.right.distortion)[:n]),
+        rotation=tuple(float(x) for x in np.asarray(solve.rotation, dtype=np.float64).ravel()),
         translation_m=(float(t[0]), float(t[1]), float(t[2])),
         baseline_m=float(np.linalg.norm(t)),
-        rms_left=left.rms,
-        rms_right=right.rms,
-        rms_stereo=float(rms_s),
-        views_used=views_used,
+        rms_left=solve.left.rms,
+        rms_right=solve.right.rms,
+        rms_stereo=solve.rms,
+        views_used=solve.views_used,
         lens=lens,
     )
+
+
+def estimate_to_json(estimate: StereoEstimate) -> dict[str, Any]:
+    """`StereoEstimate` as the protocol's JSON object."""
+    fields = dataclasses.asdict(estimate)
+    fields["lens"] = estimate.lens.value
+    return fields
+
+
+def estimate_from_json(fields: dict[str, Any]) -> StereoEstimate:
+    """The protocol's JSON object back as a `StereoEstimate`."""
+    tx, ty, tz = (float(v) for v in fields["translation_m"])
+    return dataclasses.replace(
+        StereoEstimate(**{**fields, "lens": LensModel(fields["lens"])}),
+        distortion_left=tuple(float(v) for v in fields["distortion_left"]),
+        distortion_right=tuple(float(v) for v in fields["distortion_right"]),
+        rotation=tuple(float(v) for v in fields["rotation"]),
+        translation_m=(tx, ty, tz),
+    )
+
+
+def _handle_detect(request: dict[str, Any], board: CheckerboardSpec) -> dict[str, Any]:
+    try:
+        gray = decode_rgb(
+            int(request["width"]),
+            int(request["height"]),
+            str(request.get("encoding", "raw_rgb")),
+            base64.b64decode(str(request["data_b64"])),
+        )
+    except ValueError as exc:
+        return {"unreadable": str(exc)}
+    corners = detect_corners(gray, board, int(request.get("max_scale", 1)))
+    return {"corners": [list(p) for p in corners] if corners else None}
+
+
+def _handle_calibrate(request: dict[str, Any], board: CheckerboardSpec) -> dict[str, Any]:
+    views = tuple(
+        CalibrationView(
+            left=tuple((float(x), float(y)) for x, y in v["left"]),
+            right=tuple((float(x), float(y)) for x, y in v["right"]),
+        )
+        for v in request["views"]
+    )
+    estimate = calibrate_views(
+        views,
+        board,
+        int(request["width"]),
+        int(request["height"]),
+        LensModel(str(request.get("lens", LensModel.PINHOLE_RADTAN.value))),
+    )
+    return {"estimate": estimate_to_json(estimate)}
 
 
 def handle_request(request: dict[str, Any]) -> dict[str, Any]:
@@ -292,54 +385,9 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any]:
         square_size_m=float(request["square_size_m"]),
     )
     if op == "detect":
-        try:
-            gray = decode_rgb(
-                int(request["width"]),
-                int(request["height"]),
-                str(request.get("encoding", "raw_rgb")),
-                base64.b64decode(str(request["data_b64"])),
-            )
-        except ValueError as exc:
-            return {"unreadable": str(exc)}
-        corners = detect_corners(gray, board, int(request.get("max_scale", 1)))
-        return {"corners": [list(p) for p in corners] if corners else None}
+        return _handle_detect(request, board)
     if op == "calibrate":
-        views = tuple(
-            CalibrationView(
-                left=tuple((float(x), float(y)) for x, y in v["left"]),
-                right=tuple((float(x), float(y)) for x, y in v["right"]),
-            )
-            for v in request["views"]
-        )
-        est = calibrate_views(
-            views,
-            board,
-            int(request["width"]),
-            int(request["height"]),
-            LensModel(str(request.get("lens", LensModel.PINHOLE_RADTAN.value))),
-        )
-        return {
-            "estimate": {
-                "left_fx": est.left_fx,
-                "left_fy": est.left_fy,
-                "left_cx": est.left_cx,
-                "left_cy": est.left_cy,
-                "right_fx": est.right_fx,
-                "right_fy": est.right_fy,
-                "right_cx": est.right_cx,
-                "right_cy": est.right_cy,
-                "distortion_left": list(est.distortion_left),
-                "distortion_right": list(est.distortion_right),
-                "rotation": list(est.rotation),
-                "translation_m": list(est.translation_m),
-                "baseline_m": est.baseline_m,
-                "rms_left": est.rms_left,
-                "rms_right": est.rms_right,
-                "rms_stereo": est.rms_stereo,
-                "views_used": est.views_used,
-                "lens": est.lens.value,
-            }
-        }
+        return _handle_calibrate(request, board)
     return {"error": f"unknown op {op!r}"}
 
 
@@ -387,23 +435,15 @@ class OpenCvSidecarVision:
             return reply
 
     async def detect(
-        self,
-        *,
-        frame_id: int,
-        width: int,
-        height: int,
-        encoding: str,
-        data: bytes,
-        board: CheckerboardSpec,
-        max_scale: int,
+        self, frame: EncodedFrame, *, board: CheckerboardSpec, max_scale: int
     ) -> CornerSet | None:
         reply = await self._roundtrip(
             {
                 "op": "detect",
-                "width": width,
-                "height": height,
-                "encoding": encoding,
-                "data_b64": base64.b64encode(data).decode(),
+                "width": frame.width,
+                "height": frame.height,
+                "encoding": frame.encoding,
+                "data_b64": base64.b64encode(frame.data).decode(),
                 "max_scale": max_scale,
                 "cols": board.cols,
                 "rows": board.rows,
@@ -439,27 +479,7 @@ class OpenCvSidecarVision:
                 ],
             }
         )
-        e = reply["estimate"]
-        return StereoEstimate(
-            left_fx=e["left_fx"],
-            left_fy=e["left_fy"],
-            left_cx=e["left_cx"],
-            left_cy=e["left_cy"],
-            right_fx=e["right_fx"],
-            right_fy=e["right_fy"],
-            right_cx=e["right_cx"],
-            right_cy=e["right_cy"],
-            distortion_left=tuple(e["distortion_left"]),
-            distortion_right=tuple(e["distortion_right"]),
-            rotation=tuple(e["rotation"]),
-            translation_m=(e["translation_m"][0], e["translation_m"][1], e["translation_m"][2]),
-            baseline_m=e["baseline_m"],
-            rms_left=e["rms_left"],
-            rms_right=e["rms_right"],
-            rms_stereo=e["rms_stereo"],
-            views_used=e["views_used"],
-            lens=LensModel(e["lens"]),
-        )
+        return estimate_from_json(reply["estimate"])
 
     async def close(self) -> None:
         if self._proc is not None and self._proc.returncode is None:

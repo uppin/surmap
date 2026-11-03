@@ -1,8 +1,8 @@
 """Camera calibration: checkerboard target, session guidance, RPC.
 
 Hexagon: `port.CheckerboardVision` is the seam; adapters are the
-OpenCV sidecar (`opencv_sidecar.OpenCvSidecarVision`) and the
-scripted fake (`fake.ScriptedCheckerboardVision`). The simulated
+OpenCV sidecar (`opencv_sidecar.OpenCvSidecarVision`); tests script
+their own. The simulated
 board (`simulated.SimulatedCheckerboard`) renders known-truth views.
 """
 
@@ -13,12 +13,13 @@ from surmap.calibration.port import (
     CalibrationUnavailable,
     CalibrationView,
     CheckerboardVision,
+    EncodedFrame,
     LensModel,
     StereoEstimate,
     UnreadableFrame,
 )
 from surmap.calibration.session import CalibrationSession, MoveSuggestion, ViewFeedback, ViewStatus
-from surmap.calibration.simulated import BoardPose, RenderedPair, SimulatedCheckerboard
+from surmap.calibration.simulated import BoardPose, RenderedPair, SimulatedCheckerboard, StereoRig
 
 __all__ = [
     "BoardPose",
@@ -27,11 +28,13 @@ __all__ = [
     "CalibrationView",
     "CheckerboardSpec",
     "CheckerboardVision",
+    "EncodedFrame",
     "LensModel",
     "MoveSuggestion",
     "RenderedPair",
     "SimulatedCheckerboard",
     "StereoEstimate",
+    "StereoRig",
     "Tilt",
     "UnreadableFrame",
     "ViewFeedback",

@@ -77,49 +77,56 @@ def nominal_distance_m(board: CheckerboardSpec, size: float, width: int, height:
     return float(width) * math.sqrt(quad_m2 / (size * size * width * height))
 
 
-def capture_plan(
-    board: CheckerboardSpec, *, width: int, height: int, lens: LensModel
-) -> tuple[Viewpoint, ...]:
-    """The viewpoints that, filled, clear RTAB-Map's readiness bar."""
+_Target = tuple[str, float, float, float, Tilt]
+"""(cell, centre x, centre y, size, tilt) of one viewpoint."""
+
+
+def _targets(lens: LensModel) -> tuple[_Target, ...]:
     far = _far_size(lens)
     lo, hi = CORNER
-    targets: list[tuple[str, float, float, float, Tilt]] = [
+    corners_away = (
+        Tilt.TOP_LEFT_AWAY,
+        Tilt.TOP_RIGHT_AWAY,
+        Tilt.BOTTOM_LEFT_AWAY,
+        Tilt.BOTTOM_RIGHT_AWAY,
+    )
+    return (
         ("centre", 0.5, 0.5, NEAR_SIZE, Tilt.NONE),
         ("upper_left", lo, lo, far, Tilt.NONE),
         ("upper_right", hi, lo, far, Tilt.NONE),
         ("lower_left", lo, hi, far, Tilt.NONE),
         ("lower_right", hi, hi, far, Tilt.NONE),
-        *(
-            ("centre", 0.5, 0.5, MID_SIZE, tilt)
-            for tilt in (
-                Tilt.TOP_LEFT_AWAY,
-                Tilt.TOP_RIGHT_AWAY,
-                Tilt.BOTTOM_LEFT_AWAY,
-                Tilt.BOTTOM_RIGHT_AWAY,
-            )
-        ),
-    ]
+        *(("centre", 0.5, 0.5, MID_SIZE, tilt) for tilt in corners_away),
+    )
+
+
+def _instruction(target: _Target, distance: float, *, near: bool) -> str:
+    cell, _, _, _, tilt = target
+    if near:
+        return (
+            f"Hold the board facing the camera, about {distance:.2f} m away and "
+            "centred midway between the two lenses, so both images show all of it."
+        )
+    if tilt is Tilt.NONE:
+        return (
+            f"Hold the board facing the camera, about {distance:.1f} m away, "
+            f"its centre at the {cell.replace('_', ' ')} of the image."
+        )
+    corner = tilt.value.removesuffix("_away").replace("_", "-")
+    return (
+        f"Hold the board about {distance:.1f} m away at the centre of the image, "
+        f"and tilt it about {TILT_DEG:.0f}° so its {corner} corner is farther from the camera."
+    )
+
+
+def capture_plan(
+    board: CheckerboardSpec, *, width: int, height: int, lens: LensModel
+) -> tuple[Viewpoint, ...]:
+    """The viewpoints that, filled, clear RTAB-Map's readiness bar."""
     plan = []
-    for index, (cell, x, y, size, tilt) in enumerate(targets):
+    for index, target in enumerate(_targets(lens)):
+        cell, x, y, size, tilt = target
         distance = nominal_distance_m(board, size, width, height)
-        place = cell.replace("_", " ")
-        if index == 0:
-            instruction = (
-                f"Hold the board facing the camera, about {distance:.2f} m away and "
-                "centred midway between the two lenses, so both images show all of it."
-            )
-        elif tilt is Tilt.NONE:
-            instruction = (
-                f"Hold the board facing the camera, about {distance:.1f} m away, "
-                f"its centre at the {place} of the image."
-            )
-        else:
-            corner = tilt.value.removesuffix("_away").replace("_", "-")
-            instruction = (
-                f"Hold the board about {distance:.1f} m away at the centre of the image, "
-                f"and tilt it about {TILT_DEG:.0f}° so its {corner} corner is farther "
-                "from the camera."
-            )
         plan.append(
             Viewpoint(
                 index=index,
@@ -130,7 +137,7 @@ def capture_plan(
                 tilt=tilt,
                 tilt_deg=0.0 if tilt is Tilt.NONE else TILT_DEG,
                 distance_m=round(distance, 2),
-                instruction=instruction,
+                instruction=_instruction(target, distance, near=index == 0),
             )
         )
     return tuple(plan)

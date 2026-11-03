@@ -30,6 +30,7 @@ from surmap.calibration.plan import Tilt, Viewpoint
 from surmap.calibration.port import (
     CheckerboardVision,
     CornerSet,
+    EncodedFrame,
     LensModel,
     StereoEstimate,
     UnreadableFrame,
@@ -220,15 +221,14 @@ async def _detect_pair(
     max_scale: int,
 ) -> tuple[CornerSet | None, CornerSet | None]:
     async def detect(frame: survey_pb2.RawVideoFrame) -> CornerSet | None:
-        return await vision.detect(
+        encoded = EncodedFrame(
             frame_id=int(frame.frame_id),
             width=int(frame.width),
             height=int(frame.height),
             encoding=_ENCODING.get(frame.encoding, "raw_rgb"),
             data=frame.data,
-            board=board,
-            max_scale=max_scale,
         )
+        return await vision.detect(encoded, board=board, max_scale=max_scale)
 
     left, right = await asyncio.gather(detect(pair.left), detect(pair.right))
     return left, right
@@ -259,6 +259,44 @@ async def _observe_pair(
     return session.observe(frame_id=frame_id, left=left, right=right)
 
 
+async def _frame_responses(
+    session: CalibrationSession,
+    vision: CheckerboardVision,
+    frame: survey_pb2.CalibrationStereoFrame,
+    options: _StreamOptions,
+) -> list[survey_pb2.CalibrationResponse]:
+    """A pair's feedback, preceded by the plan when this frame fixed the size."""
+    responses = []
+    if not session.plan:
+        _bind_size(session, frame)
+        responses.append(_plan_proto(session.plan))
+    feedback = await _observe_pair(session, vision, frame, options.max_detection_scale)
+    responses.append(survey_pb2.CalibrationResponse(feedback=_feedback_message(feedback)))
+    return responses
+
+
+async def _finish_response(
+    session: CalibrationSession, vision: CheckerboardVision, options: _StreamOptions
+) -> survey_pb2.CalibrationResponse:
+    """The solved calibration, or `not_ready` with the progress so far."""
+    if not session.ready:
+        progress = session.progress(
+            f"Not ready to solve: {len(session.views)} of {session.min_views} views, "
+            "and the views must spread across position, distance and tilt."
+        )
+        return survey_pb2.CalibrationResponse(not_ready=_feedback_message(progress))
+    estimate = await vision.calibrate(
+        views=session.views,
+        board=session.board,
+        width=session.width,
+        height=session.height,
+        lens=session.lens,
+    )
+    if options.expected_baseline_m > 0:
+        estimate = rescale_baseline(estimate, expected_baseline_m=options.expected_baseline_m)
+    return _result_proto(estimate, session.board, session.width, session.height)
+
+
 async def stream_calibration(
     requests: AsyncIterable[survey_pb2.CalibrationRequest],
     vision: CheckerboardVision,
@@ -268,41 +306,18 @@ async def stream_calibration(
     options = _StreamOptions(max_detection_scale=1, expected_baseline_m=0.0)
     async for request in requests:
         kind = request.WhichOneof("kind")
+        responses: list[survey_pb2.CalibrationResponse] = []
         if session is None:
             if kind != "config":
                 raise ValueError("first calibration request must be config")
             session, options = _session_from_config(request.config)
-            if session.plan:
-                yield _plan_proto(session.plan)
-            continue
-        if kind == "frame":
-            if not session.plan:
-                _bind_size(session, request.frame)
-                yield _plan_proto(session.plan)
-            feedback = await _observe_pair(
-                session, vision, request.frame, options.max_detection_scale
-            )
-            yield survey_pb2.CalibrationResponse(feedback=_feedback_message(feedback))
+            responses = [_plan_proto(session.plan)] if session.plan else []
+        elif kind == "frame":
+            responses = await _frame_responses(session, vision, request.frame, options)
         elif kind == "finish" and request.finish:
-            if not session.ready:
-                progress = session.progress(
-                    f"Not ready to solve: {len(session.views)} of {session.min_views} views, "
-                    "and the views must spread across position, distance and tilt."
-                )
-                yield survey_pb2.CalibrationResponse(not_ready=_feedback_message(progress))
-                continue
-            estimate = await vision.calibrate(
-                views=session.views,
-                board=session.board,
-                width=session.width,
-                height=session.height,
-                lens=session.lens,
-            )
-            if options.expected_baseline_m > 0:
-                estimate = rescale_baseline(
-                    estimate, expected_baseline_m=options.expected_baseline_m
-                )
-            yield _result_proto(estimate, session.board, session.width, session.height)
+            responses = [await _finish_response(session, vision, options)]
+        for response in responses:
+            yield response
     if session is None:
         raise ValueError("first calibration request must be config")
 

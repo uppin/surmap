@@ -8,6 +8,7 @@ from surmap.calibration.board import CheckerboardSpec
 from surmap.calibration.port import (
     CalibrationView,
     CornerSet,
+    EncodedFrame,
     LensModel,
     StereoEstimate,
     UnreadableFrame,
@@ -30,16 +31,9 @@ class FakeDetector:
         self.lenses: list[LensModel] = []
 
     async def detect(
-        self,
-        *,
-        frame_id: int,
-        width: int,
-        height: int,
-        encoding: str,
-        data: bytes,
-        board: CheckerboardSpec,
-        max_scale: int,
+        self, frame: EncodedFrame, *, board: CheckerboardSpec, max_scale: int
     ) -> CornerSet | None:
+        frame_id = frame.frame_id
         self.max_scales.append(max_scale)
         if frame_id in self._unreadable:
             raise UnreadableFrame(f"frame {frame_id} is not decodable")

@@ -6,7 +6,7 @@ import pytest
 
 from surmap.calibration.board import CheckerboardSpec
 from surmap.calibration.opencv_sidecar import OpenCvSidecarVision, handle_request
-from surmap.calibration.port import UnreadableFrame
+from surmap.calibration.port import EncodedFrame, UnreadableFrame
 
 
 def a_short_raw_frame_request() -> dict[str, object]:
@@ -38,11 +38,9 @@ async def test_the_client_raises_unreadable_frame_for_an_undecodable_frame() -> 
         # Then a short frame raises the per-frame error, not CalibrationUnavailable
         with pytest.raises(UnreadableFrame, match="bytes"):
             await vision.detect(
-                frame_id=1,
-                width=640,
-                height=480,
-                encoding="raw_rgb",
-                data=b"\x00" * 12,
+                EncodedFrame(
+                    frame_id=1, width=640, height=480, encoding="raw_rgb", data=b"\x00" * 12
+                ),
                 board=CheckerboardSpec(9, 6, 0.04),
                 max_scale=1,
             )

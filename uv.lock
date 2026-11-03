@@ -2329,7 +2329,6 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "onnxruntime" },
-    { name = "opencv-python-headless" },
     { name = "pillow" },
     { name = "protobuf" },
     { name = "protobuf-py" },
@@ -2337,9 +2336,15 @@ dependencies = [
     { name = "websockets" },
 ]
 
+[package.optional-dependencies]
+calibration = [
+    { name = "opencv-python-headless" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "mypy" },
+    { name = "opencv-python-headless" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
@@ -2360,17 +2365,19 @@ requires-dist = [
     { name = "meta-sam-parser", specifier = ">=0.1.0" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "onnxruntime", specifier = ">=1.31.1" },
-    { name = "opencv-python-headless", specifier = ">=4.10" },
+    { name = "opencv-python-headless", marker = "extra == 'calibration'", specifier = ">=4.10" },
     { name = "pillow", specifier = ">=13.0.0" },
     { name = "protobuf", specifier = ">=6.33,<7" },
     { name = "protobuf-py", specifier = "==0.5.0" },
     { name = "rosbags", specifier = ">=0.11.9" },
     { name = "websockets", specifier = ">=14.0" },
 ]
+provides-extras = ["calibration"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "mypy", specifier = ">=1.11" },
+    { name = "opencv-python-headless", specifier = ">=4.10" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "ruff", specifier = ">=0.6" },

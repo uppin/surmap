@@ -2,7 +2,7 @@
 
 from surmap.calibration.board import CheckerboardSpec
 from surmap.calibration.port import CornerSet, LensModel
-from surmap.calibration.session import CalibrationSession, ViewStatus
+from surmap.calibration.session import CalibrationSession, ViewFeedback, ViewStatus
 from tests.calibration_builders import DIVERSE_VIEWS, a_detection, shifted, width_for
 
 
@@ -23,6 +23,21 @@ def corners_at(cx: float, cy: float, half: float = 40.0) -> tuple[tuple[float, f
         for c in range(9):
             pts.append((cx - half + c * half / 4, cy - half / 2 + r * half / 5))
     return tuple(pts)
+
+
+def observe_all(session: CalibrationSession, views: tuple[CornerSet, ...]) -> ViewFeedback:
+    """Observe each left-eye view as a stereo pair; the last feedback."""
+    feedbacks = [
+        session.observe(frame_id=frame_id, left=left, right=shifted(left, -27))
+        for frame_id, left in enumerate(views, start=1)
+    ]
+    return feedbacks[-1]
+
+
+FLAT_CORNER_VIEWS = tuple(
+    a_detection(cx, cy) for cx, cy in ((100, 80), (540, 80), (100, 400), (540, 400))
+)
+"""All four image corners, all facing the camera at one distance."""
 
 
 def test_a_missing_board_is_reported_and_the_centre_is_suggested_first() -> None:
@@ -81,8 +96,9 @@ def test_views_in_one_eye_only_are_not_accepted() -> None:
 def test_the_session_is_ready_once_views_span_position_size_and_tilt() -> None:
     # Given views spread across the image, near and far, flat and tilted
     session = a_session(min_views=4)
-    for frame_id, left in enumerate(DIVERSE_VIEWS, start=1):
-        last = session.observe(frame_id=frame_id, left=left, right=shifted(left, -27))
+
+    # When they are observed
+    last = observe_all(session, DIVERSE_VIEWS)
 
     # Then every spread clears RTAB-Map's bar and it is ready to solve
     assert last.accepted_views == 4
@@ -95,9 +111,9 @@ def test_the_session_is_ready_once_views_span_position_size_and_tilt() -> None:
 def test_many_flat_views_of_one_size_are_never_ready_and_ask_for_tilt() -> None:
     # Given views in all four corners, all facing the camera at one distance
     session = a_session(min_views=4)
-    for frame_id, (cx, cy) in enumerate(((100, 80), (540, 80), (100, 400), (540, 400)), 1):
-        left = a_detection(cx, cy)
-        last = session.observe(frame_id=frame_id, left=left, right=shifted(left, -27))
+
+    # When they are observed
+    last = observe_all(session, FLAT_CORNER_VIEWS)
 
     # Then position is covered, but without tilt it is not ready
     assert last.accepted_views == 4
@@ -129,18 +145,12 @@ MODERATE_DEPTH_VIEWS = (
 """Spread in position and tilt, but size only about 0.34 apart."""
 
 
-def observe_all(session: CalibrationSession, views: tuple[CornerSet, ...]) -> bool:
-    for frame_id, left in enumerate(views, start=1):
-        session.observe(frame_id=frame_id, left=left, right=shifted(left, -27))
-    return session.ready
-
-
 def test_a_pinhole_session_needs_more_size_spread_than_moderate_depths_give() -> None:
     # Given a pinhole session (RTAB-Map's size bar: 0.4)
     session = a_session(min_views=4)
 
     # Then a size spread of about 0.34 is not enough
-    assert not observe_all(session, MODERATE_DEPTH_VIEWS)
+    assert not observe_all(session, MODERATE_DEPTH_VIEWS).ready
 
 
 def test_a_fisheye_session_is_ready_with_rtab_maps_relaxed_size_spread() -> None:
@@ -148,4 +158,4 @@ def test_a_fisheye_session_is_ready_with_rtab_maps_relaxed_size_spread() -> None
     session = a_session(min_views=4, lens=LensModel.FISHEYE)
 
     # Then the same views are enough
-    assert observe_all(session, MODERATE_DEPTH_VIEWS)
+    assert observe_all(session, MODERATE_DEPTH_VIEWS).ready

@@ -1,8 +1,8 @@
 """Port for checkerboard vision (hexagon seam).
 
 The domain (session, guidance, RPC session logic) speaks only these
-contracts. Adapters: `OpenCvSidecarVision` (real OpenCV in a sidecar
-process) and `ScriptedCheckerboardVision` (tests/simulation). No
+contracts. The adapter is `OpenCvSidecarVision` (real OpenCV in a sidecar
+process); tests script their own. No
 OpenCV or protobuf type crosses this seam.
 """
 
@@ -16,6 +16,18 @@ from surmap.calibration.board import CheckerboardSpec
 
 CornerSet = tuple[tuple[float, float], ...]
 """Pixel corners (u, v), row-major over the board's inner grid."""
+
+
+@dataclass(frozen=True)
+class EncodedFrame:
+    """One camera frame as it arrives: size, encoding and bytes."""
+
+    frame_id: int
+    width: int
+    height: int
+    encoding: str
+    """"raw_rgb" or "mjpeg"."""
+    data: bytes
 
 
 @dataclass(frozen=True)
@@ -73,15 +85,7 @@ class CheckerboardVision(Protocol):
     """What calibration needs from a vision engine."""
 
     async def detect(
-        self,
-        *,
-        frame_id: int,
-        width: int,
-        height: int,
-        encoding: str,
-        data: bytes,
-        board: CheckerboardSpec,
-        max_scale: int,
+        self, frame: EncodedFrame, *, board: CheckerboardSpec, max_scale: int
     ) -> CornerSet | None:
         """Board corners in one frame, or None when not found.
 

@@ -232,7 +232,7 @@ are fully local.
 | `track` | CM5 CPU | Associate boxes into stable track IDs, static and moving objects alike |
 | `reconstruct_object` | CM5 CPU | Stereo depth inside each tracked box → the object's 3D points, camera frame → map frame via the RTAB-Map pose at that timestamp |
 | `classify_motion` | CM5 CPU | Per track: static vs moving, from map-frame displacement after ego-motion compensation (§3.3) |
-| `rtabmap` | CM5 CPU | Passive trajectory + local pose graph + static-scene points. Provides pose and the static layer; never receives object points back into its internal map. Two backends behind `SlamBackend`: the batch sidecar (`SidecarRtabmapBackend`, CM5 today) and the streaming backend (`StreamingRtabmapBackend`: a long-lived librtabmap process emitting odometry, keyframe points and optimized graph poses while frames play; stereo-only VO, lost tracking yields no pose) |
+| `rtabmap` | CM5 CPU | Passive trajectory + local pose graph + static-scene points. Provides pose and the static layer; never receives object points back into its internal map. Two backends behind `SlamBackend`: the batch sidecar (`SidecarRtabmapBackend`, CM5 today) and the streaming backend (`StreamingRtabmapBackend`: a long-lived librtabmap process emitting odometry, keyframe points and optimized graph poses while frames play; stereo-only VO, lost tracking yields no pose). The streaming process gives `Rtabmap::process` the odometry covariance prepared as RTAB-Map's `RtabmapThread` prepares it (`deploy/rtabmap-stream/odom_covariance.h`): invalid or "unknown" (1.0) values fall back to identity, and the largest one is carried across nodes RTAB-Map drops for too little motion |
 | `augment_map` | CM5 CPU | RTAB-Map output + object layers = the on-board map product: static objects accumulated, moving objects as timestamped track snapshots (§6) |
 | `store` | CM5 CPU | Persist frames, calibration, GPS, tracks, object points, trajectory (survives link loss) |
 | `uplink` | CM5 CPU | Stream when the link allows; otherwise store-and-forward |
@@ -418,7 +418,8 @@ Layered — the layers are never merged into one undifferentiated cloud:
 - Frame ↔ GPS association is by timestamp interpolation only.
   No GPS reading is ever snapped to a frame without recording the offset.
 - Stereo calibration is per-camera-rig, versioned as `calibration_id`,
-  and stored with every session.
+  and stored with every session. It is measured from checkerboard views
+  by `CameraCalibrationService` ([camera-calibration.md](camera-calibration.md)).
 
 Known accuracy limit: consumer GPS (metres) is far coarser than stereo
 geometry (centimetres at short range).
@@ -447,7 +448,7 @@ Decided by measured link bandwidth, which is still unknown.
 | GPS lost / degraded | Keep building relative geometry; flag landmarks as unanchored until a fix resumes |
 | Stereo calibration invalid | Reject the session at `surmap_ingest` with the `calibration_id` named |
 | SAM 3.1 / LLM API unavailable | Map still builds geometrically; segmentation and semantics are backfilled later — raw data is never discarded |
-| RTAB-Map pose lost / not yet initialised | Keep detecting and recording; object points stay in camera frame and are marked unposed — never placed in the map with a guessed pose. The streaming backend emits `lost: true` with a null pose per untracked pair and surfaces the state on the demo panel; it never guesses, and an odometry reset starts a new map session explicitly |
+| RTAB-Map pose lost / not yet initialised | Keep detecting and recording; object points stay in camera frame and are marked unposed — never placed in the map with a guessed pose. The streaming backend emits `lost: true` with a null pose per untracked pair and surfaces the state on the demo panel; it never guesses. An odometry reset stays in the same map session: the link across it carries the reset's near-zero-information covariance, so loop closures, not odometry, rejoin the two tracks |
 | Track fragmented (ID switch) after occlusion | Base-station SAM 3.1 identities and LLM labels may re-link fragments; on-board never merges two tracks on a guess |
 | CM5 storage full | Drop live streaming first, keep recording at reduced keyframe rate, never corrupt already-written sessions |
 | RTX 5060 Ti out of memory in SAM 3.1 | Reduce input resolution / keyframe rate, then fall back per §3.1; log the configuration that failed |

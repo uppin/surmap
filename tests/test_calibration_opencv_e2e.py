@@ -7,9 +7,20 @@ import pytest
 from surmap.calibration.board import CheckerboardSpec
 from surmap.calibration.opencv_sidecar import OpenCvSidecarVision
 from surmap.calibration.plan import Tilt, Viewpoint
-from surmap.calibration.port import CalibrationView, CornerSet, LensModel, StereoEstimate
+from surmap.calibration.port import (
+    CalibrationView,
+    CornerSet,
+    EncodedFrame,
+    LensModel,
+    StereoEstimate,
+)
 from surmap.calibration.session import CalibrationSession
-from surmap.calibration.simulated import BoardPose, RenderedPair, SimulatedCheckerboard
+from surmap.calibration.simulated import (
+    BoardPose,
+    RenderedPair,
+    SimulatedCheckerboard,
+    StereoRig,
+)
 
 cv2 = pytest.importorskip("cv2")
 
@@ -17,13 +28,7 @@ cv2 = pytest.importorskip("cv2")
 def a_rig() -> SimulatedCheckerboard:
     return SimulatedCheckerboard(
         board=CheckerboardSpec(cols=9, rows=6, square_size_m=0.04),
-        width=640,
-        height=480,
-        fx=381.36,
-        fy=381.36,
-        cx=320.0,
-        cy=240.0,
-        baseline_m=0.07,
+        rig=StereoRig(640, 480, fx=381.36, fy=381.36, cx=320.0, cy=240.0, baseline_m=0.07),
     )
 
 
@@ -42,6 +47,11 @@ FAR_BOARD_Z_M = 4.5
 """Measured: 9x6 x 4 cm squares are about 3.4 px here; native detection misses them."""
 
 
+def a_raw_frame(data: bytes) -> EncodedFrame:
+    """A 640x480 raw-RGB frame of the simulated rig."""
+    return EncodedFrame(frame_id=1, width=640, height=480, encoding="raw_rgb", data=data)
+
+
 def mean_error_px(found: CornerSet, truth: CornerSet) -> float:
     distances = [math.hypot(u - gu, v - gv) for (u, v), (gu, gv) in zip(found, truth, strict=True)]
     return sum(distances) / len(distances)
@@ -54,15 +64,7 @@ async def detect_both(
     board: CheckerboardSpec = BOARD,
 ) -> CalibrationView:
     async def detect(data: bytes) -> CornerSet | None:
-        return await vision.detect(
-            frame_id=1,
-            width=640,
-            height=480,
-            encoding="raw_rgb",
-            data=data,
-            board=board,
-            max_scale=max_scale,
-        )
+        return await vision.detect(a_raw_frame(data), board=board, max_scale=max_scale)
 
     left, right = await detect(pair.left_rgb), await detect(pair.right_rgb)
     assert left is not None and right is not None
@@ -76,13 +78,7 @@ async def test_the_sidecar_finds_the_simulated_board() -> None:
     try:
         # When the sidecar detects on the left eye
         corners = await vision.detect(
-            frame_id=1,
-            width=640,
-            height=480,
-            encoding="raw_rgb",
-            data=pair.left_rgb,
-            board=CheckerboardSpec(9, 6, 0.04),
-            max_scale=1,
+            a_raw_frame(pair.left_rgb), board=CheckerboardSpec(9, 6, 0.04), max_scale=1
         )
     finally:
         await vision.close()
@@ -193,15 +189,17 @@ def a_distorted_rig(
 ) -> SimulatedCheckerboard:
     return SimulatedCheckerboard(
         board=BOARD,
-        width=640,
-        height=480,
-        fx=fx,
-        fy=fx,
-        cx=320.0,
-        cy=240.0,
-        baseline_m=0.07,
-        lens=lens,
-        distortion=distortion,
+        rig=StereoRig(
+            640,
+            480,
+            fx=fx,
+            fy=fx,
+            cx=320.0,
+            cy=240.0,
+            baseline_m=0.07,
+            lens=lens,
+            distortion=distortion,
+        ),
     )
 
 
@@ -257,10 +255,7 @@ async def test_a_board_too_small_at_native_scale_is_found_by_upscaling() -> None
     pair = a_rig().render_pair(FAR_POSE)
     vision = OpenCvSidecarVision()
     try:
-        native = await vision.detect(
-            frame_id=1, width=640, height=480, encoding="raw_rgb",
-            data=pair.left_rgb, board=BOARD, max_scale=1,
-        )  # fmt: skip
+        native = await vision.detect(a_raw_frame(pair.left_rgb), board=BOARD, max_scale=1)
         # When up to 2x upscaling is allowed
         upscaled = await detect_both(vision, pair, max_scale=2)
     finally:
@@ -298,6 +293,20 @@ def pose_following(viewpoint: Viewpoint, *, fx: float, baseline_m: float) -> Boa
     )
 
 
+async def take_every_planned_view(
+    session: CalibrationSession,
+    rig: SimulatedCheckerboard,
+    vision: OpenCvSidecarVision,
+    *,
+    fx: float,
+) -> None:
+    """Render, detect and observe one view per viewpoint of the session's plan."""
+    for viewpoint in session.plan:
+        pair = rig.render_pair(pose_following(viewpoint, fx=fx, baseline_m=0.07))
+        view = await detect_both(vision, pair, board=session.board)
+        session.observe(frame_id=viewpoint.index, left=view.left, right=view.right)
+
+
 @pytest.mark.parametrize("fx", [300.0, 381.36, 520.0])
 async def test_following_the_capture_plan_makes_the_session_ready_and_solves_the_rig(
     fx: float,
@@ -305,16 +314,14 @@ async def test_following_the_capture_plan_makes_the_session_ready_and_solves_the
     # Given a rig whose focal length the plan does not know
     board = CheckerboardSpec(9, 6, 0.025)
     rig = SimulatedCheckerboard(
-        board=board, width=640, height=480, fx=fx, fy=fx, cx=320.0, cy=240.0, baseline_m=0.07
+        board=board,
+        rig=StereoRig(640, 480, fx=fx, fy=fx, cx=320.0, cy=240.0, baseline_m=0.07),
     )
     session = CalibrationSession(board=board, width=640, height=480, min_views=9)
     vision = OpenCvSidecarVision()
     try:
         # When one view is taken per planned viewpoint, as instructed
-        for viewpoint in session.plan:
-            pair = rig.render_pair(pose_following(viewpoint, fx=fx, baseline_m=0.07))
-            view = await detect_both(vision, pair, board=board)
-            session.observe(frame_id=viewpoint.index, left=view.left, right=view.right)
+        await take_every_planned_view(session, rig, vision, fx=fx)
         estimate = await vision.calibrate(
             views=session.views, board=board, width=640, height=480, lens=session.lens
         )

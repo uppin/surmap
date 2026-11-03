@@ -1,7 +1,7 @@
 # 2026-11-03 — Streaming sidecar rectifies radial-tangential lenses only
 
 **Category:** Capability gap (found while adding calibration lens models)
-**Source:** camera-calibration-rpc changeset (`camera-calibration-rpc-6847602b`)
+**Source:** PR #103 (`camera-calibration-rpc-6847602b`)
 **Packages:** deploy/rtabmap-stream, surmap.slam, surmap.calibration
 **Consent:** Developer, 2026-11-03: "it's fine to defer fisheye". The
 calibration RPC solves all three models; only their export is refused.

@@ -30,8 +30,7 @@ def _left_in_right(estimate: StereoEstimate) -> NDArray[np.float64]:
 def _yaml(
     t_bs: NDArray[np.float64],
     *,
-    width: int,
-    height: int,
+    resolution: tuple[int, int],
     intrinsics: tuple[float, float, float, float],
     distortion: tuple[float, ...],
     rate_hz: float,
@@ -47,7 +46,7 @@ def _yaml(
         f"         {rows[2]},\n"
         f"         {rows[3]}]\n"
         f"rate_hz: {rate_hz}\n"
-        f"resolution: [{width}, {height}]\n"
+        f"resolution: [{resolution[0]}, {resolution[1]}]\n"
         "camera_model: pinhole\n"
         f"intrinsics: [{', '.join(repr(float(v)) for v in intrinsics)}]\n"
         "distortion_model: radial-tangential\n"
@@ -75,16 +74,14 @@ def estimated_sensor_yamls(
     t_bs_right = t_bs_left @ np.linalg.inv(_left_in_right(estimate))
     left = _yaml(
         t_bs_left,
-        width=width,
-        height=height,
+        resolution=(width, height),
         intrinsics=(estimate.left_fx, estimate.left_fy, estimate.left_cx, estimate.left_cy),
         distortion=estimate.distortion_left,
         rate_hz=rate_hz,
     )
     right = _yaml(
         t_bs_right,
-        width=width,
-        height=height,
+        resolution=(width, height),
         intrinsics=(estimate.right_fx, estimate.right_fy, estimate.right_cx, estimate.right_cy),
         distortion=estimate.distortion_right,
         rate_hz=rate_hz,
