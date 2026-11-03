@@ -21,7 +21,7 @@ follows SurMap's stack (Python 3.11+, uv, Ruff, mypy strict, pytest).
 | `src/surmap/rpc/testkit/` | `RecordingBrick`, HTTP stub host for tests |
 | `proto/surmap/transport/v1/socket_rpc.proto` | The socket-RPC frame protocol (`surmap.transport.v1`) |
 | `src/surmap/transport/v1/socket_rpc_pb2.py` | Generated bindings (checked in; see below) |
-| `proto/surmap/survey/v1/survey.proto` | The survey streaming contract (`surmap.survey.v1`): CM5 + station BIDI services, including `Cm5SurveyService.StreamRegionPoints` (dense points under a SAM polygon) |
+| `proto/surmap/survey/v1/survey.proto` | The survey streaming contract (`surmap.survey.v1`): CM5 + station BIDI services, including `Cm5SurveyService.StreamRegionPoints` (dense points under a SAM polygon) and `CameraCalibrationService.StreamCalibration` (checkerboard calibration: capture plan first, then stereo frames in, per-view feedback (filled viewpoint) + next-pose suggestion out, solved calibration on finish; detection/solving in the OpenCV sidecar `surmap.calibration.opencv_sidecar`, enabled with `cm5_main --calibration`) |
 | `src/surmap/survey/v1/survey_pb2.py` | Generated bindings (checked in; regenerate with `scripts/gen_survey_rpc.py`) |
 | `proto/surmap/agent/v1/*.proto` | The survey agent's tool and chat services (`surmap.agent.v1`); see [agent.md](agent.md) |
 | `src/surmap/agent/proto/` | Generated bindings and descriptor set (checked in; regenerate with `scripts/gen_agent_rpc.py`) |

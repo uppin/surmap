@@ -24,6 +24,7 @@ import asyncio
 from collections.abc import Callable
 from pathlib import Path
 
+from surmap.calibration.port import CheckerboardVision
 from surmap.demo.datasets import scaled_sensor_yaml
 from surmap.detection.detector import CoralDetector
 from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES
@@ -71,6 +72,7 @@ def build_description(
     regions: RegionPointSource | None = None,
     moving_areas: bool = True,
     slam_factory: SlamFactory | None = None,
+    calibration_vision: CheckerboardVision | None = None,
 ) -> ServerDescription[None]:
     """The CM5 server's description: survey service plus health routes."""
     if stereo is None and use_stereo:
@@ -83,19 +85,24 @@ def build_description(
         else "inmemory"
     )
     closeables: tuple[Closeable, ...] = (_BackendCloseable(slam),) if slam is not None else ()
-    return ServerDescription(
-        services=(
-            cm5_service_module(
-                slam,
-                objects,
-                stereo,
-                detections,
-                regions,
-                moving_areas=moving_areas,
-                slam_label=slam_label,
-                slam_factory=slam_factory,
-            ),
+    services = [
+        cm5_service_module(
+            slam,
+            objects,
+            stereo,
+            detections,
+            regions,
+            moving_areas=moving_areas,
+            slam_label=slam_label,
+            slam_factory=slam_factory,
         ),
+    ]
+    if calibration_vision is not None:
+        from surmap.calibration.service import calibration_service_module
+
+        services.append(calibration_service_module(calibration_vision))
+    return ServerDescription(
+        services=tuple(services),
         http_routes=health_routes(lambda: False),
         closeables=lambda _ctx: closeables,
     )
@@ -276,6 +283,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="enable the StreamRegionPoints dense-stereo computation (default: off)",
     )
+    parser.add_argument(
+        "--calibration",
+        action="store_true",
+        help="enable CameraCalibrationService (checkerboard, OpenCV sidecar)",
+    )
     return parser
 
 
@@ -295,6 +307,11 @@ def main(argv: list[str] | None = None) -> None:
             # The same detector+tracker lifts object points on
             # StreamSurvey; its rig arrives with each stream's config.
             objects = CoralObjectPointSource(detections, StereoReconstructor())
+    calibration_vision: CheckerboardVision | None = None
+    if args.calibration:
+        from surmap.calibration.opencv_sidecar import OpenCvSidecarVision
+
+        calibration_vision = OpenCvSidecarVision()
     description = None
     if args.slam_backend == "sidecar":
         if args.calibration_dir is None:
@@ -307,6 +324,7 @@ def main(argv: list[str] | None = None) -> None:
             use_stereo=False,
             detections=detections,
             moving_areas=args.moving_areas,
+            calibration_vision=calibration_vision,
         )
     elif args.slam_backend == "streaming":
         if args.calibration_dir is None:
@@ -346,13 +364,17 @@ def main(argv: list[str] | None = None) -> None:
             regions=live if args.region_points else None,
             moving_areas=args.moving_areas,
             slam_factory=stream_slam_factory,
+            calibration_vision=calibration_vision,
         )
     elif detections is not None:
         description = build_description(
-            objects=objects, detections=detections, moving_areas=args.moving_areas
+            objects=objects,
+            detections=detections,
+            moving_areas=args.moving_areas,
+            calibration_vision=calibration_vision,
         )
     if description is None and not args.moving_areas:
-        description = build_description(moving_areas=False)
+        description = build_description(moving_areas=False, calibration_vision=calibration_vision)
     try:
         asyncio.run(serve(args.host, args.port, description))
     except KeyboardInterrupt:
