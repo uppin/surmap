@@ -7,6 +7,8 @@
 //! profile renders the left/right feeds RTAB-Map receives.
 
 mod behaviour;
+mod building_fire;
+mod building_style;
 mod calibration;
 mod fire;
 mod flight;

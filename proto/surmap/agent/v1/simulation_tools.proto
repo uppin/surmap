@@ -94,6 +94,43 @@ service SimulationTools {
     option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
   }
 
+  // Lists the building presets: facades and roofs named after Overture's facade_material and
+  // roof_material values (brick, glass, roof_tiles, slate, ...), any added preset files, and the
+  // districts (old-town, downtown, industrial, suburban, ...).
+  rpc ListBuildingPresets(ListBuildingPresetsRequest) returns (BuildingPresetsResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Sets a district: a district preset over an ENU rectangle. Buildings whose centre is inside it
+  // draw facade, roof, roof shape and colours from the preset's weighted mix (seeded); later
+  // districts win overlaps. Replaces a district with the same id.
+  rpc SetDistrict(SetDistrictRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Removes a district by its id.
+  rpc RemoveDistrict(RemoveDistrictRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Styles one building, overriding its district: facade and roof presets, roof shape (flat,
+  // gabled, hipped, pyramidal), colours, floors and glazing (none, punched, curtain_wall). An
+  // unset field keeps what the building has.
+  rpc StyleBuilding(StyleBuildingRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Lights a fire inside a building on one floor at a start time. It climbs floor by floor,
+  // burns floors out, and spreads to neighbours, farther downwind.
+  rpc AddBuildingFire(AddBuildingFireRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Removes a building fire by its id.
+  rpc RemoveBuildingFire(RemoveBuildingFireRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
   // Returns a scenario's latest version: its manifest, credits, and the URL the simulation
   // page opens it at.
   rpc GetScenario(GetScenarioRequest) returns (ScenarioResponse) {
@@ -347,6 +384,64 @@ message BehaviourResponse {
   string tree_json = 2;
   // The scenario version the tree was read from.
   int32 version = 3;
+}
+
+message ListBuildingPresetsRequest {}
+
+message BuildingPresetsResponse {
+  repeated string facades = 1;
+  repeated string roofs = 2;
+  repeated string districts = 3;
+}
+
+message Rgb {
+  double r = 1;
+  double g = 2;
+  double b = 3;
+}
+
+message SetDistrictRequest {
+  string scenario_id = 1;
+  string id = 2;
+  // A district name (e.g. "downtown") or a building/districts/*.district.json path.
+  string preset = 3;
+  EnuPoint centre = 4;
+  double size_east_m = 5;
+  double size_north_m = 6;
+  int64 seed = 7;
+}
+
+message RemoveDistrictRequest {
+  string scenario_id = 1;
+  string district_id = 2;
+}
+
+message StyleBuildingRequest {
+  string scenario_id = 1;
+  string building_id = 2;
+  // An Overture facade_material name or a building/facades/*.facade.json path.
+  optional string facade = 3;
+  // An Overture roof_material name or a building/roofs/*.roof.json path.
+  optional string roof = 4;
+  optional string roof_shape = 5;
+  optional Rgb facade_colour = 6;
+  optional Rgb roof_colour = 7;
+  optional int32 floors = 8;
+  optional string glazing = 9;
+  optional double window_ratio = 10;
+}
+
+message AddBuildingFireRequest {
+  string scenario_id = 1;
+  string id = 2;
+  string building_id = 3;
+  int32 floor = 4;
+  double start_s = 5;
+}
+
+message RemoveBuildingFireRequest {
+  string scenario_id = 1;
+  string fire_id = 2;
 }
 
 message GetScenarioRequest {

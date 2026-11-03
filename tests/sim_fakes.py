@@ -163,3 +163,16 @@ def wind_of(manifest: Mapping[str, object]) -> dict[str, object]:
 
 def person_ids(manifest: Mapping[str, object]) -> list[str]:
     return [str(e["id"]) for e in _dicts(manifest, "elements") if e.get("kind") == "person"]
+
+
+def district_ids(manifest: Mapping[str, object]) -> list[str]:
+    return [str(d["id"]) for d in _dicts(manifest, "districts")]
+
+
+def building_fire_ids(manifest: Mapping[str, object]) -> list[str]:
+    return [str(f["id"]) for f in _dicts(manifest, "building_fires")]
+
+
+def building(manifest: Mapping[str, object], building_id: str) -> dict[str, object]:
+    (found,) = [e for e in _dicts(manifest, "elements") if e.get("id") == building_id]
+    return found
