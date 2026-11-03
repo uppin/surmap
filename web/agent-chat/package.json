@@ -7,6 +7,9 @@
   "engines": {
     "node": ">=20.19.0"
   },
+  "resolutions": {
+    "@mapbox/jsonlint-lines-primitives": "2.0.2"
+  },
   "scripts": {
     "dev": "vite",
     "gen": "buf generate ../../proto --path ../../proto/surmap/agent/v1 --template buf.gen.yaml",
@@ -29,6 +32,8 @@
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "lucide-react": "1.60.0",
+    "maplibre-gl": "4.7.1",
+    "pmtiles": "3.2.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-markdown": "10.1.0",

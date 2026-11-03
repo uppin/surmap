@@ -29,7 +29,7 @@ from langchain_core.language_models import BaseChatModel
 from surmap.agent.contracts import tool_contracts
 from surmap.agent.llm.meta import DEFAULT_AGENT_META_MODEL, META_PROVIDER, MetaResponsesChatModel
 from surmap.agent.llm.registry import ChatModelRegistry
-from surmap.agent.proto import jobs_pb2, survey_tools_pb2
+from surmap.agent.proto import jobs_pb2, map_tools_pb2, survey_tools_pb2
 from surmap.agent.runtime.graph import TurnCaps
 from surmap.agent.server.binding import agent_tools
 from surmap.agent.server.chat_service import agent_jobs_handlers, chat_handlers
@@ -39,10 +39,12 @@ from surmap.agent.services import (
     Handler,
     agent_jobs_module,
     chat_service_module,
+    map_tools_module,
     survey_tools_module,
 )
 from surmap.agent.tools.geometry import GeometryStore
 from surmap.agent.tools.handlers import survey_tool_handlers
+from surmap.agent.tools.map_handlers import MapSceneStore, map_tool_handlers
 from surmap.agent.tools.workspace import DemoWorkspace, SurveyWorkspace
 from surmap.demo.datasets import default_cache_dir
 from surmap.demo.runs import DemoRunHost
@@ -52,8 +54,9 @@ from surmap.survey.sam import CentredBoxVideoSamDetector
 from surmap.usage import UsageLedger
 
 _SURVEY_TOOLS = survey_tools_pb2.DESCRIPTOR.services_by_name["SurveyTools"]
+_MAP_TOOLS = map_tools_pb2.DESCRIPTOR.services_by_name["MapTools"]
 _AGENT_JOBS = jobs_pb2.DESCRIPTOR.services_by_name["AgentJobs"]
-"""The two tool services; their rpcs are the tools a conversation binds."""
+"""The three tool services; their rpcs are the tools a conversation binds."""
 
 __all__ = [
     "CORS_ORIGINS_ENV",
@@ -80,7 +83,9 @@ DEFAULT_CORS_ORIGINS = ("http://localhost:5173",)
 SYSTEM_PROMPT = """\
 You are SurMap's survey assistant. You run the survey demos and inspect their results with \
 your tools: scenes and runs, SAM prompts, the objects a run reconstructed, their geometry, and \
-frames. You only launch demos and read results; you never command a vehicle.
+frames. You also edit the display map: place and move GLB shapes with the map tools, navigate \
+its camera, and draw route paths. Map edits change only what the person sees; routes are drawn \
+paths, never flight plans. You only launch demos and read results; you never command a vehicle.
 
 Some tools run as jobs. When a tool call returns a job handle instead of a result, say that \
 the job started and name its job id, for example "run_demo started as job j-2". Never say a \
@@ -167,12 +172,18 @@ def build_agent_description(
         if config.model_factory is not None
         else default_model_factory(models, ledger)
     )
-    rpc_handlers: dict[str, Handler] = (
+    survey_only: dict[str, Handler] = (
         dict(survey_handlers)
         if survey_handlers is not None
         else dict(survey_tool_handlers(workspace))
     )
-    contracts = (*tool_contracts(_SURVEY_TOOLS), *tool_contracts(_AGENT_JOBS))
+    map_handlers: dict[str, Handler] = dict(map_tool_handlers(MapSceneStore()))
+    rpc_handlers: dict[str, Handler] = {**survey_only, **map_handlers}
+    contracts = (
+        *tool_contracts(_SURVEY_TOOLS),
+        *tool_contracts(_MAP_TOOLS),
+        *tool_contracts(_AGENT_JOBS),
+    )
     hub = ChatHub(
         model_factory=model_factory,
         tools=lambda runner: agent_tools(contracts, rpc_handlers, runner),
@@ -185,7 +196,8 @@ def build_agent_description(
     origins = tuple(config.cors_origins)
     return ServerDescription(
         services=(
-            survey_tools_module(_allowing_origins(rpc_handlers, origins)),
+            survey_tools_module(_allowing_origins(survey_only, origins)),
+            map_tools_module(_allowing_origins(map_handlers, origins)),
             agent_jobs_module(_allowing_origins(agent_jobs_handlers(hub), origins)),
             chat_service_module(_allowing_origins(chat_handlers(hub), origins)),
         ),

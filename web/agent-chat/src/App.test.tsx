@@ -57,6 +57,16 @@ function fakePort(options: FakePortOptions = {}) {
       if (options.history === null) throw new ConnectError(`no conversation ${conversationId}`, Code.NotFound);
       return options.history ?? [];
     },
+    async getMapScene() {
+      return {
+        sceneId: "default",
+        revision: 0,
+        camera: { centre: { lon: 8.5417, lat: 47.3769, altM: null }, zoom: 16, pitchDeg: 55, bearingDeg: -20 },
+        objects: [],
+        routes: [],
+        layers: [],
+      };
+    },
   };
   return { port, asked };
 }
