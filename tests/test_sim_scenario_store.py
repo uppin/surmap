@@ -4,10 +4,10 @@ import hashlib
 from pathlib import Path
 
 import pytest
+
 from surmap.simulation.asset_sources import AmbientCg, AssetHit, PolyHaven, Sketchfab
 from surmap.simulation.scenario_manifest import ScenarioInvalid, add_model, load_presets
 from surmap.simulation.scenario_store import LicenceRefused, ScenarioStore
-
 from tests.sim_fakes import (
     BIN_BYTES,
     DIFF_BYTES,

@@ -28,8 +28,6 @@ use crate::sky::SkySource;
 use crate::textures::{load_texture_set, tiled_material, TextureSetHandles};
 use crate::wire::GroundTruthObject;
 
-pub const MANIFEST_PATH: &str = "scene.json";
-
 #[derive(Asset, TypePath, Debug)]
 pub struct ManifestAsset(pub SceneManifest);
 
@@ -81,8 +79,9 @@ pub struct PendingModel {
     instance: ModelInstance,
 }
 
-pub fn start_loading(mut commands: Commands, assets: Res<AssetServer>) {
-    commands.insert_resource(SceneState { manifest: assets.load(MANIFEST_PATH), built: false, failed: None, pending: Vec::new() });
+pub fn start_loading(mut commands: Commands, assets: Res<AssetServer>, mode: Res<RunMode>) {
+    let path = crate::shots::manifest_path(mode.scenario.as_deref());
+    commands.insert_resource(SceneState { manifest: assets.load(path), built: false, failed: None, pending: Vec::new() });
     commands.init_resource::<GroundTruth>();
 }
 

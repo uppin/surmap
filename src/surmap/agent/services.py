@@ -15,7 +15,13 @@ from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from google.protobuf.descriptor import MethodDescriptor, ServiceDescriptor
 
-from surmap.agent.proto import chat_pb2, jobs_pb2, map_tools_pb2, survey_tools_pb2
+from surmap.agent.proto import (
+    chat_pb2,
+    jobs_pb2,
+    map_tools_pb2,
+    simulation_tools_pb2,
+    survey_tools_pb2,
+)
 from surmap.rpc.compose import Brick
 from surmap.rpc.description import ServiceModule
 
@@ -24,6 +30,7 @@ __all__ = [
     "agent_jobs_module",
     "chat_service_module",
     "map_tools_module",
+    "simulation_tools_module",
     "survey_tools_module",
 ]
 
@@ -38,6 +45,11 @@ def survey_tools_module(handlers: Mapping[str, Handler]) -> ServiceModule[Any]:
 def map_tools_module(handlers: Mapping[str, Handler]) -> ServiceModule[Any]:
     """The module mounting `surmap.agent.v1.MapTools`."""
     return _module(map_tools_pb2.DESCRIPTOR.services_by_name["MapTools"], handlers)
+
+
+def simulation_tools_module(handlers: Mapping[str, Handler]) -> ServiceModule[Any]:
+    """The module mounting `surmap.agent.v1.SimulationTools`."""
+    return _module(simulation_tools_pb2.DESCRIPTOR.services_by_name["SimulationTools"], handlers)
 
 
 def agent_jobs_module(handlers: Mapping[str, Handler]) -> ServiceModule[Any]:

@@ -3,6 +3,7 @@
 import json
 
 import pytest
+
 from surmap.simulation.scenario_manifest import (
     ScenarioInvalid,
     add_element,
@@ -10,7 +11,6 @@ from surmap.simulation.scenario_manifest import (
     remove_element,
     validate_manifest,
 )
-
 from tests.sim_fakes import POC_ASSETS, element_ids
 
 

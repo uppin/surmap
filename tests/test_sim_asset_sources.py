@@ -1,6 +1,7 @@
 """The three asset sources behind one protocol, over a canned fetch (no network)."""
 
 import pytest
+
 from surmap.simulation.asset_sources import (
     AmbientCg,
     AssetFile,
@@ -8,7 +9,6 @@ from surmap.simulation.asset_sources import (
     PolyHaven,
     Sketchfab,
 )
-
 from tests.sim_fakes import RecordingFetch
 
 

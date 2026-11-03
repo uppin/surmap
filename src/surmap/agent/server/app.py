@@ -31,33 +31,40 @@ from surmap.agent.contracts import tool_contracts
 from surmap.agent.llm.fireworks import FireworksChatModel
 from surmap.agent.llm.meta import DEFAULT_AGENT_META_MODEL, META_PROVIDER, MetaResponsesChatModel
 from surmap.agent.llm.registry import ChatModelRegistry
-from surmap.agent.proto import jobs_pb2, map_tools_pb2, survey_tools_pb2
+from surmap.agent.proto import jobs_pb2, map_tools_pb2, simulation_tools_pb2, survey_tools_pb2
 from surmap.agent.runtime.graph import TurnCaps
 from surmap.agent.server.binding import agent_tools
 from surmap.agent.server.chat_service import agent_jobs_handlers, chat_handlers
 from surmap.agent.server.hub import ChatHub, ModelFactory
 from surmap.agent.server.routes import GlbReader, agent_http_routes
+from surmap.agent.server.sim_routes import SimulationRig
 from surmap.agent.services import (
     Handler,
     agent_jobs_module,
     chat_service_module,
     map_tools_module,
+    simulation_tools_module,
     survey_tools_module,
 )
 from surmap.agent.skills import SkillCatalogue, skill_tools
 from surmap.agent.tools.geometry import GeometryStore
 from surmap.agent.tools.handlers import survey_tool_handlers
 from surmap.agent.tools.map_handlers import MapSceneStore, map_tool_handlers
+from surmap.agent.tools.simulation_handlers import simulation_tool_handlers
 from surmap.agent.tools.workspace import DemoWorkspace, SurveyWorkspace
 from surmap.demo.datasets import default_cache_dir
 from surmap.demo.runs import DemoRunHost
 from surmap.demo.server import make_demo_server
 from surmap.rpc.description import ServerDescription
+from surmap.simulation.asset_sources import AmbientCg, AssetSource, PolyHaven, Sketchfab, http_fetch
+from surmap.simulation.scenario_manifest import load_presets
+from surmap.simulation.scenario_store import ScenarioStore
 from surmap.survey.sam import CentredBoxVideoSamDetector
 from surmap.usage import UsageLedger
 
 _SURVEY_TOOLS = survey_tools_pb2.DESCRIPTOR.services_by_name["SurveyTools"]
 _MAP_TOOLS = map_tools_pb2.DESCRIPTOR.services_by_name["MapTools"]
+_SIMULATION_TOOLS = simulation_tools_pb2.DESCRIPTOR.services_by_name["SimulationTools"]
 _AGENT_JOBS = jobs_pb2.DESCRIPTOR.services_by_name["AgentJobs"]
 """The three tool services; their rpcs are the tools a conversation binds."""
 
@@ -134,6 +141,45 @@ class AgentServerConfig:
     """Seconds one execution-policy `timeout_s` unit lasts; 1.0 outside tests."""
     model_factory: ModelFactory | None = None
     """Builds models instead of the registry; the seam tests inject a scripted model through."""
+    sim_dir: Path | None = None
+    """The simulation store (`simulation.sqlite` + `library/`); `<cache>/simulation` when None."""
+    sim_assets: Path = Path("examples/bevy-sitl-poc/assets")
+    """The Bevy simulation's own assets; simulation tools are off when it is missing."""
+    sim_dist: Path | None = None
+    """A built simulation page to serve at `/sim/`."""
+    sketchfab_token: str | None = None
+    """`SKETCHFAB_API_TOKEN`: Sketchfab search works without it, downloads do not."""
+
+
+DEFAULT_SIM_ASSETS = Path("examples/bevy-sitl-poc/assets")
+SKETCHFAB_TOKEN_ENV = "SKETCHFAB_API_TOKEN"
+
+
+def build_simulation_rig(config: AgentServerConfig) -> SimulationRig | None:
+    """The store, live sources and paths behind the simulation tools, or None when the
+    simulation's assets are not where `config.sim_assets` says."""
+    if not (config.sim_assets / "scene.json").is_file():
+        return None
+    root = config.sim_dir or _cache_root(config) / "simulation"
+    store = ScenarioStore(
+        db_path=root / "simulation.sqlite",
+        library_dir=root / "library",
+        presets=load_presets(config.sim_assets),
+    )
+    sources: dict[str, AssetSource] = {
+        "polyhaven": PolyHaven(http_fetch),
+        "ambientcg": AmbientCg(http_fetch),
+        "sketchfab": Sketchfab(http_fetch, token=config.sketchfab_token),
+    }
+    return SimulationRig(
+        store=store, sources=sources, static_assets=config.sim_assets, page_dist=config.sim_dist
+    )
+
+
+def _cache_root(config: AgentServerConfig) -> Path:
+    if config.cache_dir is not None:
+        return config.cache_dir
+    return Path(os.environ.get("SURMAP_DEMO_CACHE_DIR", Path.home() / ".cache" / "surmap"))
 
 
 def default_model_factory(registry: ChatModelRegistry, ledger: UsageLedger) -> ModelFactory:
@@ -178,11 +224,13 @@ def build_agent_description(
     geometry: GlbReader,
     registry: ChatModelRegistry | None = None,
     survey_handlers: Mapping[str, Handler] | None = None,
+    simulation: SimulationRig | None = None,
 ) -> ServerDescription[None]:
     """The agent server over `workspace`.
 
     `survey_handlers` defaults to `survey_tool_handlers(workspace)`; `registry` to one over the
-    process environment, which also lists the models.
+    process environment, which also lists the models. With `simulation`, the `SimulationTools`
+    are mounted, bound as agent tools, and `/sim/` serves the page, scenarios and library.
     """
     ledger = UsageLedger()
     models = registry if registry is not None else ChatModelRegistry()
@@ -197,10 +245,16 @@ def build_agent_description(
         else dict(survey_tool_handlers(workspace))
     )
     map_handlers: dict[str, Handler] = dict(map_tool_handlers(MapSceneStore()))
-    rpc_handlers: dict[str, Handler] = {**survey_only, **map_handlers}
+    sim_handlers: dict[str, Handler] = (
+        dict(simulation_tool_handlers(simulation.store, simulation.sources))
+        if simulation is not None
+        else {}
+    )
+    rpc_handlers: dict[str, Handler] = {**survey_only, **map_handlers, **sim_handlers}
     contracts = (
         *tool_contracts(_SURVEY_TOOLS),
         *tool_contracts(_MAP_TOOLS),
+        *(tool_contracts(_SIMULATION_TOOLS) if simulation is not None else ()),
         *tool_contracts(_AGENT_JOBS),
     )
     catalogue = SkillCatalogue.shipped(config.skills_dir)
@@ -221,11 +275,16 @@ def build_agent_description(
         services=(
             survey_tools_module(_allowing_origins(survey_only, origins)),
             map_tools_module(_allowing_origins(map_handlers, origins)),
+            *(
+                (simulation_tools_module(_allowing_origins(sim_handlers, origins)),)
+                if simulation is not None
+                else ()
+            ),
             agent_jobs_module(_allowing_origins(agent_jobs_handlers(hub), origins)),
             chat_service_module(_allowing_origins(chat_handlers(hub), origins)),
         ),
         http_routes=agent_http_routes(
-            workspace, geometry, cors_origins=origins, datasets=workspace
+            workspace, geometry, cors_origins=origins, datasets=workspace, simulation=simulation
         ),
         closeables=lambda _context: (hub,),
     )

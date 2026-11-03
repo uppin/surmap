@@ -18,14 +18,16 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from surmap.simulation.asset_sources import AmbientCg, PolyHaven, Sketchfab
-from surmap.simulation.scenario_manifest import load_presets, validate_manifest
-from surmap.simulation.scenario_store import ScenarioStore
+from langchain_core.messages.tool import ToolCall
 
 from surmap.agent.llm.registry import ChatModelRegistry
 from surmap.agent.proto import chat_pb2
-from surmap.agent.server.app import AgentServerConfig, SimulationRig, build_agent_description
+from surmap.agent.server.app import AgentServerConfig, build_agent_description
+from surmap.agent.server.sim_routes import SimulationRig
 from surmap.rpc.hosts.hypercorn import HypercornHost
+from surmap.simulation.asset_sources import AmbientCg, PolyHaven, Sketchfab
+from surmap.simulation.scenario_manifest import load_presets, validate_manifest
+from surmap.simulation.scenario_store import ScenarioStore
 from tests.agent_fakes import ScriptedChatModel, answer, calling, tool_call
 from tests.agent_server_fakes import STEP_TIMEOUT_S
 from tests.agent_tool_fakes import a_tool_rig
@@ -77,8 +79,11 @@ def an_agent_building_a_wreck_scene() -> ScriptedChatModel:
         ),
         calling(tool_call("download_asset", "c2", ref="sketchfab:3f1c0a")),
         calling(
-            tool_call(
-                "create_scenario", "c3", name="Wreck on the avenue", preset="earthquake-block"
+            ToolCall(
+                name="create_scenario",
+                id="c3",
+                type="tool_call",
+                args={"name": "Wreck on the avenue", "preset": "earthquake-block"},
             )
         ),
         calling(
@@ -211,3 +216,16 @@ async def test_the_page_static_assets_are_served_beside_scenarios(tmp_path: Path
     assert status == 200
     assert json.loads(body)["id"] == "elp-stereo-pinhole-v1"
     assert escaped == 404
+
+
+async def test_the_served_scenario_is_the_golden_the_renderer_validates(tmp_path: Path) -> None:
+    # Given the station after the agent built the wreck scenario
+    golden = Path(__file__).parent / "fixtures" / "sim_scenario" / "wreck-on-the-avenue.json"
+    async with a_station(tmp_path, an_agent_building_a_wreck_scene()) as station:
+        await asyncio.to_thread(station.turn, "Put a burnt car on the avenue with a survivor")
+        _, body = await asyncio.to_thread(
+            station.get, "/sim/assets/scenarios/wreck-on-the-avenue.json"
+        )
+
+    # Then it is the committed golden that the Rust renderer's own tests parse
+    assert json.loads(body) == json.loads(golden.read_text(encoding="utf-8"))

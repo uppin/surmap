@@ -22,16 +22,16 @@ PRD: `PRD-2026-11-03-sim-scenario-agent-tools.md` · Discovery:
   - [x] Acceptance tests written and failing for the right reason — `tests/test_sim_scenario_e2e.py` (4)
   - [x] Unit/integration tests written and failing — licences, sources, store, manifest, handlers; Rust `shots`, `scene_manifest`
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] `surmap.simulation.licences` — CC0 and CC BY 3.0/4.0 accepted; NC, ND, SA, Sketchfab `free-st`/`st`/`ed` and unknown refused with the reason
-  - [ ] `surmap.simulation.asset_sources` — `PolyHaven`, `AmbientCg`, `Sketchfab` behind one `AssetSource` protocol and an injectable `Fetch` (URL → bytes); search hits and download file lists normalised to `AssetHit` / `AssetFile`
-  - [ ] `surmap.simulation.scenario_store` — SQLite (`PRAGMA user_version` migrations): `assets`, `asset_files`, `scenarios`, `scenario_versions`; downloads land under `<store>/library/<source>/<asset_id>/` with SHA-256; every scenario edit is a new version
-  - [ ] `surmap.simulation.scenario_manifest` — Python validation mirroring `scene_manifest.rs` (version, unique ids, known materials, relative paths, glTF models, ≤ 1 scatter); a scenario's `credits` derive from the CC BY assets it uses
-  - [ ] Presets: `earthquake-block` (#89's shipped `scene.json`), `empty-lot` (camera, environment, ground only)
-  - [ ] `SimulationTools` proto + generated code + contracts; handlers over the store; mounted on the agent server and bound as agent tools
-  - [ ] Agent-server HTTP: `GET /sim/` (the built page when `--sim-dist` is set), `GET /sim/assets/scenarios/<id>.json`, `GET /sim/assets/library/…`, the PoC's static `assets/` beneath; `--sim-db`, `--sim-library`
-  - [ ] Bevy: `?scenario=<id>` (wasm) / `--scenario <id>` (native) loads `scenarios/<id>.json` instead of `scene.json`
-  - [ ] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · every red test green; pytest 1832 passed; cargo 58; V4 rendered from live Poly Haven
+  - [x] `surmap.simulation.licences` — CC0 and CC BY 3.0/4.0 accepted; NC, ND, SA, Sketchfab `free-st`/`st`/`ed` and unknown refused with the reason
+  - [x] `surmap.simulation.asset_sources` — `PolyHaven`, `AmbientCg`, `Sketchfab` behind one `AssetSource` protocol and an injectable `Fetch` (URL → bytes); search hits and download file lists normalised to `AssetHit` / `AssetFile` — plus `fetch_file` on the protocol (no private reach from the store)
+  - [x] `surmap.simulation.scenario_store` — SQLite (`PRAGMA user_version` migrations): `assets`, `asset_files`, `scenarios`, `scenario_versions`; downloads land under `<store>/library/<source>/<asset_id>/` with SHA-256; every scenario edit is a new version
+  - [x] `surmap.simulation.scenario_manifest` — Python validation mirroring `scene_manifest.rs` (version, unique ids, known materials, relative paths, glTF models, ≤ 1 scatter); a scenario's `credits` derive from the CC BY assets it uses
+  - [x] Presets: `earthquake-block` (#89's shipped `scene.json`), `empty-lot` (camera, environment, ground only)
+  - [x] `SimulationTools` proto + generated code + contracts; handlers over the store; mounted on the agent server and bound as agent tools — `binding.py` binds the service (its allowlist named only Survey/Map tools)
+  - [x] Agent-server HTTP: `GET /sim/` (the built page when `--sim-dist` is set), `GET /sim/assets/scenarios/<id>.json`, `GET /sim/assets/library/…`, the PoC's static `assets/` beneath; `--sim-db`, `--sim-library` — `--sim-dir`, `--sim-assets`, `--sim-dist`; `SKETCHFAB_API_TOKEN`
+  - [x] Bevy: `?scenario=<id>` (wasm) / `--scenario <id>` (native) loads `scenarios/<id>.json` instead of `scene.json` — ids restricted to `[A-Za-z0-9-]`
+  - [x] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown` — ruff --no-cache, format, mypy 423 files; wasm32 check clean
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (scripted agent session log; the published scenario rendered natively from the station-served files)
   - [ ] `docs/agent.md` — Simulation tools; `docs/simulation/bevy-simulation.md` — scenarios served by the station

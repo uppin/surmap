@@ -70,7 +70,7 @@ SKETCHFAB_BY = {
         }
     ]
 }
-SKETCHFAB_CC0 = {"results": []}
+SKETCHFAB_CC0: dict[str, list[object]] = {"results": []}
 SKETCHFAB_DOWNLOAD = {"glb": {"url": "https://sketchfab-prod.s3/burnt-car.glb", "size": 15}}
 AMBIENTCG_SEARCH = {"foundAssets": [{"assetId": "Ground054", "displayName": "Ground 054"}]}
 AMBIENTCG_ZIP = _zip(
@@ -81,17 +81,16 @@ AMBIENTCG_ZIP = _zip(
     }
 )
 
+PH_MODELS = "https://dl.polyhaven.org/file/ph-assets/Models/gltf"
+SF_SEARCH = "https://api.sketchfab.com/v3/search?type=models&downloadable=true"
+
 CANNED: dict[str, bytes] = {
     "https://api.polyhaven.com/assets?t=models": _json(POLYHAVEN_MODELS),
     "https://api.polyhaven.com/files/covered_car": _json(POLYHAVEN_FILES),
-    "https://dl.polyhaven.org/file/ph-assets/Models/gltf/2k/covered_car/covered_car_2k.gltf": GLTF_BYTES,
-    "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/covered_car/covered_car.bin": BIN_BYTES,
-    "https://api.sketchfab.com/v3/search?type=models&downloadable=true&license=cc0&q=burnt+car&count=5": _json(
-        SKETCHFAB_CC0
-    ),
-    "https://api.sketchfab.com/v3/search?type=models&downloadable=true&license=by&q=burnt+car&count=5": _json(
-        SKETCHFAB_BY
-    ),
+    f"{PH_MODELS}/2k/covered_car/covered_car_2k.gltf": GLTF_BYTES,
+    f"{PH_MODELS}/8k/covered_car/covered_car.bin": BIN_BYTES,
+    f"{SF_SEARCH}&license=cc0&q=burnt+car&count=5": _json(SKETCHFAB_CC0),
+    f"{SF_SEARCH}&license=by&q=burnt+car&count=5": _json(SKETCHFAB_BY),
     "https://api.sketchfab.com/v3/models/3f1c0a/download": _json(SKETCHFAB_DOWNLOAD),
     "https://sketchfab-prod.s3/burnt-car.glb": GLB_BYTES,
     "https://ambientcg.com/api/v2/full_json?type=Material&q=ground&limit=5": _json(

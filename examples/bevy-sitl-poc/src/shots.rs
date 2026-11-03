@@ -41,8 +41,25 @@ pub struct RunMode {
 
 /// The manifest a run loads: a station scenario, or the shipped scene.
 pub fn manifest_path(scenario: Option<&str>) -> String {
-    let _ = scenario;
-    todo!("scenarios/<id>.json or scene.json")
+    scenario.map_or_else(|| "scene.json".to_owned(), |id| format!("scenarios/{id}.json"))
+}
+
+/// A scenario id is a slug the station made: letters, digits and dashes only.
+fn checked_scenario(id: &str) -> Result<String, String> {
+    let ok = !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    if ok { Ok(id.to_owned()) } else { Err(format!("scenario id {id:?} must be letters, digits and dashes")) }
+}
+
+/// The page's `?scenario=<id>` (wasm); natively the flag carries it.
+#[cfg(target_arch = "wasm32")]
+pub fn page_scenario() -> Option<String> {
+    let search = web_sys::window()?.location().search().ok()?;
+    search.trim_start_matches('?').split('&').find_map(|pair| pair.strip_prefix("scenario=").map(str::to_owned))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn page_scenario() -> Option<String> {
+    None
 }
 
 impl RunMode {
@@ -91,7 +108,12 @@ impl RunMode {
             Some(Some(path)) => Some(path),
             Some(None) => return Err("--camera needs a profile path".into()),
         };
-        Ok(Self { flight, screenshot, record, camera, scenario: None })
+        let scenario = match value("--scenario") {
+            None => page_scenario().map(|id| checked_scenario(&id)).transpose()?,
+            Some(Some(id)) => Some(checked_scenario(&id)?),
+            Some(None) => return Err("--scenario needs an id".into()),
+        };
+        Ok(Self { flight, screenshot, record, camera, scenario })
     }
 
     /// No window chrome: stills and recordings run unattended.

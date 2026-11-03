@@ -19,6 +19,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 from urllib.parse import parse_qs
 
+from surmap.agent.server.sim_routes import SimulationRig, serve_simulation
 from surmap.agent.tools.frames import frame_image
 from surmap.agent.tools.workspace import BoxXYXY, FrameImage
 from surmap.demo.gallery import GalleryEntry
@@ -73,14 +74,19 @@ def agent_http_routes(
     *,
     cors_origins: Sequence[str],
     datasets: DatasetThumbnailReader | None = None,
+    simulation: SimulationRig | None = None,
 ) -> tuple[HttpRoute[Any], ...]:
-    """The health, geometry, frame, thumbnail and CORS-preflight routes."""
+    """The health, geometry, frame, thumbnail, `/sim/` and CORS-preflight routes."""
     origins = tuple(cors_origins)
 
     async def health(request: HttpRequest) -> HttpResponse:
         return HttpResponse(status=200, body=b"ok", headers={**_PLAIN, **_cors(request, origins)})
 
     async def serve(request: HttpRequest) -> HttpResponse:
+        if simulation is not None:
+            served = serve_simulation(simulation, request.path)
+            if served is not None:
+                return served
         if request.path == "/datasets" and datasets is not None:
             body = json.dumps(
                 {"datasets": [_dataset_json(entry) for entry in datasets.datasets()]}

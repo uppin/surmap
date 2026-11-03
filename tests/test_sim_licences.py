@@ -1,6 +1,7 @@
 """The licence gate for simulation assets: CC0 and CC BY in, everything else out with a reason."""
 
 import pytest
+
 from surmap.simulation.licences import check_licence
 
 

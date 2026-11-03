@@ -12,12 +12,12 @@ from pathlib import Path
 import pytest
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
+
+from surmap.agent.proto import simulation_tools_pb2 as pb
 from surmap.agent.tools.simulation_handlers import simulation_tool_handlers
 from surmap.simulation.asset_sources import AmbientCg, AssetSource, PolyHaven, Sketchfab
 from surmap.simulation.scenario_manifest import load_presets
 from surmap.simulation.scenario_store import ScenarioStore
-
-from surmap.agent.proto import simulation_tools_pb2 as pb
 from tests.sim_fakes import POC_ASSETS, RecordingFetch, element_ids
 
 
