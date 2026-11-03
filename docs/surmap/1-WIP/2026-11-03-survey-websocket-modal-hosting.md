@@ -165,7 +165,17 @@ tests start), and `tests/test_survey_ws_client.py`, `tests/test_modal_survey_app
 4. One survey stream held open for more than 150 s (`--frames` large enough) to prove the WebSocket is not cut at the HTTP cap.
 5. `modal app stop` both apps.
 Evidence: the scripts' output (rates, device line), the stream's duration.
-**Approved:** pending — to be asked before the Wrap row.
+**Approved:** the developer, 2026-11-03 — workspace `mantas-27062`, CM5 only (CPU), `modal serve`; the station (GPU) not run.
+
+**Executed (CM5), 2026-11-03**, `modal serve src/surmap/survey/modal_cm5_app.py` (4 CPU, 8 GiB, 1 container):
+- smoke: `hello_modal.py` and `ws_modal.py` PASS (gVisor kernel; 3 overlapping WebSockets in 1 container)
+- image: RTAB-Map 0.23.1 + stream tool built natively in 879 s (cached afterwards)
+- health over HTTPS: 200 (5–8 s on a cold start)
+- no token / wrong token: `PermissionError` at `SurveyConnection.open`; with the token, `GetCapabilities` → `cm5 / streaming / region_points=True` in 1.08 s
+- `verify_cm5.py wss://… --simulated`: PASS health, survey (real RTAB-Map scene points), gps 26/40 anchored, regions 26 531 points; 3.7 fps end to end
+- `verify_cm5.py wss://… --simulated --hold-s 200`: PASS all four over one **205 s** stream (past the 150 s HTTP cap); gps 40/40 anchored
+- app stopped afterwards; spend $0.07 (credits)
+- station: ⚠️ not run on Modal (out of the approved scope)
 
 ## Testing Plan
 
