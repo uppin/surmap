@@ -298,12 +298,21 @@ The runtime binds a LangChain `BaseChatModel`. `ChatModelRegistry`
 | Id | Provider | Listed when | Built as |
 |---|---|---|---|
 | `meta:<model>` | Meta Model API, Responses (`POST {base}/responses`) | `MODEL_API_KEY` is set; the model is `SURMAP_AGENT_META_MODEL`, else `muse-wonder-1.0` | `MetaResponsesChatModel` (`meta.py`) |
+| `fireworks:<model>` | Fireworks, OpenAI-compatible chat completions (`POST {base}/chat/completions`; base `SURMAP_FIREWORKS_URL`, else `https://api.fireworks.ai/inference/v1`) | `FIREWORKS_API_KEY` is set; the models are `SURMAP_FIREWORKS_MODELS` (comma-separated), else the endpoint's `GET /models`, else the built-in list | `FireworksChatModel` via `fireworks_chat_model` (`fireworks.py`) |
 | `ollama:<model>` | Loopback Ollama (`SURMAP_OLLAMA_URL`, else the labelling default) | the server's `GET /api/tags` names it; an unreachable server lists nothing | `ChatOllama` via `ollama_chat_model` (`ollama.py`) |
 
-An id splits at the first colon (`ollama:llama3.2:3b` is Ollama model
-`llama3.2:3b`). `build` does not consult the listing: any `meta:` or
+`available()` lists Muse first, then Fireworks, then Ollama. An id
+splits at the first colon (`ollama:llama3.2:3b` is Ollama model
+`llama3.2:3b`; `fireworks:accounts/fireworks/models/qwen3-235b-a22b`
+is Fireworks model `accounts/fireworks/models/qwen3-235b-a22b`).
+`build` does not consult the listing: any `meta:`, `fireworks:` or
 `ollama:` id builds; any other provider raises `UnknownModelProvider`.
 The registry reads an injected `environ` (default `os.environ`).
+
+**Keys.** `MODEL_API_KEY` (Muse) and `FIREWORKS_API_KEY` go in the
+project `.env` (git-ignored; copy `.env.example`) or the shell. `python
+-m surmap.agent` loads `.env` at startup with `surmap.env.load_env()`,
+which only fills variables the shell has not set — a shell export wins.
 
 ### Muse on the Responses API
 
@@ -336,11 +345,58 @@ raises `MetaResponsesError`. Every response with usage goes to
 so a spent `SURMAP_BUDGET_META_*` budget refuses the turn before a
 socket opens.
 
+### Fireworks on the OpenAI-compatible API
+
+`FireworksChatModel` is `langchain-openai`'s `ChatOpenAI` pointed at
+Fireworks: the stock client does the wire mapping (OpenAI `tools`,
+`tool_calls`, SSE streaming), with usage requested on the streaming
+path (`stream_usage`) and the Responses API off. Around every request it
+adds:
+
+- **Key.** A missing or blank `FIREWORKS_API_KEY` raises
+  `FireworksError` before any socket. The key is held as a `SecretStr`
+  (masked in `repr`) and sent only as `Authorization: Bearer`.
+- **Budget and usage.** `before_call("fireworks")` (the server wires
+  `UsageLedger.check`) runs first, so a spent
+  `SURMAP_BUDGET_FIREWORKS_{CALLS,TOKENS}` sends nothing; every
+  response's usage — whole or streamed — goes to `usage_sink` (the
+  ledger) as provider `fireworks`.
+- **Errors.** A client failure becomes `FireworksError` naming only the
+  exception type and HTTP status, with no `__cause__` or `__context__`
+  (the client exception's request holds the key). A 401 / 403 reads
+  `Fireworks refused the key: … check FIREWORKS_API_KEY`.
+- **URL.** `SURMAP_FIREWORKS_URL` must be `https`, or `http` on
+  loopback (`127.0.0.1`, `localhost`, `::1`), so the key never crosses a
+  network in clear text.
+
+**Listing.** With no `SURMAP_FIREWORKS_MODELS`, `available()` asks
+`GET {base}/models` (bearer key, 2 s timeout) for `data[].id`. That is
+every model the account can call, not only tool-capable ones — set
+`SURMAP_FIREWORKS_MODELS` to narrow it. Any failure, or an empty list,
+falls back to `DEFAULT_FIREWORKS_MODELS`:
+`accounts/fireworks/models/llama-v3p3-70b-instruct`,
+`accounts/fireworks/models/qwen3-235b-a22b`,
+`accounts/fireworks/models/kimi-k2-instruct`.
+
+The `openai` client also reads `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`
+from the environment and would send them as headers; leave them unset
+when running the agent on Fireworks.
+
+**Tests.** `tests/fake_fireworks.py` is a fake Fireworks provider on a
+real loopback socket (`HypercornHost` port 0, in a thread):
+`serving(FakeFireworksScript(rounds=[…]))` yields its base URL, answers
+`POST /v1/chat/completions` with a whole `chat.completion` or SSE
+chunks (by the request's `stream` flag), `GET /v1/models` from
+`served_models`, and records every request. It proves the real client
+and a stub of the documented wire format agree; agreement with
+Fireworks itself is the live check below.
+
 ### Live checks
 
 | Check | Command | Result on the dev host |
 |---|---|---|
-| Muse tool round trip (`echo`) | `SURMAP_LIVE_META=1 uv run pytest -q tests/test_agent_llm_meta.py -k live` | **Not run — no `MODEL_API_KEY` on the dev host. Live Meta function-tool support is unverified**: the request and reply shapes follow the OpenAI-style Responses API and are pinned only by hand-built fixtures |
+| Muse tool round trip (`echo`) | `SURMAP_LIVE_META=1 uv run pytest -q tests/test_agent_llm_meta.py -k live` (key from the shell or `.env`) | **Not run — no `MODEL_API_KEY` on the dev host. Live Meta function-tool support is unverified**: the request and reply shapes follow the OpenAI-style Responses API and are pinned only by hand-built fixtures |
+| Fireworks tool round trip (`echo`) | `SURMAP_LIVE_FIREWORKS=1 uv run pytest -q tests/test_agent_llm_fireworks.py -k live` (key from the shell or `.env`; `SURMAP_FIREWORKS_MODEL` picks the model, default `llama-v3p3-70b-instruct`) | **Not run — no `FIREWORKS_API_KEY` on the dev host**; offline coverage is the fake provider |
 | Ollama tool round trip | `SURMAP_LIVE_OLLAMA=1 SURMAP_OLLAMA_MODEL=<model> uv run pytest -q tests/test_agent_llm_registry.py -k live` | Passed against `fastcontext-tools:latest` |
 
 ## Running the agent
@@ -351,6 +407,8 @@ agent on hypercorn:
 ```bash
 uv run python -m surmap.agent --sam-fake                          # Muse (meta:) default model
 uv run python -m surmap.agent --sam-fake --model ollama:llama3.2  # a local Ollama model
+uv run python -m surmap.agent --sam-fake \
+    --model fireworks:accounts/fireworks/models/llama-v3p3-70b-instruct  # a Fireworks model
 ```
 
 | Flag | Default | Meaning |
@@ -365,8 +423,10 @@ uv run python -m surmap.agent --sam-fake --model ollama:llama3.2  # a local Olla
 Environment: `SURMAP_AGENT_CORS_ORIGINS` — comma-separated browser
 origins allowed by CORS (default `http://localhost:5173`, the chat UI's
 Vite dev server; blank entries dropped). Model credentials and budgets
-are the providers' own (`MODEL_API_KEY`, `SURMAP_BUDGET_META_*`, Ollama
-on its default port — see *Models* above). Ctrl-C stops the host and
+are the providers' own (`MODEL_API_KEY`, `FIREWORKS_API_KEY`,
+`SURMAP_BUDGET_META_*`, `SURMAP_BUDGET_FIREWORKS_*`, Ollama on its
+default port — see *Models* above). The process loads the project
+`.env` before reading any of them; a shell export wins over the file. Ctrl-C stops the host and
 prints `survey agent stopped`.
 
 **Served.** Connect services `surmap.agent.v1.ChatService`, `AgentJobs`
