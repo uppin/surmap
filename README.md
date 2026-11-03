@@ -10,7 +10,9 @@
 SurMap is a civilian disaster-response mapping payload. Carried over an
 affected area, it builds a GPS-anchored 3D semantic map from stereo
 video so a search-and-rescue (SAR) team can find landmarks, debris,
-vehicles, and people who need help.
+vehicles, and people who need help. Meta models do the understanding:
+Muse Wonder decides what to look for and describes the scene, SAM 3.1
+segments it, and the team can ask the finished map questions.
 
 **Scope and safety.** SurMap is a passive observer. A separate pilot or
 autopilot flies the aircraft. SurMap sends no flight commands, does no
@@ -18,17 +20,34 @@ path planning, and has no interface to a flight controller. It does no
 facial recognition and no personal identification: a map label such as
 `survivor` is a semantic object class, not an identity.
 
-Hackathon provenance, model usage, and third-party credits:
-[HACKATHON.md](HACKATHON.md). System design:
-[docs/architecture.md](docs/architecture.md).
+## What it does
 
-## 60-second quickstart (mission demo)
+- **Capture**: stereo frames, GPS, and timestamps from the payload or a recorded PX4 SITL flight.
+- **Map**: RTAB-Map tracks the camera passively; stereo depth turns pixels into 3D points.
+- **Segment**: Muse Wonder picks what to look for per keyframe (`person` first); SAM 3.1 masks it.
+- **Anchor**: masks become 3D objects and persistent surfaces in a GPS-anchored snapshot.
+- **Understand**: Muse Wonder or Muse Spark Open labels each object; Muse Wonder writes the scene note.
+- **Ask**: the viewer answers typed or spoken questions over the map.
 
-Offline is the default. It exports the recorded SITL capture in
-`tests/fixtures/sitl_capture_tiny/`, projects recorded masks onto the
-disaster-block ground truth, writes a semantic-map snapshot and an
-impact report, and opens the survey viewer. It downloads nothing,
-starts no Docker container, and needs no API key.
+## Meta models
+
+| Model | Hosted on | What it does |
+|---|---|---|
+| Muse Wonder `muse-wonder-1.0` | Meta Model API | SAM concepts per keyframe (structured output), per-object labels, scene note, Ask the map and situation report, LADI v2 labelling |
+| Muse Spark Open `meta-models/muse-spark-open-1026` | Baseten | Open-weight per-object labels (`record_label` tool call), LADI v2 labelling |
+| SAM 3.1 `sam-3.1` | Meta Model API | Masks for each keyframe concept in a live mission |
+| SAM 3.1 `facebook/sam3.1` | Self-deployed Modal GPU app (`surmap-sam`), or the station GPU (PyTorch) | Remote GPU masks; continuous video segmentation in the dev console |
+| Muse Voice Transcribe `muse-voice-transcribe-1.0` | Meta Model API | Spoken questions to text for Ask the map |
+
+Every Meta Model API text call defaults to Muse Wonder; Muse Wonder Full
+is refused. The only non-Meta learned stage is on-board detection: no
+Meta model compiles to the Coral Edge TPU
+([spike](docs/coral-edge-tpu-model-spike.md)). Endpoints and code
+paths: [HACKATHON.md](HACKATHON.md).
+
+## Quickstart
+
+### Offline mission demo (60 seconds, no keys)
 
 ```bash
 uv sync
@@ -36,19 +55,16 @@ uv run python scripts/mission_demo.py
 # viewer: http://127.0.0.1:8770/
 ```
 
-Outputs land in `mission-demo-out/`: the EuRoC export,
-`semantic_map_snapshot.json`, and `impact.json`. An offline report says
-`"basis": "fixtures"`. When a recorded live run is committed under
-`demo/recordings/mission/`, offline mode replays those real model
-responses instead and labels each one with its model and recording
-time ([demo/recordings/README.md](demo/recordings/README.md)).
+It replays the recorded SITL capture in `tests/fixtures/sitl_capture_tiny/`
+and writes `semantic_map_snapshot.json` and `impact.json` to
+`mission-demo-out/`, with no download, Docker, or API key. A recorded
+live run under `demo/recordings/mission/` is replayed with its real
+model responses instead ([demo/recordings/README.md](demo/recordings/README.md)).
 
-### Live run
+### Live mission
 
-A live run feeds a SITL capture through the Dockerized
-`StreamingRtabmapBackend` (image pinned to `linux/amd64`), segments
-each keyframe with SAM 3.1, labels every object, and writes a scene
-note. The only required flag is Meta:
+A live run streams a SITL capture through Dockerized RTAB-Map, SAM 3.1,
+and the Muse clients. Only the Meta flag is required:
 
 ```bash
 export SURMAP_LIVE_META=1
@@ -56,199 +72,110 @@ export MODEL_API_KEY='your-meta-key'      # single quotes: the key contains '|'
 uv run python scripts/mission_demo.py --live --capture ~/sitl-runs/disaster-01
 ```
 
-With `SURMAP_LIVE_META=1`, Muse Wonder chooses what to look for in each
-keyframe (structured output: up to `SURMAP_SAM_MAX_CONCEPTS` short noun
-phrases, default 4, `person` always first, refreshed every
-`SURMAP_CONCEPT_EVERY` posed frames, default 10) and SAM 3.1 on the
-Meta Model API segments each one. `SURMAP_SAM_PROMPT=<noun>` pins a
-single concept instead. Muse Wonder also labels the objects and writes
-the scene note.
-
-Optional providers:
-
 | Flags | Effect |
 |---|---|
-| `SURMAP_LIVE_BASETEN=1`, `BASETEN_API_KEY` | Per-object labels move to open-weight Muse Spark Open on Baseten, also when Meta is on (`reasoning_effort` `low`, fields from a `record_label` tool call) |
-| `SURMAP_LIVE_MODAL=1`, `MODAL_SAM_URL`, `--sam-route modal` | SAM 3.1 runs on the project's Modal GPU app instead of the Meta API |
-| `--record <dir>` | Writes every model request (auth dropped, images hashed) and response to `<dir>` for offline replay |
+| `SURMAP_LIVE_BASETEN=1`, `BASETEN_API_KEY` | Per-object labels move to Muse Spark Open on Baseten, also when Meta is on |
+| `SURMAP_LIVE_MODAL=1`, `MODAL_SAM_URL`, `--sam-route modal` | SAM 3.1 runs on the Modal GPU app instead of the Meta API |
+| `SURMAP_SAM_MAX_CONCEPTS` (default 4), `SURMAP_CONCEPT_EVERY` (default 10) | Concepts per keyframe, and how many posed frames between concept refreshes |
+| `SURMAP_SAM_PROMPT=<noun>` | Pins one SAM concept instead of Muse Wonder's list |
+| `--record <dir>` | Writes every model request (auth dropped, images hashed) and response for offline replay |
 
 Keys are read only by the clients and never written to reports or
-recordings. Runbook: [docs/mission-demo.md](docs/mission-demo.md).
-Simulation: [docs/simulation/gazebo-disaster-world.md](docs/simulation/gazebo-disaster-world.md)
-and [docs/simulation/px4-sitl.md](docs/simulation/px4-sitl.md).
+recordings. Runbook, WSL notes, and a fully local Ollama path:
+[docs/mission-demo.md](docs/mission-demo.md). Simulation:
+[docs/simulation/px4-sitl.md](docs/simulation/px4-sitl.md).
 
 ### Ask the map
-
-`surmap.mapqa` answers questions over a snapshot with Muse Wonder
-(`muse-wonder-1.0`) and transcribes spoken questions with Muse Voice
-Transcribe (`muse-voice-transcribe-1.0`):
 
 ```bash
 uv run python -m surmap.mapqa ask --snapshot mission-demo-out/semantic_map_snapshot.json \
     --question "Where are the blocked roads?"
-uv run python -m surmap.mapqa report --snapshot mission-demo-out/semantic_map_snapshot.json
-uv run python -m surmap.mapqa ask-voice --snapshot mission-demo-out/semantic_map_snapshot.json \
-    --audio query.wav
 ```
 
-The mission viewer's Ask box (`POST /ask`) uses the same client when
-`SURMAP_LIVE_META=1`; otherwise it matches labels locally. Details:
-[docs/mapqa.md](docs/mapqa.md).
+`report` prints a Markdown situation report and `ask-voice --audio q.wav`
+takes a spoken question. The mission viewer's Ask box uses the same
+client when `SURMAP_LIVE_META=1`; otherwise it matches labels locally
+([docs/mapqa.md](docs/mapqa.md)).
+
+### Dev console
+
+`uv run python scripts/demo.py` (then http://127.0.0.1:8765/) plays a
+public stereo dataset (EuRoC, KITTI, or NTU VIRAL) and builds the map
+live with RTAB-Map and, with `--sam-device cuda:0` or `mps`, SAM 3.1.
+It shows SAM objects as persistent 3D surfaces with an object feed,
+toggles RTAB-Map's tracked points and its dense depth for each SAM frame
+on the video, rewinds and replays every recorded run, rebuilds a run's
+RTAB-Map without rerunning SAM, and exports or imports runs as
+`.surmaprun` files. Full feature list and flags:
+[docs/dev-console.md](docs/dev-console.md).
 
 ## Architecture
 
 ```text
 ON-BOARD (Raspberry Pi CM5 + Coral Edge TPU)
-  stereo frames (L/R) + GPS checkpoints + timestamps
-        ├──► RTAB-Map (passive): trajectory + static-scene points
-        └──► Coral detector + IoU tracker (left channel): boxes, track ids
-             ─► stereo points inside each box, static vs moving,
-                layered over the static scene (never fused into it)
-        │
-        ▼  ConnectRPC streams / recorded session (no flight commands)
+  stereo + GPS + timestamps ─► RTAB-Map (passive) + Coral detector/tracker
+        │  ConnectRPC streams / recorded session (no flight commands)
+        ▼
 BASE STATION (NVIDIA RTX 5060 Ti)
-  stereo ─► depth ─► point cloud (pixel ↔ 3D point ↔ frame)
-  Muse Wonder picks concepts ─► SAM 3.1 masks (Meta API, local GPU, or Modal)
-        │   masks ─► 3D points (points_in_mask, StreamRegionPoints)
-        ▼
-  objects and persistent surfaces anchored to GPS (SemanticMapSnapshot)
-        │
-        ▼
-  Muse Wonder / Muse Spark Open labels + Muse Wonder scene note
-        │
-        ▼
-  semantic map ─► viewer, Ask the map (Muse Wonder, voice)
+  stereo depth ─► point cloud
+  Muse Wonder concepts ─► SAM 3.1 masks ─► 3D objects and surfaces
+  ─► GPS-anchored semantic-map snapshot
+  ─► Muse Wonder / Muse Spark Open labels + scene note
+  ─► viewer and Ask the map
 ```
 
-### Model policy: Meta first
+Design and scope boundary: [docs/architecture.md](docs/architecture.md);
+snapshot format: [docs/semantic-map-snapshot.md](docs/semantic-map-snapshot.md).
 
-Every learned stage uses a Meta model, except on-board detection,
-where no Meta model compiles to the Edge TPU
-([docs/coral-edge-tpu-model-spike.md](docs/coral-edge-tpu-model-spike.md)).
+## Evaluation
 
-| Stage | Host | Model id in code | Meta? |
+**LADI v2 disaster labelling.** `scripts/eval_disaster_labelling.py`
+scores both Muse label clients on twelve multi-label classes of
+[LADI v2](https://huggingface.co/datasets/MITLL/LADI-v2-dataset) aerial
+disaster imagery (CC BY 4.0). Test split, 300 images, reasoning effort
+`high`, 0 failed calls:
+
+| Provider | Model | Micro F1 | Macro F1 |
 |---|---|---|---|
-| Segmentation | Meta Model API / station GPU (PyTorch or ONNX) / Modal GPU | `sam-3.1` / `facebook/sam3.1` | Yes |
-| Concepts to segment | Meta Model API (structured output) | `muse-wonder-1.0` | Yes |
-| Scene note | Meta Model API | `muse-wonder-1.0` | Yes |
-| Per-object labels | Meta Model API, or Baseten (open weights) | `muse-wonder-1.0` / `meta-models/muse-spark-open-1026` | Yes |
-| Map Q&A and report | Meta Model API | `muse-wonder-1.0` | Yes |
-| Voice questions | Meta Model API | `muse-voice-transcribe-1.0` | Yes |
-| On-board detection | Pi CM5 + Coral Edge TPU | EfficientDet-Lite0 (default), SSD MobileNet V2, SSDLite MobileDet (INT8) + greedy IoU tracker | No — no Meta Edge TPU detector |
-| Visual SLAM | Pi CM5 / Docker sidecar | RTAB-Map | No — geometric, not learned |
+| Meta Model API | Muse Wonder `muse-wonder-1.0` | 0.900 | 0.677 |
+| Baseten | Muse Spark Open `meta-models/muse-spark-open-1026` | 0.889 | 0.654 |
 
-On the Meta Model API every text call defaults to Muse Wonder
-(`SURMAP_META_MODEL` selects another covered id). Muse Wonder Full is
-never used; the clients refuse it.
-
-## Dev console (`scripts/demo.py`)
-
-An engineering console that plays a public stereo dataset in real time
-and builds the map live:
+Both models over-predict debris, bridges, and flooding: recall is high,
+but precision on those classes is under 0.5. To reproduce (images are
+downloaded on demand and cached outside the repo):
 
 ```bash
-uv run python scripts/demo.py
-# open http://127.0.0.1:8765/
+SURMAP_EVAL_MAX_IMAGES=300 SURMAP_LIVE_META=1 uv run python scripts/eval_disaster_labelling.py \
+    --provider meta --reasoning-effort high --limit 300 --out ~/surmap-eval/wonder-high-300.json
 ```
 
-- **Live RTAB-Map** (`StreamingRtabmapBackend`): stereo pairs go over
-  stdin to a `librtabmap` process in a pinned `linux/amd64` container,
-  which streams odometry, keyframe points, and graph re-optimizations
-  without stalling playback. `--no-rtabmap` runs without Docker.
-- **SAM 3.1 video mode** (`--sam-device cuda:0`): `facebook/sam3.1`
-  (gated; `HF_TOKEN` in `.env`) runs in 16-frame windows so long videos
-  fit a 16 GB card. `--sam-fake` runs a stand-in without a GPU. Each
-  scene has a default concept (`box`, `car`, `person`), changeable on
-  the page or with `--sam-label`.
-- **SAM 3.1 on a Mac** (`--sam-device mps`): on Apple silicon, SAM
-  3.1's image model runs per frame on the GPU (Metal), about 2.4 s a
-  frame, with ids kept by box overlap. Play at SAM's pace (`--fps 0.35`)
-  so regions stay within the sidecar's 10 s buffer.
-- **Persistent surfaces** (`surmap.survey.surfaces`): mask points that
-  land on earlier points continue the same surface across SAM window
-  resets. A surface that drifts 40 cm or more is drawn red as a moving
-  object.
-  A region keeps only its points within 1.5 m of its median range from
-  the camera (the background a mask edge catches is cut away), and a
-  region needs 50 such points to start or grow a surface.
-- **Video toggles**: **RTAB-Map points** (checked by default) shows or
-  hides the frame's tracked features; **Dense depth** lays RTAB-Map's
-  dense stereo depth of the shown frame over it in the same near → far
-  colours (`GET /runs/<run_id>/dense-depth?frame_id=<n>`: the SGBM
-  disparity the sidecar journalled for that frame, a replay reading its
-  recording's; clear where nothing matched), live or on a rewound moment.
-  Only frames RTAB-Map computed dense stereo for (the SAM frames) have it;
-  nothing else is matched in its place.
-- **3D pane** (server-rendered, every map point): **Follow** (checked by
-  default) frames it like a navigation app, from behind and above the
-  camera along its heading, with the camera low in view; tilt and zoom
-  adjust it, and an orbit or a pan takes over. Drag, Shift+drag,
-  wheel or pinch work during a run, after it and on a rewound moment.
-  Hovering a surface names it (`car #27 · 336 pts · static`) and
-  selects all its points; a click opens it in the object feed.
-- **Object feed**: one card per surface with its own client-side 3D
-  preview (drag, Shift+drag, wheel or pinch, or buttons).
-- **SAM pane**: each mask's own dense points, coloured near → far, and
-  a card per object next to it (cyan: in 3D, with its surface id; grey:
-  too few depth points yet, with SAM's track id). Hovering a mask or
-  its card selects the object in 3D and the feed, a click opens it in
-  the feed, and a surface hovered anywhere is outlined there in yellow.
-- **Run history**: every frame, detection, and cloud update is stored
-  in `demo-history.db`; the timeline rewinds through it.
-- **Cached reruns by default, Rebuild to record**: opening a scene
-  reruns its newest complete recording from the journal, with neither
-  RTAB-Map nor SAM, and does not persist it again (the timeline scrubs
-  the recording itself). A scene with no recording waits for
-  **Rebuild**, the only action that runs RTAB-Map (and SAM) and records
-  a new run; applying a new SAM prompt rebuilds too. A run cut short by
-  another viewer's takeover is recorded as interrupted, never cached.
-- **Export / Import**: Export downloads the selected run (and any run it
-  replays) as one `.surmaprun` file: a gzipped SQLite database in the run
-  history's schema, with frames, journal, map, SAM masks, surfaces, rig and
-  dense buffer. Import adds a file's runs to this console under their own
-  ids, skipping runs already present, and they replay and rewind like runs
-  recorded there. Headless: `python -m surmap.demo.run_archive export
-  RUN_ID FILE` and `import FILE` (`--history-db` to pick the store). The
-  447-frame KITTI 0009 SAM run is about 200 MB exported.
-- **Rebuild RTAB-Map** (`GET /stream?rebuild_rtabmap=<run_id>`): runs
-  RTAB-Map live again over the run's scene while SAM is not run: each frame
-  gets the masks the run recorded for it (`surmap.demo.sam_journal`, by
-  `t_ns`). The result is a new recording, with the current sidecar's map
-  and dense buffer, that becomes the scene's cached run. Use it after a
-  sidecar change, or on a host without the SAM runtime.
-- **Replay run** (speed 1×, 4× or max; `GET /stream?replay=<run_id>&speed=N`):
-  every run keeps a journal of its events and RTAB-Map's dense buffer
-  (the disparity computed for each SAM frame, with its pose), so a
-  persisted run plays back without starting RTAB-Map or SAM. Frames,
-  map and masks come from the journal; regions and surfaces are
-  recomputed by the current code (`surmap.demo.replay.JournalPlayer`
-  takes the `SurfaceMap` under tuning). Each replay is saved as a new
-  run naming its source, for comparison. A replay or a rewound moment
-  shows the run's recorded SAM masks even on a console started without
-  SAM, and a long journal starts at once (it is streamed, and map views
-  are drawn at the live 0.33 s cadence).
+For Muse Spark Open, use `--provider baseten` with `SURMAP_LIVE_BASETEN=1`.
+Details: [docs/disaster-labelling-eval.md](docs/disaster-labelling-eval.md).
 
-Datasets are fetched on first use, SHA-256 verified, and cached in
-`~/.cache/surmap/demo-datasets` (`surmap.demo.datasets`, never
-re-hosted):
+Also: `scripts/seg_bench.py` scores the SAM routes (Meta API, Modal,
+station ONNX, replay) on a recorded disaster-block flight by IoU,
+boundary F1, 3D survivor recall, and cost
+([docs/segmentation-benchmark.md](docs/segmentation-benchmark.md)), and
+`scripts/usage_report.py` prints credit usage per provider, model, and
+day ([docs/credits-usage.md](docs/credits-usage.md)).
 
-| Scene | Zip | Licence |
-|---|---|---|
-| `euroc-v1-01-easy` (indoor MAV, 376×240 @ 20 Hz) | 1.15 GB | ETH ASL research dataset |
-| `kitti-2011-09-26-drive-0009` (city drive, 620×188 @ 10 Hz) | 1.79 GB | CC BY-NC-SA 3.0 |
-| `ntu-viral-sbs-01` (outdoor drone flight) | 3.78 GB | CC BY-NC-SA 4.0 |
+## Datasets
 
-Useful flags: `--dataset`, `--list-datasets`, `--frames N`,
-`--start I`, `--fps F`, `--rtabmap-mode live|batch`, `--prepare-only`,
-`--sam-model <id|path>`, `--cm5-host`, `--station-host`.
+Nothing is committed or re-hosted; every dataset is downloaded on
+demand and cached outside the repo. `scripts/download_disaster_data.py`
+fetches the Boreal Forest Fire UAV smoke dataset (CC BY 4.0) and NOAA's
+January 2025 Eaton and Palisades fire imagery (CC0-1.0), with subsets,
+limits, and dry runs ([docs/disaster-datasets.md](docs/disaster-datasets.md)).
+LADI v2 is fetched by the eval script; the dev-console scenes are listed
+in [docs/dev-console.md](docs/dev-console.md).
 
 ## Hardware and deployment
 
 | Node | Hardware | Role |
 |---|---|---|
-| On-board payload | Raspberry Pi CM5 + Coral Edge TPU + stereo camera ([ELP dual-lens candidate](docs/camera-elp-stereo.md)) | Stereo capture, Coral detection (`StreamDetections`), object points (`100 + track_id`) over the static scene (`1`), ConnectRPC streaming (`surmap.survey.cm5_main`) |
+| On-board payload | Raspberry Pi CM5 + Coral Edge TPU + stereo camera ([ELP candidate](docs/camera-elp-stereo.md)) | Stereo capture, Coral detection and tracking, ConnectRPC streaming (`surmap.survey.cm5_main`) |
 | Base station | Workstation with NVIDIA RTX 5060 Ti | `surmap.survey.station_main --detector memory\|sam3\|sam3-modal\|sam31-torch`, mask projection, snapshots, Muse calls |
-| Simulation host | Linux / WSL2 with Gazebo Harmonic, PX4 SITL, ROS 2 Jazzy | Fictional civilian earthquake-and-flood block, SITL capture export ([docs/simulation/px4-sitl.md](docs/simulation/px4-sitl.md)) |
+| Simulation host | Linux / WSL2 with Gazebo Harmonic, PX4 SITL, ROS 2 Jazzy | Fictional civilian earthquake-and-flood block, SITL capture export |
 
 ```bash
 uv run python scripts/fetch_coral_model.py
@@ -257,28 +184,10 @@ scripts/deploy-station.sh <source-dir> <ssh-target>      # SAM 3.1 PyTorch on cu
 scripts/deploy-demo.sh <source-dir> <ssh-target>         # dev console against both
 ```
 
-Details: [docs/deployment.md](docs/deployment.md).
+Details: [docs/deployment.md](docs/deployment.md) and
+[docs/modal.md](docs/modal.md).
 
-## Benchmarks and evaluation
-
-- `scripts/seg_bench.py`: offline scores for the SAM routes (Meta API,
-  Modal, station ONNX, replay) on a recorded disaster-block flight —
-  IoU, boundary F1, 3D survivor recall, cost
-  ([docs/segmentation-benchmark.md](docs/segmentation-benchmark.md)).
-- `scripts/eval_disaster_labelling.py`: per-class F1 of Muse Wonder on
-  the Meta Model API (structured output) and open-weight Muse Spark Open on Baseten
-  (tool call) on LADI v2 aerial disaster imagery (CC BY 4.0), downloaded
-  on demand; no data is committed
-  ([docs/disaster-labelling-eval.md](docs/disaster-labelling-eval.md)).
-- `scripts/download_disaster_data.py`: caches two open disaster datasets
-  outside the repo: the Boreal Forest Fire UAV smoke dataset (CC BY 4.0,
-  Fairdata) and NOAA's 28 January 2025 Eaton and Palisades fire imagery
-  tiles (CC0-1.0, `noaa-eri-pds`), with subsets, limits, and dry runs
-  ([docs/disaster-datasets.md](docs/disaster-datasets.md)).
-- `scripts/usage_report.py`: credit usage per provider, model, and day
-  ([docs/credits-usage.md](docs/credits-usage.md)).
-
-## Development and quality gates
+## Development
 
 ```bash
 uv sync --group dev
@@ -288,21 +197,23 @@ uv run mypy                 # strict, src and tests
 uv run pytest -q
 ```
 
-CI runs the same gates on Python 3.11 and 3.12 for every push to `main`
-and every pull request. Model calls in tests use fake transports; live
-tests are skipped unless their `SURMAP_LIVE_*` flag is set.
+CI runs these gates on Python 3.11 and 3.12 for every push to `main` and
+every pull request. Model calls in tests use fake transports; live tests
+are skipped unless their `SURMAP_LIVE_*` flag is set.
 
 ## Roadmap
 
-Next hardware milestones:
-
-- Bench validation of the ELP stereo module on the CM5: baseline,
-  L/R sync, depth range, sustained thermal load.
-- On-device latency of the Edge TPU profiles.
+- Bench-validate the ELP stereo module on the CM5 (baseline, L/R sync,
+  depth range, thermal load) and measure Edge TPU latency on-device.
 - Sustained SAM 3.1 throughput and VRAM on the RTX 5060 Ti.
-- Link budget (Wi-Fi vs LTE store-and-forward) and a GeoJSON map
-  export.
-- GPS on the survey wire (today GPS comes from the capture's `gps.csv`).
+- GPS on the survey wire (today it comes from the capture's `gps.csv`),
+  a link budget (Wi-Fi vs LTE store-and-forward), and GeoJSON export.
 
 Out of scope by design: navigation, path planning, flight-controller
 interfaces, and drone tasking.
+
+## Credits
+
+SurMap builds on RTAB-Map, PX4, Gazebo, ROS 2, ConnectRPC, Coral
+detectors, and open datasets. Provenance, licences, and third-party
+credits: [HACKATHON.md](HACKATHON.md).
