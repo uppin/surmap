@@ -7,16 +7,21 @@ export interface TranscriptProps {
   items: TranscriptItem[];
   /** The agent server, against which relative `geometry_uri`s resolve. */
   serverUrl: string;
+  /** The running turn has nothing to show yet; a typing indicator follows the last item. */
+  awaitingReply?: boolean;
 }
 
-/** The conversation: user and assistant messages (Markdown), tool steps, steer markers, job notices, errors. */
+/**
+ * The conversation: user and assistant messages (Markdown), tool steps, steer markers, job notices,
+ * errors, and a typing indicator while the agent's reply is awaited.
+ */
 export function Transcript(props: TranscriptProps): ReactNode {
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const log = logRef.current;
     if (log) log.scrollTop = log.scrollHeight;
-  }, [props.items]);
+  }, [props.items, props.awaitingReply]);
 
   return (
     <div
@@ -27,6 +32,23 @@ export function Transcript(props: TranscriptProps): ReactNode {
     >
       {props.items.map((item) => (
         <TranscriptEntry key={item.id} item={item} serverUrl={props.serverUrl} />
+      ))}
+      {props.awaitingReply === true && <TypingIndicator />}
+    </div>
+  );
+}
+
+/** Three dots pulsing in turn. */
+function TypingIndicator(): ReactNode {
+  return (
+    <div role="status" aria-label="Agent is thinking" className="flex items-center gap-1 py-2">
+      {["0ms", "150ms", "300ms"].map((delay) => (
+        <span
+          key={delay}
+          aria-hidden="true"
+          className="size-2 animate-bounce rounded-full bg-muted-foreground/60"
+          style={{ animationDelay: delay }}
+        />
       ))}
     </div>
   );

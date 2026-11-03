@@ -17,7 +17,7 @@ import {
   jobHandle,
 } from "@/test-support/turn-events";
 import { aModel, ONE_PIXEL_PNG } from "@/test-support/view-items";
-import { isTurnActive } from "./chat-reducer";
+import { isAwaitingReply, isTurnActive } from "./chat-reducer";
 
 describe("chatReducer", () => {
   it("records the user's message from the turn's user_message event", () => {
@@ -236,6 +236,56 @@ describe("chatReducer", () => {
       turnId: null,
       busy: false,
     });
+  });
+
+  it("awaits a reply from the moment a turn is requested", () => {
+    const state = aChatState({ type: "turn_requested" });
+
+    expect(isAwaitingReply(state)).toBe(true);
+  });
+
+  it("awaits a reply after the user's message until the agent answers", () => {
+    const turn = aConversation().userMessage("Find the boxes").build();
+
+    const state = receive(aChatState({ type: "turn_requested" }), turn);
+
+    expect(isAwaitingReply(state)).toBe(true);
+  });
+
+  it("no longer awaits a reply while the agent's text is streaming", () => {
+    const turn = aConversation().userMessage("Hello").textDelta("Hi").build();
+
+    const state = receive(aChatState({ type: "turn_requested" }), turn);
+
+    expect(isAwaitingReply(state)).toBe(false);
+  });
+
+  it("does not await a reply while a tool step shows its own progress", () => {
+    const turn = aConversation().userMessage("Run the EuRoC demo").toolStarted("call-1", "run_demo").build();
+
+    const state = receive(aChatState({ type: "turn_requested" }), turn);
+
+    expect(isAwaitingReply(state)).toBe(false);
+  });
+
+  it("awaits a reply again once a tool call finishes", () => {
+    const turn = aConversation()
+      .userMessage("Run the EuRoC demo")
+      .toolStarted("call-1", "run_demo")
+      .toolSucceeded("call-1")
+      .build();
+
+    const state = receive(aChatState({ type: "turn_requested" }), turn);
+
+    expect(isAwaitingReply(state)).toBe(true);
+  });
+
+  it("does not await a reply once the turn finishes", () => {
+    const turn = aConversation().userMessage("Hello").turnFinished("stop").build();
+
+    const state = receive(aChatState({ type: "turn_requested" }), turn);
+
+    expect(isAwaitingReply(state)).toBe(false);
   });
 
   it("is stopping, and still busy, after Stop until the turn finishes", () => {
