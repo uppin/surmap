@@ -292,6 +292,9 @@ CI runs the same gates on Python 3.11 and 3.12 for every push to `main`
 and every pull request. Model calls in tests use fake transports; live
 tests are skipped unless their `SURMAP_LIVE_*` flag is set.
 
+The agent chat web front end (Vite, React, shadcn/ui) lives in
+[web/agent-chat/](web/agent-chat/README.md).
+
 ## Roadmap
 
 Next hardware milestones:

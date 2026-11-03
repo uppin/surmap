@@ -1,0 +1,65 @@
+name: agent-chat
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/agent-chat/**"
+      - "proto/surmap/agent/**"
+      - ".github/workflows/agent-chat.yml"
+  pull_request:
+    paths:
+      - "web/agent-chat/**"
+      - "proto/surmap/agent/**"
+      - ".github/workflows/agent-chat.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/agent-chat
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20.19
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.19"
+          cache: yarn
+          cache-dependency-path: web/agent-chat/yarn.lock
+
+      - name: Enable corepack (honours packageManager)
+        run: corepack enable
+
+      # Public runners cannot reach the private registry, so CI installs the
+      # committed lock, whose resolved URLs are all registry.yarnpkg.com.
+      - name: Install from the public registry with the committed lock
+        run: yarn install --frozen-lockfile
+
+      - name: Lock resolves only on the public registry
+        run: |
+          if grep -E '^  resolved ' yarn.lock | grep -v '^  resolved "https://registry\.yarnpkg\.com/'; then
+            echo "yarn.lock has resolved URLs outside registry.yarnpkg.com" >&2
+            exit 1
+          fi
+
+      - name: Generate the protobuf client and check for drift
+        run: |
+          yarn gen
+          git diff --exit-code -- src/gen
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Typecheck
+        run: yarn typecheck
+
+      - name: Test
+        run: yarn test --run
+
+      - name: Build
+        run: yarn build
