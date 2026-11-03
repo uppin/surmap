@@ -342,3 +342,67 @@ socket opens.
 |---|---|---|
 | Muse tool round trip (`echo`) | `SURMAP_LIVE_META=1 uv run pytest -q tests/test_agent_llm_meta.py -k live` | **Not run — no `MODEL_API_KEY` on the dev host. Live Meta function-tool support is unverified**: the request and reply shapes follow the OpenAI-style Responses API and are pinned only by hand-built fixtures |
 | Ollama tool round trip | `SURMAP_LIVE_OLLAMA=1 SURMAP_OLLAMA_MODEL=<model> uv run pytest -q tests/test_agent_llm_registry.py -k live` | Passed against `fastcontext-tools:latest` |
+
+## Running the agent
+
+`python -m surmap.agent` (`src/surmap/agent/__main__.py`) serves the
+agent on hypercorn:
+
+```bash
+uv run python -m surmap.agent --sam-fake                          # Muse (meta:) default model
+uv run python -m surmap.agent --sam-fake --model ollama:llama3.2  # a local Ollama model
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--host` | `127.0.0.1` | bind address — loopback unless you say otherwise; the server has no auth |
+| `--port` | `8780` | `0` picks a free port; the bound one is printed as `survey agent on http://…` |
+| `--model` | `meta:<DEFAULT_AGENT_META_MODEL>` | default model id (`ListModels` lists the rest) |
+| `--history-db` | demo default | demo run history DB |
+| `--cache-dir` | demo default | demo scene cache; object GLBs go to `<cache-dir>/agent-geometry` |
+| `--sam-fake` | off | fake centred-box SAM — **required for now** |
+
+Environment: `SURMAP_AGENT_CORS_ORIGINS` — comma-separated browser
+origins allowed by CORS (default `http://localhost:5173`, the chat UI's
+Vite dev server; blank entries dropped). Model credentials and budgets
+are the providers' own (`MODEL_API_KEY`, `SURMAP_BUDGET_META_*`, Ollama
+on its default port — see *Models* above). Ctrl-C stops the host and
+prints `survey agent stopped`.
+
+**Served.** Connect services `surmap.agent.v1.ChatService`, `AgentJobs`
+and `SurveyTools` (the UI may call a survey tool directly), plus HTTP:
+
+| Route | Returns |
+|---|---|
+| `GET /health` | `ok` |
+| `GET /geometry/<run_id>/<object_id>.glb` | an object's published GLB (`model/gltf-binary`), 404 when absent |
+| `GET /frames/<run_id>/<frame_id>.jpg[?crop=x0,y0,x1,y1&max_side=N]` | a run frame, optionally cropped / downscaled; 400 on a malformed query |
+
+CORS headers go only to allowed origins, on Connect responses and the
+HTTP routes alike; `OPTIONS` answers the preflight.
+
+**Event stream.** `StreamTurn` streams the turn's `TurnEvent`s, each
+with `conversation_id`, `turn_id` and a per-conversation `seq`: first
+`user_message`, then `text_delta`, `tool_call_started` /
+`tool_call_finished` (with any tool `image`), `job_update`,
+`steer_applied`, and last `turn_finished` (or `error`). A conversation
+starts with its first `StreamTurn` (one `AgentSession` each, in the
+`ChatHub`); a second `StreamTurn` while a turn runs is refused as busy.
+`WatchConversation` streams the turns a finished job starts (each opens
+with that job's `job_update`); `GetConversation` replays every event.
+`Steer` on an idle conversation returns `accepted=false`; `CancelTurn`
+ends the turn as `turn_finished(CANCELLED)`. `AgentJobs` requests name
+their conversation in the `surmap-conversation-id` header.
+
+**Limits.**
+
+- **`--sam-fake` only.** Without it the process refuses to start: the
+  CLI has no SAM device / model / route flags yet. Recorded:
+  `src/surmap/docs/todo/2026-11-03-agent-cli-sam-flags.md`.
+- **Tool images reach the model as a placeholder**
+  (`<image/jpeg, N bytes, shown to the user>`); the stream carries the
+  real bytes to the UI. Recorded:
+  `src/surmap/docs/todo/2026-11-03-agent-tool-image-parts.md`.
+- **`WatchConversation` before the first turn is `NOT_FOUND`** — open the
+  watch after the conversation's first `StreamTurn`.
+- Conversations live in memory for the process lifetime.

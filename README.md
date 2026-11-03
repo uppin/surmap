@@ -242,6 +242,18 @@ Useful flags: `--dataset`, `--list-datasets`, `--frames N`,
 `--start I`, `--fps F`, `--rtabmap-mode live|batch`, `--prepare-only`,
 `--sam-model <id|path>`, `--cm5-host`, `--station-host`.
 
+## Survey agent
+
+A chat agent that runs demos, SAM and object tools for you, served on
+`127.0.0.1:8780`:
+
+```bash
+uv run python -m surmap.agent --sam-fake --model ollama:llama3.2
+```
+
+Flags, routes and the event stream: [docs/agent.md](docs/agent.md)
+§ *Running the agent*.
+
 ## Hardware and deployment
 
 | Node | Hardware | Role |
