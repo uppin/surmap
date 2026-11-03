@@ -136,3 +136,33 @@ def test_a_capture_without_fire_has_no_perimeters(tmp_path: Path) -> None:
     recorder.finish()
 
     assert load_bevy_capture(tmp_path).fire_perimeters == {}
+
+
+def test_a_capture_carries_each_persons_track_and_the_wind_per_frame(tmp_path: Path) -> None:
+    # Given a recorded session whose recorder wrote the moving bodies and the wind
+    recorder = CaptureRecorder(tmp_path, a_calibration(), objects=(a_car(),))
+    recorder.record_pair(a_pair(1, 1_000_000_000, 0.0))
+    recorder.finish()
+    line = {
+        "t_ns": 1_000_000_000,
+        "wind_enu": [6.0, 0.5],
+        "objects": [{"id": "evacuee-1", "enu": [12.0, 61.0, 0.0], "action": "flee_from_fire"}],
+    }
+    (tmp_path / "object_tracks.jsonl").write_text(json.dumps(line) + "\n", encoding="utf-8")
+
+    # When it is loaded
+    capture = load_bevy_capture(tmp_path)
+
+    # Then each frame has every person's position and the wind
+    assert capture.object_tracks[1_000_000_000]["evacuee-1"] == Vec3(12.0, 61.0, 0.0)
+    assert capture.wind[1_000_000_000] == (6.0, 0.5)
+
+
+def test_a_capture_without_moving_bodies_has_no_tracks(tmp_path: Path) -> None:
+    recorder = CaptureRecorder(tmp_path, a_calibration(), objects=(a_car(),))
+    recorder.record_pair(a_pair(1, 1_000_000_000, 0.0))
+    recorder.finish()
+
+    capture = load_bevy_capture(tmp_path)
+
+    assert (capture.object_tracks, capture.wind) == ({}, {})

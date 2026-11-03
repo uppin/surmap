@@ -6,6 +6,7 @@
 //! ground debris, and a stereo rig built from the runtime camera
 //! profile renders the left/right feeds RTAB-Map receives.
 
+mod behaviour;
 mod calibration;
 mod fire;
 mod flight;

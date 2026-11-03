@@ -159,3 +159,7 @@ def weather_of(manifest: Mapping[str, object]) -> dict[str, object]:
 
 def wind_of(manifest: Mapping[str, object]) -> dict[str, object]:
     return _dict(weather_of(manifest).get("wind"))
+
+
+def person_ids(manifest: Mapping[str, object]) -> list[str]:
+    return [str(e["id"]) for e in _dicts(manifest, "elements") if e.get("kind") == "person"]

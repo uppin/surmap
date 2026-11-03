@@ -76,6 +76,24 @@ service SimulationTools {
     option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
   }
 
+  // Sets the behaviour tree of a person (by element id) or of the wind (target "wind"), as
+  // JSON: nodes sequence, selector, parallel, repeat, invert; conditions time_after, near_fire,
+  // near_object, wind_above; actions idle, move_to, follow_path, wander, flee_from_fire, and
+  // set_wind for the wind only. Every node is {"node": <kind>, "id": <optional>, ...fields}.
+  rpc SetBehaviour(SetBehaviourRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Replaces one node, found by its id, in a target's behaviour tree.
+  rpc UpdateBehaviourNode(UpdateBehaviourNodeRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Returns a target's behaviour tree as JSON (empty when it has none).
+  rpc GetBehaviour(GetBehaviourRequest) returns (BehaviourResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
   // Returns a scenario's latest version: its manifest, credits, and the URL the simulation
   // page opens it at.
   rpc GetScenario(GetScenarioRequest) returns (ScenarioResponse) {
@@ -235,6 +253,8 @@ message PersonElement {
   EnuPoint position = 2;
   // A coat material the scenario declares, e.g. "coat_orange".
   string coat = 3;
+  // A skin material the scenario declares; the scenario's default skin when empty.
+  string skin = 4;
 }
 
 message VegetationElement {
@@ -298,6 +318,35 @@ message AddFireRequest {
 message RemoveFireRequest {
   string scenario_id = 1;
   string fire_id = 2;
+}
+
+message SetBehaviourRequest {
+  string scenario_id = 1;
+  // A person element's id, or "wind".
+  string target_id = 2;
+  // The whole tree, as a JSON object.
+  string tree_json = 3;
+}
+
+message UpdateBehaviourNodeRequest {
+  string scenario_id = 1;
+  string target_id = 2;
+  string node_id = 3;
+  // The replacement node (and its subtree), as a JSON object.
+  string node_json = 4;
+}
+
+message GetBehaviourRequest {
+  string scenario_id = 1;
+  string target_id = 2;
+}
+
+message BehaviourResponse {
+  string target_id = 1;
+  // The tree as a JSON object; empty when the target has none.
+  string tree_json = 2;
+  // The scenario version the tree was read from.
+  int32 version = 3;
 }
 
 message GetScenarioRequest {
