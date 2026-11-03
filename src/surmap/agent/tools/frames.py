@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 from PIL import Image
 
-from surmap.agent.tools.workspace import BoxXYXY
+from surmap.agent.tools.port import BoxXYXY
 
 __all__ = ["EncodedImage", "crop_box_for_object", "frame_image"]
 

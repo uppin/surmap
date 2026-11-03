@@ -23,6 +23,7 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
+from surmap.agent.proto import survey_tools_pb2 as pb
 from surmap.agent.tools.workspace import DemoWorkspace, GeometryStore
 from surmap.demo.datasets import DISPLAY_HEIGHT, DISPLAY_WIDTH, PreparedDataset
 from surmap.demo.history import RunHistoryStore
@@ -199,3 +200,9 @@ async def settled(call: Awaitable[T]) -> None:
     """Wait for a cancelled call to finish unwinding."""
     with contextlib.suppress(asyncio.CancelledError):
         await call
+
+
+def xyz(vector: pb.Vec3) -> tuple[float, float, float]:
+    """A proto vector as an `(x, y, z)` tuple."""
+    return (vector.x, vector.y, vector.z)
+
