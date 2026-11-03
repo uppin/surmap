@@ -1,0 +1,45 @@
+{
+  "colour_gradient": [
+    [
+      0.0,
+      [
+        0.32,
+        0.3,
+        0.28
+      ],
+      1.0,
+      0.55
+    ],
+    [
+      1.0,
+      [
+        0.55,
+        0.53,
+        0.5
+      ],
+      1.0,
+      0.0
+    ]
+  ],
+  "size_m": [
+    2.0,
+    12.0
+  ],
+  "lifetime_s": [
+    12.0,
+    18.0
+  ],
+  "motion": {
+    "up": 1.8,
+    "wind_coupling": 1.0,
+    "gravity": 0.0
+  },
+  "blend": "alpha",
+  "spawn": {
+    "per_metre": 0.12
+  },
+  "max_particles": 4000,
+  "emitter_spacing_m": 6.0,
+  "refresh_s": 0.5,
+  "round": 1.0
+}

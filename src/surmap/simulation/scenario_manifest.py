@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from surmap.simulation.scenario_store import StoredAsset
 
 Manifest = dict[str, object]
-ELEMENT_KINDS = ("box", "collapsed_building", "building", "person")
+ELEMENT_KINDS = ("box", "collapsed_building", "building", "person", "vegetation")
 COLLIDERS = ("none", "box", "trimesh")
 
 
@@ -47,6 +47,77 @@ def _relative(path: object, what: str) -> str:
     if pure.is_absolute() or ".." in pure.parts or "" in path.split("/"):
         raise ScenarioInvalid(f"{what} {path!r} must stay inside the assets")
     return path
+
+
+def _number(value: object, what: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ScenarioInvalid(f"{what} must be a number")
+    return float(value)
+
+
+def _file(path: object, what: str, suffix: str) -> str:
+    """A relative asset path naming a declarative `suffix` file (`.fx.json`, `.species.json`)."""
+    checked = _relative(path, what)
+    if not checked.endswith(suffix):
+        raise ScenarioInvalid(f"{what} {checked!r} must be a {suffix} file")
+    return checked
+
+
+def _validate_weather(weather: object) -> None:
+    if not isinstance(weather, dict):
+        raise ScenarioInvalid("weather must be an object")
+    if _number(weather.get("rain_mm_h", 0.0), "weather rain_mm_h") < 0:
+        raise ScenarioInvalid("weather rain_mm_h must be >= 0")
+    if "fog_visibility_m" in weather and weather["fog_visibility_m"] is not None:
+        if _number(weather["fog_visibility_m"], "weather fog_visibility_m") <= 0:
+            raise ScenarioInvalid("weather fog_visibility_m must be > 0")
+    wind = weather.get("wind")
+    if not isinstance(wind, dict):
+        raise ScenarioInvalid("weather wind must be an object")
+    _number(wind.get("from_deg"), "weather wind from_deg")
+    for key in ("speed_m_s", "gust_m_s"):
+        if _number(wind.get(key, 0.0), f"weather wind {key}") < 0:
+            raise ScenarioInvalid(f"weather wind {key} must be >= 0")
+    if "rain_fx" in weather:
+        _file(weather["rain_fx"], "weather rain_fx", ".fx.json")
+
+
+def _validate_fire(fire: Mapping[str, object], seen: set[str]) -> None:
+    fire_id = fire.get("id")
+    if not isinstance(fire_id, str) or not fire_id:
+        raise ScenarioInvalid("every fire needs an id")
+    if fire_id in seen:
+        raise ScenarioInvalid(f"duplicate id {fire_id!r}")
+    seen.add(fire_id)
+    ignition = fire.get("ignition_enu")
+    if not isinstance(ignition, list) or len(ignition) != 3:
+        raise ScenarioInvalid(f"fire {fire_id}: ignition_enu must be three numbers")
+    for value in ignition:
+        _number(value, f"fire {fire_id} ignition_enu")
+    if _number(fire.get("spread_m_s"), f"fire {fire_id} spread_m_s") <= 0:
+        raise ScenarioInvalid(f"fire {fire_id}: spread_m_s must be > 0")
+    if _number(fire.get("max_radius_m"), f"fire {fire_id} max_radius_m") <= 0:
+        raise ScenarioInvalid(f"fire {fire_id}: max_radius_m must be > 0")
+    if _number(fire.get("start_s", 0.0), f"fire {fire_id} start_s") < 0:
+        raise ScenarioInvalid(f"fire {fire_id}: start_s must be >= 0")
+    effects = fire.get("effects", {})
+    if not isinstance(effects, dict):
+        raise ScenarioInvalid(f"fire {fire_id}: effects must be an object")
+    for name, path in effects.items():
+        _file(path, f"fire {fire_id} effect {name}", ".fx.json")
+
+
+def _validate_vegetation(element: Mapping[str, object]) -> None:
+    element_id = element.get("id")
+    _file(element.get("species"), f"element {element_id}: species", ".species.json")
+    size = element.get("size_m")
+    if not isinstance(size, list) or len(size) != 2:
+        raise ScenarioInvalid(f"element {element_id}: size_m must be (east, north)")
+    if any(_number(v, f"element {element_id} size_m") <= 0 for v in size):
+        raise ScenarioInvalid(f"element {element_id}: size_m must be > 0")
+    density = _number(element.get("density_per_100m2"), f"element {element_id} density")
+    if not 0 < density <= 50:
+        raise ScenarioInvalid(f"element {element_id}: density_per_100m2 must be in (0, 50]")
 
 
 def _element_materials(element: Mapping[str, object]) -> list[str]:
@@ -92,8 +163,12 @@ def validate_manifest(manifest: Mapping[str, object]) -> None:
             if key not in materials:
                 raise ScenarioInvalid(f"element {element_id}: unknown material {key!r}")
         scatters += isinstance(element.get("scatter"), dict)
+        if element.get("kind") == "vegetation":
+            _validate_vegetation(element)
     if scatters > 1:
         raise ScenarioInvalid("at most one element may scatter debris")
+    if "weather" in manifest:
+        _validate_weather(manifest["weather"])
     for model in _list(manifest, "models"):
         model_id = model.get("id")
         if not isinstance(model_id, str) or not model_id:
@@ -106,11 +181,15 @@ def validate_manifest(manifest: Mapping[str, object]) -> None:
             raise ScenarioInvalid(f"model {model_id}: {glb!r} is not glTF")
         if model.get("collider") not in COLLIDERS:
             raise ScenarioInvalid(f"model {model_id}: collider must be one of {COLLIDERS}")
+    for fire in _list(manifest, "fires"):
+        _validate_fire(fire, seen)
 
 
 def element_ids(manifest: Mapping[str, object]) -> list[str]:
+    """Ids a new element, model or fire must not reuse (a fire shares the namespace)."""
     ids = [str(e.get("id")) for e in _list(manifest, "elements")]
-    return ids + [str(m.get("id")) for m in _list(manifest, "models")]
+    ids += [str(m.get("id")) for m in _list(manifest, "models")]
+    return ids + [str(f.get("id")) for f in _list(manifest, "fires")]
 
 
 def _with(manifest: Mapping[str, object], key: str, items: Sequence[dict[str, object]]) -> Manifest:
@@ -169,8 +248,117 @@ def remove_element(manifest: Mapping[str, object], element_id: str) -> Manifest:
     )
 
 
+def set_weather(
+    manifest: Mapping[str, object],
+    *,
+    rain_mm_h: float,
+    fog_visibility_m: float | None,
+    wind_from_deg: float,
+    wind_speed_m_s: float,
+    wind_gust_m_s: float,
+) -> Manifest:
+    """A new manifest whose weather is the rain, fog and one wind given."""
+    edited: Manifest = copy.deepcopy(dict(manifest))
+    previous = edited.get("weather")
+    weather: dict[str, object] = dict(previous) if isinstance(previous, dict) else {}
+    weather["rain_mm_h"] = rain_mm_h
+    if fog_visibility_m is None:
+        weather.pop("fog_visibility_m", None)
+    else:
+        weather["fog_visibility_m"] = fog_visibility_m
+    weather["wind"] = {
+        "from_deg": wind_from_deg,
+        "speed_m_s": wind_speed_m_s,
+        "gust_m_s": wind_gust_m_s,
+    }
+    edited["weather"] = weather
+    validate_manifest(edited)
+    return edited
+
+
+def add_fire(manifest: Mapping[str, object], fire: Mapping[str, object]) -> Manifest:
+    """A new manifest with `fire` appended (its id is unique among elements, models and fires)."""
+    fire_id = fire.get("id")
+    if fire_id in element_ids(manifest):
+        raise ScenarioInvalid(f"duplicate id {fire_id!r}")
+    return _with(manifest, "fires", [*_list(manifest, "fires"), dict(fire)])
+
+
+def remove_fire(manifest: Mapping[str, object], fire_id: str) -> Manifest:
+    """A new manifest without the fire called `fire_id`."""
+    fires = _list(manifest, "fires")
+    if fire_id not in [f.get("id") for f in fires]:
+        raise ScenarioInvalid(f"no fire {fire_id!r}")
+    return _with(manifest, "fires", [f for f in fires if f.get("id") != fire_id])
+
+
+def _stand(
+    stand_id: str,
+    species: str,
+    centre: tuple[float, float],
+    size: tuple[float, float],
+    **plan: object,
+) -> dict[str, object]:
+    return {
+        "kind": "vegetation",
+        "id": stand_id,
+        "species": f"species/{species}.species.json",
+        "position_enu": [centre[0], centre[1], 0.0],
+        "size_m": list(size),
+        **plan,
+    }
+
+
+def _wildfire_edge(lot: Manifest) -> Manifest:
+    """The empty lot with two pine stands in dry grass, a 6 m/s westerly and a fire upwind."""
+    edge = add_element(
+        lot,
+        _stand("grass", "dry_grass", (0.0, 60.0), (150.0, 80.0), density_per_100m2=30.0, seed=7),
+    )
+    edge = add_element(
+        edge,
+        _stand("pines-west", "pine", (-40.0, 60.0), (40.0, 60.0), density_per_100m2=3.0, seed=11),
+    )
+    edge = add_element(
+        edge,
+        _stand("pines-east", "pine", (35.0, 55.0), (30.0, 40.0), density_per_100m2=3.0, seed=23),
+    )
+    edge = set_weather(
+        edge,
+        rain_mm_h=0.0,
+        fog_visibility_m=None,
+        wind_from_deg=270.0,
+        wind_speed_m_s=6.0,
+        wind_gust_m_s=2.0,
+    )
+    return add_fire(
+        edge,
+        {
+            "id": "front-1",
+            "ignition_enu": [-58.0, 60.0, 0.0],
+            "start_s": 2.0,
+            "spread_m_s": 0.15,
+            "max_radius_m": 35.0,
+            "smoke": True,
+        },
+    )
+
+
+def _flood_street(block: Manifest) -> Manifest:
+    """The earthquake block in 8 mm/h rain and 250 m fog, with a calm 2 m/s wind."""
+    return set_weather(
+        block,
+        rain_mm_h=8.0,
+        fog_visibility_m=250.0,
+        wind_from_deg=250.0,
+        wind_speed_m_s=2.0,
+        wind_gust_m_s=0.0,
+    )
+
+
 def load_presets(assets_dir: Path) -> dict[str, Manifest]:
-    """`earthquake-block` (the shipped scene) and `empty-lot` (its rig, sky and bare ground)."""
+    """`earthquake-block` (the shipped scene), `empty-lot` (its rig, sky and bare ground), and
+    `wildfire-edge` and `flood-street` built from them."""
     block: Manifest = json.loads((Path(assets_dir) / "scene.json").read_text(encoding="utf-8"))
     materials = _materials(block)
     lot: Manifest = {
@@ -190,7 +378,11 @@ def load_presets(assets_dir: Path) -> dict[str, Manifest]:
         ],
         "models": [],
     }
-    presets = {"earthquake-block": block, "empty-lot": lot}
-    for manifest in presets.values():
+    for manifest in (block, lot):
         validate_manifest(manifest)
-    return presets
+    return {
+        "earthquake-block": block,
+        "empty-lot": lot,
+        "wildfire-edge": _wildfire_edge(lot),
+        "flood-street": _flood_street(block),
+    }

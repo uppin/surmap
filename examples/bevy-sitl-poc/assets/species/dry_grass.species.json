@@ -1,0 +1,35 @@
+{
+  "generator": "grass",
+  "palette": [
+    [
+      0.42,
+      0.38,
+      0.2
+    ],
+    [
+      0.62,
+      0.55,
+      0.3
+    ]
+  ],
+  "burnt_palette": [
+    [
+      0.06,
+      0.05,
+      0.045
+    ]
+  ],
+  "height_m": [
+    0.45,
+    0.85
+  ],
+  "plants_per_unit": 30.0,
+  "wind_damping": {
+    "strength": 1.0,
+    "micro_strength": 1.0,
+    "s_curve_strength": 1.0,
+    "bop_strength": 1.0,
+    "twist_strength": 1.0
+  },
+  "lod_distance_m": 75.0
+}

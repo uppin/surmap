@@ -45,6 +45,9 @@ pub struct Weather {
     pub wet_roughness: f32,
     #[serde(default = "wet_darkening")]
     pub wet_darkening: f32,
+    /// Material keys that look wet while it rains.
+    #[serde(default = "wet_materials")]
+    pub wet_materials: Vec<String>,
 }
 
 /// Meteorological: `from_deg` is where the wind blows from, clockwise from north.
@@ -111,6 +114,9 @@ fn smoke_fx() -> String {
 }
 fn wet_roughness() -> f32 {
     0.6
+}
+fn wet_materials() -> Vec<String> {
+    vec!["ground".into(), "asphalt".into()]
 }
 fn wet_darkening() -> f32 {
     0.85
@@ -408,7 +414,8 @@ impl SceneManifest {
             .models
             .iter()
             .map(|m| m.id.as_str())
-            .chain(manifest.elements.iter().map(Element::id));
+            .chain(manifest.elements.iter().map(Element::id))
+            .chain(manifest.fires.iter().map(|f| f.id.as_str()));
         for id in ids {
             if !seen.insert(id.to_owned()) {
                 return Err(ManifestError::DuplicateId(id.to_owned()));
@@ -438,11 +445,63 @@ impl SceneManifest {
                 return Err(ManifestError::BadAssetPath(model.glb.clone()));
             }
         }
+        manifest.validate_weather_fire_vegetation()?;
         Ok(manifest)
+    }
+
+    /// Ranges of weather, fires and vegetation, and the kind of file each path names.
+    fn validate_weather_fire_vegetation(&self) -> Result<(), ManifestError> {
+        let invalid = |what: &str| Err(ManifestError::Invalid(what.to_owned()));
+        if let Some(weather) = &self.weather {
+            if weather.rain_mm_h < 0.0 {
+                return invalid("weather rain_mm_h must be >= 0");
+            }
+            if weather.fog_visibility_m.is_some_and(|v| v <= 0.0) {
+                return invalid("weather fog_visibility_m must be > 0");
+            }
+            if weather.wind.speed_m_s < 0.0 || weather.wind.gust_m_s < 0.0 {
+                return invalid("weather wind speed and gust must be >= 0");
+            }
+            expect_suffix(&weather.rain_fx, ".fx.json")?;
+        }
+        for fire in &self.fires {
+            if fire.spread_m_s <= 0.0 || fire.max_radius_m <= 0.0 || fire.start_s < 0.0 {
+                return invalid("fire spread_m_s and max_radius_m must be > 0, start_s >= 0");
+            }
+            for path in [&fire.effects.flames, &fire.effects.embers, &fire.effects.smoke] {
+                expect_suffix(path, ".fx.json")?;
+            }
+        }
+        for element in &self.elements {
+            if let Element::Vegetation(stand) = element {
+                expect_suffix(&stand.species, ".species.json")?;
+                if stand.size_m.iter().any(|v| *v <= 0.0)
+                    || !(stand.density_per_100m2 > 0.0 && stand.density_per_100m2 <= 50.0)
+                {
+                    return invalid("vegetation size_m must be > 0 and density in (0, 50]");
+                }
+            }
+        }
+        Ok(())
     }
 
     fn referenced_paths(&self) -> Vec<String> {
         let mut paths = vec![self.camera.clone()];
+        if let Some(weather) = &self.weather {
+            paths.push(weather.rain_fx.clone());
+        }
+        for fire in &self.fires {
+            paths.extend([
+                fire.effects.flames.clone(),
+                fire.effects.embers.clone(),
+                fire.effects.smoke.clone(),
+            ]);
+        }
+        for element in &self.elements {
+            if let Element::Vegetation(stand) = element {
+                paths.push(stand.species.clone());
+            }
+        }
         if let Some(hdri) = &self.environment.hdri {
             paths.push(hdri.clone());
         }
@@ -471,6 +530,14 @@ impl SceneManifest {
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect()
+    }
+}
+
+fn expect_suffix(path: &str, suffix: &str) -> Result<(), ManifestError> {
+    if path.ends_with(suffix) {
+        Ok(())
+    } else {
+        Err(ManifestError::BadAssetPath(path.to_owned()))
     }
 }
 

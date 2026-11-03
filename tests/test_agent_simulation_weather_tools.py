@@ -18,7 +18,7 @@ from tests.sim_fakes import POC_ASSETS, element_ids, fire_ids, wind_of
 
 def tools_with_a_lot(tmp_path: Path) -> tuple[dict[str, object], str]:
     store = ScenarioStore(tmp_path / "s.sqlite", tmp_path / "library", load_presets(POC_ASSETS))
-    handlers = dict(simulation_tool_handlers(store, {}))
+    handlers: dict[str, object] = dict(simulation_tool_handlers(store, {}))
     scenario_id = store.create_scenario("Edge", "empty-lot").id
     return handlers, scenario_id
 

@@ -13,6 +13,10 @@ license = "MIT OR Apache-2.0"
 bevy = { version = "0.18", features = ["webgpu", "jpeg"] }
 bevy_rapier3d = "0.33"
 bevy_feronia = "0.8"
+# Feronia's GPU-instanced grass companion (the version FeroniaDemo pins).
+bevy_eidolon = "0.4"
+# GPU particles for fire, embers, smoke and rain (WebGPU compute, like Feronia's culling).
+bevy_hanabi = { version = "0.18", default-features = false, features = ["3d"] }
 # Grey eye frames for --record (the version Bevy already locks).
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 serde = { version = "1", features = ["derive"] }

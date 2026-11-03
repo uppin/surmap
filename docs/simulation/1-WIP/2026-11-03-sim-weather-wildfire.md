@@ -23,16 +23,16 @@ PRD: `PRD-2026-11-03-sim-weather-wildfire.md` · Discovery:
   - [x] Acceptance tests written and failing for the right reason (`tests/test_sim_wildfire_e2e.py`)
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Rust `scene_manifest.rs`: `weather`, `fires`, element kind `vegetation` (contract below); the shipped `scene.json` stays valid
-  - [ ] Rust `wind.rs` and `fire.rs`: the pure wind and fire-spread models (contract below)
-  - [ ] Declarative assets: `fx/*.fx.json` and `species/*.species.json` loaders and validation (Rust + Python); the shipped files carry the visual spec's values; no visual constant left in Rust
-  - [ ] Rust rendering, exactly per the visual spec: `bevy_hanabi = "0.18"` (consented dependency) flames, embers, smoke, rain; burnt ground behind the front; Feronia-wind pines and grass ported from the developer's FeroniaDemo (`~/Code/FeroniaDemo/src/{meshes,forest,main}.rs`); `GlobalWind` driven by `weather.wind`; flames lean and smoke bends with the same wind — a screenshot set at each visual checkpoint (`--screenshot <dir> --at <t> --scenario <id>`)
-  - [ ] Recorder: `fire_perimeter.jsonl` beside every capture (one line per frame: `t_ns`, fires with their ENU perimeter)
-  - [ ] Python `scenario_manifest`: validate `weather`, `fires`, `vegetation`; pure edits `set_weather`, `add_fire`, `remove_fire`; presets `wildfire-edge`, `flood-street`
-  - [ ] `SimulationTools`: `SetWeather`, `AddFire`, `RemoveFire` rpcs, regenerated code, handlers, docs table
-  - [ ] `bevy_capture`: `load_bevy_capture(...).fire_perimeters`
-  - [ ] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · Python 1855 green (was 12 red), Rust 86 green (was 20 red); wasm32 `cargo check` green, nothing gated off; W1-W3 screenshot sets in scratchpad `n3-shots/`
+  - [x] Rust `scene_manifest.rs`: `weather`, `fires`, element kind `vegetation` (contract below); the shipped `scene.json` stays valid
+  - [x] Rust `wind.rs` and `fire.rs`: the pure wind and fire-spread models (contract below)
+  - [x] Declarative assets: `fx/*.fx.json` and `species/*.species.json` loaders and validation (Rust + Python); the shipped files carry the visual spec's values; no visual constant left in Rust
+  - [x] Rust rendering, exactly per the visual spec: `bevy_hanabi = "0.18"` (consented dependency) flames, embers, smoke, rain; burnt ground behind the front; Feronia-wind pines and grass ported from the developer's FeroniaDemo (`~/Code/FeroniaDemo/src/{meshes,forest,main}.rs`); `GlobalWind` driven by `weather.wind`; flames lean and smoke bends with the same wind — a screenshot set at each visual checkpoint (`--screenshot <dir> --at <t> --scenario <id>`)
+  - [x] Recorder: `fire_perimeter.jsonl` beside every capture (one line per frame: `t_ns`, fires with their ENU perimeter)
+  - [x] Python `scenario_manifest`: validate `weather`, `fires`, `vegetation`; pure edits `set_weather`, `add_fire`, `remove_fire`; presets `wildfire-edge`, `flood-street`
+  - [x] `SimulationTools`: `SetWeather`, `AddFire`, `RemoveFire` rpcs, regenerated code, handlers, docs table
+  - [x] `bevy_capture`: `load_bevy_capture(...).fire_perimeters`
+  - [x] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (tests + the planner-reviewed screenshot sets)
   - [ ] `docs/simulation/bevy-simulation.md` — Weather, wind and fire; `docs/agent.md` — the three tools
@@ -159,6 +159,19 @@ Deferred-work scan: the 2026-11-03 Bevy records (`bevy-visual-checkpoints-v3-v5`
 `bevy-loop-closure-acceptance`, `bevy-live-websocket-stream`) are ℹ unrelated to this node's scope.
 
 ## Decisions & Trade-offs
+
+- Green additions the contract left open (all runtime JSON, none in Rust): fx files also carry
+  `round` (ellipse particles), `stretch` (rain streak length over width), `box_m`, `emitter_spacing_m`
+  and `refresh_s`; `flames.fx.json` carries the fire's `ground` (scorch + glowing rim) and `light`;
+  `spawn.per_mm_h` scales rain with `rain_mm_h`; species carry `plants_per_unit` (grass clumps per
+  density unit; Feronia scatters `density²` instances over a stand, so the renderer passes
+  `√clumps`); `weather.wet_materials` names the surfaces that look wet (default ground, asphalt).
+- Feronia collects a scatter root's assets only in its global Setup to Collecting pass, so sowing
+  grass sets `ScatterState::Setup` again and scatters once the state is `Ready`.
+- Native review stills of a scene with fires aim the overview camera at the first ignition (from
+  its south, raised); without fires the overview is unchanged.
+- `fire_perimeter.jsonl` is written only when the scene has fires (absent otherwise, which the
+  loader reads as no perimeters).
 
 - One wind for everything: the manifest's `weather.wind` drives Feronia's `GlobalWind`, the fire
   ellipse, flame lean and the smoke/rain/ember forces. n4 makes it change over time.

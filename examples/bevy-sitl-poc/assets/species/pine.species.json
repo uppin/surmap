@@ -1,0 +1,44 @@
+{
+  "generator": "pine",
+  "palette": [
+    [
+      0.3366,
+      0.2592,
+      0.1872
+    ],
+    [
+      0.187,
+      0.2884,
+      0.075
+    ],
+    [
+      0.268,
+      0.3693,
+      0.108
+    ],
+    [
+      0.3459,
+      0.4472,
+      0.1432
+    ]
+  ],
+  "burnt_palette": [
+    [
+      0.06,
+      0.05,
+      0.045
+    ]
+  ],
+  "height_m": [
+    9.0,
+    15.0
+  ],
+  "wind_damping": {
+    "strength": 0.4,
+    "micro_strength": 0.65,
+    "s_curve_strength": 0.45,
+    "bop_strength": 0.3,
+    "twist_strength": 0.4
+  },
+  "lod_distance_m": 40.0
+}
