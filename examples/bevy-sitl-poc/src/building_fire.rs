@@ -1,7 +1,7 @@
-//! Building fires (changeset § *Building fire model*): a fire climbs a building floor by floor,
-//! burns each floor out, jumps to neighbours (farther downwind) and is lit by a wildfire's burnt
-//! area. Pure and stepped, so the renderer, the behaviour trees and the recorder share one state.
-//! Every coefficient comes from `building/fire.json`.
+//! Building fires (docs/simulation/bevy-simulation.md § *The building fire model*): a fire
+//! climbs a building floor by floor, burns each floor out, jumps to neighbours (farther downwind)
+//! and is lit by a wildfire's burnt area. Pure and stepped, so the renderer, the behaviour trees
+//! and the recorder share one state. Every coefficient comes from `building/fire.json`.
 
 use bevy::math::Vec2;
 use serde::Deserialize;

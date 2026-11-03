@@ -1,7 +1,7 @@
-//! Building presets (changeset § *Everything is runtime JSON*): facades, roofs and districts are
-//! files under `assets/building/`, named after Overture's `facade_material` / `roof_material`
-//! values. This module parses them and resolves each building's style — its own fields, else
-//! its district's weighted draw, else the legacy material.
+//! Building presets (docs/simulation/bevy-simulation.md § *Preset files*): facades, roofs and
+//! districts are files under `assets/building/`, named after Overture's `facade_material` /
+//! `roof_material` values. This module parses them and resolves each building's style — its own
+//! fields, else its district's weighted draw, else the legacy material.
 
 use bevy::math::Vec2;
 use serde::Deserialize;

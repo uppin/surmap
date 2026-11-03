@@ -12,27 +12,30 @@ fetches, at runtime, from `examples/bevy-sitl-poc/assets/`:
 
 | File | What it declares |
 |---|---|
-| `scene.json` | `camera` (profile path), `environment` (HDRI, sun, haze, `sky_brightness`, `exposure_ev100`), `materials` (textured: `base_color`/`normal`/`arm` maps + `uv_scale`, or solid: `color`, roughness, metallic, reflectance, clearcoat), `elements`, `models`, and optionally `weather` and `fires` |
+| `scene.json` | `camera` (profile path), `environment` (HDRI, sun, haze, `sky_brightness`, `exposure_ev100`), `materials` (textured: `base_color`/`normal`/`arm` maps + `uv_scale`, or solid: `color`, roughness, metallic, reflectance, clearcoat), `elements`, `models`, and optionally `weather`, `fires`, `districts` and `building_fires` |
 | `cameras/<id>.camera.json` | the stereo camera profile — the single source of truth for the renderer **and** RTAB-Map |
 | `fx/<name>.fx.json` | one particle effect (flames, embers, smoke, rain) — see *Weather, wind and fire* |
 | `species/<name>.species.json` | one vegetation species (pine, dry grass) — see *Weather, wind and fire* |
+| `building/{facades,roofs,districts}/<name>.*.json`, `building/look.json`, `building/fire.json` | wall, roof and district presets, the buildings' look and the building fire's tuning — see *Buildings: presets, districts and building fires* |
 | `assets.lock.json` | every fetched file: URL, SHA-256, licence (CC0-1.0), source page |
 
 Element kinds the engine knows (positions are ENU metres at the element's base, yaw in
 degrees): `box` (ground, roads, water, pads; optional `scatter` of debris and a
 `ground_truth` kind), `collapsed_building` (slabs, tilt and a rubble fan laid out by `seed`),
-`building` (with a window grid), `person`, `vegetation` (a stand of one species). `models` are
+`building` (a window grid and one material, or wall, roof and glazing presets — see *Buildings*), `person`, `vegetation` (a stand of one species). `models` are
 glTF/GLB instances with a collider (`none` / `box` / `trimesh`) and an optional ground-truth
 kind. The manifest is validated at load, by the renderer (`scene_manifest.rs`) and by the
 station (`surmap.simulation.scenario_manifest`) with the same rules: version 1, unique ids
-across elements, models and fires, known materials, relative asset paths, each referenced file
-of the right kind (`.fx.json`, `.species.json`), and the ranges below.
+across elements, models, fires and building fires, known materials, relative asset paths, each
+referenced file of the right kind (`.fx.json`, `.species.json`), and the ranges below.
 
 Fetch the pinned assets (≈ 66 MB, git-ignored) with `uv run python scripts/fetch_sim_assets.py`.
-All are CC0 from Poly Haven: textures `aerial_asphalt_01`, `rocks_ground_02`,
+All are CC0. From Poly Haven: textures `aerial_asphalt_01`, `rocks_ground_02`,
 `brown_mud_03`, `concrete_floor_worn_001`, `white_plaster_02`; models
 `concrete_road_barrier`, `old_tyre`, `Barrel_01`, `covered_car`; HDRI
-`kloofendal_28d_misty_puresky`.
+`kloofendal_28d_misty_puresky`; and the building presets' textures (17 Poly Haven and 3
+ambientCG sets, CC0). An ambientCG set is one zip, downloaded once per run however many of its
+members are pinned; requests carry a `User-Agent` (ambientCG refuses urllib's default).
 
 ## Look
 
@@ -250,8 +253,8 @@ A root that finishes is not restarted — wrap it in `repeat`.
   burning when inside it (`FireSpec::burnt`).
 - **`World.burning_areas` is a public seam.** It is other burning ground — ENU polygons such
   as burning buildings' footprints — that `near_fire` and `flee_from_fire` treat exactly like a
-  wildfire's perimeter (a test pins it). This PR passes it empty; the building presets with fire
-  (#104, n5 of `#sim-disaster-2`) fill it.
+  wildfire's perimeter (a test pins it). Burning buildings' footprints fill it
+  (*Buildings: presets, districts and building fires*).
 - Layout: `behaviour.rs` (node, tree and world types), `behaviour/validate.rs`,
   `behaviour/tick.rs` (each node's semantics and the `Runner`), `behaviour/geometry.rs` (the
   seeded wander stream, distances to fronts, containment).
@@ -308,6 +311,177 @@ burnt area over 40–70 s. The planner reviewed native stills at t = 10 and t = 
 pushed north-east by the veered wind. Open work:
 `src/surmap/docs/todo/2026-11-03-figure-facing-cue.md`.
 
+## Buildings: presets, districts and building fires
+
+A building's walls and roof are presets named after Overture's building attributes — the
+`facade_material` and `roof_material` values of the `overture-buildings` layer the station's map
+already shows (`src/surmap/agent/tools/map_layers.py`) — so a later import could map attributes
+one to one. There is no Overture geometry import: buildings are still the manifest's boxes, by
+the developer's choice. The agent styles a **district** (a rectangle with a weighted mix of
+presets) and overrides single buildings. Buildings can burn: a fire climbs floor by floor, burns
+each floor out, jumps to neighbours (farther downwind) and is lit by a wildfire that reaches
+them. Every look and every coefficient is runtime JSON; a new preset is a new file.
+
+Why this shape: preset names come from a vocabulary the station already speaks, and names are
+only shorthand for shipped files, so the agent is never limited to what ships. `building_fires`
+is a list apart from the wildfire `fires`: the ground fire is untouched, and both reach people
+through the behaviour runtime's `burning_areas`.
+
+### Preset files (`assets/building/`)
+
+| File | Holds |
+|---|---|
+| `facades/<name>.facade.json` | `material` (a manifest material: textured with `uv_scale`, or solid), `colourable` (whether a building's `facade_colour` multiplies it), `glazing` (the default, below), `burnt` (the charred material) |
+| `roofs/<name>.roof.json` | `material`, `colourable`, `burnt` |
+| `districts/<name>.district.json` | weighted `facades`, `roofs` and `roof_shapes` (`[[name or path, weight], …]`, weights > 0), `facade_colours` / `roof_colours` palettes, `floor_m` (> 0), and optionally `window_ratio` (the glazed share of a facade cell, over the facade's own) and `ground_window_ratio` (the ground floor's — a shopfront) |
+| `look.json` | the numbers no preset owns: `roof_shapes` (`flat`: `parapet_m` 0.6, `parapet_thickness_m` 0.25; `gabled` `pitch_deg` 35, `hipped` and `pyramidal` 30, each `eave_m` 0.3); `shopfront.floors` (1 — how many ground floors take `ground_window_ratio`); `interior` (`inset_m` 0.6, `colour` — the dark box behind the walls); and `fire`: `glow_inset_m` (0.5 — the glow plane behind a burning floor's windows), `soot` (`height_m` 1.5, `colour`, `alpha` 0.85 — the band above a burnt floor's windows) and `light` (`colour`, `lumens_per_floor` 600 000, `range_m` 70 — one point light per burning building at its top burning floor, no shadows) |
+| `fire.json` | the fire's tuning (*The building fire model*, below), `effects` (`window_flames`, `smoke`, `embers` fx paths) and the window glow: `glow_colour` (`[1.0, 0.42, 0.10]`) × `glow_intensity` (3.5) |
+
+**Glazing** — `kind` `punched` | `curtain_wall` | `none`:
+
+| Field | Kind | Meaning (shipped) |
+|---|---|---|
+| `window_ratio` | punched | glazed share of each facade cell, in (0, 1] (0.30; a district's ratio wins) |
+| `pane_m` `[w, h]`, `bay_m` | punched | pane size and cell width (1.4 × 1.6 m, 3.0 m) |
+| `recess_m`, `frame_m` | punched | how far the pane sits behind the wall face (0.12 m); the frame's border around it (0.06 m) |
+| `glass`, `frame` | punched | materials (dark glass, roughness 0.08, reflectance 0.5; grey frame) |
+| `bay_m`, `mullion_m` `[w, h]`, `mullion` | curtain wall | mullion grid width (1.5 m × the floor height), mullion profile (0.08 × 0.08 m), metallic grey material |
+| `spandrel_m`, `spandrel` | curtain wall | the opaque band at each slab (0.9 m) and its darker material |
+| `glass` | curtain wall | the facade-wide glass (roughness 0.05, reflectance 0.6, metallic 0 — it mirrors the HDRI sky) |
+
+A building's own `glazing` replaces its facade's; a kind the facade does not carry takes its
+other fields from the shipped default of that kind (the `glass` facade is a curtain wall, the
+others punched).
+
+**Shipped names.** Facades `brick, cement_block, clay, concrete, glass, metal, plaster, plastic,
+stone, timber, wood`; roofs `concrete, copper, eternit, glass, grass, gravel, metal, plastic,
+roof_tiles, slate, solar_panels, tar_paper, thatch, wood` — every Overture value of each.
+Colourable: facades `clay`, `metal`, `plaster`, `plastic`, `wood`; roofs `metal`, `plastic`.
+Districts:
+
+| District | Facades (weight) | Roofs (weight) | Shapes (weight) | `floor_m` | `window_ratio` |
+|---|---|---|---|---|---|
+| `old-town` | brick .4, plaster .35, stone .25 | roof_tiles .7, slate .3 | gabled .6, hipped .4 | 3.2 | 0.30 |
+| `downtown` | glass .45, concrete .3, stone .15, metal .1 | concrete .4, gravel .4, metal .2 | flat 1 | 3.6 | 0.45, ground 0.8 |
+| `industrial` | metal .5, cement_block .35, brick .15 | metal .6, eternit .4 | flat .5, gabled .5 | 5.0 | 0.15 |
+| `suburban` | wood .4, plaster .3, plastic .2, brick .1 | roof_tiles .5, wood .3, slate .2 | gabled .6, hipped .4 | 2.8 | 0.30 |
+
+A **name** (no `/`) means the shipped file of its kind; a **path**
+(`building/facades/my-red.facade.json`) names any other file of that kind. The textures are 17
+Poly Haven and 3 ambientCG CC0 sets at 2k, pinned in `assets.lock.json` and fetched with the
+rest.
+
+### In the manifest
+
+```json
+"districts": [{"id": "core", "preset": "downtown", "position_enu": [0, 0, 0], "size_m": [120, 80], "seed": 4}],
+"elements": [{"kind": "building", "id": "tower-1", "size_m": [18, 18, 42], "position_enu": [30, 10, 0],
+              "facade": "glass", "roof": "metal", "roof_shape": "flat", "floors": 12,
+              "facade_colour": [0.55, 0.6, 0.65], "glazing": {"kind": "curtain_wall"}}],
+"building_fires": [{"id": "blaze-1", "building": "tower-1", "floor": 3, "start_s": 5}]
+```
+
+- **Resolution** of each building's facade, roof, roof shape, colours, glazing and floors: the
+  building's own field › the district whose rectangle holds the building's centre (later
+  districts win overlaps), drawn by weight from an FNV-1a hash of the building's id mixed with
+  the district's `seed` › the legacy `material` / `windows` › refused (*in no district: give it
+  a material, or a facade and a roof*). `floors` defaults to `floor(height / floor_m)`, at
+  least 1. A building with no preset and no district is drawn exactly as before.
+- **Ranges.** District ids unique, `size_m` > 0; `roof_shape` `flat | gabled | hipped |
+  pyramidal` (Overture's other shapes are refused — the agent maps them); colours three numbers
+  in 0..1; `floors` ≥ 1; glazing `kind` known, `window_ratio` in (0, 1].
+- **`building_fires`**: `building` an existing building id; `floor` counted from 0 at the
+  ground, `0 ≤ floor < floors`; `start_s` ≥ 0; `tuning` a `.json` path (default
+  `building/fire.json`); ids unique with every element, model and fire id. The renderer
+  (`scene_manifest/buildings.rs`, `building_style.rs`, `building.rs`) and the station
+  (`surmap.simulation.building_presets`) apply the same rules, except two the station cannot yet
+  check and the renderer refuses at load: a floor beyond a floor count that comes from the
+  district (`src/surmap/docs/todo/2026-11-04-building-fire-floor-from-district.md`), and a fire
+  in a legacy, `material`-only building
+  (`src/surmap/docs/todo/2026-11-04-legacy-buildings-burn.md`).
+
+### The building fire model (`building_fire.rs`, pure, stepped)
+
+`BuildingFires::new(footprints: Vec<Footprint { id, polygon_enu, floors }>, ignitions, tuning)`;
+`step(t_s, dt, wind_enu, wildfires: &[FireSpec])`; `floor(id, f) -> FloorState::{Intact,
+Burning, Burnt}`; `ignited_at(id)`; `burning_footprints()`. Deterministic for the same inputs
+and `dt`; `actors.rs` steps it on the behaviour clock's fixed 10 Hz, with that tick's wind.
+
+| `fire.json` field | Meaning (shipped) |
+|---|---|
+| `climb_s_per_floor` | from ignition floor f₀ at t₀, floor f above it ignites at t₀ + (f − f₀) · climb (45 s) |
+| `descend_factor` | floors below ignite this many times slower (3) |
+| `floor_burn_s` | a floor burns this long, then is `Burnt` (600 s) |
+| `ignite_distance_m` | a burning building whose footprint is this close to B's ignites B … (4 m) |
+| `ignite_wind_gain_s` | … plus this many metres per m/s of wind blowing from it toward B (1) … |
+| `exposure_s` | … once within reach this long without a break (360 s); B ignites at the floor nearest the source's lowest burning floor |
+
+A wildfire's burnt area touching a building's footprint ignites its floor 0 at that moment.
+Burning buildings' footprints are the behaviour runtime's `World.burning_areas`, so `near_fire`
+and `flee_from_fire` treat a burning building like a wildfire front. Only preset-styled
+buildings burn.
+
+### On screen
+
+Layout: `building.rs` (which preset files to fetch, resolution once they load, the fire's
+setup) and `building/{assets,look,spawn,walls,roofs,meshes,surface,fire_view}.rs`;
+`building_style.rs` (the preset types, loaders and resolution). Each floor keeps its wall, frame,
+pane, glow and soot meshes apart, so a fire changes one floor at a time.
+
+- **Walls**: textured, tiled by world size; punched windows recessed with a frame and a dark
+  interior behind, or a curtain wall of glass between spandrel bands and mullions.
+- **Roofs**: `flat` with a parapet; `gabled` (ridge along the long axis), `hipped` and
+  `pyramidal` with eaves. Parapets and gable ends take the facade material.
+- **A burning floor**: panes hidden (broken), an emissive glow plane `glow_inset_m` behind every
+  window, `window_flames` at each window (a curtain wall: along the whole band), and the wall
+  band in the facade's `burnt` material. A burnt floor stays charred and gains soot above its
+  windows; a fully burnt building's roof turns to the roof's `burnt` material.
+- **Smoke** (`fx/building_smoke.fx.json`) rises from the top burning floor's windows and the
+  roof as one dark plume bending downwind; **embers** are the wildfire's.
+- **`emit_radius_m`**, a new optional fx field: particles start within this radius of their
+  emitter (window flames 0.35 m, so they stay at their window; smoke 1.0 m); without it they
+  spread over half the emitter spacing.
+
+### Presets, ground truth and stills
+
+The station's presets add `district-showcase` — the empty lot with the four districts side by
+side (west to east: old-town, downtown, industrial, suburban; 50 × 70 m each, seed 1), six
+generic buildings each, no fire — and `downtown-blaze` — a downtown block of eight buildings in
+a 5 m/s westerly, a glass tower (`tower-1`, 12 floors, metal flat roof) alight on floor 3 at
+t = 5 s, and a neighbour 5 m downwind.
+
+A capture of a scene whose buildings can burn adds `building_fires.jsonl`, one line per frame:
+`{"t_ns": n, "buildings": [{"id": "tower-1", "burning": [3, 4], "burnt": [2]}]}` (each building
+with a floor alight or burnt out). `load_bevy_capture(dir).building_fires` reads it as `t_ns` →
+id → `(burning, burnt)` floor tuples; it is empty without the file.
+
+Stills: `--look-at <district id>` frames that district from the south (1.2 × its depth + 10 m
+back, 0.9 × its depth up). Without it, a scene with building fires and no wildfire aims the
+overview at the first fire's building from the south-west, and the rig's eye from 55 m south,
+12 m up, at the ignition floor, and adds `fire-eye.png`.
+
+### Verified
+
+Rust tests pin the preset loaders and the name-or-path rules, the weighted resolution and its
+determinism, every shipped preset parsing, the fire's climb, descent, burn-out, spread farther
+downwind than upwind and wildfire ignition, the manifest rules and the golden
+`tests/fixtures/sim_scenario/downtown-blaze.json` the station writes. Python tests pin
+validation and edits, both presets, the six tools, the capture lines, an agent turn on a real
+socket that sets a downtown glass tower alight with the tools, and the served `downtown-blaze`
+preset being the golden the renderer validates.
+
+The planner reviewed native stills against a visual spec. **D1** (`district-showcase` at t = 1,
+one still per district) passed in one round: old-town reads as terracotta gables over brick and
+plaster, downtown as glass curtain-wall and punched towers, industrial as low flat metal roofs,
+suburban as pastel houses with tile and slate. **D2** (`downtown-blaze` at t = 15, 120, 400 and
+900) took one round of JSON corrections: the window glow from near-white to 3.5 in orange,
+window flames from dots to tongues, smoke from puffs to a continuous plume, and the neighbour's
+ignition from 65 s to 364.9 s (`exposure_s` 360, `ignite_distance_m` 4). It then passed: at
+t = 400 the fire has climbed every floor of the tower — orange floor bands under a smooth black
+plume bending downwind; at t = 900 the lower floors are charred and burnt out, the top floors
+burn and the neighbour is alight. Open work:
+`src/surmap/docs/todo/2026-11-04-{building-texture-character,building-window-glow-variation,building-smoke-prewarm-stills,building-fire-floor-from-district,legacy-buildings-burn}.md`.
+
 ## The stereo rig: one camera profile
 
 `cameras/elp-stereo-pinhole.camera.json` (the SurMap ELP rig): 640×480, fx = fy = 381.36,
@@ -340,6 +514,10 @@ BEVY_ASSET_ROOT=$PWD cargo run --release -- --screenshot shots --at 20
 BEVY_ASSET_ROOT=$PWD cargo run --release -- --screenshot shots --at 40 --scenario wildfire-edge
 # ...with people, a fifth still, people.png, follows them from 25 m south-west, 12 m up:
 BEVY_ASSET_ROOT=$PWD cargo run --release -- --screenshot shots --at 60 --scenario wildfire-evacuation
+# ...with building fires (and no wildfire), the overview and fire-eye.png aim at the first one:
+BEVY_ASSET_ROOT=$PWD cargo run --release -- --screenshot shots --at 400 --scenario downtown-blaze
+# ...framing one district of the scenario:
+BEVY_ASSET_ROOT=$PWD cargo run --release -- --screenshot shots --at 1 --scenario district-showcase --look-at old-town
 # a stereo capture RTAB-Map can replay (hidden window, GPU readback, progress logged):
 BEVY_ASSET_ROOT=$PWD cargo run --release -- --record cap --frames 90 --start 15.5 --jpeg \
   [--rate-hz 10] [--camera cameras/wide-baseline-pinhole.camera.json]
@@ -349,8 +527,8 @@ BEVY_ASSET_ROOT=$PWD cargo run --release -- --record cap --frames 90 --start 15.
 (1.5 m/s, 7 ± 1.5 m up, ≤ 10.7 °/s yaw, 182 m, 121 s); stills and recordings imply it. A
 capture holds `camera.json`, `calibration.json`, `ground_truth.json` (ENU boxes of every
 ground-truth element and model), `frames.jsonl` (each frame's rig pose in ENU), grey8
-frames, `object_tracks.jsonl` (the wind and every person with a behaviour tree) and, with
-fires, `fire_perimeter.jsonl`; `surmap.simulation.bevy_capture.load_bevy_capture` reads it.
+frames, `object_tracks.jsonl` (the wind and every person with a behaviour tree), with
+fires `fire_perimeter.jsonl`, and with buildings that can burn `building_fires.jsonl`; `surmap.simulation.bevy_capture.load_bevy_capture` reads it.
 
 Verified natively (Metal) throughout; the browser build compiles for `wasm32` but the
 runtime-scene version has not been checked in Chrome yet (visual checkpoint V5,

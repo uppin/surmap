@@ -1,8 +1,8 @@
 //! Preset-styled buildings and their fires at run time (docs/simulation/bevy-simulation.md §
-//! *Buildings and building fires*). The manifest names districts and presets; this plans which
-//! preset files to fetch, resolves each building's style once they are in, builds the walls, roofs
-//! and glazing, and — when anything can burn — the `BuildingBlaze` the behaviour clock steps and
-//! `fire_view` draws.
+//! *Buildings: presets, districts and building fires*). The manifest names districts and
+//! presets; this plans which preset files to fetch, resolves each building's style once they are
+//! in, builds the walls, roofs and glazing, and — when anything can burn — the `BuildingBlaze`
+//! the behaviour clock steps and `fire_view` draws.
 
 use std::collections::BTreeMap;
 
