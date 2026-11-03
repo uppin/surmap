@@ -21,6 +21,27 @@ Run from `web/agent-chat/`.
 | `yarn test` | Vitest (`yarn test --run` for one pass). Includes the lock resolver tests. |
 | `yarn build` | Type-check and `vite build` into `dist/`. |
 
+## Running against a local agent server
+
+```bash
+# from the repository root
+uv run python -m surmap.agent --sam-fake --model ollama:llama3.2   # http://127.0.0.1:8780
+# from web/agent-chat/
+yarn local-install
+yarn dev                        # http://localhost:5173
+```
+
+Open `http://localhost:5173/`. `?server=<url>` points the page at another
+agent server (default `http://127.0.0.1:8780`; add the page's origin to
+`SURMAP_AGENT_CORS_ORIGINS` when it is not `http://localhost:5173`), and
+`?conversation=<id>` opens a given conversation (default: one per tab,
+kept across reloads). `yarn build && yarn preview` serves the production
+build on the same port. What the page shows: [docs/agent.md](../../docs/agent.md#chat-ui).
+
+`yarn e2e` runs the Playwright suite against a stub Connect server
+(`e2e/stub-chat-server.ts`), not the real agent; it skips when Chromium is
+not installed unless `E2E_REQUIRE_BROWSER=1`.
+
 ## Private registry and `yarn.lock`
 
 The dev machine cannot reach public npm; it reaches a private registry

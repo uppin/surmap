@@ -406,3 +406,41 @@ their conversation in the `surmap-conversation-id` header.
 - **`WatchConversation` before the first turn is `NOT_FOUND`** — open the
   watch after the conversation's first `StreamTurn`.
 - Conversations live in memory for the process lifetime.
+
+## Chat UI
+
+`web/agent-chat/` is the browser client of `ChatService`
+([web/agent-chat/README.md](../web/agent-chat/README.md)). With the agent
+running on its default port:
+
+```bash
+uv run python -m surmap.agent --sam-fake --model ollama:llama3.2
+cd web/agent-chat && yarn local-install && yarn dev   # http://localhost:5173
+```
+
+![Chat UI after one turn: a list_demos tool step with its policy and the reply](images/agent-chat.png)
+
+- **Query parameters.** `?server=` names the agent server (default
+  `http://127.0.0.1:8780`; its origin must be in
+  `SURMAP_AGENT_CORS_ORIGINS`). `?conversation=` names the conversation;
+  without it each tab keeps one id of its own in `sessionStorage`, so a
+  reload keeps the conversation and redraws it from `GetConversation`.
+- **Transcript.** User messages, streamed Markdown replies, and one card
+  per tool call with its resolved execution policy (`SYNC 10 s → FAIL`,
+  `SYNC 30 s → DETACH`, `ASYNC`), status (Running, Done, Failed,
+  Detached, Cancelled), duration and expandable arguments.
+- **Steering while busy.** The composer never locks. While a turn runs
+  it offers **Steer** (sends `Steer`; the transcript shows
+  `Steered: …`) and **Stop** (`CancelTurn`). A steer the server does not
+  accept starts a new turn with the same text.
+- **Jobs panel.** Detached and `ASYNC` calls appear as jobs with tool,
+  status and elapsed time; **Cancel** on a running job calls
+  `AgentJobs` with the conversation header. Turns a finished job starts
+  arrive on the `WatchConversation` stream, opened once the server knows
+  the conversation, and begin with a job notice.
+- **Previews.** A tool image is drawn inline from its bytes; an object
+  GLB from `/geometry/…` is drawn by a lazily loaded three.js preview
+  (its core, renderer and loader chunks load only when a preview is
+  shown).
+- **Model picker.** Lists `ListModels`, preselects the server default,
+  and sends the chosen id with each turn.
