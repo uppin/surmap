@@ -5,7 +5,8 @@ SurMap search-and-rescue demo. The drone is still flown by PX4. SurMap
 only reads stereo and GPS. Nothing here is a real incident, and nothing
 here is a military model.
 
-The stereo airframe and the capture → EuRoC bridge are
+A browser/native alternative without PX4 or ROS is the Bevy simulation
+([bevy-simulation.md](bevy-simulation.md)). The stereo airframe and the capture → EuRoC bridge are
 [px4-sitl.md](px4-sitl.md). This page is the world, the scoring file,
 and the launch.
 
