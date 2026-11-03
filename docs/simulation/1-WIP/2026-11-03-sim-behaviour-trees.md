@@ -19,7 +19,7 @@ PRD: `PRD-2026-11-03-sim-behaviour-trees.md` · Discovery:
   - [x] Create/update PRD documentation
   - [x] Create changeset
   - [x] Build and baseline healthy (Step 7)
-- [wf 2] ✅ 2026-11-03 `/plan-red` Red — acceptance and failing lower-tier tests, committed · Rust 16 red (`behaviour.rs` stubs, manifest validation, golden); Python 16 red (`behaviour_of`/`set_behaviour`/`update_behaviour_node`, proto `SetBehaviour…`/`skin`, `object_tracks`, preset, golden) — tool tests stop first on n3's `wildfire-edge` preset (inherited, green in n3)
+- [wf 2] ✅ 2026-11-03 `/plan-red` Red — acceptance and failing lower-tier tests, committed · Rust 17 red (`behaviour.rs` stubs, incl. burning areas, manifest validation, golden); Python 16 red (`behaviour_of`/`set_behaviour`/`update_behaviour_node`, proto `SetBehaviour…`/`skin`, `object_tracks`, preset, golden) — tool tests stop first on n3's `wildfire-edge` preset (inherited, green in n3)
   - [x] Acceptance tests written and failing for the right reason (`tests/test_sim_behaviour_e2e.py`)
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
@@ -101,7 +101,9 @@ tree; the address `update_behaviour_node` edits by):
   `Tree::validate(Target::{Object, Wind})`, `Runner::new(tree, position: Vec2, wind: WindModel)`,
   `Runner::tick(&mut self, &World, dt) -> Status::{Running, Success, Failure}`, `runner.position`,
   `runner.wind`, `runner.action() -> Option<&str>` (the running leaf's kind). `World { t_s,
-  fires: &[FireSpec], wind: &WindModel, objects: &[(String, Vec2)] }`. A root that finishes is
+  fires: &[FireSpec], burning_areas: &[Vec<Vec2>], wind: &WindModel, objects: &[(String, Vec2)] }`
+  — `burning_areas` is other burning ground (n5's burning buildings' footprints), which `near_fire`
+  and `flee_from_fire` treat like a wildfire perimeter; this node passes it empty. A root that finishes is
   not restarted (wrap it in `repeat`).
 - **Scope.** Moving people are layered ground truth for the survey, never written into the static
   scene or RTAB-Map's map (`docs/architecture.md` §1). Nothing here controls the drone.

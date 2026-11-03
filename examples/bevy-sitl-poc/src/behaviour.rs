@@ -112,6 +112,9 @@ pub struct Tree {
 pub struct World<'a> {
     pub t_s: f32,
     pub fires: &'a [FireSpec],
+    /// Other burning ground (ENU polygons, e.g. burning buildings' footprints): `near_fire` and
+    /// `flee_from_fire` treat them like a wildfire's perimeter.
+    pub burning_areas: &'a [Vec<Vec2>],
     pub wind: &'a WindModel,
     pub objects: &'a [(String, Vec2)],
 }
@@ -186,6 +189,7 @@ mod tests {
             let world = World {
                 t_s: t0 + i as f32 * DT,
                 fires,
+                burning_areas: &[],
                 wind: &wind,
                 objects: &[],
             };
@@ -254,12 +258,14 @@ mod tests {
         let before = World {
             t_s: 29.0,
             fires: &[],
+            burning_areas: &[],
             wind: &wind,
             objects: &[],
         };
         let after = World {
             t_s: 31.0,
             fires: &[],
+            burning_areas: &[],
             wind: &wind,
             objects: &[],
         };
@@ -317,6 +323,7 @@ mod tests {
                 &World {
                     t_s,
                     fires: std::slice::from_ref(&fire),
+                    burning_areas: &[],
                     wind: &wind,
                     objects: &[],
                 },
@@ -354,6 +361,7 @@ mod tests {
         let early = World {
             t_s: 0.0,
             fires: &[],
+            burning_areas: &[],
             wind: &wind,
             objects: &[],
         };
@@ -375,6 +383,7 @@ mod tests {
         let world = World {
             t_s: 0.0,
             fires: &[],
+            burning_areas: &[],
             wind: &wind,
             objects: &others,
         };
@@ -396,6 +405,45 @@ mod tests {
     }
 
     #[test]
+    fn a_burning_building_is_a_fire_to_flee_from() {
+        let wind = calm();
+        let block = [vec![
+            Vec2::new(-12.0, -5.0),
+            Vec2::new(-2.0, -5.0),
+            Vec2::new(-2.0, 5.0),
+            Vec2::new(-12.0, 5.0),
+        ]];
+        let mut runner = Runner::new(
+            tree(
+                r#"{"node": "sequence", "children": [
+                {"node": "near_fire", "within_m": 5},
+                {"node": "flee_from_fire", "speed_m_s": 3, "clearance_m": 20}]}"#,
+            ),
+            Vec2::ZERO,
+            wind,
+        );
+
+        for i in 0..100 {
+            runner.tick(
+                &World {
+                    t_s: i as f32 * DT,
+                    fires: &[],
+                    burning_areas: &block,
+                    wind: &wind,
+                    objects: &[],
+                },
+                DT,
+            );
+        }
+
+        assert!(
+            runner.position.x >= 18.0 - 0.1,
+            "18 m east of the block's east wall: {:?}",
+            runner.position
+        );
+    }
+
+    #[test]
     fn wandering_is_deterministic_for_a_seed_and_stays_in_its_radius() {
         let wanderer = r#"{"node": "wander", "radius_m": 6, "speed_m_s": 0.8, "seed": 3}"#;
         let mut a = Runner::new(tree(wanderer), Vec2::new(5.0, 5.0), calm());
@@ -407,6 +455,7 @@ mod tests {
             let world = World {
                 t_s: i as f32 * DT,
                 fires: &[],
+                burning_areas: &[],
                 wind: &wind,
                 objects: &[],
             };
