@@ -70,6 +70,11 @@ def test_every_survey_tools_rpc_is_a_tool_named_in_snake_case() -> None:
         "get_object",
         "get_object_geometry",
         "get_frame",
+        "list_datasets",
+        "get_dataset",
+        "prepare_dataset",
+        "run_rtabmap",
+        "run_sam_on_dataset",
     )
 
 
@@ -125,6 +130,11 @@ def test_each_tool_carries_the_default_execution_its_rpc_declares() -> None:
         "get_object": a_policy(SYNC, 10, FAIL),
         "get_object_geometry": a_policy(SYNC, 15, FAIL),
         "get_frame": a_policy(SYNC, 15, FAIL),
+        "list_datasets": a_policy(SYNC, 10, FAIL),
+        "get_dataset": a_policy(SYNC, 10, FAIL),
+        "prepare_dataset": a_policy(SYNC, 30, DETACH),
+        "run_rtabmap": a_policy(SYNC, 30, DETACH),
+        "run_sam_on_dataset": a_policy(SYNC, 60, DETACH),
         "wait_for_jobs": a_policy(SYNC, 300, FAIL),
         "get_job": a_policy(SYNC, 10, FAIL),
         "cancel_job": a_policy(SYNC, 10, FAIL),

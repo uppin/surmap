@@ -14,6 +14,7 @@ interface FakePortOptions {
   history?: TurnEvent[] | null;
   /** The events the next turn streams. */
   turn?: TurnEvent[];
+  datasets?: import("@/ports").DatasetView[];
 }
 
 /** A stream with no events that ends when `signal` aborts, as a watch stream does with no job ending. */
@@ -57,6 +58,9 @@ function fakePort(options: FakePortOptions = {}) {
       if (options.history === null) throw new ConnectError(`no conversation ${conversationId}`, Code.NotFound);
       return options.history ?? [];
     },
+    async listDatasets() {
+      return options.datasets ?? [];
+    },
     async getMapScene() {
       return {
         sceneId: "default",
@@ -91,6 +95,48 @@ describe("chat page", () => {
     render(<App port={port} />);
 
     expect(await screen.findByRole("combobox", { name: "Model" })).toHaveValue("ollama:qwen3");
+  });
+
+  it("opens the dataset gallery as its own searchable screen", async () => {
+    const { port } = fakePort({
+      datasets: [
+        {
+          id: "kitti-2011_09_26_drive_0001",
+          title: "KITTI 2011-09-26 drive 0001",
+          description: "Karlsruhe drive.",
+          provider: "KITTI",
+          licenseName: "CC BY-NC-SA 3.0",
+          licenseUrl: "https://creativecommons.org/licenses/by-nc-sa/3.0/",
+          attribution: "KITTI, CC BY-NC-SA 3.0",
+          modality: "grey",
+          officialUrl: "https://www.cvlibs.net/datasets/kitti/raw_data.php",
+          defaultPrompt: "car",
+          prepared: false,
+          frameCount: 0,
+          thumbnailAvailable: false,
+          thumbnailUrl: "https://example.invalid/thumb.jpg",
+          locationLabel: "Karlsruhe area, Germany (approx.)",
+          gpsCentre: { lon: 8.4059, lat: 49.0069 },
+          gpsTrack: [],
+        },
+      ],
+    });
+    render(<App port={port} />);
+    const user = userEvent.setup();
+
+    // The chat screen has no gallery cards
+    await screen.findByRole("combobox", { name: "Model" });
+    expect(screen.queryByText(/KITTI 2011-09-26 drive 0001/)).not.toBeInTheDocument();
+
+    // The gallery is its own screen, searchable
+    await user.click(screen.getByRole("button", { name: "Dataset gallery" }));
+    expect(await screen.findByText(/KITTI 2011-09-26 drive 0001/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Search datasets")).toBeInTheDocument();
+    expect(window.location.search).toContain("screen=gallery");
+
+    // And back to chat
+    await user.click(screen.getByRole("button", { name: "Chat" }));
+    expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
   });
 
   it("sends the message through the port and shows the streamed reply", async () => {

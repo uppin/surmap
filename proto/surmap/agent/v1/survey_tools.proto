@@ -63,6 +63,37 @@ service SurveyTools {
   rpc GetFrame(GetFrameRequest) returns (GetFrameResponse) {
     option (default_execution) = {mode: SYNC timeout_s: 15 on_timeout: FAIL};
   }
+
+  // Lists every dataset in the gallery catalogue: provider, licence, grey or colour modality,
+  // whether it is prepared, and its GPS centre and track for a map preview. A new data source
+  // appears here by registering one dataset; no new tool is needed.
+  rpc ListDatasets(ListDatasetsRequest) returns (ListDatasetsResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Returns one dataset of the gallery catalogue by id, with the same fields list_datasets gives.
+  rpc GetDataset(GetDatasetRequest) returns (DatasetResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Downloads and prepares one dataset so it can be run or segmented. Preparing can take
+  // minutes for a large dataset: by default it detaches to a job after 30 s.
+  rpc PrepareDataset(PrepareDatasetRequest) returns (DatasetResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 30 on_timeout: DETACH};
+  }
+
+  // Runs RTAB-Map (no SAM) on a dataset and returns when the recorded run ends. Runs take
+  // minutes: by default it detaches to a job after 30 s; follow it with wait_for_jobs.
+  rpc RunRtabmap(RunRtabmapRequest) returns (RunRtabmapResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 30 on_timeout: DETACH};
+  }
+
+  // Segments a text concept with SAM directly on a dataset's frames, without RTAB-Map and
+  // without a recorded run. Picks up to 8 evenly spaced frames unless frame timestamps are
+  // not needed; by default it detaches to a job after 60 s.
+  rpc RunSamOnDataset(RunSamOnDatasetRequest) returns (RunSamOnDatasetResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 60 on_timeout: DETACH};
+  }
 }
 
 // A point or extent in the object's coordinate frame, in its units.
@@ -391,6 +422,121 @@ message GetFrameRequest {
   optional uint32 pad_px = 7;
   // Downscale so the longer side is at most this many pixels.
   optional uint32 max_side = 8;
+}
+
+// Whether a dataset's frames are grey or colour.
+enum DatasetModality {
+  MODALITY_UNSPECIFIED = 0;
+  // Single-channel grey frames (KITTI image_00/01, EuRoC, NTU VIRAL).
+  GREY = 1;
+  // Colour frames (KITTI image_02/03); SAM segments them in colour.
+  COLOR = 2;
+}
+
+// A WGS84 position for a dataset's GPS map preview.
+message DatasetGeoPoint {
+  // Longitude, degrees east.
+  double lon = 1;
+  // Latitude, degrees north.
+  double lat = 2;
+  // Altitude above sea level, metres; absent when the fix has none.
+  optional double alt_m = 3;
+}
+
+// A dataset's licence as the gallery shows it.
+message DatasetLicense {
+  // Licence name, e.g. "CC BY-NC-SA 3.0".
+  string name = 1;
+  // Canonical licence URL.
+  string url = 2;
+  // The credit line to show with the data.
+  string attribution = 3;
+}
+
+// One dataset of the gallery catalogue.
+message DatasetEntry {
+  // The dataset id the run tools take, e.g. "kitti-2011-09-26-drive-0009-color".
+  string id = 1;
+  // Human-readable title.
+  string title = 2;
+  // What the dataset contains.
+  string description = 3;
+  // Who publishes it, e.g. "KITTI"; a new source names itself here.
+  string provider = 4;
+  // Its licence; always present, "not specified" when the source gives none.
+  DatasetLicense license = 5;
+  // Grey or colour frames.
+  DatasetModality modality = 6;
+  // The dataset's official page.
+  string official_url = 7;
+  // The SAM concept this dataset is run with when none is given.
+  string default_prompt = 8;
+  // Whether its data is downloaded and prepared.
+  bool prepared = 9;
+  // Prepared stereo pairs; 0 when not prepared.
+  uint32 frame_count = 10;
+  // Whether a thumbnail frame is available from the agent server.
+  bool thumbnail_available = 11;
+  // Where it was recorded, e.g. "Karlsruhe, Germany (approx.)".
+  string location_label = 12;
+  // Centre of its GPS track, or its approximate centre before preparation.
+  optional DatasetGeoPoint gps_centre = 13;
+  // Its GPS track (downsampled), in order, for a map preview; empty without GPS.
+  repeated DatasetGeoPoint gps_track = 14;
+  // The short credit line, as on the demo page.
+  string credit = 15;
+}
+
+message ListDatasetsRequest {}
+
+message ListDatasetsResponse {
+  // Every dataset in the catalogue, in catalogue order.
+  repeated DatasetEntry datasets = 1;
+}
+
+message GetDatasetRequest {
+  // The dataset to return.
+  string dataset_id = 1;
+}
+
+message PrepareDatasetRequest {
+  // The dataset to download and prepare.
+  string dataset_id = 1;
+}
+
+message DatasetResponse {
+  // The dataset.
+  DatasetEntry dataset = 1;
+}
+
+message RunRtabmapRequest {
+  // The dataset to run: a DatasetEntry id from list_datasets.
+  string dataset = 1;
+  // Stop after this many frames; the whole dataset when absent.
+  optional uint32 max_frames = 2;
+  // Playback rate in frames per second; the dataset's native rate when absent.
+  optional double fps = 3;
+}
+
+message RunRtabmapResponse {
+  // The recorded run RTAB-Map produced.
+  RunInfo run = 1;
+}
+
+message RunSamOnDatasetRequest {
+  // The dataset to segment: a DatasetEntry id from list_datasets.
+  string dataset = 1;
+  // The text concept to segment, e.g. "car"; the dataset's default prompt when absent.
+  optional string concept = 2;
+  // The most frames to segment, evenly spaced; at most 8.
+  optional uint32 max_frames = 3;
+}
+
+message RunSamOnDatasetResponse {
+  // The dataset segmented.
+  string dataset_id = 1;
+  // One entry per frame segmented, in frame order.
+  repeated SamFrameDetections frames = 2;
 }
 
 message GetFrameResponse {

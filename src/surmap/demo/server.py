@@ -49,6 +49,7 @@ from surmap.demo.datasets import (
     DISPLAY_WIDTH,
     DatasetSpec,
     DemoCalibration,
+    ImageModality,
     PreparedDataset,
     default_cache_dir,
     load_calibration,
@@ -650,13 +651,18 @@ class _SamStreamWorker:
 
 
 def _display_jpeg(prepared: PreparedDataset, channel: int, t_ns: int) -> bytes:
-    """The half-res JPEG for one frame, generated once and cached."""
+    """The half-res JPEG for one frame, generated once and cached.
+
+    Colour datasets keep colour (SAM segments the colour frame); grey
+    datasets stay grey. The stereo/RTAB-Map path converts to grey itself.
+    """
     width, height = prepared.spec.display_size
     target = prepared.root / f"display-{width}x{height}" / f"cam{channel}" / f"{t_ns}.jpg"
     if not target.is_file():
         target.parent.mkdir(parents=True, exist_ok=True)
+        mode = "RGB" if prepared.spec.modality is ImageModality.COLOR else "L"
         with Image.open(prepared.frame_path(channel, t_ns)) as frame:
-            frame.resize((width, height)).convert("L").save(target, format="JPEG", quality=85)
+            frame.resize((width, height)).convert(mode).save(target, format="JPEG", quality=85)
     return target.read_bytes()
 
 

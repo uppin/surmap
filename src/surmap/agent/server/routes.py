@@ -13,6 +13,7 @@ An unknown run, object or frame is 404. A request whose `Origin` is one of `cors
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
@@ -20,12 +21,14 @@ from urllib.parse import parse_qs
 
 from surmap.agent.tools.frames import frame_image
 from surmap.agent.tools.workspace import BoxXYXY, FrameImage
+from surmap.demo.gallery import GalleryEntry
 from surmap.rpc.description import HttpRoute
 from surmap.rpc.http import HttpRequest, HttpResponse
 
 __all__ = [
     "GLB_MEDIA_TYPE",
     "HEALTH_PATH",
+    "DatasetThumbnailReader",
     "FrameReader",
     "GlbReader",
     "agent_http_routes",
@@ -48,6 +51,14 @@ class FrameReader(Protocol):
     def frame(self, run_id: str, frame_id: int) -> FrameImage | None: ...
 
 
+class DatasetThumbnailReader(Protocol):
+    """Where the dataset routes read the catalogue and thumbnails; `SurveyWorkspace` is one."""
+
+    def datasets(self) -> Sequence[GalleryEntry]: ...
+
+    def dataset_thumbnail(self, dataset_id: str) -> bytes | None: ...
+
+
 class GlbReader(Protocol):
     """Where the geometry route reads published GLBs; `GeometryStore` is one."""
 
@@ -61,15 +72,25 @@ def agent_http_routes(
     geometry: GlbReader,
     *,
     cors_origins: Sequence[str],
+    datasets: DatasetThumbnailReader | None = None,
 ) -> tuple[HttpRoute[Any], ...]:
-    """The health, geometry, frame and CORS-preflight routes."""
+    """The health, geometry, frame, thumbnail and CORS-preflight routes."""
     origins = tuple(cors_origins)
 
     async def health(request: HttpRequest) -> HttpResponse:
         return HttpResponse(status=200, body=b"ok", headers={**_PLAIN, **_cors(request, origins)})
 
     async def serve(request: HttpRequest) -> HttpResponse:
-        response = _route(request, frames, geometry)
+        if request.path == "/datasets" and datasets is not None:
+            body = json.dumps(
+                {"datasets": [_dataset_json(entry) for entry in datasets.datasets()]}
+            ).encode()
+            return HttpResponse(
+                status=200,
+                body=body,
+                headers={"content-type": "application/json", **_cors(request, origins)},
+            )
+        response = _route(request, frames, geometry, datasets)
         return HttpResponse(
             status=response.status,
             body=response.body,
@@ -92,7 +113,43 @@ def agent_http_routes(
     )
 
 
-def _route(request: HttpRequest, frames: FrameReader, geometry: GlbReader) -> HttpResponse:
+def _dataset_json(entry: GalleryEntry) -> dict[str, object]:
+    """One gallery entry as the JSON the chat gallery reads."""
+    licence = entry.license
+    return {
+        "id": entry.dataset_id,
+        "title": entry.title,
+        "description": entry.description,
+        "provider": entry.provider,
+        "license": (
+            {"name": licence.name, "url": licence.url, "attribution": licence.attribution}
+            if licence is not None
+            else {"name": "Not specified", "url": "", "attribution": entry.credit}
+        ),
+        "modality": entry.modality.value,
+        "official_url": entry.official_url,
+        "default_prompt": entry.default_prompt,
+        "prepared": entry.prepared,
+        "frame_count": entry.frame_count,
+        "thumbnail_available": entry.thumbnail_available,
+        "thumbnail_url": entry.thumbnail_url,
+        "location_label": entry.location_label,
+        "gps_centre": (
+            {"lon": entry.gps_centre.lon, "lat": entry.gps_centre.lat}
+            if entry.gps_centre is not None
+            else None
+        ),
+        "gps_track": [{"lon": point.lon, "lat": point.lat} for point in entry.gps_track],
+        "credit": entry.credit,
+    }
+
+
+def _route(
+    request: HttpRequest,
+    frames: FrameReader,
+    geometry: GlbReader,
+    datasets: DatasetThumbnailReader | None = None,
+) -> HttpResponse:
     segments = request.path.split("/")
     if len(segments) != 4:
         return HttpResponse(status=404)
@@ -101,6 +158,11 @@ def _route(request: HttpRequest, frames: FrameReader, geometry: GlbReader) -> Ht
         return _glb(geometry, run_id, leaf.removesuffix(".glb"))
     if kind == "frames" and leaf.endswith(".jpg"):
         return _frame(frames, run_id, leaf.removesuffix(".jpg"), request.query)
+    if kind == "datasets" and leaf == "thumbnail.jpg" and datasets is not None:
+        data = datasets.dataset_thumbnail(run_id)
+        if data is None:
+            return HttpResponse(status=404)
+        return HttpResponse(status=200, body=data, headers={"content-type": _JPEG})
     return HttpResponse(status=404)
 
 

@@ -20,7 +20,7 @@ export default function App(props: AppProps): ReactNode {
   const [conversationId] = useState(() => params.get("conversation") ?? crypto.randomUUID());
   useEffect(() => setUrlParam("conversation", conversationId), [conversationId]);
   const port = useMemo(
-    () => props.port ?? createConnectChatPort(createAgentTransport(serverUrl)),
+    () => props.port ?? createConnectChatPort(createAgentTransport(serverUrl), serverUrl),
     [props.port, serverUrl],
   );
   return (

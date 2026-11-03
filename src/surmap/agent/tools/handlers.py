@@ -22,17 +22,26 @@ from numpy.typing import NDArray
 
 from surmap.agent.proto import survey_tools_pb2 as pb
 from surmap.agent.services import Handler
+from surmap.agent.tools.dataset_handlers import (
+    _RUN_STATUS,
+    _frame_detections,
+    _not_found,
+    _run_message,
+    get_dataset,
+    list_datasets,
+    prepare_dataset,
+    run_rtabmap,
+    run_sam_on_dataset,
+)
 from surmap.agent.tools.frames import crop_box_for_object, frame_image
 from surmap.agent.tools.workspace import (
     OBJECT_FRAME,
     OBJECT_UP_AXIS,
     BoxXYXY,
-    FrameDetections,
     FrameRecord,
     FrameSource,
     RunBusy,
     RunInfo,
-    RunStatus,
     StoredObject,
     SurveyWorkspace,
 )
@@ -45,7 +54,6 @@ from surmap.objects3d import (
     neighbours,
     summarize,
 )
-from surmap.survey.sam import SamDetection
 
 __all__ = [
     "MAX_SAM_FRAMES",
@@ -54,8 +62,13 @@ __all__ = [
     "get_frame",
     "get_object",
     "get_object_geometry",
+    "get_dataset",
     "get_run",
+    "list_datasets",
     "list_demos",
+    "prepare_dataset",
+    "run_rtabmap",
+    "run_sam_on_dataset",
     "object_summary_message",
     "prompt_sam",
     "run_demo",
@@ -78,12 +91,6 @@ _RELATIONS: dict[Relation, pb.Relation] = {
     Relation.BELOW: pb.BELOW,
     Relation.NEXT_TO: pb.NEXT_TO,
     Relation.OVERLAPS: pb.OVERLAPS,
-}
-_RUN_STATUS: dict[RunStatus, pb.RunInfo.Status] = {
-    RunStatus.RUNNING: pb.RunInfo.RUNNING,
-    RunStatus.FINISHED: pb.RunInfo.FINISHED,
-    RunStatus.CANCELLED: pb.RunInfo.CANCELLED,
-    RunStatus.FAILED: pb.RunInfo.FAILED,
 }
 _SOURCES: dict[FrameSource, pb.FrameSource] = {
     FrameSource.FULL: pb.FULL,
@@ -109,6 +116,11 @@ def survey_tool_handlers(workspace: SurveyWorkspace) -> Mapping[str, Handler]:
         "GetObject": bind(get_object),
         "GetObjectGeometry": bind(get_object_geometry),
         "GetFrame": bind(get_frame),
+        "ListDatasets": bind(list_datasets),
+        "GetDataset": bind(get_dataset),
+        "PrepareDataset": bind(prepare_dataset),
+        "RunRtabmap": bind(run_rtabmap),
+        "RunSamOnDataset": bind(run_sam_on_dataset),
     }
 
 
@@ -371,22 +383,6 @@ def _object_or_refuse(objects: Sequence[StoredObject], object_id: str) -> Stored
     return found
 
 
-def _not_found(missing: KeyError) -> ConnectError:
-    detail = missing.args[0] if missing.args else "not found"
-    return ConnectError(Code.NOT_FOUND, str(detail))
-
-
-def _run_message(run: RunInfo) -> pb.RunInfo:
-    return pb.RunInfo(
-        run_id=run.run_id,
-        dataset=run.dataset,
-        prompt=run.prompt,
-        frames=run.frames,
-        objects=run.objects,
-        status=_RUN_STATUS[run.status],
-    )
-
-
 def _sam_budget(request: pb.PromptSamRequest) -> int:
     if not request.HasField("max_frames"):
         return MAX_SAM_FRAMES
@@ -405,28 +401,6 @@ def _evenly_spaced(timeline: Sequence[FrameRecord], count: int) -> list[int]:
     last = len(timeline) - 1
     positions = sorted({round(step * last / (count - 1)) for step in range(count)})
     return [timeline[position].frame_id for position in positions]
-
-
-def _frame_detections(result: FrameDetections) -> pb.SamFrameDetections:
-    return pb.SamFrameDetections(
-        frame_id=result.frame_id,
-        t_ns=result.t_ns,
-        detections=[
-            _detection(f"d{result.frame_id}-{index}", detection)
-            for index, detection in enumerate(result.detections)
-        ],
-    )
-
-
-def _detection(detection_id: str, detection: SamDetection) -> pb.SamDetection:
-    x0, y0, x1, y1 = detection.box_xyxy
-    return pb.SamDetection(
-        detection_id=detection_id,
-        label=detection.label,
-        score=0.0 if detection.score is None else detection.score,
-        box_xyxy=pb.PixelBox(x0=x0, y0=y0, x1=x1, y1=y1),
-        mask_polygon=[pb.PixelPoint(x=x, y=y) for x, y in detection.mask_polygon],
-    )
 
 
 def _distance_to_box(point: NDArray[np.float64], points: NDArray[np.float32]) -> float:
