@@ -12,6 +12,7 @@ Design: [docs/architecture.md](docs/architecture.md).
 | Writing or editing tests | [.agents/skills/fluent-tests/SKILL.md](.agents/skills/fluent-tests/SKILL.md) |
 | Starting, planning, resuming, or wrapping a change / PR | [.agents/skills/pr-lifecycle/SKILL.md](.agents/skills/pr-lifecycle/SKILL.md) |
 | Verifying Gazebo/PX4 SITL → EuRoC on the WSL host | [.agents/skills/px4-sitl-test/SKILL.md](.agents/skills/px4-sitl-test/SKILL.md) |
+| Running anything on Modal (modal.com) — login, workspace, cost, cleanup | [.agents/skills/modal-cloud/SKILL.md](.agents/skills/modal-cloud/SKILL.md) |
 
 Do not restate these skills here or in changesets — reference them and
 follow them. Where this file and a skill disagree, the skill wins.
