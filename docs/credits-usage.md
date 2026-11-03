@@ -12,10 +12,16 @@ turn a live call on, and how spend is recorded.
 |---|---|---|---|
 | [Meta Model API](https://dev.meta.ai/docs/models) | SAM concepts, scene note, per-object labels, Ask the map (Muse Wonder); SAM 3.1 masks; voice | `muse-wonder-1.0`, `sam-3.1`, `muse-voice-transcribe-1.0` | `surmap.labelling.meta_muse`, `surmap.survey.meta_sam`, `surmap.mapqa` |
 | [Meta Model API](https://dev.meta.ai/docs/models) | Survey agent chat turns with function tools (Responses API, `POST /responses`); usage ledger provider `meta`, gated by `SURMAP_BUDGET_META_*` | `muse-wonder-1.0` (`SURMAP_AGENT_META_MODEL`) | `surmap.agent.llm.meta` |
+| [Fireworks](https://docs.fireworks.ai/) | Survey agent chat turns with function tools (OpenAI-compatible chat completions); usage ledger provider `fireworks`, gated by `SURMAP_BUDGET_FIREWORKS_*`; key `FIREWORKS_API_KEY` | `fireworks:<model>`, e.g. `accounts/fireworks/models/llama-v3p3-70b-instruct` (`SURMAP_FIREWORKS_MODELS`, `SURMAP_FIREWORKS_URL`) | `surmap.agent.llm.fireworks` |
 | [Baseten Model APIs](https://docs.baseten.co/inference/model-apis/overview) | Open-weight per-object labels from a JPEG crop | `meta-models/muse-spark-open-1026` at `https://inference.baseten.co/v1` | `surmap.labelling.baseten_muse` |
 | Modal | GPU for SAM 3.1 (app `surmap-sam`); a Muse Spark Open check endpoint | `facebook/sam3.1`; `meta-models/Muse-Spark-Open-816B-A42B` | `surmap.survey.modal_sam`, `surmap.labelling.modal_muse` |
 
-Every live call is gated by its `SURMAP_LIVE_*` flag. Muse Spark Open
+Keys (`MODEL_API_KEY`, `FIREWORKS_API_KEY`, `BASETEN_API_KEY`, …) go in
+the project `.env` (git-ignored; start from `.env.example`) or the
+shell. `python -m surmap.agent`, `python -m surmap.mapqa`,
+`scripts/demo.py`, `scripts/mission_demo.py` and the Muse and Fireworks live tests
+load it with `surmap.env.load_env()`; a shell export always wins, and
+values are never logged. Every live call is gated by its `SURMAP_LIVE_*` flag. Muse Spark Open
 is not on the Meta Model API; Baseten hosts it. The geometric pipeline
 (stereo, Coral detection, RTAB-Map, the dev console) does not use
 these credits.

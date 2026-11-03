@@ -10,7 +10,13 @@ import os
 
 import pytest
 from langchain_ollama import ChatOllama
+from pydantic import SecretStr
 
+from surmap.agent.llm.fireworks import (
+    DEFAULT_FIREWORKS_MODELS,
+    FireworksChatModel,
+    UrllibFireworksModelsTransport,
+)
 from surmap.agent.llm.meta import MetaResponsesChatModel
 from surmap.agent.llm.ollama import ollama_chat_model, ollama_models
 from surmap.agent.llm.registry import ChatModelRegistry, ModelInfo, UnknownModelProvider
@@ -21,11 +27,23 @@ from tests.agent_llm_fakes import (
     bound_tool_names,
     round_trip,
 )
+from tests.fake_fireworks import (
+    FAKE_FIREWORKS_KEY,
+    FakeFireworksScript,
+    a_closed_base_url,
+    serving,
+)
 
 REGISTRY_KEY = "sk-registry-key"
 MUSE_WONDER = ModelInfo(id="meta:muse-wonder-1.0", provider="meta", model="muse-wonder-1.0")
 LLAMA = ModelInfo(id="ollama:llama3.2:3b", provider="ollama", model="llama3.2:3b")
 QWEN_VL = ModelInfo(id="ollama:qwen2.5vl:7b", provider="ollama", model="qwen2.5vl:7b")
+FW_LLAMA = "accounts/fireworks/models/llama-v3p3-70b-instruct"
+FW_QWEN = "accounts/fireworks/models/qwen3-235b-a22b"
+
+
+def on_fireworks(model: str) -> ModelInfo:
+    return ModelInfo(id=f"fireworks:{model}", provider="fireworks", model=model)
 
 
 def a_registry(
@@ -39,6 +57,7 @@ def a_registry(
         environ=environ if environ is not None else {},
         ollama_transport=ollama if ollama is not None else FakeOllamaTags.unreachable(),
         meta_transport=meta if meta is not None else RecordingMetaTransport(),
+        fireworks_transport=UrllibFireworksModelsTransport(timeout_s=2.0),
     )
 
 
@@ -117,6 +136,88 @@ def test_the_tags_are_asked_of_the_configured_ollama_server() -> None:
     assert tags.urls == ["http://127.0.0.1:11500/api/tags"]
 
 
+# --- available: Fireworks -------------------------------------------------------------------
+
+
+def test_without_a_fireworks_key_no_fireworks_model_is_listed() -> None:
+    # Given a Fireworks model list but no FIREWORKS_API_KEY
+    registry = a_registry(environ={"SURMAP_FIREWORKS_MODELS": FW_LLAMA})
+
+    # When the available models are listed
+    listed = registry.available()
+
+    # Then Fireworks offers nothing
+    assert listed == ()
+
+
+def test_a_keyed_environment_lists_the_fireworks_models_it_names() -> None:
+    # Given a key and two comma-separated model ids, one padded, plus a blank entry
+    registry = a_registry(
+        environ={
+            "FIREWORKS_API_KEY": FAKE_FIREWORKS_KEY,
+            "SURMAP_FIREWORKS_MODELS": f"{FW_LLAMA}, {FW_QWEN},",
+        }
+    )
+
+    # When the available models are listed
+    listed = registry.available()
+
+    # Then both are offered, ids keeping their slashes
+    assert listed == (on_fireworks(FW_LLAMA), on_fireworks(FW_QWEN))
+
+
+def test_without_a_model_list_the_endpoint_s_models_are_listed_with_the_key() -> None:
+    # Given a key and a Fireworks endpoint serving one model
+    script = FakeFireworksScript(served_models=[FW_QWEN])
+    with serving(script) as base:
+        registry = a_registry(
+            environ={"FIREWORKS_API_KEY": FAKE_FIREWORKS_KEY, "SURMAP_FIREWORKS_URL": base}
+        )
+
+        # When the available models are listed
+        listed = registry.available()
+
+    # Then the endpoint's model is offered, asked with the bearer key
+    assert listed == (on_fireworks(FW_QWEN),)
+    asked = script.requests[0]
+    assert (asked.method, asked.path) == ("GET", "/v1/models")
+    assert asked.header("Authorization") == f"Bearer {FAKE_FIREWORKS_KEY}"
+
+
+def test_an_unreachable_endpoint_lists_the_built_in_fireworks_models() -> None:
+    # Given a key and a Fireworks URL nothing listens on
+    registry = a_registry(
+        environ={
+            "FIREWORKS_API_KEY": FAKE_FIREWORKS_KEY,
+            "SURMAP_FIREWORKS_URL": a_closed_base_url(),
+        }
+    )
+
+    # When the available models are listed
+    listed = registry.available()
+
+    # Then the built-in tool-capable models are offered
+    assert listed == tuple(on_fireworks(model) for model in DEFAULT_FIREWORKS_MODELS)
+
+
+def test_muse_comes_first_then_fireworks_then_the_local_models() -> None:
+    # Given both keys and an Ollama server holding one model
+    registry = a_registry(
+        environ={
+            "MODEL_API_KEY": REGISTRY_KEY,
+            "FIREWORKS_API_KEY": FAKE_FIREWORKS_KEY,
+            "SURMAP_FIREWORKS_MODELS": FW_LLAMA,
+        },
+        ollama=FakeOllamaTags.holding("llama3.2:3b"),
+    )
+
+    # When the available models are listed
+    listed = registry.available()
+
+    # Then hosted models lead, Muse before Fireworks
+    assert listed == (MUSE_WONDER, on_fireworks(FW_LLAMA), LLAMA)
+
+
 # --- build ----------------------------------------------------------------------------------
 
 
@@ -177,6 +278,50 @@ def test_a_built_muse_model_answers_through_the_registry_transport_with_its_key(
 
     # Then the request went through that transport, keyed from the registry's environment
     assert meta.headers[0]["Authorization"] == f"Bearer {REGISTRY_KEY}"
+
+
+def test_a_fireworks_id_builds_that_model_split_at_the_first_colon_only() -> None:
+    # Given a keyed registry
+    registry = a_registry(environ={"FIREWORKS_API_KEY": FAKE_FIREWORKS_KEY})
+
+    # When a Fireworks id with a slashed model path is built
+    model = registry.build(f"fireworks:{FW_LLAMA}")
+
+    # Then it is the Fireworks model for that path on the default endpoint
+    assert isinstance(model, FireworksChatModel)
+    assert model.model_name == FW_LLAMA
+    assert model.openai_api_base == "https://api.fireworks.ai/inference/v1"
+
+
+def test_a_built_fireworks_model_holds_the_registry_key_as_a_secret() -> None:
+    # Given a keyed registry
+    registry = a_registry(environ={"FIREWORKS_API_KEY": FAKE_FIREWORKS_KEY})
+
+    # When a Fireworks id is built
+    model = registry.build(f"fireworks:{FW_LLAMA}")
+
+    # Then the key is the registry's, held as a secret and never shown
+    assert isinstance(model, FireworksChatModel)
+    assert isinstance(model.openai_api_key, SecretStr)
+    assert model.openai_api_key.get_secret_value() == FAKE_FIREWORKS_KEY
+    assert FAKE_FIREWORKS_KEY not in repr(model)
+
+
+def test_a_built_fireworks_model_talks_to_the_configured_url() -> None:
+    # Given SURMAP_FIREWORKS_URL points at a local stub
+    registry = a_registry(
+        environ={
+            "FIREWORKS_API_KEY": FAKE_FIREWORKS_KEY,
+            "SURMAP_FIREWORKS_URL": "http://127.0.0.1:8999/v1/",
+        }
+    )
+
+    # When a Fireworks id is built
+    model = registry.build(f"fireworks:{FW_LLAMA}")
+
+    # Then that model is served from there
+    assert isinstance(model, FireworksChatModel)
+    assert model.openai_api_base == "http://127.0.0.1:8999/v1"
 
 
 def test_an_unknown_provider_is_refused_by_name() -> None:

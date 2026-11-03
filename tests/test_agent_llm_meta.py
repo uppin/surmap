@@ -26,6 +26,7 @@ from surmap.agent.llm.meta import (
     parse_responses,
     responses_request,
 )
+from surmap.env import load_env
 from surmap.usage import BudgetExceeded, UsageLedger
 from tests.agent_llm_fakes import (
     ECHO_PORTABLE_TOOL,
@@ -467,10 +468,12 @@ async def test_an_async_turn_answers_like_a_sync_one() -> None:
 
 @pytest.mark.skipif(
     os.environ.get("SURMAP_LIVE_META") != "1",
-    reason="set SURMAP_LIVE_META=1 to call the Meta Model API",
+    reason="set SURMAP_LIVE_META=1 (and MODEL_API_KEY in the shell or .env) to call it",
 )
 def test_a_live_muse_turn_calls_echo_and_answers_with_its_result() -> None:
-    # Given Muse on the live Responses API, keyed from MODEL_API_KEY, recording credits
+    # Given Muse on the live Responses API, keyed from MODEL_API_KEY in the shell or the
+    # project .env, recording credits
+    load_env()
     model = MetaResponsesChatModel(usage_sink=UsageLedger())
 
     # When it is offered echo and then given the result of its call

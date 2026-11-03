@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+from surmap.env import load_env
 from surmap.mapqa.answers import MapAnswer
 from surmap.mapqa.client import HttpTransport
 from surmap.mapqa.errors import MapQaError
@@ -23,7 +24,12 @@ def main(
     transport: HttpTransport | None = None,
     api_key: str | None = None,
 ) -> int:
-    """Run one subcommand. Returns a process status code."""
+    """Run one subcommand. Returns a process status code.
+
+    The project `.env` fills environment gaps first, so `MODEL_API_KEY` may live there; a shell
+    export wins.
+    """
+    load_env()
     parser = argparse.ArgumentParser(prog="surmap.mapqa")
     sub = parser.add_subparsers(dest="command", required=True)
 

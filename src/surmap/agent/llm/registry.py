@@ -5,11 +5,14 @@ An id is `<provider>:<model>`, split at the first colon (`ollama:llama3.2:3b` is
 
 - `meta:<model>` is listed only when `MODEL_API_KEY` is set; the model is
   `SURMAP_AGENT_META_MODEL`, else `muse-wonder-1.0`.
+- `fireworks:<model>` is listed only when `FIREWORKS_API_KEY` is set: the comma-separated
+  `SURMAP_FIREWORKS_MODELS`, else what the endpoint's `GET /models` returns (short timeout), else
+  the built-in tool-capable list. The model is a path (`accounts/fireworks/models/<name>`).
 - `ollama:<model>` is listed for every model the loopback server's `GET /api/tags` returns, and
   for none when the server does not answer.
 
-`build` does not consult the listing: any `meta:` or `ollama:` id builds, and any other provider is
-refused by name.
+`build` does not consult the listing: any `meta:`, `fireworks:` or `ollama:` id builds, and any
+other provider is refused by name.
 """
 
 from __future__ import annotations
@@ -22,6 +25,16 @@ from typing import Literal
 from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import SecretStr
 
+from surmap.agent.llm.fireworks import (
+    FIREWORKS_API_KEY_ENV,
+    FIREWORKS_MODELS_ENV,
+    FIREWORKS_PROVIDER,
+    FIREWORKS_URL_ENV,
+    FireworksModelsTransport,
+    UrllibFireworksModelsTransport,
+    fireworks_chat_model,
+    fireworks_models,
+)
 from surmap.agent.llm.meta import (
     AGENT_META_MODEL_ENV,
     DEFAULT_AGENT_META_MODEL,
@@ -42,7 +55,7 @@ from surmap.usage import UsageSink
 
 __all__ = ["ChatModelRegistry", "ModelInfo", "Provider", "UnknownModelProvider"]
 
-Provider = Literal["meta", "ollama"]
+Provider = Literal["meta", "fireworks", "ollama"]
 
 _MODEL_API_KEY_ENV = "MODEL_API_KEY"
 
@@ -71,24 +84,43 @@ class ChatModelRegistry:
         environ: Mapping[str, str] | None = None,
         ollama_transport: OllamaTagsTransport | None = None,
         meta_transport: MetaMuseTransport | None = None,
+        fireworks_transport: FireworksModelsTransport | None = None,
         usage_sink: UsageSink | None = None,
     ) -> None:
         """`environ` defaults to `os.environ`; the transports to the stdlib ones.
 
-        `meta_transport` and `usage_sink` are handed to every Muse model `build` returns.
+        `meta_transport` and `usage_sink` are handed to every Muse model `build` returns;
+        `usage_sink` to every Fireworks model too. `fireworks_transport` lists Fireworks models.
         """
         self._environ = environ
         self._ollama_transport = ollama_transport
         self._meta_transport = meta_transport
+        self._fireworks_transport = fireworks_transport
         self._usage_sink = usage_sink
 
     def available(self) -> tuple[ModelInfo, ...]:
-        """Muse first (when keyed), then the Ollama server's models in its order."""
+        """Muse first (when keyed), then Fireworks (when keyed), then the Ollama server's models."""
         environ = self._env()
         listed: list[ModelInfo] = []
         if environ.get(_MODEL_API_KEY_ENV, "").strip():
             muse = environ.get(AGENT_META_MODEL_ENV, "").strip() or DEFAULT_AGENT_META_MODEL
             listed.append(ModelInfo(id=f"{META_PROVIDER}:{muse}", provider="meta", model=muse))
+        fireworks_key = environ.get(FIREWORKS_API_KEY_ENV, "").strip()
+        if fireworks_key:
+            transport = (
+                self._fireworks_transport
+                if self._fireworks_transport is not None
+                else UrllibFireworksModelsTransport()
+            )
+            for name in fireworks_models(
+                transport,
+                api_key=fireworks_key,
+                base_url=self._fireworks_url(),
+                override=environ.get(FIREWORKS_MODELS_ENV),
+            ):
+                listed.append(
+                    ModelInfo(id=f"{FIREWORKS_PROVIDER}:{name}", provider="fireworks", model=name)
+                )
         tags = (
             self._ollama_transport
             if self._ollama_transport is not None
@@ -108,15 +140,25 @@ class ChatModelRegistry:
                 transport=self._meta_transport,
                 usage_sink=self._usage_sink,
             )
+        if provider == FIREWORKS_PROVIDER and model:
+            return fireworks_chat_model(
+                model,
+                api_key=self._env().get(FIREWORKS_API_KEY_ENV, "").strip(),
+                base_url=self._fireworks_url(),
+                usage_sink=self._usage_sink,
+            )
         if provider == "ollama" and model:
             return ollama_chat_model(model, base_url=self._ollama_url())
         raise UnknownModelProvider(
             f"unknown model provider {provider!r} in {model_id!r}; "
-            "the agent builds meta:<model> and ollama:<model> ids"
+            "the agent builds meta:<model>, fireworks:<model> and ollama:<model> ids"
         )
 
     def _env(self) -> Mapping[str, str]:
         return os.environ if self._environ is None else self._environ
+
+    def _fireworks_url(self) -> str | None:
+        return self._env().get(FIREWORKS_URL_ENV) or None
 
     def _ollama_url(self) -> str:
         # Read from the injected environment, never os.environ: the default is passed explicitly
