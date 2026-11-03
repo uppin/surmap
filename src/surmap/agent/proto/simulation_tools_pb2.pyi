@@ -212,19 +212,39 @@ class PersonElement(_message.Message):
     coat: str
     def __init__(self, id: _Optional[str] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., coat: _Optional[str] = ...) -> None: ...
 
+class VegetationElement(_message.Message):
+    __slots__ = ("id", "species", "position", "size_east_m", "size_north_m", "density_per_100m2", "seed")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    SPECIES_FIELD_NUMBER: _ClassVar[int]
+    POSITION_FIELD_NUMBER: _ClassVar[int]
+    SIZE_EAST_M_FIELD_NUMBER: _ClassVar[int]
+    SIZE_NORTH_M_FIELD_NUMBER: _ClassVar[int]
+    DENSITY_PER_100M2_FIELD_NUMBER: _ClassVar[int]
+    SEED_FIELD_NUMBER: _ClassVar[int]
+    id: str
+    species: str
+    position: EnuPoint
+    size_east_m: float
+    size_north_m: float
+    density_per_100m2: float
+    seed: int
+    def __init__(self, id: _Optional[str] = ..., species: _Optional[str] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., size_east_m: _Optional[float] = ..., size_north_m: _Optional[float] = ..., density_per_100m2: _Optional[float] = ..., seed: _Optional[int] = ...) -> None: ...
+
 class AddElementRequest(_message.Message):
-    __slots__ = ("scenario_id", "box", "building", "collapsed_building", "person")
+    __slots__ = ("scenario_id", "box", "building", "collapsed_building", "person", "vegetation")
     SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
     BOX_FIELD_NUMBER: _ClassVar[int]
     BUILDING_FIELD_NUMBER: _ClassVar[int]
     COLLAPSED_BUILDING_FIELD_NUMBER: _ClassVar[int]
     PERSON_FIELD_NUMBER: _ClassVar[int]
+    VEGETATION_FIELD_NUMBER: _ClassVar[int]
     scenario_id: str
     box: BoxElement
     building: BuildingElement
     collapsed_building: CollapsedBuildingElement
     person: PersonElement
-    def __init__(self, scenario_id: _Optional[str] = ..., box: _Optional[_Union[BoxElement, _Mapping[str, _Any]]] = ..., building: _Optional[_Union[BuildingElement, _Mapping[str, _Any]]] = ..., collapsed_building: _Optional[_Union[CollapsedBuildingElement, _Mapping[str, _Any]]] = ..., person: _Optional[_Union[PersonElement, _Mapping[str, _Any]]] = ...) -> None: ...
+    vegetation: VegetationElement
+    def __init__(self, scenario_id: _Optional[str] = ..., box: _Optional[_Union[BoxElement, _Mapping[str, _Any]]] = ..., building: _Optional[_Union[BuildingElement, _Mapping[str, _Any]]] = ..., collapsed_building: _Optional[_Union[CollapsedBuildingElement, _Mapping[str, _Any]]] = ..., person: _Optional[_Union[PersonElement, _Mapping[str, _Any]]] = ..., vegetation: _Optional[_Union[VegetationElement, _Mapping[str, _Any]]] = ...) -> None: ...
 
 class RemoveElementRequest(_message.Message):
     __slots__ = ("scenario_id", "element_id")
@@ -233,6 +253,48 @@ class RemoveElementRequest(_message.Message):
     scenario_id: str
     element_id: str
     def __init__(self, scenario_id: _Optional[str] = ..., element_id: _Optional[str] = ...) -> None: ...
+
+class SetWeatherRequest(_message.Message):
+    __slots__ = ("scenario_id", "rain_mm_h", "fog_visibility_m", "wind_from_deg", "wind_speed_m_s", "wind_gust_m_s")
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    RAIN_MM_H_FIELD_NUMBER: _ClassVar[int]
+    FOG_VISIBILITY_M_FIELD_NUMBER: _ClassVar[int]
+    WIND_FROM_DEG_FIELD_NUMBER: _ClassVar[int]
+    WIND_SPEED_M_S_FIELD_NUMBER: _ClassVar[int]
+    WIND_GUST_M_S_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    rain_mm_h: float
+    fog_visibility_m: float
+    wind_from_deg: float
+    wind_speed_m_s: float
+    wind_gust_m_s: float
+    def __init__(self, scenario_id: _Optional[str] = ..., rain_mm_h: _Optional[float] = ..., fog_visibility_m: _Optional[float] = ..., wind_from_deg: _Optional[float] = ..., wind_speed_m_s: _Optional[float] = ..., wind_gust_m_s: _Optional[float] = ...) -> None: ...
+
+class AddFireRequest(_message.Message):
+    __slots__ = ("scenario_id", "id", "ignition", "start_s", "spread_m_s", "max_radius_m", "smoke")
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    ID_FIELD_NUMBER: _ClassVar[int]
+    IGNITION_FIELD_NUMBER: _ClassVar[int]
+    START_S_FIELD_NUMBER: _ClassVar[int]
+    SPREAD_M_S_FIELD_NUMBER: _ClassVar[int]
+    MAX_RADIUS_M_FIELD_NUMBER: _ClassVar[int]
+    SMOKE_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    id: str
+    ignition: EnuPoint
+    start_s: float
+    spread_m_s: float
+    max_radius_m: float
+    smoke: bool
+    def __init__(self, scenario_id: _Optional[str] = ..., id: _Optional[str] = ..., ignition: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., start_s: _Optional[float] = ..., spread_m_s: _Optional[float] = ..., max_radius_m: _Optional[float] = ..., smoke: bool = ...) -> None: ...
+
+class RemoveFireRequest(_message.Message):
+    __slots__ = ("scenario_id", "fire_id")
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    FIRE_ID_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    fire_id: str
+    def __init__(self, scenario_id: _Optional[str] = ..., fire_id: _Optional[str] = ...) -> None: ...
 
 class GetScenarioRequest(_message.Message):
     __slots__ = ("scenario_id",)

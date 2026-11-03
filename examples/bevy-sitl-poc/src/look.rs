@@ -48,6 +48,8 @@ pub fn photographic(commands: &mut EntityCommands, lens: Lens) {
         Exposure { ev100: DEFAULT_EV100 },
         Tonemapping::AgX,
         haze(DEFAULT_VISIBILITY_M),
+        // Feronia's GPU-instanced grass is culled per camera.
+        bevy_eidolon::prepass::CullComputeCamera,
     ));
     match lens {
         Lens::Chase => {

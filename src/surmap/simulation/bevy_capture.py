@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from PIL import Image
@@ -28,6 +28,10 @@ class BevyCapture:
     frames: tuple[CapturedFrame, ...]
     # The renderer's exact profile (`camera.json`), when the recorder left one.
     camera: CameraProfile | None = None
+    # Each frame's fire fronts (ENU polygons by fire id), keyed by `t_ns`; empty without fire.
+    fire_perimeters: dict[int, dict[str, tuple[tuple[float, float], ...]]] = field(
+        default_factory=dict
+    )
 
 
 class CaptureRecorder:
@@ -226,5 +230,43 @@ def load_bevy_capture(root: Path) -> BevyCapture:
     profile_path = root / "camera.json"
     camera = load_camera_profile(profile_path) if profile_path.is_file() else None
     return BevyCapture(
-        calibration=calibration, objects=tuple(objects), frames=tuple(frames), camera=camera
+        calibration=calibration,
+        objects=tuple(objects),
+        frames=tuple(frames),
+        camera=camera,
+        fire_perimeters=_load_fire_perimeters(root / "fire_perimeter.jsonl"),
     )
+
+
+def _load_fire_perimeters(path: Path) -> dict[int, dict[str, tuple[tuple[float, float], ...]]]:
+    """`fire_perimeter.jsonl`: one `{t_ns, fires: [{id, polygon_enu}]}` line per frame."""
+    if not path.is_file():
+        return {}
+    perimeters: dict[int, dict[str, tuple[tuple[float, float], ...]]] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        frame = _as_obj(json.loads(line), "fire perimeter frame")
+        fires = frame.get("fires")
+        if not isinstance(fires, list):
+            raise ValueError("fires must be a list")
+        by_id: dict[str, tuple[tuple[float, float], ...]] = {}
+        for raw in fires:
+            fire = _as_obj(raw, "fire")
+            fire_id, polygon = fire.get("id"), fire.get("polygon_enu")
+            if not isinstance(fire_id, str) or not isinstance(polygon, list):
+                raise ValueError("a fire needs an id and a polygon_enu list")
+            by_id[fire_id] = tuple(_xy(point) for point in polygon)
+        perimeters[int(_num(frame, "t_ns", integer=True))] = by_id
+    return perimeters
+
+
+def _xy(value: object) -> tuple[float, float]:
+    if not isinstance(value, list) or len(value) != 2:
+        raise ValueError("a polygon vertex is two numbers")
+    x, y = value
+    if isinstance(x, bool) or isinstance(y, bool):
+        raise ValueError("a polygon vertex is two numbers")
+    if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+        raise ValueError("a polygon vertex is two numbers")
+    return (float(x), float(y))

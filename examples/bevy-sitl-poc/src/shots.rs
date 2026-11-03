@@ -185,6 +185,18 @@ pub fn setup_overview(mut commands: Commands, mode: Res<RunMode>, mut images: Re
     commands.insert_resource(Shots { overview, settled_frames: 0, requested: false, captured: 0 });
 }
 
+/// With a fire in the scene the review still looks at it: from the south of the ignition,
+/// raised, towards the downwind side. Re-aimed once, when the manifest has built.
+pub fn aim_overview_at_fire(fires: Option<Res<crate::wildfire::Wildfire>>, mut camera: Query<&mut Transform, With<OverviewCam>>, mut aimed: Local<bool>) {
+    let Some(ignition) = fires.as_ref().and_then(|f| f.first_ignition()) else { return };
+    if *aimed {
+        return;
+    }
+    let Ok(mut eye) = camera.single_mut() else { return };
+    *aimed = true;
+    *eye = Transform::from_translation(enu(ignition.x - 6.0, ignition.y - 48.0, 24.0)).looking_at(enu(ignition.x + 14.0, ignition.y, 0.0), Vec3::Y);
+}
+
 /// Frames to wait after everything loaded: mips upload, shadows and TAA settle.
 const SETTLE_FRAMES: u32 = 90;
 

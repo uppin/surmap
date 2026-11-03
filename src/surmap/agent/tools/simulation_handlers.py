@@ -29,8 +29,11 @@ from surmap.simulation.licences import check_licence
 from surmap.simulation.scenario_manifest import (
     ScenarioInvalid,
     add_element,
+    add_fire,
     add_model,
     remove_element,
+    remove_fire,
+    set_weather,
 )
 from surmap.simulation.scenario_store import (
     LicenceRefused,
@@ -97,6 +100,9 @@ def simulation_tool_handlers(
         "AddModel": bind(add_model_tool),
         "AddElement": bind(add_element_tool),
         "RemoveElement": bind(remove_element_tool),
+        "SetWeather": bind(set_weather_tool),
+        "AddFire": bind(add_fire_tool),
+        "RemoveFire": bind(remove_fire_tool),
         "GetScenario": bind(get_scenario),
         "ListScenarios": bind(list_scenarios),
     }
@@ -284,8 +290,19 @@ def _element(request: pb.AddElementRequest) -> dict[str, object]:
             "coat": person.coat,
             "skin": "skin",
         }
+    if which == "vegetation":
+        stand = request.vegetation
+        return {
+            "kind": "vegetation",
+            "id": stand.id,
+            "species": stand.species,
+            "position_enu": _xyz(stand.position),
+            "size_m": [stand.size_east_m, stand.size_north_m],
+            "density_per_100m2": stand.density_per_100m2,
+            "seed": stand.seed,
+        }
     raise ConnectError(
-        Code.INVALID_ARGUMENT, "give one of box, building, collapsed_building, person"
+        Code.INVALID_ARGUMENT, "give one of box, building, collapsed_building, person, vegetation"
     )
 
 
@@ -301,6 +318,48 @@ async def remove_element_tool(
 ) -> pb.ScenarioResponse:
     return await _edit(
         tooling, request.scenario_id, lambda s: remove_element(s.manifest, request.element_id)
+    )
+
+
+async def set_weather_tool(
+    request: pb.SetWeatherRequest, tooling: SimulationTooling
+) -> pb.ScenarioResponse:
+    """`SetWeather`: the scenario's rain, fog visibility and one wind."""
+    fog = request.fog_visibility_m if request.HasField("fog_visibility_m") else None
+    return await _edit(
+        tooling,
+        request.scenario_id,
+        lambda s: set_weather(
+            s.manifest,
+            rain_mm_h=request.rain_mm_h,
+            fog_visibility_m=fog,
+            wind_from_deg=request.wind_from_deg,
+            wind_speed_m_s=request.wind_speed_m_s,
+            wind_gust_m_s=request.wind_gust_m_s,
+        ),
+    )
+
+
+async def add_fire_tool(
+    request: pb.AddFireRequest, tooling: SimulationTooling
+) -> pb.ScenarioResponse:
+    """`AddFire`: a wildfire that spreads downwind from its ignition point."""
+    fire: dict[str, object] = {
+        "id": request.id,
+        "ignition_enu": _xyz(request.ignition),
+        "start_s": request.start_s,
+        "spread_m_s": request.spread_m_s,
+        "max_radius_m": request.max_radius_m,
+        "smoke": request.smoke if request.HasField("smoke") else True,
+    }
+    return await _edit(tooling, request.scenario_id, lambda s: add_fire(s.manifest, fire))
+
+
+async def remove_fire_tool(
+    request: pb.RemoveFireRequest, tooling: SimulationTooling
+) -> pb.ScenarioResponse:
+    return await _edit(
+        tooling, request.scenario_id, lambda s: remove_fire(s.manifest, request.fire_id)
     )
 
 

@@ -26,6 +26,8 @@ use crate::rig::{ProfileAsset, RigSource};
 use crate::shots::RunMode;
 use crate::sky::SkySource;
 use crate::textures::{load_texture_set, tiled_material, TextureSetHandles};
+use crate::vegetation::{plan_stand, PendingStands};
+use crate::wildfire::Wildfire;
 use crate::wire::GroundTruthObject;
 
 #[derive(Asset, TypePath, Debug)]
@@ -117,6 +119,8 @@ impl Seeded {
 /// The manifest's materials, with their maps loading.
 pub struct Library {
     defs: BTreeMap<String, (PbrTextureSet, Option<TextureSetHandles>)>,
+    /// While it rains, these materials look wet: (keys, roughness factor, colour factor).
+    wet: Option<(Vec<String>, f32, f32)>,
 }
 
 impl Library {
@@ -129,14 +133,27 @@ impl Library {
             }
             defs.insert(key.clone(), (def.clone(), handles));
         }
-        Self { defs }
+        let wet = manifest
+            .weather
+            .as_ref()
+            .filter(|w| w.rain_mm_h > 0.0)
+            .map(|w| (w.wet_materials.clone(), w.wet_roughness, w.wet_darkening));
+        Self { defs, wet }
     }
 
     /// `key` tiled over `size_m` of surface, tinted, optionally re-scaled.
     fn material(&self, key: &str, size_m: Vec2, tint: Option<[f32; 3]>, uv_scale: Option<f32>) -> StandardMaterial {
         let (def, handles) = &self.defs[key];
         let tint = tint.map_or(Color::WHITE, |[r, g, b]| Color::srgb(r, g, b));
-        tiled_material(def, handles.as_ref(), size_m, tint, uv_scale)
+        let mut material = tiled_material(def, handles.as_ref(), size_m, tint, uv_scale);
+        if let Some((keys, roughness, darkening)) = &self.wet {
+            if keys.iter().any(|k| k == key) {
+                material.perceptual_roughness *= roughness;
+                let c = material.base_color.to_linear();
+                material.base_color = Color::LinearRgba(LinearRgba::new(c.red * darkening, c.green * darkening, c.blue * darkening, c.alpha));
+            }
+        }
+        material
     }
 }
 
@@ -148,6 +165,7 @@ pub fn build_world(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut truth: ResMut<GroundTruth>,
+    mut stands: ResMut<PendingStands>,
     mode: Res<RunMode>,
 ) {
     if state.built {
@@ -159,7 +177,14 @@ pub fn build_world(
     let profile: Handle<ProfileAsset> = assets.load(camera);
     state.pending.push(profile.clone().untyped());
     commands.insert_resource(RigSource(profile));
-    spawn_sun_and_haze(&mut commands, &assets, &mut state.pending, &manifest.environment);
+    let fog_visibility_m = manifest.weather.as_ref().and_then(|w| w.fog_visibility_m);
+    spawn_sun_and_haze(&mut commands, &assets, &mut state.pending, &manifest.environment, fog_visibility_m);
+    commands.insert_resource(Wildfire::new(manifest.weather.as_ref(), &manifest.fires, &assets, &mut meshes, &mut state.pending));
+    for element in &manifest.elements {
+        if let Element::Vegetation(stand) = element {
+            plan_stand(&mut commands, &assets, &mut state.pending, &mut stands, stand);
+        }
+    }
     let mut world = Builder { commands: &mut commands, meshes: &mut meshes, materials: &mut materials, library: &library, truth: &mut truth };
     for element in &manifest.elements {
         world.element(element);
@@ -336,7 +361,7 @@ fn bounds(points: impl Iterator<Item = Vec3>) -> (Vec3, Vec3) {
 
 /// Spec §5 sun (elevation, azimuth clockwise from north) with cascaded
 /// shadows, from the manifest's environment.
-fn spawn_sun_and_haze(commands: &mut Commands, assets: &AssetServer, pending: &mut Vec<UntypedHandle>, environment: &Environment) {
+fn spawn_sun_and_haze(commands: &mut Commands, assets: &AssetServer, pending: &mut Vec<UntypedHandle>, environment: &Environment, fog_visibility_m: Option<f32>) {
     let (el, az) = (environment.sun_elevation_deg.to_radians(), environment.sun_azimuth_deg.to_radians());
     let towards_sun = enu(az.sin() * el.cos(), az.cos() * el.cos(), el.sin());
     commands.spawn((
@@ -357,7 +382,7 @@ fn spawn_sun_and_haze(commands: &mut Commands, assets: &AssetServer, pending: &m
         pending.push(equirect.clone().untyped());
         commands.insert_resource(SkySource { equirect, brightness: environment.sky_brightness, baked: false });
     }
-    commands.insert_resource(CameraLook { fog_visibility_m: environment.fog_visibility_m, exposure_ev100: environment.exposure_ev100 });
+    commands.insert_resource(CameraLook { fog_visibility_m: fog_visibility_m.unwrap_or(environment.fog_visibility_m), exposure_ev100: environment.exposure_ev100 });
 }
 
 /// The manifest's haze and exposure, applied to every camera.
