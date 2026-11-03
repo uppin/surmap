@@ -165,6 +165,14 @@ posed-frames rate, each in frames per second. RTAB-Map alone, with
 no object tracking in the loop, is measured with
 `scripts/verify_cm5.py --rtabmap-only [--frames N]`.
 
+## Survey agent process
+
+The survey agent (`uv run python -m surmap.agent --sam-fake`) runs on the
+operator's machine, not on the CM5 or station, and is not deployed by
+these scripts. It listens on `127.0.0.1:8780` by default (`--host`,
+`--port`) and has no auth, so keep it on loopback or behind a trusted
+proxy. See [agent.md](agent.md) § *Running the agent*.
+
 ## Demo page on remote hosts
 
 The demo page can run against the deployed servers instead of its

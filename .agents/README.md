@@ -1,13 +1,16 @@
 # Agents Guide
 
 `.agents/` is the **single canonical home** for this repo's assistant guidance.
-Muse reads the same files through the symlinks in `.muse/`:
+Muse and Claude Code read the same files through symlinks:
 
 - `.muse/skills` → `../.agents/skills`
 - `.muse/commands` → `../.agents/commands`
+- `.claude/skills` → `../.agents/skills`
+- `.claude/commands` → `../.agents/commands`
 
-Write changes **here**, never in `.muse/` — a regular file appearing in either
-of those directories is unmigrated drift.
+Write changes **here**, never in `.muse/` or `.claude/` — a regular file
+appearing in any of those directories is unmigrated drift. (`.claude/` may
+still hold Claude Code's own `settings.json`, `agents/` or `hooks/`.)
 
 ## Layout
 

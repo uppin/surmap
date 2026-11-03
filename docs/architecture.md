@@ -172,6 +172,10 @@ fixture label and does not construct these clients.
 and a situation report over a snapshot, and
 `muse-voice-transcribe-1.0` for spoken questions ([mapqa.md](mapqa.md)).
 
+**Survey agent.** `surmap.agent` defines the agent's tools as proto
+services (`surmap.agent.v1`) and builds each tool's model-facing contract
+from their descriptors ([agent.md](agent.md)).
+
 ### 3.3 On-board detection and tracking (CM5 + Coral Edge TPU)
 
 The TPU pipeline's job, end to end: **camera input in, labeled tracked

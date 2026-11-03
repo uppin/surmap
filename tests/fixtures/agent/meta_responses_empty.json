@@ -1,0 +1,21 @@
+{
+  "id": "resp_empty_01",
+  "object": "response",
+  "status": "completed",
+  "model": "muse-wonder-1.0",
+  "output": [
+    {
+      "type": "reasoning",
+      "id": "rs_empty_01",
+      "summary": []
+    }
+  ],
+  "usage": {
+    "input_tokens": 812,
+    "output_tokens": 8192,
+    "output_tokens_details": {
+      "reasoning_tokens": 8192
+    },
+    "total_tokens": 9004
+  }
+}

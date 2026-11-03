@@ -25,3 +25,10 @@ mission-demo-out/
 .worktrees
 
 *.bundle
+
+# web/agent-chat (yarn 1 package; local-install swaps yarn.lock and restores it)
+web/agent-chat/node_modules
+web/agent-chat/dist
+web/agent-chat/yarn.lock.local-install-backup
+web/agent-chat/test-results
+web/agent-chat/playwright-report

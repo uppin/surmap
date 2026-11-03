@@ -12,7 +12,8 @@ from numpy.typing import NDArray
 from surmap.demo.cloud_view import CAMERA_MARKER, CloudPose, CloudViewer, FollowCamera
 from surmap.demo.history import RunHistoryStore
 from surmap.demo.replay import Bounds, CloudRenderer, JournalPlayer
-from surmap.demo.server import DemoPlayer, PlaybackControls
+from surmap.demo.runs import PlaybackControls
+from surmap.demo.server import DemoPlayer
 from surmap.demo.surface_render import SurfaceLayer
 from surmap.types import Pose, Vec3
 from tests.test_demo import _odom_with, _prepared_tiny

@@ -1,0 +1,45 @@
+{
+  "id": "resp_two_calls_01",
+  "object": "response",
+  "status": "completed",
+  "model": "muse-wonder-1.0",
+  "output": [
+    {
+      "type": "message",
+      "id": "msg_two_calls_01",
+      "role": "assistant",
+      "status": "completed",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "Looking up the recorded runs first.",
+          "annotations": []
+        }
+      ]
+    },
+    {
+      "type": "function_call",
+      "id": "fc_two_calls_01",
+      "call_id": "call_runs_1",
+      "name": "list_runs",
+      "arguments": "{}",
+      "status": "completed"
+    },
+    {
+      "type": "function_call",
+      "id": "fc_two_calls_02",
+      "call_id": "call_run_2",
+      "name": "get_run",
+      "arguments": "{\"run_id\": \"run-7\"}",
+      "status": "completed"
+    }
+  ],
+  "usage": {
+    "input_tokens": 1204,
+    "output_tokens": 58,
+    "output_tokens_details": {
+      "reasoning_tokens": 20
+    },
+    "total_tokens": 1262
+  }
+}

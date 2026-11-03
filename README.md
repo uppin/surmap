@@ -169,6 +169,18 @@ limits, and dry runs ([docs/disaster-datasets.md](docs/disaster-datasets.md)).
 LADI v2 is fetched by the eval script; the dev-console scenes are listed
 in [docs/dev-console.md](docs/dev-console.md).
 
+## Survey agent
+
+A chat agent that runs demos, SAM and object tools for you, served on
+`127.0.0.1:8780`:
+
+```bash
+uv run python -m surmap.agent --sam-fake --model ollama:llama3.2
+```
+
+Flags, routes and the event stream: [docs/agent.md](docs/agent.md)
+§ *Running the agent*.
+
 ## Hardware and deployment
 
 | Node | Hardware | Role |
@@ -200,6 +212,9 @@ uv run pytest -q
 CI runs these gates on Python 3.11 and 3.12 for every push to `main` and
 every pull request. Model calls in tests use fake transports; live tests
 are skipped unless their `SURMAP_LIVE_*` flag is set.
+
+The agent chat web front end (Vite, React, shadcn/ui) lives in
+[web/agent-chat/](web/agent-chat/README.md).
 
 ## Roadmap
 

@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from surmap.demo.cloud_view import CloudPose, CloudViewer
-from surmap.demo.server import PlaybackControls
+from surmap.demo.runs import PlaybackControls
 from tests.test_demo_regions import FakeRegionBackend
 from tests.test_demo_surfaces import a_map_around_the_region, a_running_console
 

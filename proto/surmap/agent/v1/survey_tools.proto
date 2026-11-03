@@ -1,0 +1,557 @@
+syntax = "proto3";
+
+package surmap.agent.v1;
+
+import "surmap/agent/v1/execution.proto";
+
+/*
+The survey agent's SurMap tools: run demo scenes, prompt SAM on a recorded
+run, find the objects it reconstructed in 3D, and read raw or cropped
+frames. Every rpc here is a model-facing tool: its snake_case name is the
+tool name, its leading comment the tool description, and its request
+message the tool's argument schema.
+
+Passive survey only (docs/architecture.md section 1): these tools launch
+demos and replays and read their results; none commands a vehicle.
+*/
+
+service SurveyTools {
+  // Lists the demo scenes this station can run, with their default SAM prompt and whether their
+  // data is prepared.
+  rpc ListDemos(ListDemosRequest) returns (ListDemosResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Runs a demo scene with a SAM prompt and returns when the run ends. Runs take minutes: by
+  // default it detaches to a job after 30 s; follow it with wait_for_jobs.
+  rpc RunDemo(RunDemoRequest) returns (RunDemoResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 30 on_timeout: DETACH};
+  }
+
+  // Describes one recorded run: its scene, SAM prompt, frame and object counts, and status.
+  rpc GetRun(GetRunRequest) returns (GetRunResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Segments a text concept with SAM on frames of a recorded run and returns each frame's
+  // detections. Without frame ids it picks up to 8 evenly spaced frames; by default it detaches to
+  // a job after 60 s.
+  rpc PromptSam(PromptSamRequest) returns (PromptSamResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 60 on_timeout: DETACH};
+  }
+
+  // Finds the objects a run reconstructed in 3D, filtered by label, by distance from a point, or
+  // by whether they moved, as compact summaries with no raw geometry.
+  rpc FindObjects(FindObjectsRequest) returns (FindObjectsResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 15 on_timeout: FAIL};
+  }
+
+  // Returns the summary of one object of a run: its label, extent, shape, when it was seen and
+  // its nearest neighbours.
+  rpc GetObject(GetObjectRequest) returns (GetObjectResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Returns one object's 3D geometry as OBJ text with quantised integer coordinates, decimated to
+  // at most max_points vertices.
+  rpc GetObjectGeometry(GetObjectGeometryRequest) returns (GetObjectGeometryResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 15 on_timeout: FAIL};
+  }
+
+  // Returns one frame of a run as an image, picked by index, frame id or timestamp, whole or
+  // cropped to a pixel box or to an object's projection.
+  rpc GetFrame(GetFrameRequest) returns (GetFrameResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 15 on_timeout: FAIL};
+  }
+
+  // Lists every dataset in the gallery catalogue: provider, licence, grey or colour modality,
+  // whether it is prepared, and its GPS centre and track for a map preview. A new data source
+  // appears here by registering one dataset; no new tool is needed.
+  rpc ListDatasets(ListDatasetsRequest) returns (ListDatasetsResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Returns one dataset of the gallery catalogue by id, with the same fields list_datasets gives.
+  rpc GetDataset(GetDatasetRequest) returns (DatasetResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Downloads and prepares one dataset so it can be run or segmented. Preparing can take
+  // minutes for a large dataset: by default it detaches to a job after 30 s.
+  rpc PrepareDataset(PrepareDatasetRequest) returns (DatasetResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 30 on_timeout: DETACH};
+  }
+
+  // Runs RTAB-Map (no SAM) on a dataset and returns when the recorded run ends. Runs take
+  // minutes: by default it detaches to a job after 30 s; follow it with wait_for_jobs.
+  rpc RunRtabmap(RunRtabmapRequest) returns (RunRtabmapResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 30 on_timeout: DETACH};
+  }
+
+  // Segments a text concept with SAM directly on a dataset's frames, without RTAB-Map and
+  // without a recorded run. Picks up to 8 evenly spaced frames unless frame timestamps are
+  // not needed; by default it detaches to a job after 60 s.
+  rpc RunSamOnDataset(RunSamOnDatasetRequest) returns (RunSamOnDatasetResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 60 on_timeout: DETACH};
+  }
+}
+
+// A point or extent in the object's coordinate frame, in its units.
+message Vec3 {
+  // First axis.
+  double x = 1;
+  // Second axis.
+  double y = 2;
+  // Third axis.
+  double z = 3;
+}
+
+// An axis-aligned rectangle in image pixels: (x0, y0) top-left, (x1, y1) bottom-right.
+message PixelBox {
+  // Left edge, pixels.
+  float x0 = 1;
+  // Top edge, pixels.
+  float y0 = 2;
+  // Right edge, pixels.
+  float x1 = 3;
+  // Bottom edge, pixels.
+  float y1 = 4;
+}
+
+// A point in image pixels.
+message PixelPoint {
+  // Column, pixels.
+  float x = 1;
+  // Row, pixels.
+  float y = 2;
+}
+
+message ListDemosRequest {}
+
+// One demo scene this station can run.
+message DemoScene {
+  // The scene id run_demo takes as `dataset`, e.g. "euroc-v1-01-easy".
+  string id = 1;
+  // Human-readable scene title.
+  string title = 2;
+  // The SAM concept the scene is run with when no prompt is given, e.g. "box".
+  string default_prompt = 3;
+  // Whether the scene's data is downloaded and prepared; an unprepared scene is prepared first.
+  bool prepared = 4;
+  // A recorded run of this scene that can be read without running it again.
+  optional string cached_run_id = 5;
+}
+
+message ListDemosResponse {
+  // Every scene this station can run.
+  repeated DemoScene scenes = 1;
+}
+
+message RunDemoRequest {
+  // The scene to run: a DemoScene id from list_demos.
+  string dataset = 1;
+  // The SAM concept to segment, e.g. "car"; the scene's default prompt when absent.
+  optional string prompt = 2;
+  // Stop after this many frames; the whole scene when absent.
+  optional uint32 max_frames = 3;
+  // Playback rate in frames per second; the scene's native rate when absent.
+  optional double fps = 4;
+}
+
+// Where a demo run is in its life.
+message RunInfo {
+  // A run's state.
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    // Still playing frames.
+    RUNNING = 1;
+    // Played to its end.
+    FINISHED = 2;
+    // Stopped before its end.
+    CANCELLED = 3;
+    // Stopped by an error.
+    FAILED = 4;
+  }
+
+  // Identifies the run for every other tool.
+  string run_id = 1;
+  // The scene id it played.
+  string dataset = 2;
+  // The SAM concept it segmented.
+  string prompt = 3;
+  // Frames recorded so far.
+  uint32 frames = 4;
+  // 3D objects reconstructed so far.
+  uint32 objects = 5;
+  // The run's state.
+  Status status = 6;
+}
+
+message RunDemoResponse {
+  // Identifies the run for every other tool.
+  string run_id = 1;
+  // Frames the run recorded.
+  uint32 frames = 2;
+  // 3D objects the run reconstructed.
+  uint32 objects = 3;
+  // How the run ended.
+  RunInfo.Status status = 4;
+}
+
+message GetRunRequest {
+  // The run to describe.
+  string run_id = 1;
+}
+
+message GetRunResponse {
+  // The run.
+  RunInfo run = 1;
+}
+
+message PromptSamRequest {
+  // The recorded run whose frames are segmented.
+  string run_id = 1;
+  // The text concept to segment, e.g. "door".
+  string concept = 2;
+  // Frame ids to segment; empty picks up to 8 evenly spaced frames of the run.
+  repeated uint64 frame_ids = 3;
+  // The most frames to segment when frame_ids is empty; at most 8.
+  optional uint32 max_frames = 4;
+}
+
+// One SAM instance on one frame.
+message SamDetection {
+  // Identifies the detection within this response.
+  string detection_id = 1;
+  // The concept the detection answers.
+  string label = 2;
+  // SAM's confidence, 0..1.
+  float score = 3;
+  // The instance's bounding box, pixels.
+  PixelBox box_xyxy = 4;
+  // The instance's mask outline, pixels, in order.
+  repeated PixelPoint mask_polygon = 5;
+}
+
+// The detections on one frame.
+message SamFrameDetections {
+  // The frame segmented.
+  uint64 frame_id = 1;
+  // The frame's timestamp, nanoseconds.
+  uint64 t_ns = 2;
+  // Every instance found; empty when the concept is not in the frame.
+  repeated SamDetection detections = 3;
+}
+
+message PromptSamResponse {
+  // One entry per frame segmented, in frame order.
+  repeated SamFrameDetections frames = 1;
+}
+
+message FindObjectsRequest {
+  // The run whose objects are searched.
+  string run_id = 1;
+  // Only objects with this label, e.g. "car".
+  optional string label = 2;
+  // Only objects within radius_m of this point, in the run's object frame.
+  optional Vec3 near = 3;
+  // The search radius around `near`, metres; required with `near`.
+  optional double radius_m = 4;
+  // Only moving objects (true) or only static ones (false).
+  optional bool moving = 5;
+  // The most objects to return, nearest or most confident first.
+  optional uint32 limit = 6;
+}
+
+// What an object's extent looks like.
+enum Shape {
+  SHAPE_UNSPECIFIED = 0;
+  // Long and thin: a pole, a rail, a wire.
+  LINEAR = 1;
+  // Flat: a wall, a floor patch, a sign.
+  PLANAR = 2;
+  // Extended in all three axes: a box, a car, a person.
+  VOLUMETRIC = 3;
+}
+
+// How a neighbour sits relative to the object.
+enum Relation {
+  RELATION_UNSPECIFIED = 0;
+  // The neighbour is above the object along the up axis.
+  ABOVE = 1;
+  // The neighbour is below the object along the up axis.
+  BELOW = 2;
+  // The neighbour is beside the object.
+  NEXT_TO = 3;
+  // The neighbour's extent overlaps the object's.
+  OVERLAPS = 4;
+}
+
+// An oriented bounding box.
+message OrientedBox {
+  // The box centre.
+  Vec3 centre = 1;
+  // Half-lengths along the box's own axes.
+  Vec3 extents = 2;
+  // Row-major 3x3 rotation from the box axes to the object frame; 9 values.
+  repeated double rotation = 3;
+}
+
+// Another object close to this one.
+message Neighbour {
+  // The neighbour's object id.
+  string id = 1;
+  // Distance between the two objects' extents, metres.
+  double distance_m = 2;
+  // How the neighbour sits relative to this object.
+  Relation relation = 3;
+}
+
+// A compact, geometry-free description of one reconstructed 3D object.
+message ObjectSummary {
+  // Identifies the object within its run.
+  string id = 1;
+  // The SAM concept it was segmented as.
+  string label = 2;
+  // Confidence in the object, 0..1.
+  float confidence = 3;
+  // The coordinate frame every coordinate here is in, e.g. "map".
+  string frame = 4;
+  // The frame's up axis, e.g. "+z" or "-y".
+  string up_axis = 5;
+  // The coordinates' units, e.g. "m".
+  string units = 6;
+  // Points in the object's geometry.
+  uint32 n_points = 7;
+  // Faces in the object's geometry; 0 for a point set.
+  uint32 n_faces = 8;
+  // Mean of the object's points.
+  Vec3 centroid = 9;
+  // Axis-aligned bounding box, lower corner.
+  Vec3 aabb_min = 10;
+  // Axis-aligned bounding box, upper corner.
+  Vec3 aabb_max = 11;
+  // The tightest oriented bounding box.
+  OrientedBox obb = 12;
+  // Extent along the up axis, metres.
+  double height_m = 13;
+  // Area of the footprint on the ground plane, square metres.
+  double footprint_m2 = 14;
+  // What the extent looks like.
+  Shape shape = 15;
+  // Frames the object was seen in.
+  uint32 observed_frames = 16;
+  // First time it was seen, nanoseconds.
+  uint64 t_first_ns = 17;
+  // Last time it was seen, nanoseconds.
+  uint64 t_last_ns = 18;
+  // The closest other objects, nearest first.
+  repeated Neighbour neighbours = 19;
+  // Where get_object_geometry reads the object's geometry from.
+  string geometry_uri = 20;
+  // Whether the object moved during the run; moving objects are never fused into the static scene.
+  bool moving = 21;
+}
+
+message FindObjectsResponse {
+  // The matching objects.
+  repeated ObjectSummary objects = 1;
+}
+
+message GetObjectRequest {
+  // The run the object belongs to.
+  string run_id = 1;
+  // The object to describe.
+  string object_id = 2;
+}
+
+message GetObjectResponse {
+  // The object.
+  ObjectSummary object = 1;
+}
+
+message GetObjectGeometryRequest {
+  // The run the object belongs to.
+  string run_id = 1;
+  // The object whose geometry is returned.
+  string object_id = 2;
+  // The most vertices to return; the geometry is decimated to fit.
+  optional uint32 max_points = 3;
+  // Voxel size for decimation, metres; chosen from max_points when absent.
+  optional double voxel_m = 4;
+}
+
+message GetObjectGeometryResponse {
+  // The geometry as OBJ text: `v` lines, plus `f` lines for a mesh.
+  string obj_text = 1;
+  // Where the full geometry lives.
+  string geometry_uri = 2;
+  // Vertices before decimation; equal to the returned count when nothing was dropped.
+  uint32 decimated_from = 3;
+}
+
+// Which image a frame was read from.
+enum FrameSource {
+  FRAME_SOURCE_UNSPECIFIED = 0;
+  // The full-resolution recorded frame.
+  FULL = 1;
+  // The run's downscaled display frame; the full one is not available.
+  DISPLAY = 2;
+}
+
+message GetFrameRequest {
+  // The run the frame belongs to.
+  string run_id = 1;
+  // Which frame; the run's first when none is given.
+  oneof at {
+    // The frame's position in the run, from 0.
+    uint32 frame_index = 2;
+    // The frame's id.
+    uint64 frame_id = 3;
+    // The frame nearest this timestamp, nanoseconds.
+    uint64 t_ns = 4;
+  }
+  // What part of the frame; the whole frame when none is given.
+  oneof crop {
+    // Crop to this pixel box.
+    PixelBox crop_box = 5;
+    // Crop to this object's projection into the frame.
+    string crop_object_id = 6;
+  }
+  // Padding around the crop, pixels.
+  optional uint32 pad_px = 7;
+  // Downscale so the longer side is at most this many pixels.
+  optional uint32 max_side = 8;
+}
+
+// Whether a dataset's frames are grey or colour.
+enum DatasetModality {
+  MODALITY_UNSPECIFIED = 0;
+  // Single-channel grey frames (KITTI image_00/01, EuRoC, NTU VIRAL).
+  GREY = 1;
+  // Colour frames (KITTI image_02/03); SAM segments them in colour.
+  COLOR = 2;
+}
+
+// A WGS84 position for a dataset's GPS map preview.
+message DatasetGeoPoint {
+  // Longitude, degrees east.
+  double lon = 1;
+  // Latitude, degrees north.
+  double lat = 2;
+  // Altitude above sea level, metres; absent when the fix has none.
+  optional double alt_m = 3;
+}
+
+// A dataset's licence as the gallery shows it.
+message DatasetLicense {
+  // Licence name, e.g. "CC BY-NC-SA 3.0".
+  string name = 1;
+  // Canonical licence URL.
+  string url = 2;
+  // The credit line to show with the data.
+  string attribution = 3;
+}
+
+// One dataset of the gallery catalogue.
+message DatasetEntry {
+  // The dataset id the run tools take, e.g. "kitti-2011-09-26-drive-0009-color".
+  string id = 1;
+  // Human-readable title.
+  string title = 2;
+  // What the dataset contains.
+  string description = 3;
+  // Who publishes it, e.g. "KITTI"; a new source names itself here.
+  string provider = 4;
+  // Its licence; always present, "not specified" when the source gives none.
+  DatasetLicense license = 5;
+  // Grey or colour frames.
+  DatasetModality modality = 6;
+  // The dataset's official page.
+  string official_url = 7;
+  // The SAM concept this dataset is run with when none is given.
+  string default_prompt = 8;
+  // Whether its data is downloaded and prepared.
+  bool prepared = 9;
+  // Prepared stereo pairs; 0 when not prepared.
+  uint32 frame_count = 10;
+  // Whether a thumbnail frame is available from the agent server.
+  bool thumbnail_available = 11;
+  // Where it was recorded, e.g. "Karlsruhe, Germany (approx.)".
+  string location_label = 12;
+  // Centre of its GPS track, or its approximate centre before preparation.
+  optional DatasetGeoPoint gps_centre = 13;
+  // Its GPS track (downsampled), in order, for a map preview; empty without GPS.
+  repeated DatasetGeoPoint gps_track = 14;
+  // The short credit line, as on the demo page.
+  string credit = 15;
+}
+
+message ListDatasetsRequest {}
+
+message ListDatasetsResponse {
+  // Every dataset in the catalogue, in catalogue order.
+  repeated DatasetEntry datasets = 1;
+}
+
+message GetDatasetRequest {
+  // The dataset to return.
+  string dataset_id = 1;
+}
+
+message PrepareDatasetRequest {
+  // The dataset to download and prepare.
+  string dataset_id = 1;
+}
+
+message DatasetResponse {
+  // The dataset.
+  DatasetEntry dataset = 1;
+}
+
+message RunRtabmapRequest {
+  // The dataset to run: a DatasetEntry id from list_datasets.
+  string dataset = 1;
+  // Stop after this many frames; the whole dataset when absent.
+  optional uint32 max_frames = 2;
+  // Playback rate in frames per second; the dataset's native rate when absent.
+  optional double fps = 3;
+}
+
+message RunRtabmapResponse {
+  // The recorded run RTAB-Map produced.
+  RunInfo run = 1;
+}
+
+message RunSamOnDatasetRequest {
+  // The dataset to segment: a DatasetEntry id from list_datasets.
+  string dataset = 1;
+  // The text concept to segment, e.g. "car"; the dataset's default prompt when absent.
+  optional string concept = 2;
+  // The most frames to segment, evenly spaced; at most 8.
+  optional uint32 max_frames = 3;
+}
+
+message RunSamOnDatasetResponse {
+  // The dataset segmented.
+  string dataset_id = 1;
+  // One entry per frame segmented, in frame order.
+  repeated SamFrameDetections frames = 2;
+}
+
+message GetFrameResponse {
+  // The frame returned.
+  uint64 frame_id = 1;
+  // The frame's timestamp, nanoseconds.
+  uint64 t_ns = 2;
+  // The returned image's width, pixels.
+  uint32 width = 3;
+  // The returned image's height, pixels.
+  uint32 height = 4;
+  // Which image the frame was read from.
+  FrameSource source = 5;
+  // The encoded image.
+  bytes image = 6;
+  // The image's media type, e.g. "image/jpeg".
+  string media_type = 7;
+}
