@@ -104,6 +104,7 @@ fn main() {
         .init_asset_loader::<fxdef::FxLoader>()
         .init_asset::<fxdef::SpeciesAsset>()
         .init_asset_loader::<fxdef::SpeciesLoader>()
+        .init_resource::<fx::SoftDiscs>()
         .init_resource::<vegetation::PendingStands>()
         .init_resource::<vegetation::PineKits>()
         .init_asset::<ManifestAsset>()

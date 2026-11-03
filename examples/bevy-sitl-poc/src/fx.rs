@@ -6,7 +6,7 @@
 use bevy::prelude::*;
 use bevy_hanabi::prelude::*;
 
-use crate::fxdef::{Blend, FxDef};
+use crate::fxdef::{Blend, FxDef, Shape};
 
 /// The name of the wind property every effect built here declares.
 pub const WIND_PROPERTY: &str = "wind";
@@ -72,15 +72,20 @@ pub fn effect(def: &FxDef, name: &str, rate_per_s: f32, emission: Emission) -> E
                 .expr(),
         )),
     };
+    let texture_slot = writer.lit(0u32).expr();
     let roundness = RoundModifier {
         roundness: writer.lit(def.round).expr(),
     };
     let gravity = AccelModifier::new(writer.lit(Vec3::new(0.0, def.motion.gravity, 0.0)).expr());
 
+    let mut module = writer.finish();
+    if def.shape == Shape::SoftDisc {
+        module.add_texture_slot("shape");
+    }
     let mut asset = EffectAsset::new(
         capacity(def, rate_per_s),
         SpawnerSettings::rate(rate_per_s.into()),
-        writer.finish(),
+        module,
     )
     .with_name(name)
     .with_alpha_mode(match def.blend {
@@ -105,7 +110,12 @@ pub fn effect(def: &FxDef, name: &str, rate_per_s: f32, emission: Emission) -> E
             gradient: sizes,
             screen_space_size: false,
         });
-    if def.round > 0.0 {
+    if def.shape == Shape::SoftDisc {
+        asset = asset.render(ParticleTextureModifier {
+            texture_slot: texture_slot,
+            sample_mapping: ImageSampleMapping::ModulateOpacityFromR,
+        });
+    } else if def.round > 0.0 {
         asset = asset.render(roundness);
     }
     if def.stretch != 1.0 {
@@ -117,4 +127,74 @@ pub fn effect(def: &FxDef, name: &str, rate_per_s: f32, emission: Emission) -> E
 enum Position {
     Sphere(SetPositionSphereModifier),
     Box(SetAttributeModifier),
+}
+
+/// The radial alpha texture of a soft disc (red channel): 1 at the centre, 0 at the rim.
+/// `softness` 0 keeps a hard edge; 1 fades smoothly all the way from the centre.
+pub fn soft_disc_image(softness: f32) -> Image {
+    const SIDE: u32 = 64;
+    let width = softness.clamp(0.0, 1.0).max(1.0e-3);
+    let mut bytes = Vec::with_capacity((SIDE * SIDE * 4) as usize);
+    for y in 0..SIDE {
+        for x in 0..SIDE {
+            let (dx, dy) = (
+                (x as f32 + 0.5) / SIDE as f32 * 2.0 - 1.0,
+                (y as f32 + 0.5) / SIDE as f32 * 2.0 - 1.0,
+            );
+            let t = ((1.0 - (dx * dx + dy * dy).sqrt()) / width).clamp(0.0, 1.0);
+            let alpha = (t * t * (3.0 - 2.0 * t) * 255.0).round() as u8;
+            bytes.extend([alpha, alpha, alpha, 255]);
+        }
+    }
+    Image::new(
+        bevy::render::render_resource::Extent3d {
+            width: SIDE,
+            height: SIDE,
+            depth_or_array_layers: 1,
+        },
+        bevy::render::render_resource::TextureDimension::D2,
+        bytes,
+        bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+        bevy::asset::RenderAssetUsages::default(),
+    )
+}
+
+/// Generated soft-disc textures, one per distinct softness.
+#[derive(Resource, Default)]
+pub struct SoftDiscs(Vec<(u32, Handle<Image>)>);
+
+impl SoftDiscs {
+    pub fn handle(&mut self, images: &mut Assets<Image>, softness: f32) -> Handle<Image> {
+        let key = softness.to_bits();
+        if let Some((_, handle)) = self.0.iter().find(|(k, _)| *k == key) {
+            return handle.clone();
+        }
+        let handle = images.add(soft_disc_image(softness));
+        self.0.push((key, handle.clone()));
+        handle
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn alpha_at(image: &Image, x: u32, y: u32) -> u8 {
+        image.data.as_ref().expect("pixels")[((y * 64 + x) * 4) as usize]
+    }
+
+    #[test]
+    fn a_soft_disc_is_opaque_in_the_middle_and_clear_at_the_corners() {
+        let image = soft_disc_image(1.0);
+
+        assert!(alpha_at(&image, 32, 32) > 240);
+        assert_eq!(alpha_at(&image, 0, 0), 0);
+    }
+
+    #[test]
+    fn a_harder_disc_stays_opaque_further_out() {
+        let (hard, soft) = (soft_disc_image(0.1), soft_disc_image(1.0));
+
+        assert!(alpha_at(&hard, 32 + 20, 32) > alpha_at(&soft, 32 + 20, 32));
+    }
 }

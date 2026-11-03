@@ -23,7 +23,7 @@ PRD: `PRD-2026-11-03-sim-weather-wildfire.md` · Discovery:
   - [x] Acceptance tests written and failing for the right reason (`tests/test_sim_wildfire_e2e.py`)
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · Python 1855 green (was 12 red), Rust 86 green (was 20 red); wasm32 `cargo check` green, nothing gated off; W1-W3 screenshot sets in scratchpad `n3-shots/`
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · Python 1855 green (was 12 red), Rust 90 green (was 20 red); wasm32 `cargo check` green, nothing gated off; W1-W3 screenshot sets in scratchpad `n3-shots/`; visual review round 1 applied (soft-disc particles, flame/smoke/ember/rain/pine retune, `fire-eye.png`)
   - [x] Rust `scene_manifest.rs`: `weather`, `fires`, element kind `vegetation` (contract below); the shipped `scene.json` stays valid
   - [x] Rust `wind.rs` and `fire.rs`: the pure wind and fire-spread models (contract below)
   - [x] Declarative assets: `fx/*.fx.json` and `species/*.species.json` loaders and validation (Rust + Python); the shipped files carry the visual spec's values; no visual constant left in Rust
@@ -168,6 +168,7 @@ Deferred-work scan: the 2026-11-03 Bevy records (`bevy-visual-checkpoints-v3-v5`
   `√clumps`); `weather.wet_materials` names the surfaces that look wet (default ground, asphalt).
 - Feronia collects a scatter root's assets only in its global Setup to Collecting pass, so sowing
   grass sets `ScatterState::Setup` again and scatters once the state is `Ready`.
+- Particles: `shape: soft_disc` + `softness` (a 64x64 radial-alpha texture generated at startup, one per softness) replaces hard discs; `round` stays as the hard-disc alias. Review stills of a fire scene add a third, inactive-otherwise rig eye aimed at the fire (`fire-eye.png`, 40 m south, 15 m up); the survey flight is untouched.
 - Native review stills of a scene with fires aim the overview camera at the first ignition (from
   its south, raised); without fires the overview is unchanged.
 - `fire_perimeter.jsonl` is written only when the scene has fires (absent otherwise, which the

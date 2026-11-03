@@ -46,6 +46,7 @@ struct Layer {
     effect: Option<Handle<EffectAsset>>,
     emitters: Vec<Entity>,
     spacing_m: f32,
+    image: Option<Handle<Image>>,
 }
 
 struct FireRuntime {
@@ -160,6 +161,7 @@ fn layer(kind: Kind, fx: Handle<FxAsset>) -> Layer {
         effect: None,
         emitters: Vec::new(),
         spacing_m: 2.0,
+        image: None,
     }
 }
 
@@ -213,6 +215,8 @@ pub fn update_fires(
     mut effects: ResMut<Assets<EffectAsset>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut standard: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    mut discs: ResMut<fx::SoftDiscs>,
     mut emitters: Query<&mut EffectProperties, With<FireEmitter>>,
     mut transforms: Query<&mut Transform>,
     mut lights: Query<&mut PointLight>,
@@ -225,6 +229,8 @@ pub fn update_fires(
             if layer.effect.is_none() {
                 if let Some(def) = ready_effect(&fxs, &layer.fx) {
                     layer.spacing_m = def.emitter_spacing_m;
+                    layer.image = (def.shape == crate::fxdef::Shape::SoftDisc)
+                        .then(|| discs.handle(&mut images, def.softness));
                     let rate = rate_per_emitter(&def, layer.spacing_m);
                     let name = format!("{} {:?}", fire.id, layer.kind);
                     layer.effect = Some(effects.add(fx::effect(
@@ -326,6 +332,7 @@ fn refresh_fire(
         let Some(effect) = layer.effect.clone() else {
             continue;
         };
+        let images = layer.image.clone().into_iter().collect::<Vec<_>>();
         let wanted = ((length / layer.spacing_m).ceil() as usize).max(1);
         while layer.emitters.len() > wanted {
             commands
@@ -346,6 +353,7 @@ fn refresh_fire(
                     FireEmitter,
                     ParticleEffect::new(effect.clone()),
                     EffectProperties::default(),
+                    EffectMaterial { images: images.clone() },
                     Transform::from_translation(at),
                 ))
                 .id();
