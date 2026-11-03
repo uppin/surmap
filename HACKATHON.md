@@ -79,8 +79,9 @@ CI use fixtures and fake transports.
 
 On the Meta Model API every text call (concepts, labels, scene note,
 Q&A, report) defaults to Muse Wonder. Muse Spark runs only as open-weight
-Muse Spark Open on Baseten (and the Modal check endpoint). Muse Wonder
-has not been scored on the LADI v2 eval yet.
+Muse Spark Open on Baseten (and the Modal check endpoint). On 300 LADI v2
+test images at high reasoning effort, Muse Wonder scored micro F1 0.900
+and Muse Spark Open on Baseten 0.889 (see the README).
 
 Request details (reasoning effort, token caps, usage callbacks, budget
 env vars) are in [docs/credits-usage.md](docs/credits-usage.md),

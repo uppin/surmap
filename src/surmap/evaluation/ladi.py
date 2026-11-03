@@ -13,8 +13,7 @@ drops the EXIF block and its GPS tags. No data is committed.
 Two classifiers are compared:
 
 * ``MetaLadiClassifier``: Muse Wonder ``muse-wonder-1.0`` on the Meta Model
-  API by default (``SURMAP_META_MODEL=muse-spark-1.3`` selects hosted Muse
-  Spark), with
+  API (``SURMAP_META_MODEL`` may select another covered id), with
   structured output (``text.format`` JSON schema, strict).
 * ``BasetenLadiClassifier``: open-weight ``meta-models/muse-spark-open-1026``
   on Baseten, with a ``record_classes`` tool call (Baseten has no JSON

@@ -5,7 +5,7 @@ Model API Responses endpoint and reads back a search-and-rescue
 description. The prompt asks for no flight advice. The default model
 is Muse Wonder (``muse-wonder-1.0``) for the scene note, per-object
 labels, and SAM concepts. ``SURMAP_META_MODEL`` or the constructor may
-select another covered id, such as hosted Muse Spark (``muse-spark-1.3``).
+select another covered id.
 Muse Wonder Full and the Baseten slug ``meta-models/muse-spark-open-1026``
 are refused.
 
