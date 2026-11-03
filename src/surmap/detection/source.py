@@ -37,6 +37,21 @@ class DetectionSource(Protocol):
     ) -> tuple[TrackedDetection, ...]: ...
 
 
+@runtime_checkable
+class DetectorExecution(Protocol):
+    """Where a detection source runs, as the CM5's capabilities report it."""
+
+    @property
+    def provider(self) -> str:
+        """The execution provider, e.g. "Coral"."""
+        ...
+
+    @property
+    def device(self) -> str:
+        """The device that provider runs on, e.g. "edgetpu" or "cpu"."""
+        ...
+
+
 class StereoSource(Protocol):
     """The stereo reconstructor seam the object source lifts with."""
 

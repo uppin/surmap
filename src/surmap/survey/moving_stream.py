@@ -13,6 +13,8 @@ from collections.abc import AsyncIterable, AsyncIterator
 from surmap.geometry import to_map_frame
 from surmap.moving.config import MovingConfig
 from surmap.slam.base import SlamBackend
+from surmap.slam.capabilities import FlushableBackend
+from surmap.survey.offload import run_blocking
 from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
 from surmap.survey.v1 import survey_pb2
 from surmap.types import Pose, StereoFramePair, Vec3
@@ -122,7 +124,8 @@ async def stream_moving_areas(
         )
         left_frame, right_frame = channels[0], channels[1]
         try:
-            points = stereo.reconstruct(
+            points = await asyncio.to_thread(
+                stereo.reconstruct,
                 FrameImage(
                     left_frame.width,
                     left_frame.height,
@@ -151,7 +154,7 @@ async def stream_moving_areas(
                 left_frame.data,
                 right_frame.data,
             )
-            runtime_pose = slam.process_frame(pair).pose
+            runtime_pose = (await run_blocking(slam, slam.process_frame, pair)).pose
             if runtime_pose is not None:
                 sampled = tuple(to_map_frame(point, runtime_pose) for point in sampled)
         if layer.voxel_count == 0:
@@ -207,8 +210,7 @@ async def stream_moving_areas(
     if config is None:
         raise ValueError("first request must be config")
     if slam is not None and layer is not None:
-        flush = getattr(slam, "flush", None)
-        results = await asyncio.to_thread(flush) if callable(flush) else []
+        results = await run_blocking(slam, slam.flush) if isinstance(slam, FlushableBackend) else []
         keyframes = tuple(
             KeyframePose(result.t_ns, result.pose) for result in results if result.pose is not None
         )

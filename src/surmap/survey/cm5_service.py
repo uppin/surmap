@@ -9,7 +9,7 @@ from collections.abc import AsyncIterable, AsyncIterator
 from typing import Any
 
 from surmap.detection.detector import decode_rgb
-from surmap.detection.source import DetectionSource
+from surmap.detection.source import DetectionSource, DetectorExecution
 from surmap.rpc.compose import Brick
 from surmap.rpc.description import ServiceModule
 from surmap.slam.base import SlamBackend
@@ -159,32 +159,28 @@ def cm5_service_module(
         objects if objects is not None else InMemoryObjectPointSource()
     )
 
-    def bricks(ctx: Any) -> tuple[Brick, ...]:
-        effective_slam: SlamBackend = getattr(ctx, "slam", None) or default_slam
-        effective_objects: ObjectPointSource = getattr(ctx, "objects", None) or default_objects
-        effective_stereo: StereoReconstructor | None = getattr(ctx, "stereo", None) or stereo
+    effective_regions: RegionPointSource | None = regions or router
+    execution = detections if isinstance(detections, DetectorExecution) else None
+
+    def bricks(_ctx: object) -> tuple[Brick, ...]:
 
         async def handler(
             requests: AsyncIterable[survey_pb2.Cm5Request], _ctx: Any
         ) -> AsyncIterator[survey_pb2.Cm5Response]:
             async for response in stream_survey(
                 requests,
-                effective_slam,
-                effective_objects,
-                stereo=effective_stereo,
+                default_slam,
+                default_objects,
+                stereo=stereo,
                 slam_factory=slam_factory,
                 stream_regions=router,
             ):
                 yield response
 
-        effective_detections: DetectionSource | None = (
-            getattr(ctx, "detections", None) or detections
-        )
-
         async def detections_handler(
             requests: AsyncIterable[survey_pb2.Cm5Request], _ctx: Any
         ) -> AsyncIterator[survey_pb2.DetectionResponse]:
-            async for response in stream_detections(requests, effective_detections):
+            async for response in stream_detections(requests, detections):
                 yield response
 
         async def moving_areas_handler(
@@ -195,14 +191,8 @@ def cm5_service_module(
                     "moving areas are not enabled on this CM5 server "
                     "(start with --moving-areas to enable)"
                 )
-            async for response in stream_moving_areas(
-                requests, stereo=effective_stereo, slam=effective_slam
-            ):
+            async for response in stream_moving_areas(requests, stereo=stereo, slam=default_slam):
                 yield response
-
-        effective_regions: RegionPointSource | None = (
-            getattr(ctx, "regions", None) or regions or router
-        )
 
         async def region_points_handler(
             requests: AsyncIterable[survey_pb2.RegionQuery], _ctx: Any
@@ -215,12 +205,12 @@ def cm5_service_module(
         ) -> survey_pb2.Capabilities:
             return survey_pb2.Capabilities(
                 service="cm5",
-                detections=effective_detections is not None,
+                detections=detections is not None,
                 object_points=object_points_enabled,
                 moving_areas=moving_areas,
                 region_points=effective_regions is not None,
-                provider=str(getattr(effective_detections, "provider", "") or ""),
-                device=str(getattr(effective_detections, "device", "") or ""),
+                provider=execution.provider if execution is not None else "",
+                device=execution.device if execution is not None else "",
                 slam=slam_label,
             )
 

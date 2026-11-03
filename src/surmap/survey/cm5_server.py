@@ -15,12 +15,18 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterable, AsyncIterator, Callable
-from dataclasses import dataclass
 
 import numpy as np
 
 from surmap.geometry import to_map_frame
 from surmap.slam.base import FrameResult, SlamBackend
+from surmap.slam.capabilities import (
+    FlushableBackend,
+    KeyframeSource,
+    MapSnapshotSource,
+    OdometrySource,
+    RectificationSource,
+)
 from surmap.slam.regions import (
     RegionPointSource,
     StreamRegionRouter,
@@ -31,21 +37,11 @@ from surmap.survey.gps import PendingFixes, PoseTimeline
 from surmap.survey.moving_stream import _encoding_name as _encoding_name
 from surmap.survey.moving_stream import stream_moving_areas as stream_moving_areas
 from surmap.survey.object_points import ObjectPointSource
+from surmap.survey.offload import forget_backend, run_blocking
 from surmap.survey.points import IncrementalPointEmitter
 from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig
 from surmap.survey.v1 import survey_pb2
 from surmap.types import StereoFramePair, Vec3
-
-
-@dataclass(frozen=True)
-class Cm5Context:
-    """Context carrying the SLAM backend and object-point source for a host."""
-
-    slam: SlamBackend
-    objects: ObjectPointSource
-    stereo: StereoReconstructor | None = None
-    regions: RegionPointSource | None = None
-
 
 # A survey stream with no request for this long still drains what a live backend produced since
 # (odometry, keyframes, the GPS anchors waiting for them).
@@ -219,6 +215,7 @@ async def stream_survey(
             if stream_regions is not None and isinstance(owned[0], RegionPointSource):
                 stream_regions.close(owned[0])
             owned[0].close()
+            forget_backend(owned[0])
 
 
 async def _stream_survey(
@@ -244,12 +241,11 @@ async def _stream_survey(
     def drain_odom() -> list[survey_pb2.Cm5Response]:
         """Odometry responses for pending frames whose odometry landed."""
         nonlocal rectification_sent
-        frame_odometry = getattr(slam, "frame_odometry", None)
-        if not callable(frame_odometry):
+        if not isinstance(slam, OdometrySource):
             return []
         responses: list[survey_pb2.Cm5Response] = []
         for frame_id in sorted(odom_pending):
-            update = frame_odometry(frame_id)
+            update = slam.frame_odometry(frame_id)
             if update is None:
                 continue
             pair = pairs.get(frame_id)
@@ -263,8 +259,8 @@ async def _stream_survey(
             if posed is not None:
                 timeline.add(frame_id, update.t_ns, posed.position)
             rectification: Rectification | None = None
-            if not rectification_sent:
-                candidate = getattr(slam, "rectification", None)
+            if not rectification_sent and isinstance(slam, RectificationSource):
+                candidate = slam.rectification
                 if candidate is not None:
                     rectification, rectification_sent = candidate, True
             responses.append(_odom_response(update, rectification))
@@ -274,11 +270,10 @@ async def _stream_survey(
         """Scene batches for keyframes that landed. New keyframes only: placing their local
         points costs O(new), unlike re-scanning the whole map snapshot per pair (which grows
         with the cloud and throttles the stream)."""
-        poll_updates = getattr(slam, "poll_updates", None)
-        if not callable(poll_updates):
+        if not isinstance(slam, KeyframeSource):
             return []
         responses: list[survey_pb2.Cm5Response] = []
-        for update in poll_updates():
+        for update in slam.poll_updates():
             if not isinstance(update, KeyframeUpdate):
                 continue
             fresh = emitter.emit(1, _placed_keyframe_points(update))
@@ -317,12 +312,10 @@ async def _stream_survey(
             # Whatever the backend already maps predates this stream:
             # mark it sent so only this stream's own points go out,
             # and drain keyframe updates queued by earlier streams.
-            snapshot_fn = getattr(slam, "map_snapshot", None)
-            if callable(snapshot_fn):
-                emitter.emit(1, snapshot_fn())
-            poll_fn = getattr(slam, "poll_updates", None)
-            if callable(poll_fn):
-                poll_fn()
+            if isinstance(slam, MapSnapshotSource):
+                emitter.emit(1, slam.map_snapshot())
+            if isinstance(slam, KeyframeSource):
+                slam.poll_updates()
             continue
         if request.WhichOneof("kind") == "gps":
             fixes.add(request.gps)
@@ -358,7 +351,7 @@ async def _stream_survey(
         )
         pairs[frame.frame_id] = pair
         odom_pending.add(frame.frame_id)
-        result = slam.process_frame(pair)
+        result = await run_blocking(slam, slam.process_frame, pair)
         # Live-backend extras the pair result cannot carry (a streaming
         # backend's result has no pose yet): odometry that has landed
         # since (pose + tracked keypoints for the video overlay) and
@@ -385,7 +378,8 @@ async def _stream_survey(
         if stereo is not None and rig is not None:
             left_frame, right_frame = channels[0], channels[1]
             try:
-                camera_points = stereo.reconstruct(
+                camera_points = await asyncio.to_thread(
+                    stereo.reconstruct,
                     FrameImage(
                         left_frame.width,
                         left_frame.height,
@@ -403,15 +397,16 @@ async def _stream_survey(
             except ValueError:
                 camera_points = ()
             scene_points.extend(to_map_frame(point, result.pose) for point in camera_points)
-        for response in _point_responses(result, pair, scene_points, objects, emitter, rig):
+        for response in await run_blocking(
+            objects, _point_responses, result, pair, scene_points, objects, emitter, rig
+        ):
             yield response
     if config is None:
         raise ValueError("first request must be config")
     # Batch backends (the RTAB-Map sidecar) only know their poses and
     # points once the whole stream is staged: flush them now, on this
     # still-open stream, so their scene/object batches arrive too.
-    flush = getattr(slam, "flush", None)
-    if callable(flush):
+    if isinstance(slam, FlushableBackend):
         calibration = config.calibration
         flush_rig: StereoRig | None = None
         if calibration.focal_length_px > 0 and calibration.baseline_m > 0:
@@ -422,14 +417,21 @@ async def _stream_survey(
                 cy=calibration.cy,
                 baseline_m=calibration.baseline_m,
             )
-        for result in await asyncio.to_thread(flush):
+        for result in await run_blocking(slam, slam.flush):
             if result.pose is None:
                 continue
             flushed_pair = pairs.get(result.frame_id)
             if flushed_pair is None:
                 continue
-            for response in _point_responses(
-                result, flushed_pair, list(result.static_points), objects, emitter, flush_rig
+            for response in await run_blocking(
+                objects,
+                _point_responses,
+                result,
+                flushed_pair,
+                list(result.static_points),
+                objects,
+                emitter,
+                flush_rig,
             ):
                 yield response
         for response in drain_odom():
