@@ -205,3 +205,33 @@ values in 0–1:
 - Horizon: haze blends the apron into the sky; no visible ground edge in `overview.png`.
 - `left.png` grey histogram uses ≥ 150 of 256 levels; texture detail visible on asphalt at 10 m.
 - Chrome/WebGPU and native screenshots match in exposure and colour within eyeballing.
+
+## 10. Review log (planner)
+
+### V1 (2026-11-03, `--at 20`) — corrections
+
+1. Ground tiling reads as a stamp: block ground `uv_scale` 0.2 → **0.15**; the apron is its own
+   material instance at **0.06** repeats/m, tint `srgb(0.80, 0.76, 0.70)`.
+2. Asphalt reads lilac: tint `srgb(0.68, 0.70, 0.66)` instead of the dust tint.
+3. Procedural cars read as toys: all three vehicle sites use `covered_car`, upright, yaws
+   28.6°, −51.6°, 11.5° (the PoC's 0.5, −0.9, 0.2 rad); §4.3's procedural car is dropped.
+4. Background buildings are blank boxes: window grid on all four faces — 1.4 m × 1.6 m panes,
+   one per 3 m bay, one row per 3 m floor from 4.2 m up (ground floor blank), 0.02 m proud of the
+   wall, glass `srgb(0.06, 0.07, 0.08)`, roughness 0.15, reflectance 0.5; bays closer than 1 m to
+   a corner are skipped.
+5. Slabs and pond read flat: expected under the V1 light — judged again at V2.
+
+### V2 (2026-11-03) — decisions and corrections
+
+- **Sky: HDRI, not `Atmosphere`.** Bevy 0.18's `Atmosphere` writes its buffer from `Query::single`
+  (`bevy_pbr/src/atmosphere/resources.rs`, `write_atmosphere_buffer`), so it serves one camera; with
+  four cameras the mesh-view bind group misses bindings 29–31 and wgpu aborts. The manifest's
+  `environment.hdri` is now `kloofendal_28d_misty_puresky` (Poly Haven, CC0), baked to a 512² cube
+  at load and used as `Skybox` + `GeneratedEnvironmentMapLight` on every camera; the sun is aimed at
+  the HDRI's brightest texel. `sky_brightness` (15 000) and `exposure_ev100` (14) live in the
+  manifest *(tune)*. Sun elevation 28° (the HDRI's).
+- **The scene is fully declarative** (developer: "everything added in runtime … no recompilation
+  while composing"): `scene.json` `elements` (`box`, `collapsed_building`, `building`, `person`)
+  carry every position, size, seed and material; materials may be solid (no maps).
+1. Water glint saturates the left eye: water roughness 0.06 → 0.14.
+2. Slabs read as plastic: collapsed-building tint `[0.70, 0.68, 0.64]`, concrete reflectance 0.2.

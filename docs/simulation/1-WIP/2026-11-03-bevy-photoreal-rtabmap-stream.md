@@ -30,7 +30,7 @@ PRD: `PRD-2026-11-03-bevy-photoreal-rtabmap-stream.md` · Discovery:
   - [ ] Committed and pushed with the row (green step 4)
   - [x] M1 Rust contracts: `scene_manifest.rs`, `wire.rs`, `flight.rs` stubs implemented; `cargo test --locked` green — 25 passed, only the shipped-manifest test red (waits for M3, expected). Survey loop: rounded rectangle ENU corners (-14, 8), (14, 8), (14, 78), (-14, 78), radius 8 m, CCW from (0, 8) east at 1.5 m/s, altitude 7 ± 1.5 m (period = loop period); corner yaw rate 1.5/8 = 0.1875 rad/s = 10.7 deg/s, within the 30 deg/s limit
   - [x] M2 Python contracts: `bevy_wire`, `bevy_capture`, `bevy_ground_truth`, `trajectory_eval`, `sim_assets`, `bevy_bridge` green — 35 passed; only the shipped-scene pin test red (waits for M3, expected)
-  - [ ] M3 Runtime content per the visual spec (`2026-11-03-bevy-photoreal-rtabmap-stream-visual-spec.md` §2–§4, §6): asset shortlist → planner picks → `assets/scene.json` + `assets/assets.lock.json` (CC0 only, pinned sha256, ≤ 150 MB), `scripts/fetch_sim_assets.py`, `.gitignore` for fetched binaries; world spawned from the manifest at runtime (`AssetServer`, `AssetMetaCheck::Never`); models `.glb` or `.gltf` (planner contract change: the manifest test refuses other extensions, e.g. `.obj`); Rapier colliders per instance
+  - [x] M3 Runtime content per the visual spec (`2026-11-03-bevy-photoreal-rtabmap-stream-visual-spec.md` §2–§4, §6): asset shortlist → planner picks → `assets/scene.json` + `assets/assets.lock.json` (CC0 only, pinned sha256, ≤ 150 MB), `scripts/fetch_sim_assets.py`, `.gitignore` for fetched binaries; world spawned from the manifest at runtime (`AssetServer`, `AssetMetaCheck::Never`); models `.glb` or `.gltf` (planner contract change: the manifest test refuses other extensions, e.g. `.obj`); Rapier colliders per instance
   - [ ] M4 Photo-realism exactly per the visual spec §3, §5, §7, §8 — checkpoints V1–V5 reviewed by the planner (`--screenshot <dir> --at <t>`); the implementer makes no visual choice the spec does not state
   - [ ] M5 Capture: eye targets get `COPY_SRC`, `Readback` at `rate_hz` (10), grey8 conversion, ground-truth rig pose; scripted `survey-loop` flight (`?flight=` / `--flight`)
   - [ ] M6 Streaming: wasm WebSocket client (`?bridge=ws://127.0.0.1:8773`), hello + pairs, status overlay from the bridge's replies; `scripts/serve_bevy_sim.py` (static `dist/` + `assets/` on 8772, bridge on 8773, `--record <dir>`)
@@ -67,6 +67,15 @@ Python (Muse, this row):
 - [tests/test_sim_assets.py](../../../tests/test_sim_assets.py) — `test_the_lock_file_loads_into_typed_pins`, `test_a_pin_escaping_the_assets_directory_is_refused`, `test_an_absolute_pin_path_is_refused`, `test_fetch_downloads_a_pinned_file_and_verifies_its_hash`, `test_fetch_skips_a_file_already_present_with_the_right_hash`, `test_a_hash_mismatch_leaves_no_file_behind`, `test_fetch_extracts_the_named_member_of_a_downloaded_zip`, `test_a_manifest_names_its_hdri_textures_and_models`, `test_every_asset_of_the_shipped_scene_is_pinned`, `test_the_page_never_copies_the_assets_directory_into_the_bundle`, `test_no_rust_source_embeds_the_assets_directory_outside_tests`
 - [tests/test_bevy_bridge.py](../../../tests/test_bevy_bridge.py) — `test_the_hello_builds_the_backend_from_the_hello_calibration`, `test_the_hello_sensor_yamls_are_the_rendered_calibration`, `test_a_pair_before_any_hello_is_refused`, `test_a_pair_becomes_a_stereo_frame_with_png_payloads`, `test_the_status_counts_frames_posed_keyframes_and_dropped`, `test_closing_the_session_closes_the_backend_and_finishes_the_recorder`, `test_a_real_websocket_client_gets_a_status_for_its_pair`
 - [tests/test_bevy_sim_rtabmap_e2e.py](../../../tests/test_bevy_sim_rtabmap_e2e.py) — acceptance (PRD 1–2): `test_the_sidecar_tracks_the_capture_and_builds_a_sparse_map`, `test_a_polygon_around_a_ground_truth_object_returns_its_dense_points`; a missing capture fixture fails, never skips.
+
+## Stack Context
+
+Stack slug `sim-disaster`: `main ← n1 feat/bevy-sim-photoreal-rtabmap-stream (this, #89) ← n2 feat/sim-scenario-agent-tools (#91)`.
+
+### Green wave
+
+**Wave:** 1 of 2 · **Node:** n1 · **Concurrent with:** none · **Blocks:** n2 (#91) — the runtime,
+fully declarative scene manifest, asset lock/fetch and screenshot mode. **Greenable independently?** yes.
 
 ## Background
 

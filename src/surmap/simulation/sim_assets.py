@@ -116,7 +116,7 @@ def manifest_asset_paths(scene_path: Path) -> set[str]:
     if isinstance(materials, dict):
         for material in materials.values():
             if isinstance(material, dict):
-                for key in ("base_color", "normal", "roughness"):
+                for key in ("base_color", "normal", "roughness", "arm"):
                     value = material.get(key)
                     if isinstance(value, str):
                         paths.add(value)
