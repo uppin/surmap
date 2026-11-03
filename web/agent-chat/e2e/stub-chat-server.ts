@@ -90,10 +90,26 @@ class Mailbox<T> {
     else this.items.push(item);
   }
 
-  next(): Promise<T> {
+  /** Resolves with the next item, or with `null` once `signal` aborts — dropping its waiter. */
+  next(): Promise<T>;
+  next(signal: AbortSignal): Promise<T | null>;
+  next(signal?: AbortSignal): Promise<T | null> {
     const item = this.items.shift();
     if (item !== undefined) return Promise.resolve(item);
-    return new Promise((resolve) => this.waiters.push(resolve));
+    if (signal?.aborted) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const waiter = (value: T): void => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve(value);
+      };
+      const onAbort = (): void => {
+        const index = this.waiters.indexOf(waiter);
+        if (index >= 0) this.waiters.splice(index, 1);
+        resolve(null);
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      this.waiters.push(waiter);
+    });
   }
 }
 
@@ -205,11 +221,8 @@ function routerFor(state: StubState) {
       const mailbox = state.watcherFor(request.conversationId);
       void state.watchOpenFor(request.conversationId);
       state.watchOpened.get(request.conversationId)?.();
-      const closed = new Promise<null>((resolve) =>
-        context.signal.addEventListener("abort", () => resolve(null)),
-      );
       for (;;) {
-        const events = await Promise.race([mailbox.next(), closed]);
+        const events = await mailbox.next(context.signal);
         if (events === null) return;
         const turnId = state.nextTurnId(request.conversationId);
         for (const event of events) yield state.stamp(event, request.conversationId, turnId);

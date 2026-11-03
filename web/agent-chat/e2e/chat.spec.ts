@@ -181,3 +181,23 @@ test("a reloaded page redraws the conversation from the server", async ({ page }
 
   await expect(chat.conversation()).toContainText(/What demos are there\?.*Three demos are ready\./);
 });
+
+test("a reloaded page still receives job-event turns on its new watch stream", async ({ page }) => {
+  const server = await stubServer({
+    history: {
+      "e2e-1": aConversation("e2e-1").userMessage("Run the demo").turnFinished("stop").build(),
+    },
+  });
+  const chat = new ChatPage(page);
+  await chat.open(server.url);
+  await server.watching("e2e-1");
+  await chat.reload();
+  await expect(chat.conversation()).toContainText("Run the demo");
+
+  server.pushWatchTurn(
+    "e2e-1",
+    aConversation().textDelta("The demo finished after the reload.").turnFinished("stop").build(),
+  );
+
+  await expect(chat.conversation()).toContainText("The demo finished after the reload.");
+});
