@@ -17,11 +17,11 @@
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Milestone 1: `proto/surmap/agent/v1/{execution,survey_tools,jobs,chat}.proto` compile; `scripts/gen_agent_rpc.py` writes `_pb2.py`, `.pyi` and `agent_descriptor_set.binpb`
-  - [ ] Milestone 2: `surmap.agent.contracts` builds one `ToolContract` per tool rpc from the descriptor set (name, description, schema, default execution)
-  - [ ] Milestone 3: `surmap.agent.services` mounts `SurveyTools`, `AgentJobs`, `ChatService` with `UNIMPLEMENTED` handlers
-  - [ ] Acceptance: `tests/test_agent_contracts.py` and `tests/test_agent_services.py` pass
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · 32/32 green, gates green (ruff format, ruff check, mypy, pytest 1349 passed, 30 skipped) — commit 3
+  - [x] Milestone 1: `proto/surmap/agent/v1/{execution,survey_tools,jobs,chat}.proto` compile; `scripts/gen_agent_rpc.py` writes `_pb2.py`, `.pyi` and `agent_descriptor_set.binpb` — regenerated with `grpcio-tools==1.73.1`, `git diff --exit-code src/surmap/agent/proto` clean
+  - [x] Milestone 2: `surmap.agent.contracts` builds one `ToolContract` per tool rpc from the descriptor set (name, description, schema, default execution)
+  - [x] Milestone 3: `surmap.agent.services` mounts `SurveyTools`, `AgentJobs`, `ChatService` with `UNIMPLEMENTED` handlers
+  - [x] Acceptance: `tests/test_agent_contracts.py` and `tests/test_agent_services.py` pass (23 + 9)
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/agent.md` — create: tool catalogue table (tool, rpc, default execution) and the `execution` argument
