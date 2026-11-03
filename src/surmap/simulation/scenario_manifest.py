@@ -301,7 +301,7 @@ def remove_fire(manifest: Mapping[str, object], fire_id: str) -> Manifest:
 _LEAF_FIELDS: dict[str, tuple[str, ...]] = {
     "time_after": ("s",),
     "near_fire": ("within_m",),
-    "near_object": ("id", "within_m"),
+    "near_object": ("object", "within_m"),
     "wind_above": ("speed_m_s",),
     "idle": ("s",),
     "move_to": ("enu", "speed_m_s"),
@@ -337,16 +337,14 @@ def _check_node(node: object, target: str, ids: set[str]) -> None:
     if not isinstance(kind, str) or kind not in _NODE_FIELDS:
         raise ScenarioInvalid(f"unknown node kind {kind!r}")
     required = _NODE_FIELDS[kind]
-    allowed = {"node", *required, *_OPTIONAL_FIELDS.get(kind, ())}
-    if kind != "near_object":
-        allowed.add("id")
+    allowed = {"node", "id", *required, *_OPTIONAL_FIELDS.get(kind, ())}
     for field in fields:
         if field not in allowed:
             raise ScenarioInvalid(f"{kind}: unknown field {field!r}")
     for field in required:
         if field not in fields:
             raise ScenarioInvalid(f"{kind}: missing {field!r}")
-    if kind != "near_object" and "id" in fields:
+    if "id" in fields:
         _claim_node_id(fields["id"], ids)
     _check_target(kind, target)
     _check_values(kind, fields, target, ids)
@@ -387,7 +385,7 @@ def _check_values(kind: str, fields: Mapping[str, object], target: str, ids: set
             raise ScenarioInvalid("repeat: times must be a whole number >= 1")
         _check_node(fields["child"], target, ids)
     elif kind == "near_object":
-        _claim_object_id(fields["id"])
+        _claim_object(fields["object"])
         _bound(fields, kind, "within_m", low=0.0, strict=True)
     elif kind == "near_fire":
         _bound(fields, kind, "within_m", low=0.0, strict=True)
@@ -416,9 +414,9 @@ def _check_values(kind: str, fields: Mapping[str, object], target: str, ids: set
         _bound(fields, kind, "over_s", low=0.0, strict=True)
 
 
-def _claim_object_id(value: object) -> None:
+def _claim_object(value: object) -> None:
     if not isinstance(value, str) or not value:
-        raise ScenarioInvalid("near_object: id must name the other body")
+        raise ScenarioInvalid("near_object: object must name the other body")
 
 
 def _bound(
@@ -534,7 +532,7 @@ def _replace_node(
     tree: Mapping[str, object], node_id: str, node: Mapping[str, object]
 ) -> dict[str, object] | None:
     """The tree with the node whose id is `node_id` replaced, or None when no node has that id."""
-    if tree.get("node") != "near_object" and tree.get("id") == node_id:
+    if tree.get("id") == node_id:
         return copy.deepcopy(dict(node))
     for key in ("children", "child"):
         value = tree.get(key)
@@ -615,7 +613,8 @@ def _flood_street(block: Manifest) -> Manifest:
 
 
 def _evacuee(seed: int) -> dict[str, object]:
-    """Flee the fire when it is within 20 m, until 30 m clear of it; otherwise wander."""
+    """Flee the fire when it is within 20 m, until 30 m clear of it; otherwise wander. The tree
+    repeats, so an evacuee wanders again once clear and flees again if the front comes back."""
     escape: dict[str, object] = {
         "node": "sequence",
         "id": "escape",
@@ -631,7 +630,12 @@ def _evacuee(seed: int) -> dict[str, object]:
         "speed_m_s": 0.8,
         "seed": seed,
     }
-    return {"node": "selector", "id": "root", "children": [escape, mill_about]}
+    selector: dict[str, object] = {
+        "node": "selector",
+        "id": "root",
+        "children": [escape, mill_about],
+    }
+    return {"node": "repeat", "child": selector}
 
 
 # The wind backs and builds 20 s in, then veers to 300° at 10 m/s with 3 m/s gusts over 30 s.

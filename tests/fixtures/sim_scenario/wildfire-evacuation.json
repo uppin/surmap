@@ -163,34 +163,37 @@
       "coat": "coat_orange",
       "skin": "skin",
       "behaviour": {
-        "node": "selector",
-        "id": "root",
-        "children": [
-          {
-            "node": "sequence",
-            "id": "escape",
-            "children": [
-              {
-                "node": "near_fire",
-                "id": "smell-fire",
-                "within_m": 20.0
-              },
-              {
-                "node": "flee_from_fire",
-                "id": "run",
-                "speed_m_s": 3.0,
-                "clearance_m": 30.0
-              }
-            ]
-          },
-          {
-            "node": "wander",
-            "id": "mill-about",
-            "radius_m": 6.0,
-            "speed_m_s": 0.8,
-            "seed": 7
-          }
-        ]
+        "node": "repeat",
+        "child": {
+          "node": "selector",
+          "id": "root",
+          "children": [
+            {
+              "node": "sequence",
+              "id": "escape",
+              "children": [
+                {
+                  "node": "near_fire",
+                  "id": "smell-fire",
+                  "within_m": 20.0
+                },
+                {
+                  "node": "flee_from_fire",
+                  "id": "run",
+                  "speed_m_s": 3.0,
+                  "clearance_m": 30.0
+                }
+              ]
+            },
+            {
+              "node": "wander",
+              "id": "mill-about",
+              "radius_m": 6.0,
+              "speed_m_s": 0.8,
+              "seed": 7
+            }
+          ]
+        }
       }
     },
     {
@@ -204,34 +207,37 @@
       "coat": "coat_orange",
       "skin": "skin",
       "behaviour": {
-        "node": "selector",
-        "id": "root",
-        "children": [
-          {
-            "node": "sequence",
-            "id": "escape",
-            "children": [
-              {
-                "node": "near_fire",
-                "id": "smell-fire",
-                "within_m": 20.0
-              },
-              {
-                "node": "flee_from_fire",
-                "id": "run",
-                "speed_m_s": 3.0,
-                "clearance_m": 30.0
-              }
-            ]
-          },
-          {
-            "node": "wander",
-            "id": "mill-about",
-            "radius_m": 6.0,
-            "speed_m_s": 0.8,
-            "seed": 8
-          }
-        ]
+        "node": "repeat",
+        "child": {
+          "node": "selector",
+          "id": "root",
+          "children": [
+            {
+              "node": "sequence",
+              "id": "escape",
+              "children": [
+                {
+                  "node": "near_fire",
+                  "id": "smell-fire",
+                  "within_m": 20.0
+                },
+                {
+                  "node": "flee_from_fire",
+                  "id": "run",
+                  "speed_m_s": 3.0,
+                  "clearance_m": 30.0
+                }
+              ]
+            },
+            {
+              "node": "wander",
+              "id": "mill-about",
+              "radius_m": 6.0,
+              "speed_m_s": 0.8,
+              "seed": 8
+            }
+          ]
+        }
       }
     },
     {
@@ -245,34 +251,37 @@
       "coat": "coat_orange",
       "skin": "skin",
       "behaviour": {
-        "node": "selector",
-        "id": "root",
-        "children": [
-          {
-            "node": "sequence",
-            "id": "escape",
-            "children": [
-              {
-                "node": "near_fire",
-                "id": "smell-fire",
-                "within_m": 20.0
-              },
-              {
-                "node": "flee_from_fire",
-                "id": "run",
-                "speed_m_s": 3.0,
-                "clearance_m": 30.0
-              }
-            ]
-          },
-          {
-            "node": "wander",
-            "id": "mill-about",
-            "radius_m": 6.0,
-            "speed_m_s": 0.8,
-            "seed": 9
-          }
-        ]
+        "node": "repeat",
+        "child": {
+          "node": "selector",
+          "id": "root",
+          "children": [
+            {
+              "node": "sequence",
+              "id": "escape",
+              "children": [
+                {
+                  "node": "near_fire",
+                  "id": "smell-fire",
+                  "within_m": 20.0
+                },
+                {
+                  "node": "flee_from_fire",
+                  "id": "run",
+                  "speed_m_s": 3.0,
+                  "clearance_m": 30.0
+                }
+              ]
+            },
+            {
+              "node": "wander",
+              "id": "mill-about",
+              "radius_m": 6.0,
+              "speed_m_s": 0.8,
+              "seed": 9
+            }
+          ]
+        }
       }
     }
   ],

@@ -23,7 +23,7 @@ PRD: `PRD-2026-11-03-sim-behaviour-trees.md` · Discovery:
   - [x] Acceptance tests written and failing for the right reason (`tests/test_sim_behaviour_e2e.py`)
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · Rust 114/114 (16 behaviour + manifest green) and Python behaviour suites 36/36; full gates green (ruff, mypy strict, pytest 1886 passed / 33 skipped, cargo test, wasm check)
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · Rust 118/118 and Python behaviour suites 37/37; full gates green (ruff, mypy strict, pytest 1887 passed / 33 skipped, cargo test, wasm check); review round 1: n3 wrap merged, near_object `object`, repeating evacuees
   - [x] Rust `behaviour.rs`: parse, validate per target, deterministic tick (contract below)
   - [x] Rust `scene_manifest.rs`: `behaviour` on `person` elements and on `weather.wind`, validated per target (`WindDef` is no longer `Copy` — n3 code that copied it clones)
   - [x] Rust runtime: people move by their trees at the fixed tick; the wind tree drives `WindModel` (and so Feronia, the fire's spread, flame lean and smoke drift from n3); figures turn to their heading and bob while moving, per the visual spec
@@ -82,7 +82,7 @@ tree; the address `update_behaviour_node` edits by):
 | `invert` | `child` | swaps success and failure |
 | `time_after` | `s` | success once sim time ≥ `s`, else failure |
 | `near_fire` | `within_m` | success when any burning perimeter is within `within_m` |
-| `near_object` | `id`, `within_m` | success when that object is within `within_m` |
+| `near_object` | `object`, `within_m` | success when the body named `object` is within `within_m` |
 | `wind_above` | `speed_m_s` | success when the current wind speed exceeds it |
 | `idle` | `s` | running for `s` seconds, then success |
 | `move_to` | `enu` `[e, n]`, `speed_m_s` | running until within 0.25 m, then success |
@@ -127,8 +127,9 @@ An invalid tree, an unknown target or node id → `INVALID_ARGUMENT`; each edit 
 version. `PersonElement` gains `skin` (the renderer always needed one; `add_element` defaulted it).
 
 Preset `wildfire-evacuation` — `wildfire-edge` plus three people at the stand's downwind edge,
-each `selector[ sequence[near_fire 20 m, flee_from_fire 3 m/s 30 m], wander 6 m 0.8 m/s ]`, and a
-wind tree `sequence[ idle 20 s, set_wind 300° 10 m/s gust 3 over 30 s ]`.
+each `repeat[ selector[ sequence[near_fire 20 m, flee_from_fire 3 m/s 30 m], wander 6 m 0.8 m/s ] ]`
+(no `times`, so an evacuee wanders again once 30 m clear and flees again if the front comes back
+within 20 m), and a wind tree `sequence[ idle 20 s, set_wind 300° 10 m/s gust 3 over 30 s ]`.
 
 ## Verification
 
@@ -150,3 +151,5 @@ Deferred-work scan: the 2026-11-03 Bevy records are ℹ unrelated; n3's open TOD
   wasm are required, and the tree must be the manifest's JSON, not a crate's format.
 - The wind is a target like a person, so "wind driven by a behaviour tree" needs no second
   mechanism; n3's single `WindModel` then carries the change to vegetation, fire and particles.
+- near_object names the other body by `object` so every node can carry an `id` (planner, review
+  round 1).

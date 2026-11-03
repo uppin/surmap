@@ -57,7 +57,7 @@ pub enum Kind {
         within_m: f32,
     },
     NearObject {
-        id: String,
+        object: String,
         within_m: f32,
     },
     WindAbove {
@@ -101,13 +101,8 @@ pub struct Node {
 impl<'de> Deserialize<'de> for Node {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let mut value = Value::deserialize(deserializer)?;
-        // A `near_object` names the other body with its `id`; every other node's `id` addresses it.
-        let names_body = value.get("node").and_then(Value::as_str) == Some("near_object");
-        let id = match value
-            .as_object_mut()
-            .filter(|_| !names_body)
-            .and_then(|fields| fields.remove("id"))
-        {
+        // The node's `id` addresses it in its tree; the kind's own fields never see it.
+        let id = match value.as_object_mut().and_then(|fields| fields.remove("id")) {
             None | Some(Value::Null) => None,
             Some(Value::String(id)) => Some(id),
             Some(other) => {
@@ -431,13 +426,13 @@ fn tick_node(node: &Node, memory: &mut Memory, env: &mut Env) -> Status {
             let p = *env.position;
             decide(env.near_fire(p, *within_m))
         }
-        Kind::NearObject { id, within_m } => {
+        Kind::NearObject { object, within_m } => {
             let p = *env.position;
             let near = env
                 .world
                 .objects
                 .iter()
-                .find(|(other, _)| other == id)
+                .find(|(other, _)| other == object)
                 .is_some_and(|(_, at)| p.distance(*at) <= *within_m);
             decide(near)
         }
@@ -988,13 +983,13 @@ mod tests {
         };
 
         let near = Runner::new(
-            tree(r#"{"node": "near_object", "id": "car-1", "within_m": 6}"#),
+            tree(r#"{"node": "near_object", "object": "car-1", "within_m": 6}"#),
             Vec2::ZERO,
             wind,
         )
         .tick(&world, DT);
         let far = Runner::new(
-            tree(r#"{"node": "near_object", "id": "car-1", "within_m": 4}"#),
+            tree(r#"{"node": "near_object", "object": "car-1", "within_m": 4}"#),
             Vec2::ZERO,
             wind,
         )

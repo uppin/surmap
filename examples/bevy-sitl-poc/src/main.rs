@@ -147,6 +147,7 @@ fn main() {
                 update_status,
                 take_shots,
                 shots::aim_overview_at_fire,
+                shots::aim_people_cam,
                 record::record_frames.after(fly_scripted).after(actors::tick_behaviours),
                 apply_look,
                 sky::bake_sky,

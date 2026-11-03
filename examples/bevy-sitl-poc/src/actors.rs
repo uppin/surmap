@@ -188,7 +188,7 @@ impl Figure {
     }
 
     /// Where the figure stands, ENU, before its bob.
-    fn position(&self) -> Vec2 {
+    pub fn position(&self) -> Vec2 {
         self.runner
             .as_ref()
             .map_or(self.base, |runner| runner.position)
