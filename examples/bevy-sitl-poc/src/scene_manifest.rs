@@ -446,7 +446,26 @@ impl SceneManifest {
             }
         }
         manifest.validate_weather_fire_vegetation()?;
+        manifest.validate_behaviours()?;
         Ok(manifest)
+    }
+
+    /// Each behaviour tree is valid for what it drives: a person's walks, the wind's own veer.
+    fn validate_behaviours(&self) -> Result<(), ManifestError> {
+        use crate::behaviour::{validate_node, Target};
+        let refused = |who: String| move |reason: String| ManifestError::Invalid(format!("{who}: {reason}"));
+        if let Some(tree) = self.weather.as_ref().and_then(|w| w.wind.behaviour.as_ref()) {
+            validate_node(tree, Target::Wind).map_err(refused("the wind's behaviour".into()))?;
+        }
+        for element in &self.elements {
+            if let Element::Person(person) = element {
+                if let Some(tree) = &person.behaviour {
+                    validate_node(tree, Target::Object)
+                        .map_err(refused(format!("person {} behaviour", person.id)))?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Ranges of weather, fires and vegetation, and the kind of file each path names.

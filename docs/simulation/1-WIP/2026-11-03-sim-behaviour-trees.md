@@ -23,15 +23,15 @@ PRD: `PRD-2026-11-03-sim-behaviour-trees.md` · Discovery:
   - [x] Acceptance tests written and failing for the right reason (`tests/test_sim_behaviour_e2e.py`)
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Rust `behaviour.rs`: parse, validate per target, deterministic tick (contract below)
-  - [ ] Rust `scene_manifest.rs`: `behaviour` on `person` elements and on `weather.wind`, validated per target (`WindDef` is no longer `Copy` — n3 code that copied it clones)
-  - [ ] Rust runtime: people move by their trees at the fixed tick; the wind tree drives `WindModel` (and so Feronia, the fire's spread, flame lean and smoke drift from n3); figures turn to their heading and bob while moving, per the visual spec
-  - [ ] Recorder: `object_tracks.jsonl` beside every capture (contract below)
-  - [ ] Python `scenario_manifest`: `validate_behaviour`, pure edits `set_behaviour`, `update_behaviour_node`, `behaviour_of`; preset `wildfire-evacuation`
-  - [ ] `SimulationTools`: `SetBehaviour`, `UpdateBehaviourNode`, `GetBehaviour`; `PersonElement` gains `skin`; regenerated code, handlers, docs table
-  - [ ] `bevy_capture`: `load_bevy_capture(...).object_tracks` and `.wind`
-  - [ ] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · Rust 114/114 (16 behaviour + manifest green) and Python behaviour suites 36/36; full gates green (ruff, mypy strict, pytest 1886 passed / 33 skipped, cargo test, wasm check)
+  - [x] Rust `behaviour.rs`: parse, validate per target, deterministic tick (contract below)
+  - [x] Rust `scene_manifest.rs`: `behaviour` on `person` elements and on `weather.wind`, validated per target (`WindDef` is no longer `Copy` — n3 code that copied it clones)
+  - [x] Rust runtime: people move by their trees at the fixed tick; the wind tree drives `WindModel` (and so Feronia, the fire's spread, flame lean and smoke drift from n3); figures turn to their heading and bob while moving, per the visual spec
+  - [x] Recorder: `object_tracks.jsonl` beside every capture (contract below)
+  - [x] Python `scenario_manifest`: `validate_behaviour`, pure edits `set_behaviour`, `update_behaviour_node`, `behaviour_of`; preset `wildfire-evacuation`
+  - [x] `SimulationTools`: `SetBehaviour`, `UpdateBehaviourNode`, `GetBehaviour`; `PersonElement` gains `skin`; regenerated code, handlers, docs table
+  - [x] `bevy_capture`: `load_bevy_capture(...).object_tracks` and `.wind`
+  - [x] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (tests + the planner-reviewed B1 screenshot set)
   - [ ] `docs/simulation/bevy-simulation.md` — Behaviour trees; `docs/agent.md` — the three tools

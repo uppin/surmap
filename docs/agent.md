@@ -64,6 +64,9 @@ leading comment, and argument descriptions are the field comments.
 | `set_weather` | `SimulationTools.SetWeather` | SYNC · 10 s · FAIL |
 | `add_fire` | `SimulationTools.AddFire` | SYNC · 10 s · FAIL |
 | `remove_fire` | `SimulationTools.RemoveFire` | SYNC · 10 s · FAIL |
+| `set_behaviour` | `SimulationTools.SetBehaviour` | SYNC · 10 s · FAIL |
+| `update_behaviour_node` | `SimulationTools.UpdateBehaviourNode` | SYNC · 10 s · FAIL |
+| `get_behaviour` | `SimulationTools.GetBehaviour` | SYNC · 10 s · FAIL |
 | `get_scenario` | `SimulationTools.GetScenario` | SYNC · 10 s · FAIL |
 | `list_scenarios` | `SimulationTools.ListScenarios` | SYNC · 10 s · FAIL |
 

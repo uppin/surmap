@@ -4,14 +4,24 @@
 
 #![allow(dead_code)]
 
+use std::collections::BTreeSet;
+
 use bevy::math::Vec2;
-use serde::Deserialize;
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer};
+use serde_json::Value;
 
 use crate::fire::FireSpec;
 use crate::wind::WindModel;
 
 /// Ticks per simulated second.
 pub const TICK_HZ: f32 = 10.0;
+/// A body within this distance of its goal has arrived (changeset § *Behaviour-tree JSON*).
+const ARRIVED_M: f32 = 0.25;
+/// Vertices a fire's front is sampled at for the distance tests.
+const FRONT_POINTS: usize = 48;
+/// Slack on a timer's end, so a whole number of ticks ends a leaf despite float rounding.
+const TIMER_SLACK_S: f32 = 1e-3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -81,12 +91,34 @@ pub enum Kind {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+/// One node of a tree: its address (`id`, unique within its tree) and what it does.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Node {
-    #[serde(default)]
     pub id: Option<String>,
-    #[serde(flatten)]
     pub kind: Kind,
+}
+
+impl<'de> Deserialize<'de> for Node {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut value = Value::deserialize(deserializer)?;
+        // A `near_object` names the other body with its `id`; every other node's `id` addresses it.
+        let names_body = value.get("node").and_then(Value::as_str) == Some("near_object");
+        let id = match value
+            .as_object_mut()
+            .filter(|_| !names_body)
+            .and_then(|fields| fields.remove("id"))
+        {
+            None | Some(Value::Null) => None,
+            Some(Value::String(id)) => Some(id),
+            Some(other) => {
+                return Err(D::Error::custom(format!(
+                    "a node's id must be a string, not {other}"
+                )))
+            }
+        };
+        let kind = serde_json::from_value(value).map_err(D::Error::custom)?;
+        Ok(Self { id, kind })
+    }
 }
 
 /// What a tree drives: a body on the ground, or the scenario's wind.
@@ -124,21 +156,210 @@ pub struct Runner {
     /// ENU metres on the ground plane.
     pub position: Vec2,
     pub wind: WindModel,
+    memory: Memory,
+    finished: Option<Status>,
+    action: Option<&'static str>,
 }
 
 impl Tree {
     /// Parse one tree; an unknown node kind or field is an error naming it.
     pub fn from_json(text: &str) -> Result<Self, String> {
-        let _ = text;
-        todo!("parse a behaviour tree")
+        let root: Node = serde_json::from_str(text).map_err(|e| e.to_string())?;
+        Ok(Self { root })
     }
 
     /// Node ids unique, numbers in range (speeds, times, radii > 0; `parallel` and composites
     /// non-empty), and only the leaves the target may use: no `set_wind` on an object, only
     /// composites, decorators, `time_after`, `idle` and `set_wind` on the wind.
     pub fn validate(&self, target: Target) -> Result<(), String> {
-        let _ = target;
-        todo!("validate a behaviour tree")
+        validate_node(&self.root, target)
+    }
+}
+
+/// Validates `root` and its subtree for `target` (see `Tree::validate`).
+pub fn validate_node(root: &Node, target: Target) -> Result<(), String> {
+    check(root, target, &mut BTreeSet::new())
+}
+
+fn check(node: &Node, target: Target, ids: &mut BTreeSet<String>) -> Result<(), String> {
+    if let Some(id) = &node.id {
+        if !ids.insert(id.clone()) {
+            return Err(format!("duplicate node id {id:?}"));
+        }
+    }
+    let name = node.kind.name();
+    match (target, &node.kind) {
+        (Target::Object, Kind::SetWind { .. }) => {
+            return Err(format!(
+                "{name}: set_wind drives the wind, so only the wind's own tree may use it"
+            ))
+        }
+        (Target::Wind, kind) if !kind.is_wind_node() => {
+            return Err(format!(
+                "{name}: the wind's tree may only use composites, decorators, time_after, idle and set_wind"
+            ))
+        }
+        _ => {}
+    }
+    node.kind.check_ranges()?;
+    for child in node.kind.children() {
+        check(child, target, ids)?;
+    }
+    Ok(())
+}
+
+impl Kind {
+    fn name(&self) -> &'static str {
+        match self {
+            Kind::Sequence { .. } => "sequence",
+            Kind::Selector { .. } => "selector",
+            Kind::Parallel { .. } => "parallel",
+            Kind::Repeat { .. } => "repeat",
+            Kind::Invert { .. } => "invert",
+            Kind::TimeAfter { .. } => "time_after",
+            Kind::NearFire { .. } => "near_fire",
+            Kind::NearObject { .. } => "near_object",
+            Kind::WindAbove { .. } => "wind_above",
+            Kind::Idle { .. } => "idle",
+            Kind::MoveTo { .. } => "move_to",
+            Kind::FollowPath { .. } => "follow_path",
+            Kind::Wander { .. } => "wander",
+            Kind::FleeFromFire { .. } => "flee_from_fire",
+            Kind::SetWind { .. } => "set_wind",
+        }
+    }
+
+    fn children(&self) -> Vec<&Node> {
+        match self {
+            Kind::Sequence { children }
+            | Kind::Selector { children }
+            | Kind::Parallel { children, .. } => children.iter().collect(),
+            Kind::Repeat { child, .. } | Kind::Invert { child } => vec![child.as_ref()],
+            _ => Vec::new(),
+        }
+    }
+
+    /// The kinds the wind's own tree may use: composites, decorators, `time_after`, `idle`, `set_wind`.
+    fn is_wind_node(&self) -> bool {
+        matches!(
+            self,
+            Kind::Sequence { .. }
+                | Kind::Selector { .. }
+                | Kind::Parallel { .. }
+                | Kind::Repeat { .. }
+                | Kind::Invert { .. }
+                | Kind::TimeAfter { .. }
+                | Kind::Idle { .. }
+                | Kind::SetWind { .. }
+        )
+    }
+
+    fn check_ranges(&self) -> Result<(), String> {
+        let name = self.name();
+        let require = |holds: bool, field: &str, rule: &str| -> Result<(), String> {
+            if holds {
+                Ok(())
+            } else {
+                Err(format!("{name}: {field} must be {rule}"))
+            }
+        };
+        match self {
+            Kind::Sequence { children } | Kind::Selector { children } | Kind::Parallel { children, .. } => {
+                require(!children.is_empty(), "children", "a non-empty list")?
+            }
+            Kind::Repeat { times, .. } => require(times.is_none_or(|n| n >= 1), "times", ">= 1")?,
+            Kind::Invert { .. } => {}
+            Kind::TimeAfter { s } => require(non_negative(*s), "s", ">= 0")?,
+            Kind::NearFire { within_m } | Kind::NearObject { within_m, .. } => {
+                require(positive(*within_m), "within_m", "> 0")?
+            }
+            Kind::WindAbove { speed_m_s } => require(non_negative(*speed_m_s), "speed_m_s", ">= 0")?,
+            Kind::Idle { s } => require(positive(*s), "s", "> 0")?,
+            Kind::MoveTo { enu, speed_m_s } => {
+                require(finite(std::slice::from_ref(enu)), "enu", "finite")?;
+                require(positive(*speed_m_s), "speed_m_s", "> 0")?;
+            }
+            Kind::FollowPath { enu, speed_m_s } => {
+                require(!enu.is_empty() && finite(enu), "enu", "a non-empty list of finite points")?;
+                require(positive(*speed_m_s), "speed_m_s", "> 0")?;
+            }
+            Kind::Wander { radius_m, speed_m_s, .. } => {
+                require(positive(*radius_m), "radius_m", "> 0")?;
+                require(positive(*speed_m_s), "speed_m_s", "> 0")?;
+            }
+            Kind::FleeFromFire { speed_m_s, clearance_m } => {
+                require(positive(*speed_m_s), "speed_m_s", "> 0")?;
+                require(non_negative(*clearance_m), "clearance_m", ">= 0")?;
+            }
+            Kind::SetWind { from_deg, speed_m_s, gust_m_s, over_s } => {
+                require(from_deg.is_finite(), "from_deg", "finite")?;
+                require(non_negative(*speed_m_s), "speed_m_s", ">= 0")?;
+                require(non_negative(*gust_m_s), "gust_m_s", ">= 0")?;
+                require(positive(*over_s), "over_s", "> 0")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+fn positive(value: f32) -> bool {
+    value.is_finite() && value > 0.0
+}
+
+fn non_negative(value: f32) -> bool {
+    value.is_finite() && value >= 0.0
+}
+
+fn finite(points: &[[f32; 2]]) -> bool {
+    points.iter().all(|p| p.iter().all(|v| v.is_finite()))
+}
+
+/// What one node remembers between ticks: a composite's cursor, a leaf's timer and goal, and
+/// the memory of each child.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct Memory {
+    /// Sequence and follow_path cursor; repeat's completed laps.
+    index: usize,
+    /// Seconds a leaf has run (idle, set_wind).
+    elapsed_s: f32,
+    /// Where a wander began (its disc's centre), and the point it is heading for.
+    anchor: Option<Vec2>,
+    goal: Option<Vec2>,
+    /// A wander's random stream.
+    stream: u64,
+    /// The wind when a set_wind began.
+    wind_at_start: Option<WindModel>,
+    /// Parallel: each child's verdict once it has finished.
+    verdicts: Vec<Option<Status>>,
+    /// One memory per child.
+    children: Vec<Memory>,
+}
+
+/// One tick's view: the world, the runner's own state, and the fronts it can flee.
+struct Env<'a, 'w> {
+    world: &'a World<'w>,
+    dt: f32,
+    position: &'a mut Vec2,
+    wind: &'a mut WindModel,
+    action: &'a mut Option<&'static str>,
+    /// Wildfire fronts and other burning ground, as polygons, at `world.t_s`.
+    fronts: Vec<Vec<Vec2>>,
+}
+
+impl Env<'_, '_> {
+    /// Whether `p` is inside burning ground at this tick.
+    fn burning(&self, p: Vec2) -> bool {
+        let wind = self.world.wind.velocity_enu(self.world.t_s);
+        self.world
+            .fires
+            .iter()
+            .any(|fire| fire.burnt(p, self.world.t_s, wind))
+            || self.world.burning_areas.iter().any(|area| contains(area, p))
+    }
+
+    /// Within `within` metres of a front or inside burning ground.
+    fn near_fire(&self, p: Vec2, within: f32) -> bool {
+        self.burning(p) || nearest(&self.fronts, p).is_some_and(|(d, _)| d <= within)
     }
 }
 
@@ -148,19 +369,397 @@ impl Runner {
             tree,
             position,
             wind,
+            memory: Memory::default(),
+            finished: None,
+            action: None,
         }
     }
 
     /// Advance one tick of `dt` seconds; a root that finished keeps returning its status.
     pub fn tick(&mut self, world: &World, dt: f32) -> Status {
-        let _ = (world, dt);
-        todo!("tick a behaviour tree")
+        if let Some(status) = self.finished {
+            return status;
+        }
+        self.action = None;
+        let mut env = Env {
+            world,
+            dt,
+            position: &mut self.position,
+            wind: &mut self.wind,
+            action: &mut self.action,
+            fronts: fronts(world),
+        };
+        let status = tick_node(&self.tree.root, &mut self.memory, &mut env);
+        if status != Status::Running {
+            self.finished = Some(status);
+            self.action = None;
+        }
+        status
     }
 
     /// The running leaf's kind (`"flee_from_fire"`, …), for the recorder; `None` when finished.
     pub fn action(&self) -> Option<&str> {
-        todo!("running action")
+        self.action
     }
+}
+
+/// The wildfire fronts at `world.t_s` and the other burning ground, as polygons.
+fn fronts(world: &World) -> Vec<Vec<Vec2>> {
+    let wind = world.wind.velocity_enu(world.t_s);
+    world
+        .fires
+        .iter()
+        .map(|fire| fire.perimeter(world.t_s, wind, FRONT_POINTS))
+        .chain(world.burning_areas.iter().cloned())
+        .filter(|front| !front.is_empty())
+        .collect()
+}
+
+fn tick_node(node: &Node, memory: &mut Memory, env: &mut Env) -> Status {
+    ensure_children(memory, node.kind.children().len());
+    match &node.kind {
+        Kind::Sequence { children } => sequence(children, memory, env),
+        Kind::Selector { children } => selector(children, memory, env),
+        Kind::Parallel {
+            children,
+            succeed_on,
+        } => parallel(children, *succeed_on, memory, env),
+        Kind::Repeat { child, times } => repeat(child, *times, memory, env),
+        Kind::Invert { child } => invert(child, memory, env),
+        Kind::TimeAfter { s } => decide(env.world.t_s >= *s),
+        Kind::NearFire { within_m } => {
+            let p = *env.position;
+            decide(env.near_fire(p, *within_m))
+        }
+        Kind::NearObject { id, within_m } => {
+            let p = *env.position;
+            let near = env
+                .world
+                .objects
+                .iter()
+                .find(|(other, _)| other == id)
+                .is_some_and(|(_, at)| p.distance(*at) <= *within_m);
+            decide(near)
+        }
+        Kind::WindAbove { speed_m_s } => {
+            let speed = env.world.wind.velocity_enu(env.world.t_s).length();
+            decide(speed > *speed_m_s)
+        }
+        Kind::Idle { s } => {
+            memory.elapsed_s += env.dt;
+            if memory.elapsed_s + TIMER_SLACK_S >= *s {
+                *memory = Memory::default();
+                Status::Success
+            } else {
+                running(env, "idle")
+            }
+        }
+        Kind::MoveTo { enu, speed_m_s } => {
+            let goal = Vec2::from_array(*enu);
+            if arrived(env, goal) {
+                *memory = Memory::default();
+                Status::Success
+            } else {
+                walk_towards(env, goal, *speed_m_s);
+                running(env, "move_to")
+            }
+        }
+        Kind::FollowPath { enu, speed_m_s } => {
+            while memory.index < enu.len() && arrived(env, Vec2::from_array(enu[memory.index])) {
+                memory.index += 1;
+            }
+            if memory.index == enu.len() {
+                *memory = Memory::default();
+                Status::Success
+            } else {
+                walk_towards(env, Vec2::from_array(enu[memory.index]), *speed_m_s);
+                running(env, "follow_path")
+            }
+        }
+        Kind::Wander {
+            radius_m,
+            speed_m_s,
+            seed,
+        } => wander(*radius_m, *speed_m_s, *seed, memory, env),
+        Kind::FleeFromFire {
+            speed_m_s,
+            clearance_m,
+        } => flee_from_fire(*speed_m_s, *clearance_m, memory, env),
+        Kind::SetWind {
+            from_deg,
+            speed_m_s,
+            gust_m_s,
+            over_s,
+        } => {
+            let target = WindModel {
+                from_deg: *from_deg,
+                speed_m_s: *speed_m_s,
+                gust_m_s: *gust_m_s,
+            };
+            set_wind(target, *over_s, memory, env)
+        }
+    }
+}
+
+/// The first child that does not fail decides; children after it start afresh next time, so a
+/// higher choice that becomes possible again takes over from a lower one.
+fn selector(children: &[Node], memory: &mut Memory, env: &mut Env) -> Status {
+    for index in 0..children.len() {
+        match tick_child(children, index, memory, env) {
+            Status::Failure => {}
+            decided => {
+                for later in &mut memory.children[index + 1..] {
+                    *later = Memory::default();
+                }
+                return decided;
+            }
+        }
+    }
+    *memory = Memory::default();
+    Status::Failure
+}
+
+/// Children in order; a child that is still running holds the sequence on it until it ends.
+fn sequence(children: &[Node], memory: &mut Memory, env: &mut Env) -> Status {
+    for index in memory.index..children.len() {
+        match tick_child(children, index, memory, env) {
+            Status::Success => {}
+            Status::Running => {
+                memory.index = index;
+                return Status::Running;
+            }
+            Status::Failure => {
+                *memory = Memory::default();
+                return Status::Failure;
+            }
+        }
+    }
+    *memory = Memory::default();
+    Status::Success
+}
+
+/// Every unfinished child is ticked each tick; the policy decides when the whole is done.
+fn parallel(
+    children: &[Node],
+    succeed_on: SucceedOn,
+    memory: &mut Memory,
+    env: &mut Env,
+) -> Status {
+    if memory.verdicts.len() != children.len() {
+        memory.verdicts = vec![None; children.len()];
+    }
+    for index in 0..children.len() {
+        if memory.verdicts[index].is_none() {
+            let verdict = tick_child(children, index, memory, env);
+            if verdict != Status::Running {
+                memory.verdicts[index] = Some(verdict);
+            }
+        }
+    }
+    let wins = memory
+        .verdicts
+        .iter()
+        .filter(|v| **v == Some(Status::Success))
+        .count();
+    let losses = memory
+        .verdicts
+        .iter()
+        .filter(|v| **v == Some(Status::Failure))
+        .count();
+    let decided = match succeed_on {
+        SucceedOn::All if losses > 0 => Some(Status::Failure),
+        SucceedOn::All if wins == children.len() => Some(Status::Success),
+        SucceedOn::One if wins > 0 => Some(Status::Success),
+        SucceedOn::One if losses == children.len() => Some(Status::Failure),
+        _ => None,
+    };
+    match decided {
+        Some(status) => {
+            *memory = Memory::default();
+            status
+        }
+        None => Status::Running,
+    }
+}
+
+fn repeat(child: &Node, times: Option<u32>, memory: &mut Memory, env: &mut Env) -> Status {
+    match tick_node(child, &mut memory.children[0], env) {
+        Status::Running => Status::Running,
+        Status::Failure => {
+            *memory = Memory::default();
+            Status::Failure
+        }
+        Status::Success => {
+            memory.index += 1;
+            if times.is_some_and(|n| memory.index >= n as usize) {
+                *memory = Memory::default();
+                Status::Success
+            } else {
+                Status::Running
+            }
+        }
+    }
+}
+
+fn invert(child: &Node, memory: &mut Memory, env: &mut Env) -> Status {
+    match tick_node(child, &mut memory.children[0], env) {
+        Status::Success => Status::Failure,
+        Status::Failure => Status::Success,
+        Status::Running => Status::Running,
+    }
+}
+
+fn wander(radius_m: f32, speed_m_s: f32, seed: u64, memory: &mut Memory, env: &mut Env) -> Status {
+    let anchor = match memory.anchor {
+        Some(anchor) => anchor,
+        None => {
+            memory.anchor = Some(*env.position);
+            memory.stream = seed;
+            *env.position
+        }
+    };
+    let goal = match memory.goal {
+        Some(goal) if !arrived(env, goal) => goal,
+        _ => {
+            let goal = point_in_disc(anchor, radius_m, &mut memory.stream);
+            memory.goal = Some(goal);
+            goal
+        }
+    };
+    walk_towards(env, goal, speed_m_s);
+    running(env, "wander")
+}
+
+/// Flees from the nearest front, outward from burning ground, until `clearance_m` clear of it.
+fn flee_from_fire(speed_m_s: f32, clearance_m: f32, memory: &mut Memory, env: &mut Env) -> Status {
+    let p = *env.position;
+    let Some((distance, edge)) = nearest(&env.fronts, p) else {
+        *memory = Memory::default();
+        return Status::Success;
+    };
+    let inside = env.burning(p);
+    if !inside && distance >= clearance_m {
+        *memory = Memory::default();
+        return Status::Success;
+    }
+    let away = if inside { edge - p } else { p - edge };
+    *env.position += away.normalize_or(Vec2::X) * (speed_m_s * env.dt);
+    running(env, "flee_from_fire")
+}
+
+/// Ramps the wind linearly to `target` over `over_s`, the short way round the compass.
+fn set_wind(target: WindModel, over_s: f32, memory: &mut Memory, env: &mut Env) -> Status {
+    let start = *memory.wind_at_start.get_or_insert(*env.wind);
+    let progress = memory.elapsed_s / over_s;
+    memory.elapsed_s += env.dt;
+    if progress >= 1.0 {
+        *env.wind = target;
+        *memory = Memory::default();
+        return Status::Success;
+    }
+    let turn = shortest_turn(start.from_deg, target.from_deg);
+    *env.wind = WindModel {
+        from_deg: start.from_deg + turn * progress,
+        speed_m_s: start.speed_m_s + (target.speed_m_s - start.speed_m_s) * progress,
+        gust_m_s: start.gust_m_s + (target.gust_m_s - start.gust_m_s) * progress,
+    };
+    running(env, "set_wind")
+}
+
+fn shortest_turn(from_deg: f32, to_deg: f32) -> f32 {
+    (to_deg - from_deg + 540.0).rem_euclid(360.0) - 180.0
+}
+
+fn tick_child(children: &[Node], index: usize, memory: &mut Memory, env: &mut Env) -> Status {
+    tick_node(&children[index], &mut memory.children[index], env)
+}
+
+fn ensure_children(memory: &mut Memory, count: usize) {
+    if memory.children.len() < count {
+        memory.children.resize_with(count, Memory::default);
+    }
+}
+
+fn decide(holds: bool) -> Status {
+    if holds {
+        Status::Success
+    } else {
+        Status::Failure
+    }
+}
+
+fn running(env: &mut Env, action: &'static str) -> Status {
+    *env.action = Some(action);
+    Status::Running
+}
+
+fn arrived(env: &Env, goal: Vec2) -> bool {
+    (*env.position).distance(goal) <= ARRIVED_M
+}
+
+fn walk_towards(env: &mut Env, goal: Vec2, speed_m_s: f32) {
+    let to_goal = goal - *env.position;
+    let stride = (speed_m_s * env.dt).min(to_goal.length());
+    *env.position += to_goal.normalize_or_zero() * stride;
+}
+
+/// A point uniformly spread over the disc of `radius` around `centre`, from the seeded stream.
+fn point_in_disc(centre: Vec2, radius: f32, stream: &mut u64) -> Vec2 {
+    let angle = std::f32::consts::TAU * next_unit(stream);
+    let reach = radius * next_unit(stream).sqrt();
+    centre + Vec2::from_angle(angle) * reach
+}
+
+/// A splitmix64 step, mapped to `[0, 1)`: a fixed sequence per seed, so a run repeats.
+fn next_unit(state: &mut u64) -> f32 {
+    *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut z = *state;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^= z >> 31;
+    (z >> 40) as f32 / (1u64 << 24) as f32
+}
+
+/// The nearest point of any front's edge to `p`, and its distance.
+fn nearest(fronts: &[Vec<Vec2>], p: Vec2) -> Option<(f32, Vec2)> {
+    let mut best: Option<(f32, Vec2)> = None;
+    for front in fronts {
+        for (a, b) in edges(front) {
+            let q = closest_on_segment(p, a, b);
+            let d = p.distance(q);
+            if best.is_none_or(|(bd, _)| d < bd) {
+                best = Some((d, q));
+            }
+        }
+    }
+    best
+}
+
+fn edges(polygon: &[Vec2]) -> impl Iterator<Item = (Vec2, Vec2)> + '_ {
+    polygon
+        .iter()
+        .zip(polygon.iter().cycle().skip(1))
+        .map(|(a, b)| (*a, *b))
+}
+
+fn closest_on_segment(p: Vec2, a: Vec2, b: Vec2) -> Vec2 {
+    let ab = b - a;
+    let length_sq = ab.length_squared();
+    if length_sq <= f32::EPSILON {
+        return a;
+    }
+    a + ab * ((p - a).dot(ab) / length_sq).clamp(0.0, 1.0)
+}
+
+/// Even-odd containment in a polygon.
+fn contains(polygon: &[Vec2], p: Vec2) -> bool {
+    let mut inside = false;
+    for (a, b) in edges(polygon) {
+        if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x {
+            inside = !inside;
+        }
+    }
+    inside
 }
 
 #[cfg(test)]
