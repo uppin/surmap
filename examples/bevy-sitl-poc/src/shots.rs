@@ -35,6 +35,14 @@ pub struct RunMode {
     pub record: Option<RecordPlan>,
     /// `--camera cameras/<id>.camera.json`: another profile than the scene's.
     pub camera: Option<String>,
+    /// `--scenario <id>` (native) / `?scenario=<id>` (page): a station scenario instead of `scene.json`.
+    pub scenario: Option<String>,
+}
+
+/// The manifest a run loads: a station scenario, or the shipped scene.
+pub fn manifest_path(scenario: Option<&str>) -> String {
+    let _ = scenario;
+    todo!("scenarios/<id>.json or scene.json")
 }
 
 impl RunMode {
@@ -83,7 +91,7 @@ impl RunMode {
             Some(Some(path)) => Some(path),
             Some(None) => return Err("--camera needs a profile path".into()),
         };
-        Ok(Self { flight, screenshot, record, camera })
+        Ok(Self { flight, screenshot, record, camera, scenario: None })
     }
 
     /// No window chrome: stills and recordings run unattended.
@@ -221,7 +229,7 @@ mod tests {
     fn no_flags_fly_manually_without_stills() {
         let mode = RunMode::from_args(&args(&[])).expect("valid");
 
-        assert_eq!(mode, RunMode { flight: FlightMode::Manual, screenshot: None, record: None, camera: None });
+        assert_eq!(mode, RunMode { flight: FlightMode::Manual, screenshot: None, record: None, camera: None, scenario: None });
     }
 
     #[test]
@@ -253,6 +261,24 @@ mod tests {
         let mode = RunMode::from_args(&args(&["--camera", "cameras/wide.camera.json"])).expect("valid");
 
         assert_eq!(mode.camera.as_deref(), Some("cameras/wide.camera.json"));
+    }
+
+    #[test]
+    fn a_scenario_flag_names_the_scenario_to_load() {
+        let mode = RunMode::from_args(&args(&["--scenario", "wreck-on-the-avenue"])).expect("valid");
+
+        assert_eq!(mode.scenario.as_deref(), Some("wreck-on-the-avenue"));
+    }
+
+    #[test]
+    fn a_scenario_loads_from_the_station_scenarios_folder() {
+        assert_eq!(manifest_path(Some("wreck-on-the-avenue")), "scenarios/wreck-on-the-avenue.json");
+        assert_eq!(manifest_path(None), "scene.json");
+    }
+
+    #[test]
+    fn a_scenario_id_that_could_leave_the_folder_is_refused() {
+        assert!(RunMode::from_args(&args(&["--scenario", "../secrets"])).is_err());
     }
 
     #[test]

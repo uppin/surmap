@@ -584,4 +584,15 @@ mod tests {
         assert_eq!(manifest.asset_paths(), vec!["cameras/rig.camera.json"]);
     }
 
+
+    #[test]
+    fn a_scenario_written_by_the_station_store_is_a_valid_manifest() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/sim_scenario/wreck-on-the-avenue.json");
+        let text = std::fs::read_to_string(path).expect("the station store's scenario fixture");
+
+        let manifest = SceneManifest::from_json(&text).expect("the renderer accepts the store's scenario");
+
+        assert!(manifest.models.iter().any(|m| m.glb == "library/sketchfab/3f1c0a/model.glb"));
+    }
+
 }
