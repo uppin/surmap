@@ -65,3 +65,12 @@ Both providers run at `low` reasoning effort by default. `--reasoning-effort med
     SURMAP_EVAL_MAX_IMAGES=100 SURMAP_LIVE_META=1 \
         uv run python scripts/eval_disaster_labelling.py --provider meta --limit 100 \
         --reasoning-effort high --out ~/surmap-eval/wonder-high.json
+
+## SAM 3.1 on Modal
+
+`--provider modal` scores SAM 3.1 on the self-deployed Modal endpoint. Each image is sent once per class prompt (`building`, `damaged building`, `debris`, `flooded area`, `bridge`, `road`, `tree`, `fallen tree`, `water`), so 100 images is 900 SAM calls. A class counts as predicted when SAM returns a detection scoring 0.5 or more. Only those nine classes are scored.
+
+    source ~/.surmap-keys
+    SURMAP_EVAL_MAX_IMAGES=300 SURMAP_LIVE_MODAL=1 \
+        uv run python scripts/eval_disaster_labelling.py --provider modal --limit 300 \
+        --out ~/surmap-eval/modal-sam-300.json

@@ -1,7 +1,10 @@
 """``scripts/eval_disaster_labelling.py``: LADI v2 per-class F1 for the Muse clients.
 
-A model call needs the provider's live flag (``SURMAP_LIVE_META=1`` or
-``SURMAP_LIVE_BASETEN=1``) and its key. ``--limit`` may not exceed
+A model call needs the provider's live flag (``SURMAP_LIVE_META=1``,
+``SURMAP_LIVE_BASETEN=1``, or ``SURMAP_LIVE_MODAL=1``) and its key or URL.
+``--provider modal`` scores SAM 3.1 on Modal with one text prompt per
+class (``surmap.evaluation.sam_ladi``), only on the classes it has a
+prompt for. ``--limit`` may not exceed
 ``SURMAP_EVAL_MAX_IMAGES`` (default 20), and the usual
 ``SURMAP_BUDGET_<PROVIDER>_CALLS`` / ``_TOKENS`` caps apply per call.
 ``--download-only`` fetches and caches images without any model call.
@@ -27,10 +30,15 @@ from surmap.evaluation.ladi import (
     render_table,
     report_json,
 )
+from surmap.evaluation.sam_ladi import ModalSamLadiClassifier
 
 DEFAULT_MAX_IMAGES = 20
-_LIVE_FLAGS = {"meta": "SURMAP_LIVE_META", "baseten": "SURMAP_LIVE_BASETEN"}
-_KEYS = {"meta": "MODEL_API_KEY", "baseten": "BASETEN_API_KEY"}
+_LIVE_FLAGS = {
+    "meta": "SURMAP_LIVE_META",
+    "baseten": "SURMAP_LIVE_BASETEN",
+    "modal": "SURMAP_LIVE_MODAL",
+}
+_KEYS = {"meta": "MODEL_API_KEY", "baseten": "BASETEN_API_KEY", "modal": "MODAL_SAM_URL"}
 
 ClassifierFactory = Callable[[str], LadiClassifier]
 SampleLoader = Callable[..., list[LadiSample]]
@@ -75,6 +83,8 @@ def default_classifier(provider: str, reasoning_effort: str = "low") -> LadiClas
     if provider == "baseten":
         max_tokens = 4096 if reasoning_effort == "low" else 8192
         return BasetenLadiClassifier(reasoning_effort=reasoning_effort, max_tokens=max_tokens)
+    if provider == "modal":
+        return ModalSamLadiClassifier()
     raise EvalConfigError(f"unknown provider {provider!r}")
 
 
@@ -82,9 +92,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--provider",
-        choices=("meta", "baseten", "both"),
+        choices=("meta", "baseten", "modal", "both"),
         default="meta",
-        help="which Muse client to score (default meta)",
+        help="which model to score: Muse clients or SAM 3.1 on Modal (default meta)",
     )
     parser.add_argument("--split", choices=("train", "validation", "test"), default="test")
     parser.add_argument("--limit", type=int, default=10, help="images to score (default 10)")
@@ -131,7 +141,11 @@ def main(
         def on_error(sample: LadiSample, exc: Exception) -> None:
             print(f"  image {sample.index}: {type(exc).__name__}: {exc}", file=sys.stderr)
 
-        scores, rows = evaluate(samples, classifier, on_error=on_error)
+        scored = samples
+        classes = getattr(classifier, "classes", None)
+        if isinstance(classes, frozenset):
+            scored = [LadiSample(s.split, s.index, s.jpeg, s.labels & classes) for s in samples]
+        scores, rows = evaluate(scored, classifier, on_error=on_error)
         print(render_table(scores, provider=provider, model=classifier.model))
         report = report_json(scores, provider=provider, model=classifier.model)
         report["split"] = args.split
