@@ -174,7 +174,7 @@ def farthest_from(decoded: NDArray[np.float64], cloud: NDArray[np.float32]) -> f
     origin = cloud.astype(np.float64).mean(axis=0)
     a, b = decoded - origin, cloud.astype(np.float64) - origin
     squared = (a * a).sum(axis=1)[:, None] + (b * b).sum(axis=1)[None, :] - 2.0 * a @ b.T
-    return float(math.sqrt(max(float(squared.min(axis=1).max()), 0.0)))
+    return float(math.sqrt(max(float(np.max(squared.min(axis=1))), 0.0)))
 
 
 def relations(found: tuple[Neighbour, ...]) -> list[Relation]:

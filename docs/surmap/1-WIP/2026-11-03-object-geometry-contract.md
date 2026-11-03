@@ -17,7 +17,7 @@
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
-- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · 46/46 green (`uv run pytest -q tests/test_objects3d.py`) — commit 3; gates: ruff format and check pass, mypy fails only at `tests/test_objects3d.py:177` (red-step test, not edited)
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · 46/46 green (`uv run pytest -q tests/test_objects3d.py`) — commit 3; typing fix in the red test at line 177 in commit 4; gates: ruff format, ruff check and mypy pass
   - [x] Milestone 1: `summarize` — centroid, AABB, PCA OBB, height, footprint, shape class
   - [x] Milestone 2: `neighbours` — distance and relation between summaries
   - [x] Milestone 3: `encode_obj_text` / `decode_obj_text` with voxel downsampling and cap
@@ -203,3 +203,6 @@ its header, JSON chunk and BIN length.
   `ShapeClass` ↔ `Shape` and `Relation` ↔ `Relation` (no `*_UNSPECIFIED` here);
   `confidence`, `t_first_ns`, `t_last_ns`, `geometry_uri` are `None`-able here but plain scalars
   in proto3 (None → 0 / "").
+- **Typing fix in the red test (commit 4)** — `tests/test_objects3d.py:177` called `.max()` with no
+  argument on a numpy array, which the strict mypy stubs reject. It is now `np.max(...)` on the same
+  array: same value, same assertion, no test weakened. Supervisor-approved; the only edit to a red-step test.
