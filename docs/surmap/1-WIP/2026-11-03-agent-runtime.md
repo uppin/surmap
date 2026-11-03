@@ -17,7 +17,7 @@
   - [x] Create failing acceptance tests
   - [x] Run acceptance tests (verify they fail)
   - [x] TDD Red — write failing unit/integration tests
-- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · 42/42 green; full suite 1441 passed, 30 skipped; ruff format/check and mypy strict clean
+- [wf 3] ✅ 2026-11-03 `/green` Green — implement until every red test passes · 42/42 green @ 44a1721; full suite 1441 passed, 30 skipped; ruff format/check and mypy strict clean
   - [x] Milestone 1: `langgraph`, `langchain-core` added to `pyproject.toml` / `uv.lock`; mypy strict clean
   - [x] Milestone 2: `JobRunner` — policy resolution, sync wait with timeout, FAIL/DETACH, ASYNC, cancel, notices
   - [x] Milestone 3: graph — model/tools/cut_off nodes, pending-message drain, round and repeated-failure caps
