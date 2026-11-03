@@ -7,7 +7,10 @@
 //! is encoded, uploaded, or sent to a backend.
 
 mod calibration;
+mod flight;
+mod scene_manifest;
 mod ui;
+mod wire;
 
 use bevy_rapier3d::prelude::*;
 use bevy::camera::RenderTarget;
