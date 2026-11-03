@@ -7,7 +7,9 @@
 //! profile renders the left/right feeds RTAB-Map receives.
 
 mod calibration;
+mod fire;
 mod flight;
+mod fxdef;
 mod look;
 mod record;
 mod rig;
@@ -16,6 +18,7 @@ mod shots;
 mod sky;
 mod textures;
 mod ui;
+mod wind;
 mod wire;
 mod world;
 

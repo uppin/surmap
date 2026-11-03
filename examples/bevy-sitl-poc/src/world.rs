@@ -213,6 +213,7 @@ impl Builder<'_, '_, '_> {
             Element::CollapsedBuilding(e) => self.collapsed(e),
             Element::Building(e) => self.building(e),
             Element::Person(e) => self.person(e),
+            Element::Vegetation(_) => {}
         }
     }
 

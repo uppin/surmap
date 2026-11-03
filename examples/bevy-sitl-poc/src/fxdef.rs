@@ -1,0 +1,149 @@
+//! Declarative effect and species definitions (`assets/fx/*.fx.json`,
+//! `assets/species/*.species.json`): every visual number of weather, fire and vegetation lives in
+//! these runtime files, never in Rust.
+
+#![allow(dead_code)]
+
+use serde::Deserialize;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Blend {
+    Additive,
+    Alpha,
+}
+
+/// One colour stop: position 0..1 over the lifetime, sRGB colour, HDR intensity, alpha.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub struct ColourStop(pub f32, pub [f32; 3], pub f32, pub f32);
+
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub struct Motion {
+    /// Initial upward speed, m/s.
+    pub up: f32,
+    /// Fraction of the wind velocity added to the particle's.
+    pub wind_coupling: f32,
+    /// Vertical acceleration, m/s² (negative falls).
+    #[serde(default)]
+    pub gravity: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Spawn {
+    PerMetre(f32),
+    PerSecond(f32),
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct FxDef {
+    pub colour_gradient: Vec<ColourStop>,
+    pub size_m: [f32; 2],
+    pub lifetime_s: [f32; 2],
+    pub motion: Motion,
+    pub blend: Blend,
+    pub spawn: Spawn,
+    pub max_particles: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Generator {
+    Pine,
+    Grass,
+}
+
+/// Multipliers on Feronia's wind parameters for one species (stiff trunks sway less).
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub struct WindDamping {
+    pub strength: f32,
+    pub micro_strength: f32,
+    pub s_curve_strength: f32,
+    pub bop_strength: f32,
+    pub twist_strength: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct SpeciesDef {
+    pub generator: Generator,
+    /// sRGB stops the generator's vertex colours sample (bark first for pines).
+    pub palette: Vec<[f32; 3]>,
+    pub burnt_palette: Vec<[f32; 3]>,
+    pub height_m: [f32; 2],
+    pub wind_damping: WindDamping,
+    pub lod_distance_m: f32,
+}
+
+impl FxDef {
+    /// Parse and validate: at least two stops in 0..=1, ascending; sizes, lifetimes and the
+    /// particle budget positive; lifetime min ≤ max.
+    pub fn from_json(text: &str) -> Result<Self, String> {
+        let _ = text;
+        todo!("parse and validate an effect")
+    }
+}
+
+impl SpeciesDef {
+    /// Parse and validate: a non-empty palette, heights 0 < min ≤ max, a positive LOD distance.
+    pub fn from_json(text: &str) -> Result<Self, String> {
+        let _ = text;
+        todo!("parse and validate a species")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shipped(path: &str) -> String {
+        std::fs::read_to_string(format!("{}/assets/{path}", env!("CARGO_MANIFEST_DIR")))
+            .unwrap_or_else(|e| panic!("assets/{path} is shipped: {e}"))
+    }
+
+    #[test]
+    fn every_shipped_effect_is_a_valid_definition() {
+        for name in ["flames", "embers", "smoke", "rain"] {
+            FxDef::from_json(&shipped(&format!("fx/{name}.fx.json")))
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+        }
+    }
+
+    #[test]
+    fn flames_are_additive_and_lean_with_the_wind_while_smoke_is_alpha_blended_and_drifts() {
+        let flames = FxDef::from_json(&shipped("fx/flames.fx.json")).expect("flames");
+        let smoke = FxDef::from_json(&shipped("fx/smoke.fx.json")).expect("smoke");
+
+        assert_eq!((flames.blend, smoke.blend), (Blend::Additive, Blend::Alpha));
+        assert!(
+            flames.motion.wind_coupling > 0.0
+                && smoke.motion.wind_coupling >= flames.motion.wind_coupling
+        );
+    }
+
+    #[test]
+    fn every_shipped_species_is_a_valid_definition() {
+        for name in ["pine", "dry_grass"] {
+            SpeciesDef::from_json(&shipped(&format!("species/{name}.species.json")))
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+        }
+    }
+
+    #[test]
+    fn a_gradient_out_of_order_is_refused() {
+        let text = r#"{"colour_gradient": [[0.8, [1,1,1], 1, 1], [0.2, [1,1,1], 1, 0]],
+            "size_m": [1, 2], "lifetime_s": [1, 2], "motion": {"up": 1, "wind_coupling": 0.5},
+            "blend": "alpha", "spawn": {"per_second": 10}, "max_particles": 100}"#;
+
+        assert!(FxDef::from_json(text).is_err());
+    }
+
+    #[test]
+    fn a_species_taller_at_its_minimum_than_its_maximum_is_refused() {
+        let text = r#"{"generator": "pine", "palette": [[0.4,0.3,0.2]], "burnt_palette": [[0.1,0.1,0.1]],
+            "height_m": [15, 9], "lod_distance_m": 40,
+            "wind_damping": {"strength": 0.4, "micro_strength": 0.65, "s_curve_strength": 0.45,
+                             "bop_strength": 0.3, "twist_strength": 0.4}}"#;
+
+        assert!(SpeciesDef::from_json(text).is_err());
+    }
+}

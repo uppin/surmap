@@ -109,3 +109,30 @@ def test_a_capture_without_a_camera_profile_has_none(tmp_path: Path) -> None:
 
     # Then it says so rather than inventing one
     assert capture.camera is None
+
+
+def test_a_capture_carries_the_fire_perimeter_per_frame(tmp_path: Path) -> None:
+    # Given a recorded session whose recorder wrote the fire front beside its frames
+    recorder = CaptureRecorder(tmp_path, a_calibration(), objects=(a_car(),))
+    recorder.record_pair(a_pair(1, 1_000_000_000, 0.0))
+    recorder.finish()
+    front = [[-19.0, 60.0], [-20.0, 61.0], [-21.0, 60.0], [-20.0, 59.0]]
+    (tmp_path / "fire_perimeter.jsonl").write_text(
+        json.dumps({"t_ns": 1_000_000_000, "fires": [{"id": "front-1", "polygon_enu": front}]})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    # When it is loaded
+    capture = load_bevy_capture(tmp_path)
+
+    # Then each frame's fire fronts are there by id
+    assert capture.fire_perimeters[1_000_000_000]["front-1"] == tuple(tuple(p) for p in front)
+
+
+def test_a_capture_without_fire_has_no_perimeters(tmp_path: Path) -> None:
+    recorder = CaptureRecorder(tmp_path, a_calibration(), objects=(a_car(),))
+    recorder.record_pair(a_pair(1, 1_000_000_000, 0.0))
+    recorder.finish()
+
+    assert load_bevy_capture(tmp_path).fire_perimeters == {}

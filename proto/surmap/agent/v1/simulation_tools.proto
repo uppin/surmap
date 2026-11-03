@@ -34,7 +34,9 @@ service SimulationTools {
   }
 
   // Creates a scenario from a preset ("earthquake-block": the collapsed city block;
-  // "empty-lot": camera, sky and bare ground) and returns it at version 1.
+  // "empty-lot": camera, sky and bare ground; "wildfire-edge": pine stands and grass with a
+  // fire at their upwind edge; "flood-street": the block in rain and fog) and returns it at
+  // version 1.
   rpc CreateScenario(CreateScenarioRequest) returns (ScenarioResponse) {
     option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
   }
@@ -46,13 +48,31 @@ service SimulationTools {
   }
 
   // Adds one built element to a scenario: a box (ground, road, water, pad), an intact
-  // building with windows, a collapsed building, or a person.
+  // building with windows, a collapsed building, a person, or a stand of vegetation that
+  // sways in the wind.
   rpc AddElement(AddElementRequest) returns (ScenarioResponse) {
     option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
   }
 
   // Removes an element or a placed model from a scenario by its id.
   rpc RemoveElement(RemoveElementRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Sets a scenario's weather: rain (mm/h), fog visibility and the one wind every tree, fire
+  // and smoke plume follows (where it blows from, clockwise from north; speed and gusts).
+  rpc SetWeather(SetWeatherRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Adds a wildfire: ignition point, start time, spread rate and maximum radius. The front
+  // spreads downwind with the scenario's wind; flames, embers and smoke follow it.
+  rpc AddFire(AddFireRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Removes a fire from a scenario by its id.
+  rpc RemoveFire(RemoveFireRequest) returns (ScenarioResponse) {
     option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
   }
 
@@ -156,7 +176,7 @@ message ListAssetsResponse {
 message CreateScenarioRequest {
   // A human name; the scenario id is derived from it.
   string name = 1;
-  // "earthquake-block" or "empty-lot".
+  // "earthquake-block", "empty-lot", "wildfire-edge" or "flood-street".
   string preset = 2;
 }
 
@@ -217,6 +237,20 @@ message PersonElement {
   string coat = 3;
 }
 
+message VegetationElement {
+  string id = 1;
+  // A species file, e.g. "species/pine.species.json" or "species/dry_grass.species.json".
+  string species = 2;
+  // The stand's south-west corner is position − size/2: it is centred here.
+  EnuPoint position = 3;
+  double size_east_m = 4;
+  double size_north_m = 5;
+  // Plants per 100 m² (pines: 1–5, grass: 20–50).
+  double density_per_100m2 = 6;
+  // Lays out the stand; the same seed gives the same stand.
+  int64 seed = 7;
+}
+
 message AddElementRequest {
   string scenario_id = 1;
   oneof element {
@@ -224,12 +258,46 @@ message AddElementRequest {
     BuildingElement building = 3;
     CollapsedBuildingElement collapsed_building = 4;
     PersonElement person = 5;
+    VegetationElement vegetation = 6;
   }
 }
 
 message RemoveElementRequest {
   string scenario_id = 1;
   string element_id = 2;
+}
+
+message SetWeatherRequest {
+  string scenario_id = 1;
+  // Rain in mm/h; 0 for dry.
+  double rain_mm_h = 2;
+  // Visibility through fog, metres; the scenario's environment value when absent.
+  optional double fog_visibility_m = 3;
+  // Where the wind blows from, degrees clockwise from north (270 = a westerly).
+  double wind_from_deg = 4;
+  double wind_speed_m_s = 5;
+  // Gust amplitude on top of the speed, m/s.
+  double wind_gust_m_s = 6;
+}
+
+message AddFireRequest {
+  string scenario_id = 1;
+  // The id other tools use.
+  string id = 2;
+  EnuPoint ignition = 3;
+  // Seconds into the simulation when it ignites.
+  double start_s = 4;
+  // Spread rate in still air, m/s (grass fires: 0.05–0.3).
+  double spread_m_s = 5;
+  // The front never grows past this distance from the ignition, metres.
+  double max_radius_m = 6;
+  // Draw a smoke plume; true when absent.
+  optional bool smoke = 7;
+}
+
+message RemoveFireRequest {
+  string scenario_id = 1;
+  string fire_id = 2;
 }
 
 message GetScenarioRequest {
