@@ -9,24 +9,32 @@
 
 use bevy::asset::io::Reader;
 use bevy::asset::{AssetLoader, LoadContext};
-use bevy::camera::primitives::Aabb;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
-use bevy::scene::SceneInstanceReady;
 use bevy_feronia::extension;
 use bevy_feronia::prelude::*;
 use bevy_rapier3d::prelude::*;
 
 use std::collections::BTreeMap;
 
+use crate::actors::{self, Figure};
+use crate::behaviour::Tree;
 use crate::scene_manifest::{
-    BoxElement, Building, ColliderKind, CollapsedBuilding, Element, Environment, ManifestError, ModelInstance, PbrTextureSet,
+    BoxElement, Building, CollapsedBuilding, Element, Environment, ManifestError, ModelInstance, PbrTextureSet,
     Person, SceneManifest,
 };
 use crate::rig::{ProfileAsset, RigSource};
 use crate::shots::RunMode;
 use crate::sky::SkySource;
 use crate::textures::{load_texture_set, tiled_material, TextureSetHandles};
+use crate::vegetation::{plan_stand, PendingStands};
+use crate::wildfire::Wildfire;
 use crate::wire::GroundTruthObject;
+
+mod models;
+
+use models::on_model_ready;
+pub use models::resolve_models;
 
 #[derive(Asset, TypePath, Debug)]
 pub struct ManifestAsset(pub SceneManifest);
@@ -117,6 +125,8 @@ impl Seeded {
 /// The manifest's materials, with their maps loading.
 pub struct Library {
     defs: BTreeMap<String, (PbrTextureSet, Option<TextureSetHandles>)>,
+    /// While it rains, these materials look wet: (keys, roughness factor, colour factor).
+    wet: Option<(Vec<String>, f32, f32)>,
 }
 
 impl Library {
@@ -129,27 +139,48 @@ impl Library {
             }
             defs.insert(key.clone(), (def.clone(), handles));
         }
-        Self { defs }
+        let wet = manifest
+            .weather
+            .as_ref()
+            .filter(|w| w.rain_mm_h > 0.0)
+            .map(|w| (w.wet_materials.clone(), w.wet_roughness, w.wet_darkening));
+        Self { defs, wet }
     }
 
     /// `key` tiled over `size_m` of surface, tinted, optionally re-scaled.
     fn material(&self, key: &str, size_m: Vec2, tint: Option<[f32; 3]>, uv_scale: Option<f32>) -> StandardMaterial {
         let (def, handles) = &self.defs[key];
         let tint = tint.map_or(Color::WHITE, |[r, g, b]| Color::srgb(r, g, b));
-        tiled_material(def, handles.as_ref(), size_m, tint, uv_scale)
+        let mut material = tiled_material(def, handles.as_ref(), size_m, tint, uv_scale);
+        if let Some((keys, roughness, darkening)) = &self.wet {
+            if keys.iter().any(|k| k == key) {
+                material.perceptual_roughness *= roughness;
+                let c = material.base_color.to_linear();
+                material.base_color = Color::LinearRgba(LinearRgba::new(c.red * darkening, c.green * darkening, c.blue * darkening, c.alpha));
+            }
+        }
+        material
     }
+}
+
+/// What `build_world` reads: the loaded manifests, the asset server and the run mode.
+#[derive(SystemParam)]
+pub struct WorldInputs<'w> {
+    manifests: Res<'w, Assets<ManifestAsset>>,
+    assets: Res<'w, AssetServer>,
+    mode: Res<'w, RunMode>,
 }
 
 pub fn build_world(
     mut commands: Commands,
     mut state: ResMut<SceneState>,
-    manifests: Res<Assets<ManifestAsset>>,
-    assets: Res<AssetServer>,
+    inputs: WorldInputs,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut truth: ResMut<GroundTruth>,
-    mode: Res<RunMode>,
+    mut stands: ResMut<PendingStands>,
 ) {
+    let WorldInputs { manifests, assets, mode } = inputs;
     if state.built {
         return;
     }
@@ -159,7 +190,18 @@ pub fn build_world(
     let profile: Handle<ProfileAsset> = assets.load(camera);
     state.pending.push(profile.clone().untyped());
     commands.insert_resource(RigSource(profile));
-    spawn_sun_and_haze(&mut commands, &assets, &mut state.pending, &manifest.environment);
+    let fog_visibility_m = manifest.weather.as_ref().and_then(|w| w.fog_visibility_m);
+    spawn_sun_and_haze(&mut commands, &assets, &mut state.pending, &manifest.environment, fog_visibility_m);
+    commands.insert_resource(Wildfire::new(manifest.weather.as_ref(), &manifest.fires, &assets, &mut meshes, &mut state.pending));
+    let gait: Handle<actors::FigureAsset> = assets.load("behaviour/person.figure.json");
+    state.pending.push(gait.clone().untyped());
+    commands.insert_resource(actors::FigureLook(gait));
+    commands.insert_resource(actors::Behaviour::new(actors::wind_runner(manifest.weather.as_ref())));
+    for element in &manifest.elements {
+        if let Element::Vegetation(stand) = element {
+            plan_stand(&assets, &mut state.pending, &mut stands, stand);
+        }
+    }
     let mut world = Builder { commands: &mut commands, meshes: &mut meshes, materials: &mut materials, library: &library, truth: &mut truth };
     for element in &manifest.elements {
         world.element(element);
@@ -321,12 +363,22 @@ impl Builder<'_, '_, '_> {
         }
     }
 
+    /// A survivor: a figure whose root stands on the ground, carrying its behaviour tree (if any),
+    /// with the capsule body and the head as its children.
     fn person(&mut self, e: &Person) {
-        let [x, y, z] = e.position_enu;
         let coat = self.materials.add(self.library.material(&e.coat, Vec2::ONE, None, None));
         let skin = self.materials.add(self.library.material(&e.skin, Vec2::ONE, None, None));
-        self.commands.spawn((Mesh3d(self.meshes.add(Capsule3d::new(0.17, 1.05))), MeshMaterial3d(coat), Transform::from_translation(enu(x, y, z + 0.72))));
-        self.commands.spawn((Mesh3d(self.meshes.add(Sphere::new(0.13))), MeshMaterial3d(skin), Transform::from_translation(enu(x, y, z + 1.62))));
+        let body = self.meshes.add(Capsule3d::new(0.17, 1.05));
+        let head = self.meshes.add(Sphere::new(0.13));
+        let tree = e.behaviour.clone().map(|root| Tree { root });
+        let figure = Figure::new(&e.id, e.position_enu, tree);
+        let [x, y, z] = e.position_enu;
+        self.commands
+            .spawn((figure, Visibility::default(), Transform::from_translation(enu(x, y, z))))
+            .with_children(|figure| {
+                figure.spawn((Mesh3d(body), MeshMaterial3d(coat), Transform::from_translation(Vec3::Y * 0.72)));
+                figure.spawn((Mesh3d(head), MeshMaterial3d(skin), Transform::from_translation(Vec3::Y * 1.62)));
+            });
     }
 }
 
@@ -336,7 +388,7 @@ fn bounds(points: impl Iterator<Item = Vec3>) -> (Vec3, Vec3) {
 
 /// Spec §5 sun (elevation, azimuth clockwise from north) with cascaded
 /// shadows, from the manifest's environment.
-fn spawn_sun_and_haze(commands: &mut Commands, assets: &AssetServer, pending: &mut Vec<UntypedHandle>, environment: &Environment) {
+fn spawn_sun_and_haze(commands: &mut Commands, assets: &AssetServer, pending: &mut Vec<UntypedHandle>, environment: &Environment, fog_visibility_m: Option<f32>) {
     let (el, az) = (environment.sun_elevation_deg.to_radians(), environment.sun_azimuth_deg.to_radians());
     let towards_sun = enu(az.sin() * el.cos(), az.cos() * el.cos(), el.sin());
     commands.spawn((
@@ -357,7 +409,7 @@ fn spawn_sun_and_haze(commands: &mut Commands, assets: &AssetServer, pending: &m
         pending.push(equirect.clone().untyped());
         commands.insert_resource(SkySource { equirect, brightness: environment.sky_brightness, baked: false });
     }
-    commands.insert_resource(CameraLook { fog_visibility_m: environment.fog_visibility_m, exposure_ev100: environment.exposure_ev100 });
+    commands.insert_resource(CameraLook { fog_visibility_m: fog_visibility_m.unwrap_or(environment.fog_visibility_m), exposure_ev100: environment.exposure_ev100 });
 }
 
 /// The manifest's haze and exposure, applied to every camera.
@@ -365,99 +417,6 @@ fn spawn_sun_and_haze(commands: &mut Commands, assets: &AssetServer, pending: &m
 pub struct CameraLook {
     pub fog_visibility_m: f32,
     pub exposure_ev100: f32,
-}
-
-/// The scene of a model has spawned; its bounds exist one frame later.
-#[derive(Component)]
-pub struct ModelSpawned;
-
-fn on_model_ready(ready: On<SceneInstanceReady>, mut commands: Commands) {
-    commands.entity(ready.entity).insert(ModelSpawned);
-}
-
-/// Once a model's meshes have bounds: its collider (spec §6) and, for
-/// ground-truth instances, its ENU box — from the meshes' own bounds.
-pub fn resolve_models(
-    mut commands: Commands,
-    models: Query<(Entity, &PendingModel, &Transform), With<ModelSpawned>>,
-    children: Query<&Children>,
-    mesh_parts: Query<(&Mesh3d, Option<&Aabb>, &GlobalTransform)>,
-    meshes: Res<Assets<Mesh>>,
-    mut truth: ResMut<GroundTruth>,
-) {
-    for (root, pending, transform) in &models {
-        let parts: Vec<Entity> = children.iter_descendants(root).filter(|e| mesh_parts.contains(*e)).collect();
-        if parts.is_empty() || parts.iter().any(|e| mesh_parts.get(*e).is_ok_and(|(_, aabb, _)| aabb.is_none())) {
-            continue;
-        }
-        resolve_model(&mut commands, root, pending, transform, &parts, &mesh_parts, &meshes, &mut truth);
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn resolve_model(
-    commands: &mut Commands,
-    root: Entity,
-    pending: &PendingModel,
-    transform: &Transform,
-    parts: &[Entity],
-    mesh_parts: &Query<(&Mesh3d, Option<&Aabb>, &GlobalTransform)>,
-    meshes: &Assets<Mesh>,
-    truth: &mut GroundTruth,
-) {
-    let to_local = transform.compute_affine().inverse();
-    let mut lo = Vec3::splat(f32::MAX);
-    let mut hi = Vec3::splat(f32::MIN);
-    let mut world_lo = Vec3::splat(f32::MAX);
-    let mut world_hi = Vec3::splat(f32::MIN);
-    let mut trimeshes = Vec::new();
-    for &part in parts {
-        let Ok((mesh, Some(aabb), global)) = mesh_parts.get(part) else { continue };
-        let (centre, half) = (Vec3::from(aabb.center), Vec3::from(aabb.half_extents));
-        for sx in [-1.0, 1.0] {
-            for sy in [-1.0, 1.0] {
-                for sz in [-1.0, 1.0] {
-                    let corner = global.transform_point(centre + half * Vec3::new(sx, sy, sz));
-                    world_lo = world_lo.min(corner);
-                    world_hi = world_hi.max(corner);
-                    let local = to_local.transform_point3(corner);
-                    lo = lo.min(local);
-                    hi = hi.max(local);
-                }
-            }
-        }
-        if pending.instance.collider == ColliderKind::Trimesh {
-            if let Some(m) = meshes.get(&mesh.0) {
-                trimeshes.push((part, m.clone()));
-            }
-        }
-    }
-    match pending.instance.collider {
-        ColliderKind::Box if lo.x <= hi.x => {
-            let child = commands
-                .spawn((Collider::cuboid((hi.x - lo.x) / 2.0, (hi.y - lo.y) / 2.0, (hi.z - lo.z) / 2.0), Transform::from_translation((lo + hi) / 2.0)))
-                .id();
-            commands.entity(root).insert(RigidBody::Fixed).add_child(child);
-        }
-        ColliderKind::Trimesh => {
-            commands.entity(root).insert(RigidBody::Fixed);
-            for (part, mesh) in trimeshes {
-                if let Some(collider) = Collider::from_bevy_mesh(&mesh, &ComputedColliderShape::TriMesh(TriMeshFlags::default())) {
-                    commands.entity(part).insert(collider);
-                }
-            }
-        }
-        _ => {}
-    }
-    if pending.instance.ground_truth && world_lo.x <= world_hi.x {
-        truth.0.push(GroundTruthObject {
-            id: pending.instance.id.clone(),
-            kind: pending.instance.kind.clone(),
-            min_enu: [world_lo.x, -world_hi.z, world_lo.y],
-            max_enu: [world_hi.x, -world_lo.z, world_hi.y],
-        });
-    }
-    commands.entity(root).remove::<(PendingModel, ModelSpawned)>();
 }
 
 /// True once the manifest and everything it named have loaded.

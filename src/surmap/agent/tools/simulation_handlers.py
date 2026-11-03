@@ -29,8 +29,14 @@ from surmap.simulation.licences import check_licence
 from surmap.simulation.scenario_manifest import (
     ScenarioInvalid,
     add_element,
+    add_fire,
     add_model,
+    behaviour_of,
     remove_element,
+    remove_fire,
+    set_behaviour,
+    set_weather,
+    update_behaviour_node,
 )
 from surmap.simulation.scenario_store import (
     LicenceRefused,
@@ -97,6 +103,12 @@ def simulation_tool_handlers(
         "AddModel": bind(add_model_tool),
         "AddElement": bind(add_element_tool),
         "RemoveElement": bind(remove_element_tool),
+        "SetWeather": bind(set_weather_tool),
+        "AddFire": bind(add_fire_tool),
+        "RemoveFire": bind(remove_fire_tool),
+        "SetBehaviour": bind(set_behaviour_tool),
+        "UpdateBehaviourNode": bind(update_behaviour_node_tool),
+        "GetBehaviour": bind(get_behaviour),
         "GetScenario": bind(get_scenario),
         "ListScenarios": bind(list_scenarios),
     }
@@ -282,10 +294,21 @@ def _element(request: pb.AddElementRequest) -> dict[str, object]:
             "id": person.id,
             "position_enu": _xyz(person.position),
             "coat": person.coat,
-            "skin": "skin",
+            "skin": person.skin or "skin",
+        }
+    if which == "vegetation":
+        stand = request.vegetation
+        return {
+            "kind": "vegetation",
+            "id": stand.id,
+            "species": stand.species,
+            "position_enu": _xyz(stand.position),
+            "size_m": [stand.size_east_m, stand.size_north_m],
+            "density_per_100m2": stand.density_per_100m2,
+            "seed": stand.seed,
         }
     raise ConnectError(
-        Code.INVALID_ARGUMENT, "give one of box, building, collapsed_building, person"
+        Code.INVALID_ARGUMENT, "give one of box, building, collapsed_building, person, vegetation"
     )
 
 
@@ -301,6 +324,100 @@ async def remove_element_tool(
 ) -> pb.ScenarioResponse:
     return await _edit(
         tooling, request.scenario_id, lambda s: remove_element(s.manifest, request.element_id)
+    )
+
+
+async def set_weather_tool(
+    request: pb.SetWeatherRequest, tooling: SimulationTooling
+) -> pb.ScenarioResponse:
+    """`SetWeather`: the scenario's rain, fog visibility and one wind."""
+    fog = request.fog_visibility_m if request.HasField("fog_visibility_m") else None
+    return await _edit(
+        tooling,
+        request.scenario_id,
+        lambda s: set_weather(
+            s.manifest,
+            rain_mm_h=request.rain_mm_h,
+            fog_visibility_m=fog,
+            wind_from_deg=request.wind_from_deg,
+            wind_speed_m_s=request.wind_speed_m_s,
+            wind_gust_m_s=request.wind_gust_m_s,
+        ),
+    )
+
+
+async def add_fire_tool(
+    request: pb.AddFireRequest, tooling: SimulationTooling
+) -> pb.ScenarioResponse:
+    """`AddFire`: a wildfire that spreads downwind from its ignition point."""
+    fire: dict[str, object] = {
+        "id": request.id,
+        "ignition_enu": _xyz(request.ignition),
+        "start_s": request.start_s,
+        "spread_m_s": request.spread_m_s,
+        "max_radius_m": request.max_radius_m,
+        "smoke": request.smoke if request.HasField("smoke") else True,
+    }
+    return await _edit(tooling, request.scenario_id, lambda s: add_fire(s.manifest, fire))
+
+
+async def remove_fire_tool(
+    request: pb.RemoveFireRequest, tooling: SimulationTooling
+) -> pb.ScenarioResponse:
+    return await _edit(
+        tooling, request.scenario_id, lambda s: remove_fire(s.manifest, request.fire_id)
+    )
+
+
+def _tree_json(text: str, what: str) -> dict[str, object]:
+    """A JSON object from a request's text; anything else is an invalid argument."""
+    try:
+        value: object = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ConnectError(Code.INVALID_ARGUMENT, f"{what} is not JSON: {exc.msg}") from exc
+    if not isinstance(value, dict):
+        raise ConnectError(Code.INVALID_ARGUMENT, f"{what} must be a JSON object")
+    return {str(k): v for k, v in value.items()}
+
+
+async def set_behaviour_tool(
+    request: pb.SetBehaviourRequest, tooling: SimulationTooling
+) -> pb.ScenarioResponse:
+    """`SetBehaviour`: a person's tree, or the wind's, replaced whole."""
+    tree = _tree_json(request.tree_json, "the behaviour tree")
+    return await _edit(
+        tooling,
+        request.scenario_id,
+        lambda s: set_behaviour(s.manifest, request.target_id, tree),
+    )
+
+
+async def update_behaviour_node_tool(
+    request: pb.UpdateBehaviourNodeRequest, tooling: SimulationTooling
+) -> pb.ScenarioResponse:
+    """`UpdateBehaviourNode`: the node with that id, in a target's tree, replaced."""
+    node = _tree_json(request.node_json, "the behaviour node")
+    return await _edit(
+        tooling,
+        request.scenario_id,
+        lambda s: update_behaviour_node(s.manifest, request.target_id, request.node_id, node),
+    )
+
+
+async def get_behaviour(
+    request: pb.GetBehaviourRequest, tooling: SimulationTooling
+) -> pb.BehaviourResponse:
+    """`GetBehaviour`: a target's tree as JSON, empty when it has none."""
+
+    def read() -> tuple[int, dict[str, object] | None]:
+        scenario = tooling.store.scenario(request.scenario_id)
+        return scenario.version, behaviour_of(scenario.manifest, request.target_id)
+
+    version, tree = await _blocking(read)
+    return pb.BehaviourResponse(
+        target_id=request.target_id,
+        tree_json="" if tree is None else json.dumps(tree),
+        version=version,
     )
 
 

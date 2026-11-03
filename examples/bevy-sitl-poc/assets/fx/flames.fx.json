@@ -1,0 +1,93 @@
+{
+  "colour_gradient": [
+    [
+      0.0,
+      [
+        1.0,
+        0.7,
+        0.3
+      ],
+      3.0,
+      0.0
+    ],
+    [
+      0.12,
+      [
+        1.0,
+        0.55,
+        0.14
+      ],
+      2.5,
+      0.95
+    ],
+    [
+      0.55,
+      [
+        0.92,
+        0.25,
+        0.04
+      ],
+      1.2,
+      0.75
+    ],
+    [
+      1.0,
+      [
+        0.25,
+        0.06,
+        0.02
+      ],
+      0.3,
+      0.0
+    ]
+  ],
+  "size_m": [
+    1.0,
+    2.6
+  ],
+  "lifetime_s": [
+    0.5,
+    0.9
+  ],
+  "motion": {
+    "up": 2.5,
+    "wind_coupling": 0.6,
+    "gravity": 0.0
+  },
+  "blend": "additive",
+  "spawn": {
+    "per_metre": 16.0
+  },
+  "max_particles": 48000,
+  "emitter_spacing_m": 2.0,
+  "refresh_s": 0.5,
+  "ground": {
+    "height_m": 0.02,
+    "colour": [
+      0.05,
+      0.045,
+      0.04
+    ],
+    "roughness": 1.0,
+    "glow_width_m": 1.5,
+    "glow_colour": [
+      1.0,
+      0.35,
+      0.06
+    ],
+    "glow_intensity": 2.5
+  },
+  "light": {
+    "colour": [
+      1.0,
+      0.55,
+      0.2
+    ],
+    "height_m": 2.0,
+    "lumens_per_m": 2000000.0,
+    "range_m": 60.0
+  },
+  "stretch": 1.8,
+  "shape": "soft_disc",
+  "softness": 0.7
+}

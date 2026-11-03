@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from PIL import Image
@@ -28,6 +28,14 @@ class BevyCapture:
     frames: tuple[CapturedFrame, ...]
     # The renderer's exact profile (`camera.json`), when the recorder left one.
     camera: CameraProfile | None = None
+    # Each frame's fire fronts (ENU polygons by fire id), keyed by `t_ns`; empty without fire.
+    fire_perimeters: dict[int, dict[str, tuple[tuple[float, float], ...]]] = field(
+        default_factory=dict
+    )
+    # Each frame's moving bodies (ENU, by id) and the wind's velocity (ENU m/s), keyed by `t_ns`;
+    # empty without an `object_tracks.jsonl`.
+    object_tracks: dict[int, dict[str, Vec3]] = field(default_factory=dict)
+    wind: dict[int, tuple[float, float]] = field(default_factory=dict)
 
 
 class CaptureRecorder:
@@ -225,6 +233,75 @@ def load_bevy_capture(root: Path) -> BevyCapture:
         frames.append(CapturedFrame(pair=pair, pose_enu=pose))
     profile_path = root / "camera.json"
     camera = load_camera_profile(profile_path) if profile_path.is_file() else None
+    object_tracks, wind = _load_object_tracks(root / "object_tracks.jsonl")
     return BevyCapture(
-        calibration=calibration, objects=tuple(objects), frames=tuple(frames), camera=camera
+        calibration=calibration,
+        objects=tuple(objects),
+        frames=tuple(frames),
+        camera=camera,
+        fire_perimeters=_load_fire_perimeters(root / "fire_perimeter.jsonl"),
+        object_tracks=object_tracks,
+        wind=wind,
     )
+
+
+def _load_object_tracks(
+    path: Path,
+) -> tuple[dict[int, dict[str, Vec3]], dict[int, tuple[float, float]]]:
+    """`object_tracks.jsonl`: one `{t_ns, wind_enu, objects}` line per frame; objects by id."""
+    if not path.is_file():
+        return {}, {}
+    tracks: dict[int, dict[str, Vec3]] = {}
+    wind: dict[int, tuple[float, float]] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        frame = _as_obj(json.loads(line), "object track frame")
+        t_ns = int(_num(frame, "t_ns", integer=True))
+        wind[t_ns] = _xy(frame.get("wind_enu"))
+        raw_objects = frame.get("objects")
+        if not isinstance(raw_objects, list):
+            raise ValueError("objects must be a list")
+        by_id: dict[str, Vec3] = {}
+        for raw in raw_objects:
+            body = _as_obj(raw, "tracked object")
+            body_id = body.get("id")
+            if not isinstance(body_id, str):
+                raise ValueError("a tracked object needs an id")
+            by_id[body_id] = _vec(body.get("enu"))
+        tracks[t_ns] = by_id
+    return tracks, wind
+
+
+def _load_fire_perimeters(path: Path) -> dict[int, dict[str, tuple[tuple[float, float], ...]]]:
+    """`fire_perimeter.jsonl`: one `{t_ns, fires: [{id, polygon_enu}]}` line per frame."""
+    if not path.is_file():
+        return {}
+    perimeters: dict[int, dict[str, tuple[tuple[float, float], ...]]] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        frame = _as_obj(json.loads(line), "fire perimeter frame")
+        fires = frame.get("fires")
+        if not isinstance(fires, list):
+            raise ValueError("fires must be a list")
+        by_id: dict[str, tuple[tuple[float, float], ...]] = {}
+        for raw in fires:
+            fire = _as_obj(raw, "fire")
+            fire_id, polygon = fire.get("id"), fire.get("polygon_enu")
+            if not isinstance(fire_id, str) or not isinstance(polygon, list):
+                raise ValueError("a fire needs an id and a polygon_enu list")
+            by_id[fire_id] = tuple(_xy(point) for point in polygon)
+        perimeters[int(_num(frame, "t_ns", integer=True))] = by_id
+    return perimeters
+
+
+def _xy(value: object) -> tuple[float, float]:
+    if not isinstance(value, list) or len(value) != 2:
+        raise ValueError("a polygon vertex is two numbers")
+    x, y = value
+    if isinstance(x, bool) or isinstance(y, bool):
+        raise ValueError("a polygon vertex is two numbers")
+    if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+        raise ValueError("a polygon vertex is two numbers")
+    return (float(x), float(y))

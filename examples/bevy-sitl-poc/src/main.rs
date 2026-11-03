@@ -6,12 +6,14 @@
 //! ground debris, and a stereo rig built from the runtime camera
 //! profile renders the left/right feeds RTAB-Map receives.
 
+mod actors;
 mod behaviour;
 mod building_fire;
 mod building_style;
 mod calibration;
 mod fire;
 mod flight;
+mod fx;
 mod fxdef;
 mod look;
 mod record;
@@ -21,6 +23,8 @@ mod shots;
 mod sky;
 mod textures;
 mod ui;
+mod vegetation;
+mod wildfire;
 mod wind;
 mod wire;
 mod world;
@@ -94,6 +98,22 @@ fn main() {
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(MeshMaterialAssetBackendPlugin)
         .add_plugins(ExtendedWindAffectedScatterPlugin)
+        .add_plugins((
+            InstancedWindAffectedScatterPlugin,
+            bevy_eidolon::prelude::GpuComputeCullCorePlugin,
+            bevy_eidolon::prelude::GpuCullComputePlugin::<InstancedWindAffectedMaterial>::default(),
+            bevy_hanabi::HanabiPlugin,
+        ))
+        .init_asset::<fxdef::FxAsset>()
+        .init_asset_loader::<fxdef::FxLoader>()
+        .init_asset::<fxdef::SpeciesAsset>()
+        .init_asset_loader::<fxdef::SpeciesLoader>()
+        .init_asset::<actors::FigureAsset>()
+        .init_asset_loader::<actors::FigureLoader>()
+        .init_resource::<actors::Behaviour>()
+        .init_resource::<fx::SoftDiscs>()
+        .init_resource::<vegetation::PendingStands>()
+        .init_resource::<vegetation::PineKits>()
         .init_asset::<ManifestAsset>()
         .init_asset_loader::<ManifestLoader>()
         .init_asset::<rig::ProfileAsset>()
@@ -128,10 +148,25 @@ fn main() {
                 scatter_once,
                 update_status,
                 take_shots,
-                record::record_frames.after(fly_scripted),
+                shots::aim_overview_at_fire,
+                shots::aim_people_cam,
+                record::record_frames.after(fly_scripted).after(actors::tick_behaviours),
                 apply_look,
                 sky::bake_sky,
             ),
+        )
+        .add_systems(
+            Update,
+            (
+                actors::tick_behaviours,
+                wildfire::drive_wind,
+                (vegetation::sync_vegetation_wind, vegetation::grow_stands, vegetation::scatter_stands.run_if(in_state(ScatterState::Ready)), vegetation::show_grass, vegetation::burn_vegetation),
+                wildfire::update_fires,
+                wildfire::rain_around_cameras,
+                actors::animate_figures,
+            )
+                .chain()
+                .after(build_world),
         )
         .add_systems(FixedUpdate, apply_thrust)
         .run();

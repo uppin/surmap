@@ -1,7 +1,6 @@
 //! The scenario's one wind: from the manifest's `weather.wind`, it drives Feronia's
 //! vegetation, the fire's spread and the particles' drift.
 
-#![allow(dead_code)]
 
 use bevy::math::Vec2;
 
@@ -19,14 +18,36 @@ pub const GUST_PERIOD_S: f32 = 7.0;
 impl WindModel {
     /// The air's velocity at `t_s`, ENU metres per second, pointing where it blows *to*.
     pub fn velocity_enu(&self, t_s: f32) -> Vec2 {
-        let _ = t_s;
-        todo!("wind velocity")
+        let swell = (std::f32::consts::TAU * t_s / GUST_PERIOD_S).sin();
+        let speed = (self.speed_m_s + self.gust_m_s * swell).max(0.0);
+        self.toward() * speed
+    }
+
+    /// Unit vector (ENU) the wind blows toward: opposite of the compass bearing it comes from.
+    fn toward(&self) -> Vec2 {
+        let from = self.from_deg.to_radians();
+        Vec2::new(-from.sin(), -from.cos())
     }
 
     /// Feronia's wind at `t_s`: Bevy xz direction (east +x, north −z), strength speed/15 in 0..1.
     pub fn feronia(&self, t_s: f32) -> bevy_feronia::prelude::Wind {
-        let _ = t_s;
-        todo!("feronia wind")
+        let velocity = self.velocity_enu(t_s);
+        let direction = self.toward();
+        bevy_feronia::prelude::Wind {
+            direction: Vec2::new(direction.x, -direction.y),
+            strength: (velocity.length() / 15.0).clamp(0.0, 1.0),
+            ..bevy_feronia::prelude::Wind::from(bevy_feronia::prelude::WindPreset::Mild)
+        }
+    }
+}
+
+impl From<&crate::scene_manifest::WindDef> for WindModel {
+    fn from(wind: &crate::scene_manifest::WindDef) -> Self {
+        Self {
+            from_deg: wind.from_deg,
+            speed_m_s: wind.speed_m_s,
+            gust_m_s: wind.gust_m_s,
+        }
     }
 }
 

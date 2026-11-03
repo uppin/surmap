@@ -199,3 +199,21 @@ def test_the_evacuation_preset_is_the_wildfire_edge_with_people_and_a_veering_wi
     wind_tree = behaviour_of(evacuation, "wind")
     assert wind_tree is not None and "set_wind" in str(wind_tree)
     validate_manifest(evacuation)
+
+
+def test_a_near_object_node_has_an_id_and_names_its_body_by_object() -> None:
+    # Given a person whose tree watches a car through a node with an id
+    watch = {"node": "near_object", "id": "watch-car", "object": "car-1", "within_m": 6.0}
+    scenario = set_behaviour(
+        a_lot_with_a_person(), "evacuee-1", {"node": "sequence", "children": [watch, MILL_ABOUT]}
+    )
+
+    # When the agent watches another car instead, by the node's id
+    widened = {"node": "near_object", "id": "watch-car", "object": "car-2", "within_m": 4.0}
+    edited = update_behaviour_node(scenario, "evacuee-1", "watch-car", widened)
+
+    # Then only that node changed, and it still answers to its id
+    assert behaviour_of(edited, "evacuee-1") == {
+        "node": "sequence",
+        "children": [widened, MILL_ABOUT],
+    }

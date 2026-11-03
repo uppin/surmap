@@ -9,6 +9,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages};
 use bevy::render::view::screenshot::{save_to_disk, Screenshot, ScreenshotCaptured};
 
+use crate::actors::Figure;
 use crate::flight::SurveyLoop;
 use crate::record::{RecordPlan, SimTime};
 use crate::look::{photographic, Lens};
@@ -144,9 +145,30 @@ pub fn fly_scripted(
 #[derive(Component)]
 pub struct OverviewCam;
 
+/// The review still of what the rig sees of a fire (screenshot mode only).
+#[derive(Component)]
+pub struct FireEyeCam;
+
+#[derive(Resource)]
+pub struct FireEyeFeed(pub Handle<Image>);
+
+/// Where the fire eye stands relative to the ignition: south, in metres, and its altitude.
+const FIRE_EYE_SOUTH_M: f32 = 40.0;
+const FIRE_EYE_ALTITUDE_M: f32 = 15.0;
+/// Where the people still stands relative to the people's centroid: south-west, in metres (on
+/// the ground), its altitude, and the height of the point it looks at (the people's chests).
+const PEOPLE_EYE_DISTANCE_M: f32 = 25.0;
+const PEOPLE_EYE_ALTITUDE_M: f32 = 12.0;
+const PEOPLE_LOOK_AT_M: f32 = 1.0;
+
+/// The people still's camera (screenshot mode only): it follows the people's centroid.
+#[derive(Component)]
+pub struct PeopleCam;
+
 #[derive(Resource)]
 pub struct Shots {
     overview: Handle<Image>,
+    people: Handle<Image>,
     settled_frames: u32,
     requested: bool,
     captured: u32,
@@ -182,7 +204,61 @@ pub fn setup_overview(mut commands: Commands, mode: Res<RunMode>, mut images: Re
         Transform::from_translation(enu(-40.0, -5.0, 35.0)).looking_at(enu(0.0, 45.0, 0.0), Vec3::Y),
     ));
     photographic(&mut camera, Lens::Still);
-    commands.insert_resource(Shots { overview, settled_frames: 0, requested: false, captured: 0 });
+    let people = shot_target(&mut images, 1280, 720);
+    let mut people_camera = commands.spawn((
+        PeopleCam,
+        Camera3d::default(),
+        Camera { order: 2, ..default() },
+        RenderTarget::Image(people.clone().into()),
+        Projection::Perspective(PerspectiveProjection { fov: 50f32.to_radians(), near: 0.1, far: 600.0, ..default() }),
+        Transform::default(),
+    ));
+    photographic(&mut people_camera, Lens::Still);
+    commands.insert_resource(Shots { overview, people, settled_frames: 0, requested: false, captured: 0 });
+}
+
+/// The people still looks at the people from the south-west, raised. The people walk while the
+/// scene settles, so it follows their centroid every frame rather than aiming once.
+pub fn aim_people_cam(figures: Query<&Figure>, mut camera: Query<&mut Transform, With<PeopleCam>>) {
+    let positions: Vec<Vec2> = figures.iter().map(Figure::position).collect();
+    if positions.is_empty() {
+        return;
+    }
+    let Ok(mut at) = camera.single_mut() else {
+        return;
+    };
+    let centre = positions.iter().copied().sum::<Vec2>() / positions.len() as f32;
+    let back = Vec2::new(-1.0, -1.0).normalize() * PEOPLE_EYE_DISTANCE_M;
+    *at = Transform::from_translation(enu(centre.x + back.x, centre.y + back.y, PEOPLE_EYE_ALTITUDE_M))
+        .looking_at(enu(centre.x, centre.y, PEOPLE_LOOK_AT_M), Vec3::Y);
+}
+
+type OverviewNotEye = (With<OverviewCam>, Without<FireEyeCam>);
+type EyeNotOverview = (With<FireEyeCam>, Without<OverviewCam>);
+
+/// With a fire in the scene the review still looks at it: from the south of the ignition,
+/// raised, towards the downwind side. Re-aimed once, when the manifest has built.
+pub fn aim_overview_at_fire(
+    fires: Option<Res<crate::wildfire::Wildfire>>,
+    mut overview: Query<&mut Transform, OverviewNotEye>,
+    mut eye: Query<(&mut Transform, &mut Camera), EyeNotOverview>,
+    mut aimed: Local<bool>,
+) {
+    let Some(ignition) = fires.as_ref().and_then(|f| f.first_ignition()) else {
+        return;
+    };
+    if *aimed {
+        return;
+    }
+    let (Ok(mut view), Ok((mut eye_at, mut eye_camera))) = (overview.single_mut(), eye.single_mut()) else {
+        return;
+    };
+    *aimed = true;
+    *view = Transform::from_translation(enu(ignition.x - 6.0, ignition.y - 48.0, 24.0))
+        .looking_at(enu(ignition.x + 14.0, ignition.y, 0.0), Vec3::Y);
+    *eye_at = Transform::from_translation(enu(ignition.x, ignition.y - FIRE_EYE_SOUTH_M, FIRE_EYE_ALTITUDE_M))
+        .looking_at(enu(ignition.x, ignition.y, 0.0), Vec3::Y);
+    eye_camera.is_active = true;
 }
 
 /// Frames to wait after everything loaded: mips upload, shadows and TAA settle.
@@ -197,6 +273,9 @@ pub fn take_shots(
     assets: Res<AssetServer>,
     pending: Query<(), With<PendingModel>>,
     feeds: Option<Res<StereoFeeds>>,
+    fire_eye: Option<Res<FireEyeFeed>>,
+    fires: Option<Res<crate::wildfire::Wildfire>>,
+    figures: Query<(), With<Figure>>,
     mut exit: MessageWriter<AppExit>,
 ) {
     let (Some(plan), Some(mut shots), Some(scene)) = (mode.screenshot.as_ref(), shots, scene) else { return };
@@ -206,7 +285,9 @@ pub fn take_shots(
         return;
     }
     let Some(feeds) = feeds else { return };
-    if shots.captured == 3 {
+    let fire_eye = fire_eye.filter(|_| fires.as_ref().is_some_and(|f| f.has_fires()));
+    let people_present = !figures.is_empty();
+    if shots.captured == 3 + u32::from(fire_eye.is_some()) + u32::from(people_present) {
         exit.write(AppExit::Success);
         return;
     }
@@ -225,11 +306,18 @@ pub fn take_shots(
         return;
     }
     std::fs::create_dir_all(&plan.dir).expect("screenshot directory");
-    for (name, screenshot) in [
+    let mut stills = vec![
         ("chase.png", Screenshot::primary_window()),
         ("left.png", Screenshot::image(feeds.left.clone())),
         ("overview.png", Screenshot::image(shots.overview.clone())),
-    ] {
+    ];
+    if let Some(feed) = &fire_eye {
+        stills.push(("fire-eye.png", Screenshot::image(feed.0.clone())));
+    }
+    if people_present {
+        stills.push(("people.png", Screenshot::image(shots.people.clone())));
+    }
+    for (name, screenshot) in stills {
         commands.spawn(screenshot).observe(save_to_disk(plan.dir.join(name))).observe(count_capture);
     }
     shots.requested = true;

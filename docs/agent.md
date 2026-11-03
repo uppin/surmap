@@ -61,6 +61,12 @@ leading comment, and argument descriptions are the field comments.
 | `add_model` | `SimulationTools.AddModel` | SYNC · 10 s · FAIL |
 | `add_element` | `SimulationTools.AddElement` | SYNC · 10 s · FAIL |
 | `remove_element` | `SimulationTools.RemoveElement` | SYNC · 10 s · FAIL |
+| `set_weather` | `SimulationTools.SetWeather` | SYNC · 10 s · FAIL |
+| `add_fire` | `SimulationTools.AddFire` | SYNC · 10 s · FAIL |
+| `remove_fire` | `SimulationTools.RemoveFire` | SYNC · 10 s · FAIL |
+| `set_behaviour` | `SimulationTools.SetBehaviour` | SYNC · 10 s · FAIL |
+| `update_behaviour_node` | `SimulationTools.UpdateBehaviourNode` | SYNC · 10 s · FAIL |
+| `get_behaviour` | `SimulationTools.GetBehaviour` | SYNC · 10 s · FAIL |
 | `get_scenario` | `SimulationTools.GetScenario` | SYNC · 10 s · FAIL |
 | `list_scenarios` | `SimulationTools.ListScenarios` | SYNC · 10 s · FAIL |
 
@@ -185,8 +191,16 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
   assets with every file's SHA-256 under `library/<source>/<id>/`; scenarios with every edit as a
   new version; credits derived from the CC BY assets a scenario uses.
 - **Scenarios** are the simulation's own `scene.json` manifests (`surmap.simulation.scenario_manifest`
-  validates them by the renderer's rules). Presets: `earthquake-block` (the shipped scene) and
-  `empty-lot`.
+  validates them by the renderer's rules). Presets: `earthquake-block` (the shipped scene),
+  `empty-lot`, `wildfire-edge` (pine stands in dry grass, a westerly, a fire at their upwind edge)
+  and `flood-street` (the block in rain and fog).
+- **Weather and fire**: `set_weather` sets rain (mm/h), fog visibility and the one wind (where it
+  blows from, speed, gusts) that sways the vegetation and drives the fire and its smoke;
+  `add_fire` lights a fire (ignition, start, spread rate, maximum radius, smoke) and `remove_fire`
+  removes it by id; `add_element` also takes a `vegetation` stand (species file, centre, size,
+  density, seed). Every edit is a pure function in `scenario_manifest` (`set_weather`, `add_fire`,
+  `remove_fire`), validated before it is stored. Fields and the models behind them:
+  [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *Weather, wind and fire*.
 - **Serving** (`surmap.agent.server.sim_routes`): `/sim/assets/scenarios/<id>.json` (latest
   version), `/sim/assets/library/…`, `/sim/assets/…` (the PoC's assets) and, with `--sim-dist`,
   the built page at `/sim/`; the page opens `?scenario=<id>`. One origin, no CORS.
