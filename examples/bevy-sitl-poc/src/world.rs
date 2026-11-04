@@ -24,6 +24,7 @@ use crate::scene_manifest::{
     BoxElement, Building, CollapsedBuilding, DistrictDef, DroneNest, Element, Environment, ManifestError, ModelInstance,
     PbrTextureSet, Person, SceneManifest, Vehicle,
 };
+use crate::scene_manifest::NEST_PAD_M;
 use crate::rig::{ProfileAsset, RigSource};
 use crate::scene_manifest::{surface_at, surfaces, Surface};
 use crate::shots::RunMode;
@@ -86,6 +87,15 @@ pub struct SceneState {
 /// Ground-truth boxes (ENU) of the objects a region query may target.
 #[derive(Resource, Default)]
 pub struct GroundTruth(pub Vec<GroundTruthObject>);
+
+/// A pad's deck is this thick, m; its top is the nest's deck level.
+const NEST_DECK_M: f32 = 0.05;
+/// The dark rim around the deck, m wide.
+const NEST_RIM_M: f32 = 0.1;
+/// The "H" marking: bar thickness above the deck, bar width and the uprights' length, m.
+const NEST_MARK_M: f32 = 0.01;
+const NEST_MARK_WIDTH_M: f32 = 0.16;
+const NEST_MARK_LENGTH_M: f32 = 1.2;
 
 /// A drone nest's pad as built: its id, the pad's ENU centre at deck level, its heading and the
 /// drones it houses (`DroneNest::drone_ids`). The drones dock from here.
@@ -246,10 +256,13 @@ pub fn build_world(
         districts: &manifest.districts,
         waters: &waters,
         sea,
+        nests: Vec::new(),
     };
     for element in &manifest.elements {
         world.element(element);
     }
+    let nests = world.nests;
+    commands.insert_resource(Nests(nests));
     for instance in &manifest.models {
         let scene = assets.load(GltfAssetLabel::Scene(0).from_asset(instance.glb.clone()));
         state.pending.push(scene.clone().untyped());
@@ -294,6 +307,8 @@ struct Builder<'a, 'w, 's> {
     /// The water boxes vessels float on, and the sea the scene's wind raises over them.
     waters: &'a [Surface],
     sea: SeaState,
+    /// The nests built so far, in manifest order.
+    nests: Vec<Nest>,
 }
 
 impl Builder<'_, '_, '_> {
@@ -431,9 +446,36 @@ impl Builder<'_, '_, '_> {
 
     /// A landing pad at the nest's centre, turned by its yaw: a `NEST_PAD_M` deck, a dark rim and
     /// an "H", tagged `NestPad`, with the nest added to `Nests`.
-    fn nest(&mut self, _e: &DroneNest) {
-        // TODO(pr-1): implement
-        todo!("pr-1: implement")
+    fn nest(&mut self, e: &DroneNest) {
+        let [x, y, z] = e.position_enu;
+        let turn = Quat::from_rotation_y(bevy_yaw(Vec2::from_angle(e.yaw_deg.to_radians())));
+        let paint = |materials: &mut Assets<StandardMaterial>, shade: f32| {
+            materials.add(StandardMaterial { base_color: Color::srgb(shade, shade, shade), perceptual_roughness: 0.9, ..default() })
+        };
+        let (deck_paint, rim_paint, mark_paint) = (paint(self.materials, 0.30), paint(self.materials, 0.06), paint(self.materials, 0.92));
+        let deck = Vec3::new(NEST_PAD_M, NEST_DECK_M, NEST_PAD_M);
+        let rim = Vec3::new(NEST_PAD_M + 2.0 * NEST_RIM_M, NEST_DECK_M, NEST_PAD_M + 2.0 * NEST_RIM_M);
+        let deck_mesh = self.meshes.add(Cuboid::from_size(deck));
+        let rim_mesh = self.meshes.add(Cuboid::from_size(rim));
+        // The "H": two uprights joined by a crossbar, lying on the deck, uprights along north.
+        let bar = |east: f32, north: f32| Vec3::new(east, NEST_MARK_M, north);
+        let marks = [
+            (bar(NEST_MARK_WIDTH_M, NEST_MARK_LENGTH_M), Vec3::new(-NEST_MARK_LENGTH_M / 3.0, 0.0, 0.0)),
+            (bar(NEST_MARK_WIDTH_M, NEST_MARK_LENGTH_M), Vec3::new(NEST_MARK_LENGTH_M / 3.0, 0.0, 0.0)),
+            (bar(2.0 * NEST_MARK_LENGTH_M / 3.0, NEST_MARK_WIDTH_M), Vec3::ZERO),
+        ];
+        let mark_meshes: Vec<(Handle<Mesh>, Vec3)> = marks.iter().map(|(size, at)| (self.meshes.add(Cuboid::from_size(*size)), *at)).collect();
+        self.commands
+            .spawn((NestPad { id: e.id.clone() }, Name::new(format!("Nest {}", e.id)), Visibility::default(), Transform::from_translation(enu(x, y, z)).with_rotation(turn)))
+            .with_children(|pad| {
+                // The deck's top is the nest's deck level; the rim sits a hair lower so it reads as a border.
+                pad.spawn((Mesh3d(deck_mesh), MeshMaterial3d(deck_paint), Transform::from_xyz(0.0, -NEST_DECK_M / 2.0, 0.0), RigidBody::Fixed, Collider::cuboid(deck.x / 2.0, deck.y / 2.0, deck.z / 2.0)));
+                pad.spawn((Mesh3d(rim_mesh), MeshMaterial3d(rim_paint), Transform::from_xyz(0.0, -NEST_DECK_M / 2.0 - 0.01, 0.0)));
+                for (mesh, at) in mark_meshes {
+                    pad.spawn((Mesh3d(mesh), MeshMaterial3d(mark_paint.clone()), Transform::from_translation(at + Vec3::Y * NEST_MARK_M / 2.0)));
+                }
+            });
+        self.nests.push(Nest { id: e.id.clone(), pad_enu: e.position_enu, yaw_deg: e.yaw_deg, drone_ids: e.drone_ids() });
     }
 
     fn person(&mut self, e: &Person) {

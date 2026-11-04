@@ -216,8 +216,16 @@ def _xyz(point: pb.EnuPoint) -> list[float]:
 
 def _drone_nest(nest: pb.DroneNestElement) -> dict[str, object]:
     """The `drone_nest` element of a request: `yaw_deg` and `drones` only when given."""
-    # TODO(pr-1): implement
-    raise NotImplementedError("pr-1: implement")
+    element: dict[str, object] = {
+        "kind": "drone_nest",
+        "id": nest.id,
+        "position_enu": _xyz(nest.position),
+    }
+    if nest.HasField("yaw_deg"):
+        element["yaw_deg"] = nest.yaw_deg
+    if nest.HasField("drones"):
+        element["drones"] = nest.drones
+    return element
 
 
 def _element(request: pb.AddElementRequest) -> dict[str, object]:

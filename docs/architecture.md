@@ -16,7 +16,7 @@ SurMap is a passive payload.
 ```text
 IN SCOPE                          OUT OF SCOPE (deferred)
 ────────────────────────────────  ────────────────────────────────
-stereo + GPS capture              flight control of any kind
+stereo + GPS capture              flight control of any real aircraft
 on-board detection and tracking   autonomous navigation
 3D points of detected objects,
   layered on RTAB-Map's static
@@ -26,11 +26,20 @@ SAM segmentation                  mission orchestration / tasking
 landmark detection                route replanning
 semantic map building             V-JEPA
 map export to base station        Raspberry Pi AI Camera (§2.4)
+simulation only: the agent        PX4 / MAVLink commands, any
+  tasks the simulation's own        flight-controller interface
+  drones (machine 3, §2.3)
 ```
 
-The drone is flown manually or by a separate, existing autopilot.
-SurMap has no write path to any flight controller: no actuator, waypoint,
-or velocity commands exist in any interface below.
+A real drone is flown manually or by a separate, existing autopilot.
+SurMap has no write path to any flight controller: no actuator,
+waypoint, or velocity commands exist in any interface below that reaches
+PX4, MAVLink or an aircraft. The one exception is simulation only: the
+agent tasks the simulation's own drones (§2.3), and the simulation's
+fleet commands exist only between the station and the Bevy simulation
+and have no path to PX4 or any flight controller. Navigation, path
+planning, tasking and route replanning stay out of scope for any real
+aircraft and for the survey pipeline.
 RTAB-Map runs passively on-board: it estimates the camera trajectory so
 point clouds can be registered into one map.
 Its output is never fed back as a control signal.
@@ -77,6 +86,13 @@ Its output is never fed back as a control signal.
   [simulation/px4-sitl.md](simulation/px4-sitl.md). The demo world is a
   fictional civilian earthquake-and-flood block with scoring ground
   truth (map ENU and WGS84): [simulation/disaster-world.md](simulation/disaster-world.md).
+- **Fleet tasking (simulation only):** the agent places drone nests in
+  the Bevy simulation's scene and tasks the simulation's own drones from
+  them: it may launch, route, re-route and recall them. That is the one
+  exception to §1's flight-control line, and it never leaves the
+  simulation: nothing here reaches PX4 or a real flight controller. The
+  survey pipeline consumes the active drone's feed as it would a
+  recorded session.
 - Other simulator options (Isaac Sim, a custom renderer, pure
   rosbag/session replay) and dedicated Machine 3 hardware remain open
   if a different path is needed later.
@@ -259,7 +275,9 @@ Multi-drone map merging is a later design problem.
 
 Produces synthetic `StereoFramePair` + `GpsCheckpoint` + ground-truth
 sessions in exactly the §5 formats, and replays real sessions.
-No other component may have a simulation-only code path.
+No survey, perception or mapping component may have a simulation-only
+code path. Fleet tasking (§2.3) is simulation-only by design and is the
+one named exception.
 
 On the Gazebo/PX4 SITL path, the offline bridge is
 `surmap.simulation` (capture directory → EuRoC `mav0/` + GPS CSV) plus

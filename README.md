@@ -16,7 +16,9 @@ segments it, and the team can ask the finished map questions.
 
 **Scope and safety.** SurMap is a passive observer. A separate pilot or
 autopilot flies the aircraft. SurMap sends no flight commands, does no
-path planning, and has no interface to a flight controller. It does no
+path planning, and has no interface to a flight controller. The one
+exception is simulation only: the agent may task the simulation's own
+drones, and that path never reaches PX4 or any real flight controller. It does no
 facial recognition and no personal identification: a map label such as
 `survivor` is a semantic object class, not an identity.
 

@@ -22,6 +22,7 @@ class Surface:
     """A `water: true` box's footprint and top, as the renderer reads it."""
 
     def __init__(self, box: Mapping[str, object]) -> None:
+        self.id = str(box.get("id"))
         size = _triple(box.get("size_m"))
         position = _triple(box.get("position_enu"))
         self.centre = (position[0], position[1])
@@ -41,8 +42,11 @@ class Surface:
 def water_surfaces(manifest: Mapping[str, object]) -> tuple[Surface, ...]:
     """Every `water: true` box of the scenario, as a surface, in manifest order: what vessels float
     on and what a drone nest may not stand on."""
-    # TODO(pr-1): implement
-    raise NotImplementedError("pr-1: implement")
+    return tuple(
+        Surface(box)
+        for box in object_list(manifest, "elements")
+        if box.get("kind") == "box" and box.get("water") is True
+    )
 
 
 def _triple(value: object) -> tuple[float, float, float]:
@@ -109,9 +113,7 @@ def validate_vessels(manifest: Mapping[str, object]) -> None:
     for box in boxes:
         if box.get("kind") == "box":
             _check_water_flag(box)
-    surfaces = [
-        Surface(box) for box in boxes if box.get("kind") == "box" and box.get("water") is True
-    ]
+    surfaces = water_surfaces(manifest)
     for vehicle in object_list(manifest, "elements"):
         if vehicle.get("kind") != "vehicle":
             continue

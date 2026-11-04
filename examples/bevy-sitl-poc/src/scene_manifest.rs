@@ -26,7 +26,7 @@ pub use water::{surface_at, surfaces, Surface};
 
 pub use buildings::{BuildingFireDef, DistrictDef};
 pub use environment::{Environment, PbrTextureSet};
-pub use fleet::DroneNest;
+pub use fleet::{DroneNest, NEST_PAD_M};
 pub use nature::{FireDef, Vegetation, Weather, WindDef};
 pub use people::Person;
 

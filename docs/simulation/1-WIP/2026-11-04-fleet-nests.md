@@ -12,27 +12,29 @@ PRD: `PRD-2026-11-04-fleet-nests.md` · Discovery: `2026-11-04-fleet-nests-initi
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1) · commit 1 `4a6025b`
+- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1) · commit 1 `02ce7bd`
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ✅ 2026-11-04 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 45 failing (24 acceptance + 21 unit/Rust) — commit 2
+- [wf 2] ✅ 2026-11-04 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 45 failing (24 acceptance + 21 unit/Rust) — commit 2 `c071933`
   - [x] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
   - [x] Stubs this node owns (`DroneNest`, `Element::DroneNest`, `scene_manifest/fleet.rs`, `simulation/fleet_nests.py`, proto `DroneNestElement`)
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) ·
-  - [ ] Rust `scene_manifest.rs`: `Element::DroneNest(DroneNest)`, arms in `id()` / `materials()`; `scene_manifest/fleet.rs` `validate_nests()` called from `from_json`; `DroneNest::drone_ids()`
-  - [ ] Rust `world.rs`: `Builder::nest` spawns the pad (rim, deck, "H"), a `NestPad { id }` component, and the `Nests` resource (id, ENU pad centre, yaw, drone ids)
-  - [ ] Python `simulation/fleet_nests.py`: `validate_nests(manifest)`, `nests_of(manifest) -> tuple[Nest, ...]`; `scenario_manifest.py` `ELEMENT_KINDS` + `validate_manifest` + `element_ids` include nest drone ids
-  - [ ] Python `water.py`: `water_surfaces(manifest)` public (today's private `_Surface`), reused by nests and vessels
-  - [ ] Preset `earthquake-fleet` (3 nests, 5 drones) in `load_presets`; golden `tests/fixtures/sim_scenario/fleet-nests.json`, parsed by Rust
-  - [ ] Proto `DroneNestElement` (`AddElementRequest.drone_nest = 8`); `scripts/gen_agent_rpc.py` regenerated; `_element()` handler arm
-  - [ ] `skills/building-a-simulation-scene/SKILL.md`: when and how to place nests
-  - [ ] Scope amendment: `docs/architecture.md` §1 table + text, §2.3, §4.3; `AGENTS.md` scope guardrail; `README.md:17-20`; `flight.rs:3` doc comment
-  - [ ] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
+- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) · 45/45 green (27 Python + 18 Rust); pytest 2236 passed, cargo 285 passed, wasm check ok in the Green commit
+  - [x] Stack rebased onto `origin/main` (`cf19e50`), published; ancestor gate passed (n1 is the bottom node, base `main`)
+  - [x] Red verified after the rebase: 27 Python + 18 Rust fail for the planned reasons
+  - [x] Rust `scene_manifest.rs`: `Element::DroneNest(DroneNest)`, arms in `id()` / `materials()`; `scene_manifest/fleet.rs` `validate_nests()` called from `from_json`; `DroneNest::drone_ids()`
+  - [x] Rust `world.rs`: `Builder::nest` spawns the pad (rim, deck, "H"), a `NestPad { id }` component, and the `Nests` resource (id, ENU pad centre, yaw, drone ids)
+  - [x] Python `simulation/fleet_nests.py`: `validate_nests(manifest)`, `nests_of(manifest) -> tuple[Nest, ...]`; `scenario_manifest.py` `ELEMENT_KINDS` + `validate_manifest` + `element_ids` include nest drone ids
+  - [x] Python `water.py`: `water_surfaces(manifest)` public (today's private `_Surface`), reused by nests and vessels
+  - [x] Preset `earthquake-fleet` (3 nests, 5 drones) in `load_presets`; golden `tests/fixtures/sim_scenario/fleet-nests.json`, parsed by Rust
+  - [x] Proto `DroneNestElement` (`AddElementRequest.drone_nest = 8`); `scripts/gen_agent_rpc.py` regenerated; `_element()` handler arm
+  - [x] `skills/building-a-simulation-scene/SKILL.md`: when and how to place nests
+  - [x] Scope amendment: `docs/architecture.md` §1 table + text, §2.3, §4.3; `AGENTS.md` scope guardrail; `README.md:17-20`; `flight.rs:3` doc comment
+  - [x] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (tests + a native still of `earthquake-fleet` showing the three pads)
   - [ ] `docs/simulation/bevy-simulation.md` — *Drone nests* section (element table, placement rules, the pad)
@@ -268,6 +270,18 @@ Red-step notes for `[G]`:
 - `water.py`'s `_Surface` is now the public `Surface` (the return type of `water_surfaces`).
 - A collapsed building's top, for the rooftop exception, is not pinned by a test; take
   `z + slabs × slab_thickness_m`.
+
+**Green tree (`[G]`):** `ruff format`, `ruff check --no-cache`, `ruff format --no-cache --check` and
+`uv run mypy` (512 files) clean; `uv run pytest -q` 2236 passed, 38 skipped (2209 + the 27 red);
+`cargo test --locked` 285 passed, 0 failed (267 + the 18 red);
+`cargo check --locked --target wasm32-unknown-unknown` finished, no new warnings. The branch was
+rebased onto `origin/main` `cf19e50` first (the generated `agent_descriptor_set.binpb` conflicted and
+was regenerated with `scripts/gen_agent_rpc.py`); the red tree stayed 27 + 18 red on the new base.
+
+Decided at Green: the nest spacing rule is horizontal (east/north) distance; a water box with a
+collider is checked as water, never as a solid; the pad's materials are plain colours (the nest
+needs nothing from the manifest's `materials`); `element_ids` lists drone ids so an element added
+after a nest is a duplicate, and `remove_element` refuses a drone id (a drone is not an element).
 
 ## Acceptance Tests
 

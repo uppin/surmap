@@ -18,7 +18,8 @@ failing call unchanged.
 - **A new scene**: `create_scenario` with the brief's name and the closest preset —
   `earthquake-block` (collapsed city block), `empty-lot` (sky and bare ground), `wildfire-edge`
   (pine stands in dry grass, a fire at their upwind edge), `wildfire-evacuation` (the edge with
-  people who flee), `flood-street` (the block in rain and fog), `district-showcase` (the four
+  people who flee), `earthquake-fleet` (the block with three drone nests: two on open ground, one
+  on a roof), `flood-street` (the block in rain and fog), `district-showcase` (the four
   building districts) or `downtown-blaze` (a downtown block with a burning glass tower). A preset
   that already holds most of the brief saves many edits; remove what does not fit with
   `remove_element`, `remove_fire` or `remove_district`.
@@ -36,6 +37,13 @@ east; the wind's direction is where it blows *from*, clockwise from north (270 i
   behaviour with `set_behaviour` — e.g. a `selector` that runs `flee_from_fire` when `near_fire`
   and otherwise `wander`s. Read a tree back with `get_behaviour`; change one node with
   `update_behaviour_node`.
+- **Drone nests.** When the brief asks for drones, place 2-4 nests far apart with `add_element`
+  and a `drone_nest`: `position` is the pad's centre — open ground (`up` 0) or the flat top of a
+  standing building (`up` = its roof height; a pad inside a building is refused) — never on water,
+  within 500 m east and north of the origin, at least 6 m from any other nest. `drones` is 1-4
+  (default 1) and names them `<id>-d1` … `<id>-dN`; `yaw_deg` is the way docked drones face. Nests
+  are scene data only: a scenario holds at most 8, and placing one flies nothing. Then
+  `get_scenario` to check each nest and its drone ids.
 - **Weather and fire.** `set_weather` for rain, fog and the one wind every tree, flame and smoke
   plume follows; `add_fire` for a wildfire (ignition, start time, spread rate, maximum radius);
   `add_building_fire` for a fire inside a building on a floor that building has.
@@ -61,7 +69,7 @@ Do not message it to report progress — your final answer reaches it anyway.
 
 ## 4. Check and report
 
-Before you answer, `get_scenario` and read the latest version back: every element, district,
+Before you answer, `get_scenario` and read the latest version back: every element, nest, district,
 fire and behaviour the brief asked for is in the manifest. Then finish with a report of a few
 lines:
 
