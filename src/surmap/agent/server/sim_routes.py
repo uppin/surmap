@@ -8,7 +8,8 @@ Everything the page fetches comes from one origin, so it needs no CORS:
 - `/sim/assets/<path>` — the PoC's own assets (shipped scene, camera profiles, pinned textures);
 - `/sim/export/<id>.zip` — a scenario's bundle (`surmap.simulation.scenario_bundle`), as a download;
 - `POST /sim/import[?into=<id>]` — a bundle stored as `into`'s next version, or as a new scenario
-  (`import_simulation`): 200 with the scenario, 400 for a bad bundle, 404 for an unknown `into`.
+  (`import_simulation`): 200 with the scenario, 400 for a bad bundle, 404 for an unknown `into`;
+- `GET /sim/map/<id>` — the live map of the scenario's flying drone, for the chat (`drone_map`).
 
 A path that would leave its root answers 404.
 """
@@ -23,6 +24,7 @@ from urllib.parse import parse_qs
 
 from surmap.agent.tools.simulation_core import scenario_url
 from surmap.agent.tools.simulation_handlers import SimulationTooling
+from surmap.demo.cloud_view import follow_camera, render_follow_view
 from surmap.rpc.http import HttpRequest, HttpResponse
 from surmap.simulation.asset_sources import AssetSource
 from surmap.simulation.fleet.controller import FleetTiming
@@ -34,6 +36,7 @@ from surmap.simulation.scenario_store import Scenario, ScenarioStore, UnknownRec
 
 SIM_PREFIX = "/sim/"
 IMPORT_PATH = "/sim/import"
+MAP_PREFIX = "/sim/map/"
 _TYPES: Mapping[str, str] = {
     ".html": "text/html; charset=utf-8",
     ".js": "text/javascript",
@@ -151,6 +154,42 @@ def import_simulation(rig: SimulationRig, request: HttpRequest) -> HttpResponse:
         return _plain(400, str(exc))
     body = json.dumps({"scenario": _scenario_json(scenario)}).encode()
     return HttpResponse(status=200, body=body, headers={"content-type": "application/json"})
+
+
+def drone_map(rig: SimulationRig, scenario_id: str) -> HttpResponse:
+    """`GET /sim/map/<id>`: the map of the drone the scenario's bridge page streams now, drawn in
+    the demo 3D pane's Follow view of it (`render_follow_view`), while the fleet's telemetry has it
+    off the ground — 200 `{"drone_id", "phase", "points", "png"}` (base64). 204 while no page
+    streams the scenario, before any frame, or while that drone is docked; 404 for an unknown
+    scenario. A map with no pose yet is drawn from the drone's start."""
+    try:
+        rig.store.scenario(scenario_id)
+    except UnknownRecord:
+        return _not_found()
+    perception = rig.perception.perception(scenario_id)
+    found = perception.drone_map() if perception is not None else None
+    if found is None:
+        return HttpResponse(status=204)
+    phases = {drone.id: drone.phase for drone in rig.fleet.controller(scenario_id).drones()}
+    phase = phases.get(found.drone_id, "docked")
+    if phase == "docked":
+        return HttpResponse(status=204)
+    camera = (
+        follow_camera(found.pose)
+        if found.pose is not None
+        else {"x": 0.0, "z": 0.0, "dx": 0.0, "dz": 1.0}
+    )
+    body = {
+        "drone_id": found.drone_id,
+        "phase": phase,
+        "points": len(found.cloud.points),
+        "png": render_follow_view(found.cloud.points, found.cloud.colors, camera),
+    }
+    return HttpResponse(
+        status=200,
+        body=json.dumps(body).encode(),
+        headers={"content-type": "application/json", "cache-control": "no-store"},
+    )
 
 
 def _export(store: ScenarioStore, scenario_id: str) -> HttpResponse:

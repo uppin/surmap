@@ -57,7 +57,7 @@ interface DatasetJson {
 
 /**
  * The `ChatPort` over the generated `ChatService` and `AgentJobs` clients; plain HTTP calls (the
- * gallery, simulation import) go to `baseUrl`, carrying `token()` as a bearer token when there is one.
+ * gallery, simulation import, the live drone map) go to `baseUrl`, carrying `token()` as a bearer token when there is one.
  */
 export function createConnectChatPort(
   transport: Transport,
@@ -132,6 +132,16 @@ export function createConnectChatPort(
       }
       const body = (await response.json()) as { scenario: SimulationView };
       return body.scenario;
+    },
+    async getDroneMap(scenarioId) {
+      const session = token();
+      const response = await fetch(`${baseUrl.replace(/\/$/, "")}/sim/map/${encodeURIComponent(scenarioId)}`, {
+        headers: session ? { authorization: `Bearer ${session}` } : {},
+      });
+      if (response.status === 204) return null;
+      if (!response.ok) throw new Error(`live drone map failed: ${response.status}`);
+      const body = (await response.json()) as { drone_id: string; phase: string; points: number; png: string };
+      return { droneId: body.drone_id, phase: body.phase, points: body.points, png: body.png };
     },
     async getStationStatus() {
       try {

@@ -30,7 +30,7 @@ from PIL import Image
 from surmap.simulation.bevy_capture import BevyCapture, CapturedFrame, load_bevy_capture
 from surmap.simulation.fleet.perception import DroneCounts, FleetPerception
 from surmap.slam.stream_protocol import OdomUpdate, Rectification
-from surmap.slam.streaming import StreamingRtabmapBackend, stream_image_tag
+from surmap.slam.streaming import MapCloud, StreamingRtabmapBackend, stream_image_tag
 from surmap.types import StereoFramePair
 from tests.fleet_perception_fakes import (
     NE_D1,
@@ -99,6 +99,9 @@ class LockstepBackend:
         self._held.extend(u for u in self.inner.poll_updates() if isinstance(u, OdomUpdate))
         updates, self._held = self._held, []
         return updates
+
+    def map_cloud(self) -> MapCloud:
+        return self.inner.map_cloud()
 
     def close(self) -> None:
         self.inner.close()

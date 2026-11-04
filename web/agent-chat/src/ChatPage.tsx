@@ -5,10 +5,11 @@ import { DatasetGallery } from "@/components/DatasetGallery";
 import { TasksPanel } from "@/components/TasksPanel";
 import { MapPane } from "@/components/MapPane";
 import { ModelPicker } from "@/components/ModelPicker";
+import { DroneMapPane } from "@/components/DroneMapPane";
 import { SimulationPane } from "@/components/SimulationPane";
 import { StationIndicator } from "@/components/StationIndicator";
 import { Transcript } from "@/components/Transcript";
-import type { ChatPort, DatasetView, MapSceneView, StationView } from "@/ports";
+import type { ChatPort, DatasetView, DroneMapView, MapSceneView, StationView } from "@/ports";
 import {
   chatReducer,
   initialChatState,
@@ -66,6 +67,30 @@ export function ChatPage(props: ChatPageProps): ReactNode {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const simulation = newerOf(created, imported);
+  const scenarioId = simulation?.id ?? null;
+
+  // The map the simulation's drone builds: shown from the first poll that finds it flying, and
+  // kept with its last image once it lands (a poll with no flying drone changes nothing).
+  const [heldMap, setHeldMap] = useState<{ scenarioId: string; map: DroneMapView } | null>(null);
+  const droneMap = heldMap !== null && heldMap.scenarioId === scenarioId ? heldMap.map : null;
+  useEffect(() => {
+    if (scenarioId === null) return;
+    let current = true;
+    const poll = () => {
+      port.getDroneMap(scenarioId).then(
+        (map) => {
+          if (current && map !== null) setHeldMap({ scenarioId, map });
+        },
+        () => {},
+      );
+    };
+    poll();
+    const timer = window.setInterval(poll, 1000);
+    return () => {
+      current = false;
+      window.clearInterval(timer);
+    };
+  }, [port, scenarioId]);
 
   const importSimulation = (bundle: File) => {
     if (simulation === null) return;
@@ -317,6 +342,7 @@ export function ChatPage(props: ChatPageProps): ReactNode {
                 importing={importing}
                 importError={importError}
               />
+              {droneMap !== null && <DroneMapPane map={droneMap} />}
               <TasksPanel jobs={state.jobs} subagents={state.subagents} now={now} onCancel={cancelJob} />
             </div>
           </div>
