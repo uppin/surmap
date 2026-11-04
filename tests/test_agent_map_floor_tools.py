@@ -214,3 +214,45 @@ async def _floored_scenario(
         None,
     )
     return tools, store, created.scenario.id
+
+
+async def test_resetting_the_same_floor_does_not_warn_about_reanchoring(tmp_path: object) -> None:
+    # Given a scenario floored on the Vilnius bbox, with a building placed on it
+    tools, store, scenario_id = await _floored_scenario(tmp_path)
+    from surmap.agent.proto import simulation_tools_pb2 as pb
+
+    await tools["AddElement"](
+        pb.AddElementRequest(
+            scenario_id=scenario_id,
+            building=pb.BuildingElement(
+                id="depot",
+                material="facade",
+                size=pb.EnuPoint(east=10.0, north=8.0, up=6.0),
+                position=pb.EnuPoint(east=10.0, north=10.0, up=0.0),
+            ),
+        ),
+        None,
+    )
+
+    # When the same bbox is set again
+    reset = await tools["SetMapFloor"](
+        pb.SetMapFloorRequest(
+            scenario_id=scenario_id,
+            sw_lat=VILNIUS.sw_lat, sw_lon=VILNIUS.sw_lon,
+            ne_lat=VILNIUS.ne_lat, ne_lon=VILNIUS.ne_lon,
+        ),
+        None,
+    )
+
+    # Then nothing moved, so there is nothing to warn about
+    assert isinstance(reset, pb.MapFloorResponse)
+    assert list(reset.warnings) == []
+
+
+async def test_a_non_osm_tile_source_adds_no_osm_credit(tmp_path: object) -> None:
+    # Given a scenario floored through the in-memory source (not OpenStreetMap)
+    _, store, scenario_id = await _floored_scenario(tmp_path)
+
+    # Then its credits do not claim OpenStreetMap
+    credits = store.scenario(scenario_id).credits
+    assert not any("OpenStreetMap" in credit.line() for credit in credits)
