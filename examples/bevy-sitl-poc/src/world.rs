@@ -588,13 +588,18 @@ mod tests {
 
 
     #[test]
-    fn the_floor_collider_spans_the_floor_with_its_top_at_ground_level() {
+    fn the_floor_collider_is_a_world_space_slab_under_the_floor() {
         // Given a 130 x 111 m floor
-        // When its collider half-extents are derived
-        let half = floor_collider_half(130.0, 111.0);
+        // When its collider is placed in the world
+        let (centre, half) = floor_collider(130.0, 111.0);
+        let (min, max) = (centre - Vec3::from(half), centre + Vec3::from(half));
 
-        // Then it spans the floor and reaches from under the plane to 0 m
-        assert_eq!(half, [65.0, 0.02, 55.5]);
+        // Then in world space (x east, y up, z south) it is a slab: it spans the
+        // floor east and north, and its top is at 0 m with 4 cm below it — not a
+        // wall standing ±55 m tall through the origin
+        assert_eq!((min.x, max.x), (-65.0, 65.0), "east span");
+        assert_eq!((min.y, max.y), (-0.04, 0.0), "up span: a slab, not a wall");
+        assert_eq!((min.z, max.z), (-55.5, 55.5), "north span");
     }
 
     #[test]
@@ -603,12 +608,12 @@ mod tests {
         let ground = Element::Box(BoxElement {
             id: "ground".into(), material: "ground".into(), size_m: [200.0, 200.0, 0.2],
             position_enu: [0.0, 0.0, -0.2], yaw_deg: 0.0, tint: None, uv_scale: None,
-            collider: true, scatter: None, ground_truth: None, water: false,
+            collider: true, scatter: None, ground_truth: None, water: false, ground: false,
         });
         let road = Element::Box(BoxElement {
             id: "road-1".into(), material: "ground".into(), size_m: [50.0, 8.0, 0.1],
             position_enu: [0.0, 0.0, -0.1], yaw_deg: 0.0, tint: None, uv_scale: None,
-            collider: true, scatter: None, ground_truth: None, water: false,
+            collider: true, scatter: None, ground_truth: None, water: false, ground: false,
         });
 
         // Then only the preset ground is hidden by a floor
