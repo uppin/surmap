@@ -147,8 +147,23 @@ def test_a_container_still_serving_another_client_reads_as_stopping() -> None:
     # When it is stopped
     status = rig.control.stop()
 
-    # Then it is stopping until that stream ends
+    # Then it is stopping until that stream ends, and says so
     assert (status.state, status.containers) == (StationState.STOPPING, 1)
+    assert "another client" in status.detail
+
+
+def test_a_stopped_container_that_has_not_left_yet_reads_as_leaving() -> None:
+    # Given a ready station whose idle container takes a moment to leave once stopped
+    rig = a_rig()
+    rig.control.start()
+    rig.function.leaves_at_once = False
+
+    # When it is stopped
+    status = rig.control.stop()
+
+    # Then it is stopping, and says it waits for the container to leave, not for a client
+    assert status.state == StationState.STOPPING
+    assert "leave" in status.detail and "client" not in status.detail
 
 
 def test_the_link_reaches_the_station_url_with_the_survey_token_and_the_prompt() -> None:

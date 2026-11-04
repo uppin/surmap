@@ -39,27 +39,39 @@ class FakeStats:
 
 
 @dataclass
+class FakeAutoscaler:
+    function: FakeModalFunction
+
+    def update(
+        self, *, min_containers: int | None = None, scaledown_window: int | None = None
+    ) -> None:
+        update = {"min_containers": min_containers, "scaledown_window": scaledown_window}
+        self.function.autoscaler_updates.append({k: v for k, v in update.items() if v is not None})
+        # Idle containers leave within the window; one serving an input stays until it ends.
+        stopping = min_containers == 0 and scaledown_window == 2
+        if stopping and self.function.running_inputs == 0 and self.function.leaves_at_once:
+            self.function.containers = 0
+
+
+@dataclass
 class FakeModalFunction:
     containers: int = 0
     queued: int = 0
     running_inputs: int = 0
     unreachable: str | None = None
+    leaves_at_once: bool = True
+    """Whether an idle container is gone by the next stats read after a stop."""
     autoscaler_updates: list[dict[str, int]] = field(default_factory=list)
     url: str = STATION_URL
+
+    @property
+    def autoscaler(self) -> FakeAutoscaler:
+        return FakeAutoscaler(self)
 
     def get_current_stats(self) -> FakeStats:
         if self.unreachable is not None:
             raise ConnectionError(self.unreachable)
         return FakeStats(self.queued, self.containers, self.running_inputs)
-
-    def update_autoscaler(
-        self, *, min_containers: int | None = None, scaledown_window: int | None = None
-    ) -> None:
-        update = {"min_containers": min_containers, "scaledown_window": scaledown_window}
-        self.autoscaler_updates.append({k: v for k, v in update.items() if v is not None})
-        # Idle containers leave within the window; one serving an input stays until it ends.
-        if min_containers == 0 and scaledown_window == 2 and self.running_inputs == 0:
-            self.containers = 0
 
     def get_web_url(self) -> str:
         return self.url

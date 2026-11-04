@@ -12,7 +12,13 @@ from dataclasses import dataclass
 
 import pytest
 
-from surmap.agent.tools.station import StationControl, StationState, StubStationControl
+from surmap.agent.tools.station import (
+    IdleTicker,
+    StationControl,
+    StationState,
+    StationStatus,
+    StubStationControl,
+)
 from surmap.agent.tools.station_modal import ModalStationControl
 from tests.agent_station_fakes import (
     FakeClock,
@@ -182,3 +188,28 @@ def test_a_stopped_station_comes_back_on_the_next_frame(station: Station) -> Non
     # Then the station is up again and segmented it
     assert station.control.status().state == StationState.READY
     assert len(detections) == 1
+
+
+class FlakyStation(StubStationControl):
+    def __init__(self) -> None:
+        super().__init__(clock=FakeClock())
+        self.checks = 0
+
+    def check_idle(self) -> StationStatus:
+        self.checks += 1
+        if self.checks == 1:
+            raise ConnectionError("Modal API blip")
+        return super().check_idle()
+
+
+def test_an_idle_check_that_fails_once_does_not_stop_the_idle_ticker() -> None:
+    # Given a station whose first idle check fails, as a Modal API call can
+    station = FlakyStation()
+    ticker = IdleTicker(station)
+
+    # When the ticker ticks twice
+    ticker.tick()
+    ticker.tick()
+
+    # Then the failure was absorbed and the next check still ran
+    assert station.checks == 2

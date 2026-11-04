@@ -11,7 +11,7 @@ control reads it and drives it through the `modal` SDK's public `Function` API, 
   hold one up;
 - `start()` is a health GET — the input that boots a container — repeated until it answers;
 - `stop()` closes the agent's link, then lets idle containers go within 2 s
-  (`update_autoscaler(min_containers=0, scaledown_window=2)`). A container serving another
+  (`autoscaler.update(min_containers=0, scaledown_window=2)`). A container serving another
   client's stream stays until that stream ends (`STOPPING`). `start()` puts the scaledown
   window back to the idle timeout.
 """
@@ -53,13 +53,20 @@ class LiveStats(Protocol):
     def num_running_inputs(self) -> int: ...
 
 
+class Autoscaler(Protocol):
+    """`modal.Function.autoscaler`: overrides that last until the app is next deployed."""
+
+    def update(
+        self, *, min_containers: int | None = None, scaledown_window: int | None = None
+    ) -> object: ...
+
+
 class ModalFunction(Protocol):
     """The part of `modal.Function` the control uses."""
 
+    @property
+    def autoscaler(self) -> Autoscaler: ...
     def get_current_stats(self) -> LiveStats: ...
-    def update_autoscaler(
-        self, *, min_containers: int | None = None, scaledown_window: int | None = None
-    ) -> object: ...
     def get_web_url(self) -> str | None: ...
 
 
@@ -112,7 +119,11 @@ class ModalStationControl:
                 return self._status(StationState.QUEUED, "waiting for a GPU to be free", 0)
             return self._status(StationState.OFF, "", 0)
         if self._stopping:
-            detail = "a container still serves another client's stream"
+            detail = (
+                "a container still serves another client's stream"
+                if stats.num_running_inputs > 0
+                else "waiting for the idle container to leave"
+            )
             return self._status(StationState.STOPPING, detail, containers)
         if self._healthy:
             return self._status(StationState.READY, "", containers)
@@ -124,7 +135,7 @@ class ModalStationControl:
                 return self.status()
             self._error = None
             self._stopping = False
-            self._function.update_autoscaler(scaledown_window=self._idle_timeout_s)
+            self._function.autoscaler.update(scaledown_window=self._idle_timeout_s)
             url = self._health_url()
             deadline = self._clock() + self._start_timeout_s
             while True:
@@ -150,7 +161,7 @@ class ModalStationControl:
                 return self.status()
             self._healthy = False
             self._stopping = True
-            self._function.update_autoscaler(min_containers=0, scaledown_window=STOP_SCALEDOWN_S)
+            self._function.autoscaler.update(min_containers=0, scaledown_window=STOP_SCALEDOWN_S)
             return self.status()
 
     def check_idle(self) -> StationStatus:

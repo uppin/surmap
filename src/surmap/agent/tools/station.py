@@ -13,6 +13,7 @@ for `idle_timeout_s`, and `IdleTicker` calls it in the agent process.
 from __future__ import annotations
 
 import enum
+import logging
 import threading
 import time
 from collections.abc import Callable
@@ -22,6 +23,8 @@ from typing import Protocol
 from surmap.survey.sam import CentredBoxVideoSamDetector, RawFrame, SamDetection, VideoSamDetector
 
 DEFAULT_IDLE_TIMEOUT_S = 300
+
+_log = logging.getLogger(__name__)
 
 
 class StationState(enum.Enum):
@@ -185,6 +188,13 @@ class IdleTicker:
     def stop(self) -> None:
         self._stopped.set()
 
+    def tick(self) -> None:
+        """One idle check; a failure (a Modal API blip) is logged, and the next tick retries."""
+        try:
+            self._control.check_idle()
+        except Exception:
+            _log.warning("station idle check failed; retrying next tick", exc_info=True)
+
     def _run(self) -> None:
         while not self._stopped.wait(self._every_s):
-            self._control.check_idle()
+            self.tick()

@@ -8,12 +8,11 @@
 
 ## What is left
 
-`build_demo_workspace` (`src/surmap/agent/server/app.py`) refuses to start without `--sam-fake`
-(`ValueError: the agent process runs the fake SAM only for now`). The agent CLI
-(`src/surmap/agent/__main__.py`) needs the SAM flags `scripts/demo.py` has — `--sam-model <id|path>`,
-the device, and the station route (`--station-host`) — carried into `AgentServerConfig` and the demo
-run host, so the agent runs a real detector. Then drop the refusal and cover a real-SAM config in
-`tests/test_agent_server_app.py`.
+The station route is done: `--station modal|stub` runs the agent's SAM on a station (2026-11-04,
+`docs/agent.md` *SAM station*). Still missing is a **local** real SAM: `scripts/demo.py`'s
+`--sam-model <id|path>` and device, carried into `AgentServerConfig` and the demo run host, with a
+real-SAM config test in `tests/test_agent_server_app.py`. The process now refuses to start with
+neither `--station` nor `--sam-fake`.
 
 ## Why it could not be done now
 
@@ -26,3 +25,4 @@ The fake SAM is enough for every acceptance test and for the chat UI (n9).
 | Date | Event |
 |---|---|
 | 2026-11-03 | Recorded at the n8 wrap (#84); assigned to the `#survey-agent` sweep node |
+| 2026-11-04 | Narrowed: the station route landed with the agent station lifecycle (#113); local model and device remain |
