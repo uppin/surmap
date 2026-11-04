@@ -23,7 +23,7 @@ PRD: `PRD-2026-11-04-fleet-autopilot.md` · Discovery: `2026-11-04-fleet-autopil
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⏳ `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) ·
+- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) · 45/45 red tests green; `cargo test --locked` 334 passed, 0 failed (330 + 4 new green-phase tests); pytest 2238 passed, 38 skipped; mypy, ruff clean; wasm check ok · implementation `d9ae283`
   - [x] `fleet/log.rs`: `FleetCommand`, `Route`, `OnComplete`, `Stamped`, `FleetLog::{push, refused, for_drone, from_jsonl}`; phase checks; golden `tests/fixtures/fleet/commands.json` (every variant) parses
   - [x] `fleet/autopilot.rs`: fixed-step (`STEP_S = 0.05`) pure `step`; `state_at(home, id, log, t)`; incremental `Autopilot` equal to cold `state_at`; limits; takeoff, legs, detour resume, set_route continuity, recall/land, hover
   - [x] Runtime: `spawn_fleet` docks one body per `Nests` drone id (`FleetDrone { id }`, kinematic, rotors) and despawns the legacy `Drone` when the scene has nests; `fly_fleet` poses every drone from its `Autopilot` at `SimClock::now()`
@@ -31,7 +31,7 @@ PRD: `PRD-2026-11-04-fleet-autopilot.md` · Discovery: `2026-11-04-fleet-autopil
   - [x] Recorder: `pose_enu` from the viewed drone's pure pose at `t`; `frames.jsonl` `drone_id` when fleet; `--fleet-log <path>` in `RunMode`
   - [x] UI: status line names the active drone, phase and leg; fleet list (id · phase)
   - [x] Python `bevy_capture.py`: `CapturedFrame.drone_id: str | None` read from `frames.jsonl`
-  - [ ] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
+  - [x] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (tests + native stills of `earthquake-fleet` replaying `survey-sortie.fleet.jsonl`)
   - [ ] `docs/simulation/bevy-simulation.md` — *The fleet and its autopilot* (commands, limits, phases, fleet log, `--fleet-log`, active drone); the `survey-loop` text names when it applies
@@ -320,6 +320,44 @@ Red-step notes for `[G]`:
   (40, 110, 0) yaw 225); the `earthquake-fleet` preset is still an n1 stub. If the preset places
   them elsewhere, the sortie's waypoints are still valid (5–60 m up, within ±500 m).
 
+**Green tree:** `cargo test --locked` 334 passed, 0 failed — the 45 red tests, n1's 18, and four
+tests Green added (`an_autopilot_asked_for_an_earlier_moment_replays_to_it`,
+`drones_sharing_a_pad_stand_clear_of_each_other`,
+`the_cameras_follow_the_active_fleet_drone_else_the_legacy_one`,
+`the_status_line_names_the_active_drone_its_phase_and_legs_and_lists_the_fleet`). `uv run pytest -q`
+2238 passed, 38 skipped (the Python red test passes); `uv run mypy` clean (512 files);
+`ruff format`, `ruff check --no-cache`, `ruff format --no-cache --check` clean;
+`cargo check --locked --target wasm32-unknown-unknown` finishes. No red test, test file or gate was
+weakened; the only edits to red-step files are additive (the four tests above).
+
+Green notes:
+
+- **Step semantics.** A command applies before the first step at or after its `at_s`; `state_at(t)`
+  runs `floor(t / 0.05)` steps. `FleetLog::push` checks the phase the drone has once every logged
+  command up to `at_s` is applied (so two launches at one moment are refused), and refuses a command
+  stamped earlier than the last accepted one (`OutOfOrder`). A live command must be stamped no
+  earlier than the last moment the autopilot advanced to (n3 stamps with the sim clock).
+- **`Autopilot::advance` rewinds.** A recording pins `SimClock` to `--start` only once the scene is
+  ready, after the clock has run on; an earlier moment replays from the pad so the rendered eyes
+  match the pure recorded pose.
+- **Flight model.** Horizontal and vertical speeds are tracked by acceleration-limited velocity
+  commands that brake on the last target (`sqrt(2·a·d)`, also capped at `d / dt`); horizontal speed
+  is capped so the drone arrives level with a waypoint it must climb to. A drone returns at its
+  altitude, or 2 m above its pad if lower; landing descends only within 0.5 m of the pad and docks
+  (snap, at most one 1 m/s step) once within 4 cm, nearly still and turned to the nest's heading.
+  Hover decelerates along the velocity to exactly zero.
+- **Pad slots.** Several drones of one nest sit 0.6 m off the pad's centre (a 1.2 m grid, yawed with
+  the pad), clear of one another; one drone sits at the centre.
+- **Runtime.** `spawn_fleet`, `fly_fleet`, `spin_fleet_rotors` are registered after `build_world`;
+  `fly_fleet` places each body as the survey loop does (rig pose less the mount offset) and
+  switches `ActiveDrone`. No headless harness exists, so the registered systems are covered by
+  their pure parts (`homes`, `viewed_pose`, `viewed_body`, `fleet_status`, the autopilot).
+- **Native smoke (supporting, not a rung).** `cargo run --locked -- --screenshot <dir> --at 20
+  --scenario <fleet-nests golden copied to assets/scenarios/> --fleet-log
+  tests/fixtures/fleet/survey-sortie.fleet.jsonl` rendered `chase.png`, `left.png`, `overview.png`
+  with assets fetched in this worktree: the chase camera follows an airborne drone, the legacy drone
+  is gone. The `earthquake-fleet` preset stills are the Wrap row's verification.
+
 ## Acceptance Tests
 
 - `a_launched_drone_climbs_off_its_pad_then_reaches_each_waypoint_in_order`
@@ -337,11 +375,11 @@ Red-step notes for `[G]`:
 
 ## Prerequisites
 
-| Item | Verdict |
-|---|---|
-| `todo/2026-11-03-bevy-loop-closure-acceptance.md` | ℹ unrelated to the fleet; the `survey-loop` stays untouched, so its acceptance is unaffected |
-| `todo/2026-11-03-bevy-visual-checkpoints-v3-v5.md` | — unrelated |
-| everything else | — unrelated |
+| Item | Verdict | Outcome |
+|---|---|---|
+| `todo/2026-11-03-bevy-loop-closure-acceptance.md` | ℹ unrelated to the fleet; the `survey-loop` stays untouched, so its acceptance is unaffected | ➖ **Unchanged** — the no-nests path is byte-for-byte today's (`viewed_pose(None, t)` is `SurveyLoop::pose_at`); record untouched |
+| `todo/2026-11-03-bevy-visual-checkpoints-v3-v5.md` | — unrelated | ➖ **Unchanged** — record untouched |
+| everything else | — unrelated | ➖ **Unchanged** |
 
 `examples/bevy-sitl-poc` has no `docs/code-issues/` directory, so it has never been analyzed.
 `main.rs` is 417 lines on `main`. If this node pushes it past 500, `/pr-wrap`'s clean-code pass
