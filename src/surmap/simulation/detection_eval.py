@@ -1,8 +1,8 @@
 """Scoring on-board detections against a simulation capture's ground truth.
 
 Each ground-truth box whose kind a COCO detector can name (`car`, `person`) — and each vehicle
-(`car`, `bus`, `truck`, `train`) that only `object_tracks.jsonl` places, given its class's
-footprint and recorded heading — is projected onto the
+(`car`, `bus`, `truck`, `train`, `boat`, `ship`) that only `object_tracks.jsonl` places, given its
+class's footprint and recorded heading — is projected onto the
 left image of every frame (`bevy_ground_truth.project_box`). It is *expected* in that frame when
 most of its projected box lies inside the image and the box is big enough to resolve. A
 detection *finds* an expected object when its label is one the kind answers to and its box
@@ -41,11 +41,14 @@ COCO_LABELS: Mapping[str, frozenset[str]] = {
     "truck": frozenset({"truck"}),
     "train": frozenset({"train"}),
     "person": frozenset({"person"}),
+    # A boat and a ship are both `boat` to a COCO detector: it has no label for a ship.
+    "boat": frozenset({"boat"}),
+    "ship": frozenset({"boat"}),
 }
 # The kinds that are vehicles: a detection with one of these labels on a missed vehicle is a
 # confusion (`as_another_vehicle`), not a false positive.
-VEHICLE_KINDS = ("car", "bus", "truck", "train")
-VEHICLE_LABELS = frozenset({"car", "bus", "truck", "train"})
+VEHICLE_KINDS = ("car", "bus", "truck", "train", "boat", "ship")
+VEHICLE_LABELS = frozenset({"car", "bus", "truck", "train", "boat"})
 # (length, width, height) in metres of each vehicle class, as `assets/vehicle/<class>.vehicle.json`
 # of the renderer declares them. A train is its locomotive; carriages are not tracked.
 VEHICLE_FOOTPRINT_M: Mapping[str, tuple[float, float, float]] = {
@@ -53,6 +56,8 @@ VEHICLE_FOOTPRINT_M: Mapping[str, tuple[float, float, float]] = {
     "bus": (11.0, 3.5, 3.4),
     "truck": (6.6, 3.4, 3.6),
     "train": (8.1, 2.9, 6.1),
+    "boat": (5.0, 2.6, 1.1),
+    "ship": (60.0, 20.7, 44.9),
 }
 # An expected box is at least this many pixels on its shorter side, inside the image.
 MIN_SIDE_PX = 12.0

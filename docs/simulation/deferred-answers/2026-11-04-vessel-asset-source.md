@@ -3,7 +3,7 @@
 **Kind:** Product
 **Source:** `docs/simulation/1-WIP/2026-11-04-sim-water-vessels.md` (PR #109, stack `#sim-traffic` node n3 3/3)
 **Asked by:** `/green` row 3, `[G]` n3, Claude Opus 5.5 subagent under `#yolo`
-**Status:** Awaiting review
+**Status:** Reviewed
 
 ## Question
 
@@ -35,3 +35,10 @@ publisher family as the car, truck and train already pinned.
 Swap the two `glb` paths and their lock entries, and re-tune `model_scale`, `model_yaw_deg` and the
 `length_m`/`width_m`/`height_m` in the class files. Nothing else depends on the model identity. The
 detector scores in the changeset's Verification would have to be re-recorded.
+
+## Supervisor review
+
+**Reviewed by:** `/yolo-pr-stack` orchestrator, 2026-11-04
+**Verdict:** Answered
+
+- **Vessel asset source → Answered: Quaternius CC0-1.0, pinned by sha256.** This is inside the developer's settled rule ("CC0 only, pinned by sha256 … no non-CC0 substitute"). The Kenney 403 doesn't change anything. Mark the record reviewed.
