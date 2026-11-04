@@ -174,3 +174,38 @@ def test_clearing_a_map_floor_restores_the_ground_box() -> None:
     validate_manifest(cleared)
     assert "map_floor" not in cleared
     assert element_ids(cleared) == ["ground"]
+
+
+def test_setting_a_floor_on_the_block_removes_both_of_its_ground_boxes() -> None:
+    # Given the earthquake block, whose ground is an apron and a block-ground box
+    from surmap.simulation.scenario_manifest import set_map_floor
+
+    block = the_earthquake_block()
+
+    # When a floor is set
+    edited = set_map_floor(
+        block, sw=(54.0, 25.0), ne=(54.001, 25.002), texture="library/map-floor/a.png", zoom=17
+    )
+
+    # Then neither ground box remains to hide or flicker against the floor
+    assert "apron" not in element_ids(edited)
+    assert "block-ground" not in element_ids(edited)
+    assert "avenue" in element_ids(edited)
+
+
+def test_clearing_a_floor_restores_the_presets_own_ground_not_a_default() -> None:
+    # Given the floored earthquake block
+    from surmap.simulation.scenario_manifest import clear_map_floor, set_map_floor
+
+    block = the_earthquake_block()
+    floored = set_map_floor(
+        block, sw=(54.0, 25.0), ne=(54.001, 25.002), texture="library/map-floor/a.png", zoom=17
+    )
+
+    # When the floor is cleared
+    cleared = clear_map_floor(floored)
+
+    # Then the apron and block-ground are back, with no extra 200 m ground box
+    assert "apron" in element_ids(cleared)
+    assert "block-ground" in element_ids(cleared)
+    assert "ground" not in element_ids(cleared)
