@@ -54,13 +54,15 @@ uv run python scripts/demo.py
   the feed, and a surface hovered anywhere is outlined there in yellow.
 - **Run history**: every frame, detection, and cloud update is stored
   in `demo-history.db`; the timeline rewinds through it.
-- **Cached reruns by default, Rebuild to record**: opening a scene
-  reruns its newest complete recording from the journal, with neither
-  RTAB-Map nor SAM, and does not persist it again (the timeline scrubs
-  the recording itself). A scene with no recording waits for
-  **Rebuild**, the only action that runs RTAB-Map (and SAM) and records
-  a new run; applying a new SAM prompt rebuilds too. A run cut short by
-  another viewer's takeover is recorded as interrupted, never cached.
+- **Replay cached run, Rebuild to record**: opening or reloading a
+  scene plays nothing, so it never takes a running build over. When the
+  scene has a complete recording, **Replay cached run** reruns the
+  newest one from the journal, with neither RTAB-Map nor SAM, and does
+  not persist it again (the timeline scrubs the recording itself).
+  **Rebuild** is the only action that runs RTAB-Map (and SAM) and
+  records a new run; applying a new SAM prompt rebuilds too. A run cut
+  short by another viewer's takeover is recorded as interrupted, never
+  cached.
 - **Export / Import**: Export downloads the selected run (and any run it
   replays) as one `.surmaprun` file: a gzipped SQLite database in the run
   history's schema, with frames, journal, map, SAM masks, surfaces, rig and

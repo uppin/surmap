@@ -88,8 +88,10 @@ PAGE = """<!DOCTYPE html>
     <label for="scene">Scene</label>
     <select id="scene"></select>
     <button id="pause" disabled>Pause</button>
+    <button id="replay-cached" disabled title="Rerun the scene's cached recording from
+      its journal: no RTAB-Map, no SAM, and no new run persisted">Replay cached run</button>
     <button id="rebuild" title="Run RTAB-Map (and SAM) on this scene again and record
-      a new run; otherwise the page reruns the scene's cached recording">Rebuild</button>
+      a new run">Rebuild</button>
   </div>
   <div class="controls">
     <label for="run-select">Persisted run</label>
@@ -624,8 +626,16 @@ pauseButton.addEventListener('click', async () => {{
   const state = (await response.json()).state;
   pauseButton.textContent = state === 'paused' ? 'Resume' : 'Pause';
 }});
-// --- Default: rerun the scene's cached recording; only Rebuild records ---
+// --- Default: offer the scene's cached recording; nothing plays until asked ---
 const REBUILD = new URLSearchParams(location.search).get('rebuild') === '1';
+const replayCached = $('replay-cached');
+let cachedRun = null;
+function offerCached(runId) {{
+  cachedRun = runId;
+  replayCached.disabled = false;
+  playback.textContent = 'A cached recording of this scene is ready. Replay cached run '
+    + 'plays it (no RTAB-Map, no SAM); Rebuild records a new one.';
+}}
 function playCached(runId) {{
   if (source) {{ source.close(); source = null; }}
   setMode('live');
@@ -648,10 +658,11 @@ async function startDefault() {{
     return prepareThenPlay();
   }}
   const scene = await sceneState();
-  if (scene && scene.cached_run) return playCached(scene.cached_run);
+  if (scene && scene.cached_run) return offerCached(scene.cached_run);
   playback.textContent = 'No recording of this scene yet. Press Rebuild to record one '
     + '(runs RTAB-Map' + (document.getElementById('sam-prompt') ? ' and SAM' : '') + ').';
 }}
+$('replay-cached').addEventListener('click', () => playCached(cachedRun));
 $('rebuild').addEventListener('click', rebuild);
 fillScenes().then(startDefault);
 refreshRuns();
