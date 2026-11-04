@@ -1086,6 +1086,16 @@ drone**. Only the active drone's frames are processed; the other drones keep fly
   RTAB-Map's odometry inliers mapped rectified → raw left-camera pixels with the backend's
   `rectification` (`surmap.slam.keypoint_pixels.rectified_to_raw`, shared with the demo page),
   those outside the frame left out (`fleet.perception.frame_keypoints`).
+  When the agent chose an on-board model for the scenario (`set_onboard_model`,
+  [docs/agent.md](../agent.md), *Fleet tools*), a reply also carries `detections` —
+  `[{"frame_id": n, "objects": [{"label", "score", "box": [x0, y0, x1, y1], "track_id"}]}]`,
+  omitted when empty — what that model found on this pair's left frame (raw pixels).
+  `PerceptionRegistry.choose_detector` keeps the choice per scenario and applies it to the
+  scenario's page now and to any page that registers later; `FleetPerception.use_detector` gives
+  every drone session its own fresh source (its own `IouTracker`). The session runs it
+  synchronously on the grey left eye stacked to RGB (the bridge handles pairs off the event
+  loop), so a frame's detections arrive with its own reply; a failing model finds nothing on
+  that frame and leaves the map running.
 
 ### Verified
 
@@ -1125,6 +1135,17 @@ opens the full page.
   (`scripts/build_rtabmap_stream.py`, once per source hash; a failure stops the stack before any
   service starts), runs the agent with `--bevy-bridge-port $SURMAP_DEV_BRIDGE_PORT` (8782) and
   the chat with `VITE_SURMAP_BRIDGE_URL`; the chat also takes `?bridge=`.
+- **On-board detections, labelled.** The bridge stream also holds each reply's `detections` by
+  frame id (`HeldFrames<Vec<DetectedObject>>`, `fleet::stream::parse_detections`) and attaches
+  them to the `FpvFrame` it builds for that frame, so they sit on the same held frame as its
+  keypoints. Each object is outlined, in the demo's SAM cyan, and gets a label card
+  `<label> #<track> <score>%`: `layout_cards` is the demo page's `layoutCards`
+  (`surmap.demo.view_math`) ported — just above the object when free, else the nearest free
+  spot (below, beside, then a 4 px grid), never overlapping another card, inside the image,
+  smallest objects first — and a leader with a dot at each end joins card and object. Cards
+  are laid out in display pixels (Bevy's default font is monospaced, so a card is sized from
+  its glyph count) and drawn as UI text; boxes and leaders are drawn into the frame's pixels
+  (`draw_detections`). Both are redone when the frame or the image's displayed size changes.
 
 ### Verified
 

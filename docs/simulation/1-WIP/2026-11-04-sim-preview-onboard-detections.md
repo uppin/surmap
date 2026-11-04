@@ -19,12 +19,12 @@
   - [x] `DroneSession.use_detector`, `FleetPerception.use_detector`, `PerceptionRegistry.choose_detector`
   - [x] `set_onboard_model` proto + handler, registered in `app.py`; `flying-the-fleet` skill and SYSTEM_PROMPT mention it
   - [x] Bevy FPV: boxes and leaders drawn into the held frame, label cards as UI text laid out in display pixels
-- [wf 4] ⏳ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
+- [wf 4] ⛔ `/pr-wrap` Wrap — validate, clean up, verification, docs · V4 not run: the Superset pane stalls rAF on the full scene (fleet commands time out); needs a Chrome run — options: a) run V4 in Chrome, then wrap b) wrap on V1 only
   - [ ] Verification executed — result recorded
-  - [ ] `docs/simulation/bevy-simulation.md` — the status reply's `detections`, the preview overlay
-  - [ ] `docs/agent.md` — `set_onboard_model` in *Fleet tools*
-  - [ ] `docs/simulation/changelog/` entry
-  - [ ] Python gates (ruff format/check, mypy, pytest), `cargo test`, `trunk build`
+  - [x] `docs/simulation/bevy-simulation.md` — the status reply's `detections`, the preview overlay
+  - [x] `docs/agent.md` — `set_onboard_model` in *Fleet tools*
+  - [x] `docs/simulation/changelog/` entry
+  - [x] Python gates (ruff format/check, mypy, pytest), `cargo test`, `trunk build`
 
 ## Initial Discovery
 
@@ -71,3 +71,13 @@ fleet/bridge_wasm.rs}`.
 V1 — executable tests: pytest (wire, session, registry, `set_onboard_model` handler over the real
 server rig), `cargo test` (parse, layout, cards, drawing). V4 — manual: `scripts/dev.sh --bridge`
 with a Coral model dir, launch a drone, `set_onboard_model`, see boxes and cards on the FPV.
+
+## Validation Results
+
+- V1, 2026-11-04: pytest 2618 passed / 38 skipped; `cargo test` 410; `cargo check --target
+  wasm32-unknown-unknown` clean; `trunk build` OK; ruff, mypy (strict) clean.
+- V4, 2026-11-04, not completed: an agent with `--bevy-bridge-port` and the real Coral fixture
+  models served the preview in a Superset browser pane. `set_onboard_model` answered
+  `ssd-mobilenet-v2`, the bridge socket connected and the FPV layer showed. After the worktree's
+  pinned assets were copied in, the pane stalled `requestAnimationFrame`, so `launch_drone` timed
+  out and no frame streamed. Still to do: the same run in Chrome.

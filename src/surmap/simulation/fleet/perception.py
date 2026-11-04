@@ -11,7 +11,10 @@ and its frames, when they come again, go to the same backend. At most `MAX_DRONE
 sessions exist per connection; a further drone's pairs are answered with a status naming the
 limit and processed by nothing. Closing the connection finishes every session.
 
-`PerceptionRegistry` finds a scenario's connected page for the agent's `drone_map_status` tool.
+`PerceptionRegistry` finds a scenario's connected page for the agent's `drone_map_status` tool,
+and keeps the on-board model `set_onboard_model` chose for the scenario (`DetectorChoice`): every
+drone session of its page runs a source of its own of that model on its left frames, and the
+detections go back with the pair's status reply for the preview to draw.
 """
 
 from __future__ import annotations
