@@ -59,8 +59,14 @@ export class ChatPage {
 
   job(jobId: string): Locator {
     return this.page
-      .getByRole("region", { name: "Jobs" })
+      .getByRole("region", { name: "Tasks" })
       .getByRole("listitem", { name: `Job ${jobId}` });
+  }
+
+  subagent(subagentId: string): Locator {
+    return this.page
+      .getByRole("region", { name: "Tasks" })
+      .getByRole("listitem", { name: `Subagent ${subagentId}` });
   }
 
   modelPicker(): Locator {

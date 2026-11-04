@@ -8,7 +8,9 @@ so `GetConversation` replays exactly what the streams delivered.
 `StreamTurn` streams the turn it starts. A job that ends, or a subagent that messages the
 conversation, while no turn runs starts a turn of its own; its events go to the conversation's
 `WatchConversation` subscribers. With `subagents`, each conversation also binds the subagent tools
-(`surmap.agent.subagents`), its subagents running on the conversation's current model. Steering
+(`surmap.agent.subagents`), its subagents running on the conversation's current model; each change
+of a subagent's status is recorded and goes to the `WatchConversation` subscribers as it happens,
+in no turn (an empty `turn_id`), without starting one. Steering
 and cancel act on the running turn only. Without a store, conversations live in memory and
 end with the process; with a `PersistentConversationStore` they are restored from it after a
 restart (history, model and replay), while jobs and running turns do not survive.
@@ -26,6 +28,7 @@ from langchain_core.language_models import BaseChatModel
 from surmap.agent.event_log import TurnLog
 from surmap.agent.llm.registry import ModelInfo
 from surmap.agent.proto import chat_pb2
+from surmap.agent.runtime.events import SubagentStatus
 from surmap.agent.runtime.events import TurnEvent as RuntimeEvent
 from surmap.agent.runtime.graph import TurnCaps
 from surmap.agent.runtime.jobs import JobRunner
@@ -244,6 +247,7 @@ class ChatHub:
                 tools=self.tools,
                 setup=self.subagents,
                 caps=self.caps,
+                on_status=lambda status: self._subagent_status(conversation, status),
             )
             tools.extend(subagent_tools(pool))
         session = AgentSession(
@@ -271,6 +275,19 @@ class ChatHub:
             trigger = notice_trigger(notice)
             async for event in conversation.session.run_turn(notice.text, trigger=trigger):
                 _publish(conversation, _record(conversation, turn_id, event, self._store))
+
+    def _subagent_status(self, conversation: Conversation, status: SubagentStatus) -> None:
+        """Record a subagent's status, in no turn, and hand it to the watchers."""
+        proto = turn_event_to_proto(
+            status,
+            conversation_id=conversation.conversation_id,
+            turn_id="",
+            seq=len(conversation.events) + 1,
+        )
+        conversation.events.append(proto)
+        if self._store is not None:
+            self._store.record_event(conversation.conversation_id, proto.SerializeToString())
+        _publish(conversation, proto)
 
     async def _watch(self, conversation: Conversation) -> AsyncIterator[chat_pb2.TurnEvent]:
         queue: asyncio.Queue[chat_pb2.TurnEvent | None] = asyncio.Queue()
@@ -332,6 +349,6 @@ def _record_user_message(
 
 
 def _publish(conversation: Conversation, event: chat_pb2.TurnEvent) -> None:
-    """Hand a job-event turn's event to every `WatchConversation` subscriber."""
+    """Hand an event no `stream_turn` streams to every `WatchConversation` subscriber."""
     for queue in conversation.watchers:
         queue.put_nowait(event)

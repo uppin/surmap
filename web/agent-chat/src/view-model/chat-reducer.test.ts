@@ -8,6 +8,7 @@ import {
   jobOf,
   kindsOf,
   receive,
+  subagentOf,
   toolStepOf,
 } from "@/test-support/chat-driver";
 import {
@@ -133,7 +134,7 @@ describe("chatReducer", () => {
     });
   });
 
-  it("marks a detached call detached and moves its job into the jobs panel", () => {
+  it("marks a detached call detached and moves its job into the tasks panel", () => {
     const turn = aConversation()
       .toolStarted("call-1", "run_demo")
       .toolDetached("call-1", { jobId: "job-7", tool: "run_demo" })
@@ -147,7 +148,7 @@ describe("chatReducer", () => {
     });
   });
 
-  it("puts the job of an ASYNC call that returned its handle into the jobs panel", () => {
+  it("puts the job of an ASYNC call that returned its handle into the tasks panel", () => {
     const turn = aConversation()
       .toolStarted("call-1", "run_demo", { policy: ASYNC_JOB })
       .toolSucceeded("call-1", { job: jobHandle({ jobId: "job-8", tool: "run_demo" }) })
@@ -224,7 +225,7 @@ describe("chatReducer", () => {
     });
   });
 
-  it("updates the jobs panel, without a notice, for a job_update inside a running turn", () => {
+  it("updates the tasks panel, without a notice, for a job_update inside a running turn", () => {
     const turn = aConversation()
       .userMessage("Run the EuRoC demo")
       .toolStarted("call-1", "run_demo")
@@ -238,6 +239,106 @@ describe("chatReducer", () => {
       kinds: ["user", "tool"],
       job: { status: "failed", detail: "SAM unreachable", updatedAt: arrivalOf(3) },
     });
+  });
+
+  it("adds a started subagent to the tasks panel, running as its turn's job", () => {
+    const turn = aConversation()
+      .userMessage("A tree and a house")
+      .toolStarted("call-1", "start_subagent")
+      .subagentStatus({ subagentId: "sa-1", name: "scene-builder", jobId: "job-4", status: "running" })
+      .build();
+
+    const state = receive(aChatState(), turn);
+
+    expect(subagentOf(state, "sa-1")).toMatchObject({
+      name: "scene-builder",
+      jobId: "job-4",
+      status: "running",
+      detail: "",
+      startedAt: arrivalOf(2),
+    });
+  });
+
+  it("shows what a subagent last reported doing", () => {
+    const statuses = aConversation()
+      .subagentStatus({ subagentId: "sa-1", name: "scene-builder", jobId: "job-4", status: "running" })
+      .subagentStatus({
+        subagentId: "sa-1",
+        name: "scene-builder",
+        jobId: "job-4",
+        status: "running",
+        detail: "Placing the house",
+      })
+      .build();
+
+    const state = receive(aChatState(), statuses);
+
+    expect(subagentOf(state, "sa-1")).toMatchObject({
+      detail: "Placing the house",
+      startedAt: arrivalOf(0),
+      updatedAt: arrivalOf(1),
+    });
+  });
+
+  it("ignores a subagent status older than the one it already shows", () => {
+    const [placing, started] = [
+      aConversation("conv-1", 6n).subagentStatus({
+        subagentId: "sa-1",
+        name: "scene-builder",
+        jobId: "job-4",
+        status: "running",
+        detail: "Placing the house",
+      }),
+      aConversation("conv-1", 5n).subagentStatus({
+        subagentId: "sa-1",
+        name: "scene-builder",
+        jobId: "job-4",
+        status: "running",
+      }),
+    ].map((script) => script.build());
+
+    const state = receive(aChatState(), [...placing, ...started]);
+
+    expect(subagentOf(state, "sa-1")?.detail).toBe("Placing the house");
+  });
+
+  it("restarts a subagent's clock when a follow-up turn runs it as a new job", () => {
+    const statuses = aConversation()
+      .subagentStatus({ subagentId: "sa-1", name: "scene-builder", jobId: "job-4", status: "succeeded" })
+      .subagentStatus({ subagentId: "sa-1", name: "scene-builder", jobId: "job-6", status: "running" })
+      .build();
+
+    const state = receive(aChatState(), statuses);
+
+    expect(subagentOf(state, "sa-1")).toMatchObject({ jobId: "job-6", status: "running", startedAt: arrivalOf(1) });
+  });
+
+  it("keeps the conversation idle, with nothing in the transcript, for a subagent status between turns", () => {
+    const status = aConversation("conv-1", 9n)
+      .subagentStatus({
+        subagentId: "sa-1",
+        name: "scene-builder",
+        jobId: "job-4",
+        status: "running",
+        detail: "Placing the house",
+      })
+      .build();
+
+    const state = receive(aChatState(), status);
+
+    expect({ active: isTurnActive(state), kinds: kindsOf(state) }).toEqual({ active: false, kinds: [] });
+  });
+
+  it("keeps a running turn's events after a subagent status that arrived first with a later seq", () => {
+    const turn = aConversation().userMessage("A tree and a house").build();
+    const status = aConversation("conv-1", 3n)
+      .subagentStatus({ subagentId: "sa-1", name: "scene-builder", jobId: "job-4", status: "running" })
+      .build();
+    const reply = aConversation("conv-1", 2n).textDelta("Started the builder.").build();
+
+    const state = receive(aChatState(), [...turn, ...status, ...reply]);
+
+    expect(kindsOf(state)).toEqual(["user", "assistant"]);
   });
 
   it("is busy from the moment a turn is requested", () => {

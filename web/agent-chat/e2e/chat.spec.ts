@@ -41,7 +41,7 @@ test("sending a message streams the reply and shows the tool call as a step with
   await expect(chat.conversation()).toContainText("One demo is ready: euroc-v1-01-easy.");
 });
 
-test("typing while the agent works steers the turn and moves the detached call to the jobs panel", async ({ page }) => {
+test("typing while the agent works steers the turn and moves the detached call to the tasks panel", async ({ page }) => {
   const server = await stubServer({
     turn: async function* ({ nextSteer }) {
       yield* aConversation().toolStarted("call-1", "run_demo").build();
@@ -103,7 +103,7 @@ test("Stop cancels the running turn", async ({ page }) => {
   expect(server.received.cancelTurns).toEqual(["e2e-1"]);
 });
 
-test("Cancel in the jobs panel cancels that job on the server, naming the conversation", async ({ page }) => {
+test("Cancel in the tasks panel cancels that job on the server, naming the conversation", async ({ page }) => {
   const server = await stubServer({
     turn: async function* () {
       yield* aConversation()
@@ -120,6 +120,35 @@ test("Cancel in the jobs panel cancels that job on the server, naming the conver
   await chat.job("job-9").getByRole("button", { name: "Cancel" }).click();
 
   await expect.poll(() => server.received.cancelJobs).toEqual([{ conversationId: "e2e-1", jobId: "job-9" }]);
+});
+
+test("a subagent's reported status on the watch stream shows in the tasks panel, and Cancel stops its job", async ({
+  page,
+}) => {
+  const server = await stubServer({});
+  const chat = new ChatPage(page);
+  await chat.open(server.url);
+  await server.watching("e2e-1");
+
+  server.pushWatchTurn(
+    "e2e-1",
+    aConversation()
+      .subagentStatus({ subagentId: "sa-1", name: "scene-builder", jobId: "job-4", status: "running" })
+      .subagentStatus({
+        subagentId: "sa-1",
+        name: "scene-builder",
+        jobId: "job-4",
+        status: "running",
+        detail: "Placing the house",
+      })
+      .build(),
+  );
+  await expect(chat.subagent("sa-1")).toContainText("scene-builder");
+  await expect(chat.subagent("sa-1")).toContainText("Placing the house");
+
+  await chat.subagent("sa-1").getByRole("button", { name: "Cancel" }).click();
+
+  await expect.poll(() => server.received.cancelJobs).toEqual([{ conversationId: "e2e-1", jobId: "job-4" }]);
 });
 
 test("a frame result shows its image and a geometry result shows a 3D preview", async ({ page }) => {

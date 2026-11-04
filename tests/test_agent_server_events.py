@@ -14,6 +14,7 @@ from surmap.agent.runtime.events import (
     JobUpdate,
     SteerApplied,
     SubagentMessage,
+    SubagentStatus,
     TextDelta,
     ToolCallFinished,
     ToolCallStarted,
@@ -232,4 +233,27 @@ def test_a_subagent_message_becomes_subagent_message() -> None:
     # Then it carries the subagent and its text
     assert mapped.subagent_message == chat_pb2.SubagentMessage(
         subagent_id="sa-1", name="scene-builder", text="Which side burns?"
+    )
+
+
+def test_a_subagent_status_becomes_subagent_status() -> None:
+    # Given the scene builder's status as it works
+    event = SubagentStatus(
+        subagent_id="sa-1",
+        name="scene-builder",
+        job_id="j-2",
+        state=JobState.RUNNING,
+        detail="Placing the house",
+    )
+
+    # When it is mapped
+    mapped = as_proto(event)
+
+    # Then it carries the subagent, its job, its state and what it reported
+    assert mapped.subagent_status == chat_pb2.SubagentStatus(
+        subagent_id="sa-1",
+        name="scene-builder",
+        job_id="j-2",
+        status=execution_pb2.RUNNING,
+        detail="Placing the house",
     )

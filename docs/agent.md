@@ -507,12 +507,12 @@ edits — runs in a subagent, so its tool calls never enter the conversation's c
 - **What a subagent is.** An `AgentSession` with its own `JobRunner` (its own `j-1`, …) and
   history (conversation id `<conversation>/sa-<n>`), on the conversation's model as it is when
   each of its turns starts, bound to the conversation's tools minus `start_subagent` and
-  `message_subagent` (subagents do not nest) plus `message_main_agent`. Its system prompt is
+  `message_subagent` (subagents do not nest) plus `message_main_agent` and `report_status`. Its
+  system prompt is
   `SUBAGENT_PROMPT` (`server/app.py`) and, when the start names one, `# Your skill: <name>` and
   that skill's body.
 - **Its turns are jobs.** Each subagent turn is an ASYNC job of the conversation's runner, tool
-  `subagent:sa-<n>`, so `wait_for_jobs`, `cancel_job`, Stop (`cancel_all`) and the jobs panel cover
-  it. Its result is `{subagent_id, name, finish_reason, reply}` — `reply` is the subagent's last
+  `subagent:sa-<n>`, so `wait_for_jobs`, `cancel_job` and Stop (`cancel_all`) cover it. Its result is `{subagent_id, name, finish_reason, reply}` — `reply` is the subagent's last
   answer; a turn that errors fails the job. Its end reports like any job (a `job_notice` mid-turn,
   a turn of its own while idle). Cancelling the job cancels the subagent's turn and its jobs.
 - **At most 3 run at once** (`SubagentSetup.max_running`); a start or follow-up past it fails.
@@ -522,6 +522,15 @@ edits — runs in a subagent, so its tool calls never enter the conversation's c
 | `start_subagent` | `task` (the whole brief); `name` (label, default `subagent`); `skill` (a skill name) | `{subagent_id, name, job_id}`; an unknown skill fails and starts nothing |
 | `message_subagent` | `subagent_id`, `text` | running: a steer (`AgentSession.steer` — its blocking calls detach, the text is its next message), `{delivered: "STEER", job_id}` of the running turn; ended: a follow-up turn on its whole history, `{delivered: "NEW_TURN", job_id}` of the new job. Unknown id fails |
 | `message_main_agent` | `text` | `{delivered: true}`: a `SubagentNotice` on the conversation's notice queue |
+| `report_status` | `status` (what it is doing now, a few words) | `{reported: true}`: the subagent's status for the tasks panel; no model reads it |
+
+**Status.** `SubagentPool(on_status=…)` hears a `SubagentStatus` (`runtime/events.py`) on every
+change: `RUNNING` with its turn's `job_id` when a turn starts (the start and each follow-up), the
+text of each `report_status` as its `detail`, and `SUCCEEDED` / `FAILED` / `CANCELLED` when the
+turn ends, keeping the last `detail`. `SUBAGENT_PROMPT` tells the subagent to call
+`report_status` when it starts and at each major step. The hub records each status as a
+`subagent_status` `TurnEvent` with an empty `turn_id` and hands it to the `WatchConversation`
+subscribers as it happens — it never starts a turn and never reaches `StreamTurn`.
 
 **Messages back.** A `SubagentNotice` (`runtime/jobs.py`) shares `JobRunner.notices` with job
 notices (`Notice = JobNotice | SubagentNotice`), so it reaches the main agent the same way: during
@@ -934,7 +943,8 @@ with `conversation_id`, `turn_id` and a per-conversation `seq`: first
 starts with its first `StreamTurn` (one `AgentSession` each, in the
 `ChatHub`); a second `StreamTurn` while a turn runs is refused as busy.
 `WatchConversation` streams the turns a finished job or a subagent's message starts (each opens
-with that `job_update` or `subagent_message`); `GetConversation` replays every event.
+with that `job_update` or `subagent_message`), and every `subagent_status` as it happens, in no
+turn (`turn_id` empty); `GetConversation` replays every event.
 `Steer` on an idle conversation returns `accepted=false`; `CancelTurn`
 ends the turn as `turn_finished(CANCELLED)`. `AgentJobs` requests name
 their conversation in the `surmap-conversation-id` header.
@@ -1011,17 +1021,23 @@ cd web/agent-chat && yarn local-install && yarn dev   # http://localhost:5173
   it offers **Steer** (sends `Steer`; the transcript shows
   `Steered: …`) and **Stop** (`CancelTurn`). A steer the server does not
   accept starts a new turn with the same text.
-- **Jobs panel.** Detached and `ASYNC` calls appear as jobs with tool,
-  status and elapsed time; **Cancel** on a running job calls
-  `AgentJobs` with the conversation header. Turns a finished job starts
-  arrive on the `WatchConversation` stream, opened once the server knows
-  the conversation, and begin with a job notice.
+- **Tasks panel.** Subagents appear with their label, a *Subagent* tag,
+  status, elapsed time and what they last reported (`subagent_status`;
+  a later status wins by `seq`, and a follow-up turn restarts the clock);
+  a subagent's own `subagent:sa-<n>` jobs are not listed again. Detached
+  and `ASYNC` calls appear as jobs with tool, status and elapsed time.
+  **Cancel** on a running job or subagent calls `AgentJobs.CancelJob`
+  (for a subagent, on its turn's job) with the conversation header. A
+  status never moves the turn phase or the transcript. Turns a finished
+  job starts arrive on the `WatchConversation` stream, opened once the
+  server knows the conversation, and begin with a job notice. Component:
+  `src/components/TasksPanel.tsx`; view model: `src/view-model/tasks.ts`.
 - **Simulation pane.** When the agent creates a simulation in the
   conversation — a succeeded `create_scenario`, or a reply reporting the
   `/sim/?scenario=<id>` URL of a scene a subagent built — a right-side pane
   inside the chat shows the scenario's name, version and credits, an
   **Open simulation** link, and the live Bevy page at `/sim/` in an iframe;
-  the Jobs panel moves below it. Later edits to that scenario bump the
+  the Tasks panel moves below it. Later edits to that scenario bump the
   version and reload the iframe. No creation, no pane. Derivation:
   `src/view-model/simulation.ts`; component: `src/components/SimulationPane.tsx`.
 - **Export / Import.** The pane's **Export** downloads the scenario as

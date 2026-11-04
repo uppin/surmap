@@ -154,6 +154,20 @@ class SubagentMessage(_message.Message):
     text: str
     def __init__(self, subagent_id: _Optional[str] = ..., name: _Optional[str] = ..., text: _Optional[str] = ...) -> None: ...
 
+class SubagentStatus(_message.Message):
+    __slots__ = ("subagent_id", "name", "job_id", "status", "detail")
+    SUBAGENT_ID_FIELD_NUMBER: _ClassVar[int]
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    JOB_ID_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    DETAIL_FIELD_NUMBER: _ClassVar[int]
+    subagent_id: str
+    name: str
+    job_id: str
+    status: _execution_pb2.JobStatus
+    detail: str
+    def __init__(self, subagent_id: _Optional[str] = ..., name: _Optional[str] = ..., job_id: _Optional[str] = ..., status: _Optional[_Union[_execution_pb2.JobStatus, str]] = ..., detail: _Optional[str] = ...) -> None: ...
+
 class TurnFinished(_message.Message):
     __slots__ = ("reason",)
     class Reason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
@@ -179,7 +193,7 @@ class TurnError(_message.Message):
     def __init__(self, message: _Optional[str] = ...) -> None: ...
 
 class TurnEvent(_message.Message):
-    __slots__ = ("conversation_id", "turn_id", "seq", "text_delta", "tool_call_started", "tool_call_finished", "job_update", "steer_applied", "turn_finished", "error", "user_message", "subagent_message")
+    __slots__ = ("conversation_id", "turn_id", "seq", "text_delta", "tool_call_started", "tool_call_finished", "job_update", "steer_applied", "turn_finished", "error", "user_message", "subagent_message", "subagent_status")
     CONVERSATION_ID_FIELD_NUMBER: _ClassVar[int]
     TURN_ID_FIELD_NUMBER: _ClassVar[int]
     SEQ_FIELD_NUMBER: _ClassVar[int]
@@ -192,6 +206,7 @@ class TurnEvent(_message.Message):
     ERROR_FIELD_NUMBER: _ClassVar[int]
     USER_MESSAGE_FIELD_NUMBER: _ClassVar[int]
     SUBAGENT_MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    SUBAGENT_STATUS_FIELD_NUMBER: _ClassVar[int]
     conversation_id: str
     turn_id: str
     seq: int
@@ -204,4 +219,5 @@ class TurnEvent(_message.Message):
     error: TurnError
     user_message: UserMessage
     subagent_message: SubagentMessage
-    def __init__(self, conversation_id: _Optional[str] = ..., turn_id: _Optional[str] = ..., seq: _Optional[int] = ..., text_delta: _Optional[str] = ..., tool_call_started: _Optional[_Union[ToolCallStarted, _Mapping[str, _Any]]] = ..., tool_call_finished: _Optional[_Union[ToolCallFinished, _Mapping[str, _Any]]] = ..., job_update: _Optional[_Union[_execution_pb2.JobHandle, _Mapping[str, _Any]]] = ..., steer_applied: _Optional[_Union[SteerApplied, _Mapping[str, _Any]]] = ..., turn_finished: _Optional[_Union[TurnFinished, _Mapping[str, _Any]]] = ..., error: _Optional[_Union[TurnError, _Mapping[str, _Any]]] = ..., user_message: _Optional[_Union[UserMessage, _Mapping[str, _Any]]] = ..., subagent_message: _Optional[_Union[SubagentMessage, _Mapping[str, _Any]]] = ...) -> None: ...
+    subagent_status: SubagentStatus
+    def __init__(self, conversation_id: _Optional[str] = ..., turn_id: _Optional[str] = ..., seq: _Optional[int] = ..., text_delta: _Optional[str] = ..., tool_call_started: _Optional[_Union[ToolCallStarted, _Mapping[str, _Any]]] = ..., tool_call_finished: _Optional[_Union[ToolCallFinished, _Mapping[str, _Any]]] = ..., job_update: _Optional[_Union[_execution_pb2.JobHandle, _Mapping[str, _Any]]] = ..., steer_applied: _Optional[_Union[SteerApplied, _Mapping[str, _Any]]] = ..., turn_finished: _Optional[_Union[TurnFinished, _Mapping[str, _Any]]] = ..., error: _Optional[_Union[TurnError, _Mapping[str, _Any]]] = ..., user_message: _Optional[_Union[UserMessage, _Mapping[str, _Any]]] = ..., subagent_message: _Optional[_Union[SubagentMessage, _Mapping[str, _Any]]] = ..., subagent_status: _Optional[_Union[SubagentStatus, _Mapping[str, _Any]]] = ...) -> None: ...
