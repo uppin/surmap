@@ -57,6 +57,23 @@ describe("Transcript", () => {
     expect(transcript.log()).toHaveTextContent("Job job-7 (run_demo) succeeded");
   });
 
+  it("shows a subagent's message as a note from that subagent", () => {
+    renderTranscript([
+      {
+        kind: "subagent_message",
+        id: "m1",
+        turnId: "turn-1",
+        subagentId: "sa-1",
+        name: "scene-builder",
+        text: "Which side should the fire start on?",
+      },
+    ]);
+
+    const note = screen.getByRole("note", { name: "Message from subagent sa-1" });
+    expect(note).toHaveTextContent("scene-builder");
+    expect(note).toHaveTextContent("Which side should the fire start on?");
+  });
+
   it("shows a typing indicator after the conversation while awaiting the agent's reply", () => {
     const transcript = renderTranscript(
       [{ kind: "user", id: "u1", turnId: "turn-1", text: "What demos are there?" }],

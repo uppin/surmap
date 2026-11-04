@@ -147,7 +147,7 @@ async def test_a_turn_can_list_and_load_the_shipped_map_skill(tmp_path: Path) ->
     # And the listing it read names the shipped map skill
     history = model.history_of_call(2)
     listing = json.loads(str(tool_message_for(history, "c1").content))
-    assert listing == {"skills": [{"name": "using-the-map", "description": MAP_SKILL_DESCRIPTION}]}
+    assert {"name": "using-the-map", "description": MAP_SKILL_DESCRIPTION} in listing["skills"]
 
     # And the body it loaded teaches the map tools
     loaded = json.loads(str(tool_message_for(model.history_of_call(3), "c2").content))

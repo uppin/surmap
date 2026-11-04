@@ -7,8 +7,8 @@ import "surmap/agent/v1/execution.proto";
 /*
 The chat service the browser talks to. A conversation is a sequence of
 turns; each turn streams TurnEvents as the agent writes text and calls
-tools. Between turns, a finished job may start a turn of its own; a client
-keeps a WatchConversation stream open to receive those.
+tools. Between turns, a finished job or a subagent's message may start a turn
+of its own; a client keeps a WatchConversation stream open to receive those.
 
 This service is not a tool: its rpcs carry no default_execution.
 */
@@ -161,6 +161,17 @@ message SteerApplied {
   repeated string detached_call_ids = 2;
 }
 
+// A subagent the agent started sent it a message; the agent reads it as a notice. A message that
+// arrives while no turn runs opens a turn of its own.
+message SubagentMessage {
+  // The subagent, as start_subagent named it, e.g. "sa-1".
+  string subagent_id = 1;
+  // The label it was started with, e.g. "scene-builder".
+  string name = 2;
+  // What it wrote.
+  string text = 3;
+}
+
 // The turn ended.
 message TurnFinished {
   // Why it ended.
@@ -212,5 +223,7 @@ message TurnEvent {
     TurnError error = 16;
     // The user's message that started the turn; recorded so GetConversation can replay it.
     UserMessage user_message = 17;
+    // A subagent's message to the agent.
+    SubagentMessage subagent_message = 18;
   }
 }

@@ -174,6 +174,37 @@ describe("chatReducer", () => {
     });
   });
 
+  it("shows a subagent's message inside a running turn", () => {
+    const turn = aConversation()
+      .userMessage("Build me a wildfire scene")
+      .toolStarted("call-1", "start_subagent")
+      .toolSucceeded("call-1")
+      .subagentMessage("sa-1", "scene-builder", "Which side should the fire start on?")
+      .build();
+
+    const state = receive(aChatState(), turn);
+
+    expect(state.transcript.at(-1)).toMatchObject({
+      kind: "subagent_message",
+      turnId: "turn-1",
+      subagentId: "sa-1",
+      name: "scene-builder",
+      text: "Which side should the fire start on?",
+    });
+  });
+
+  it("opens a turn with the subagent's message that started it", () => {
+    const subagentTurn = aConversation("conv-1", 5n)
+      .inTurn("turn-2")
+      .subagentMessage("sa-1", "scene-builder", "Which side should the fire start on?")
+      .textDelta("The builder asks where the fire starts.")
+      .build();
+
+    const state = receive(aChatState(), subagentTurn);
+
+    expect(kindsOf(state)).toEqual(["subagent_message", "assistant"]);
+  });
+
   it("renders a job_update that opens a turn as a notice for the job that ended", () => {
     const jobTurn = aConversation("conv-1", 5n)
       .inTurn("turn-2")
