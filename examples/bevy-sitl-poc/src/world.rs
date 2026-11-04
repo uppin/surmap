@@ -231,6 +231,26 @@ pub fn build_world(
     commands.insert_resource(RigSource(profile));
     let fog_visibility_m = manifest.weather.as_ref().and_then(|w| w.fog_visibility_m);
     spawn_sun_and_haze(&mut commands, &assets, &mut state.pending, &manifest.environment, fog_visibility_m);
+    if let Some(floor) = &manifest.map_floor {
+        // The real map as the floor: one untiled texture on a bbox-sized plane at
+        // the ENU origin, just under the elements' bases so boxes never z-fight it.
+        let (_, [east, north]) = floor.centre_and_size_enu();
+        let texture: Handle<Image> = assets.load(floor.texture.clone());
+        state.pending.push(texture.clone().untyped());
+        let material = materials.add(StandardMaterial {
+            base_color_texture: Some(texture),
+            perceptual_roughness: 0.95,
+            ..default()
+        });
+        let mesh = meshes.add(Rectangle::new(east as f32, north as f32));
+        commands.spawn((
+            Name::new("Map floor"),
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
+            Transform::from_translation(enu(0.0, 0.0, -0.02))
+                .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+        ));
+    }
     commands.insert_resource(Wildfire::new(manifest.weather.as_ref(), &manifest.fires, &assets, &mut meshes, &mut state.pending));
     let gait: Handle<actors::FigureAsset> = assets.load("behaviour/person.figure.json");
     state.pending.push(gait.clone().untyped());
