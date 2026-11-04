@@ -19,6 +19,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from surmap.agent.runtime.outputs import DEFAULT_MAX_INLINE_BYTES
 from surmap.agent.server.app import (
     CORAL_MODEL_DIR_ENV,
     CORS_ORIGINS_ENV,
@@ -27,6 +28,8 @@ from surmap.agent.server.app import (
     DEFAULT_MODEL_ID,
     DEFAULT_PORT,
     DEFAULT_SIM_ASSETS,
+    MAX_INLINE_OUTPUT_ENV,
+    READ_ROOTS_ENV,
     SKETCHFAB_TOKEN_ENV,
     SKILLS_DIR_ENV,
     AgentServerConfig,
@@ -133,7 +136,11 @@ def config_from_args(
     argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = None
 ) -> AgentServerConfig:
     """The config for this command line; CORS origins from `SURMAP_AGENT_CORS_ORIGINS` in
-    `environ` (default `os.environ`), blank entries dropped."""
+    `environ` (default `os.environ`), blank entries dropped, and likewise the read roots from
+    `SURMAP_AGENT_READ_ROOTS` (`os.pathsep`-separated).
+
+    Raises `ValueError` when `SURMAP_AGENT_MAX_INLINE_OUTPUT_BYTES` is not a positive integer.
+    """
     args = build_parser().parse_args(argv)
     env = os.environ if environ is None else environ
     raw_origins = env.get(CORS_ORIGINS_ENV)
@@ -170,7 +177,25 @@ def config_from_args(
         survey_token=survey_token(None, env),
         access_code=env.get(ACCESS_CODE_ENV, "").strip() or None,
         web_dist=args.web_dist,
+        read_roots=tuple(
+            Path(root) for root in env.get(READ_ROOTS_ENV, "").split(os.pathsep) if root.strip()
+        ),
+        max_inline_output_bytes=_inline_limit(env),
     )
+
+
+def _inline_limit(env: Mapping[str, str]) -> int:
+    """`max_inline_output_bytes` from the environment, or the default when it is unset."""
+    raw = env.get(MAX_INLINE_OUTPUT_ENV, "").strip()
+    if not raw:
+        return DEFAULT_MAX_INLINE_BYTES
+    try:
+        limit = int(raw)
+    except ValueError:
+        limit = 0
+    if limit < 1:
+        raise ValueError(f"{MAX_INLINE_OUTPUT_ENV} must be a positive integer, not {raw!r}")
+    return limit
 
 
 async def serve(config: AgentServerConfig) -> None:

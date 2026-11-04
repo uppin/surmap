@@ -17,6 +17,8 @@ name, description, JSON Schema arguments and default execution policy.
 | `proto/surmap/agent/v1/chat.proto` | `ChatService` — the browser's chat API (`StreamTurn`, `WatchConversation`, `Steer`, `CancelTurn`, `ListModels`, `GetConversation`), streaming `TurnEvent`s |
 | `src/surmap/agent/proto/` | Generated `_pb2.py` / `.pyi` and `agent_descriptor_set.binpb` (checked in) |
 | `src/surmap/agent/contracts.py` | `ToolContract`, `tool_contracts(service)`, `resolve_execution(contract, arguments)` |
+| `src/surmap/agent/runtime/outputs.py` | `ToolOutputs` — large or requested tool results saved to a file (*The `output` argument*) |
+| `src/surmap/agent/files.py` | `ReadRoots`, `file_tools` — `read_file` and `grep_files` over the read roots (*Saved outputs and file tools*) |
 | `src/surmap/agent/subagents.py` | `SubagentPool`, `SubagentSetup`, `subagent_tools` — delegated work in a context of its own (*Subagents*) |
 | `src/surmap/agent/services.py` | `survey_tools_module`, `agent_jobs_module`, `chat_service_module`, `fleet_module` — `ServiceModule`s where an rpc with no handler answers `UNIMPLEMENTED` |
 
@@ -120,6 +122,63 @@ contract builder rather than declared in each request message:
 `default_execution` with any field the model gave overriding it; an
 invalid value is a `ValueError`. The runtime strips `execution` before
 decoding the request.
+
+## The `output` argument
+
+Every tool schema also gets an optional `output` argument from `tool_input_schema`, next to
+`execution`:
+
+```json
+{"output": {"to_file": true}}
+```
+
+`resolve_output(arguments)` validates it, and `BoundTool.prepare` strips it before the handler
+runs. What the model reads for a completed call (and for a detached job's notice) is rendered by
+the runner's `ToolOutputs`:
+
+- When the compact JSON fits under `max_inline_bytes` (default 16 KiB) and the call did not ask
+  for a file, the result goes to the model inline, as before.
+- Otherwise the result is saved as pretty-printed JSON (one value per line), at
+  `<job_id>-<tool>-<random>.json`. The model reads a reference instead:
+  `{"saved_to_file", "reason", "bytes", "lines", "preview", "hint"}`. `reason` is `requested` or
+  `over the inline limit of N bytes`.
+- A `ToolOutputs` with no directory keeps every result inline (library use, most tests).
+- The UI still receives the whole result in `ToolCallFinished`; only the model's copy is
+  shortened.
+
+Each conversation saves into `<root>/<conversation id>/`, and each subagent into
+`<root>/<conversation id>/<subagent id>/`. A name is sanitised to `[A-Za-z0-9_-]`, so it cannot
+leave the root. File names carry a random suffix because job ids restart at `j-1` when a
+conversation is restored. Saved files are not cleaned up.
+
+## Saved outputs and file tools (`surmap.agent.files`)
+
+Two tools, bound in every conversation (SYNC · 30 s · FAIL), read the saved outputs:
+
+| Tool | Arguments | Result |
+|---|---|---|
+| `read_file` | `path`, `offset` (from 1), `limit` (lines, default 200, ≤ 2000) | `{"path", "start_line", "end_line", "total_lines", "content", "truncated"}`; `content` is tab-numbered lines |
+| `grep_files` | `pattern` (Python regex), `path`, `glob`, `ignore_case`, `max_matches` (default 100, ≤ 1000) | `{"matches": [{"path", "line", "text"}], "files_searched", "truncated"}` |
+
+- **Read roots.** The tools can read the runner's output folder plus
+  `AgentServerConfig.read_roots` (`$SURMAP_AGENT_READ_ROOTS`, `os.pathsep`-separated), and nothing
+  else. A relative path starts at the output folder. Every path is `resolve()`d, symlinks
+  included, and must land inside a root. Grep walks with `os.walk(followlinks=False)` and checks
+  each file again. A main agent's root contains its subagents' folders; a subagent reads only its
+  own folder.
+- **Engine.** Grep is plain Python `re` run in a worker thread. It needs no ripgrep binary or
+  native wheel, so it works on every OS and architecture the agent runs on. A file whose first
+  8 KiB holds a NUL is binary: `read_file` refuses it and grep skips it. Grep also skips files
+  over 16 MiB. Lines are cut at 2000 characters.
+- **Bounded.** Each result is kept under the inline limit and says `truncated` when it was cut
+  short; `end_line` tells where to continue. These two tools are bound with
+  `saves_large_results=False`, so a read never saves another file.
+- **Not bounded.** A regex has no timeout: a pathological pattern runs until the call's 30 s
+  timeout, and the worker thread finishes the file it is in.
+
+Server config: `tool_outputs_dir` (default `<cache_dir>/agent-tool-outputs`, on Modal the Volume),
+`max_inline_output_bytes` (`$SURMAP_AGENT_MAX_INLINE_OUTPUT_BYTES`, a positive integer; anything
+else refuses to start) and `read_roots`.
 
 ## Tools (`surmap.agent.tools`)
 
@@ -542,7 +601,8 @@ many seconds one `timeout_s` unit lasts (1.0 in production).
   lists every job newest first). `wait_for_jobs` takes mode `ALL` or `ANY` and a timeout (default
   300 s).
 - When a detached or async job ends (other than by cancel), a `JobNotice` — e.g.
-  `Job j-3 run_demo succeeded: {...}` — is queued on `JobRunner.notices`. During a turn it is read
+  `Job j-3 run_demo succeeded: {...}` — is queued on `JobRunner.notices`. Its result is rendered
+  through the runner's `ToolOutputs`, so a large one is a saved file's reference. During a turn it is read
   before the next model call and reported as a `JobUpdate`; while no turn runs it comes out of
   `AgentSession.idle_events()`, for the chat server to start a `job_event` turn.
 

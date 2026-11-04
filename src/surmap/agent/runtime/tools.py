@@ -2,7 +2,8 @@
 
 The policy of each call comes from an injected resolver (`surmap.agent.contracts.resolve_execution`
 by default): the contract's default execution with the model's optional `execution` argument
-applied. The handler never sees `execution`.
+applied. The optional `output` argument says whether the result goes to a file
+(`surmap.agent.runtime.outputs`). The handler never sees `execution` or `output`.
 """
 
 from __future__ import annotations
@@ -10,8 +11,21 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
-from surmap.agent.contracts import ExecutionPolicy, ToolContract, resolve_execution
-from surmap.agent.runtime.jobs import Job, JobRunner, ToolHandler, ToolOutcome, WaitMode
+from surmap.agent.contracts import (
+    ExecutionPolicy,
+    ToolContract,
+    resolve_execution,
+    resolve_output,
+)
+from surmap.agent.runtime.jobs import (
+    Completed,
+    Detached,
+    Job,
+    JobRunner,
+    ToolHandler,
+    ToolOutcome,
+    WaitMode,
+)
 
 __all__ = [
     "BoundTool",
@@ -30,8 +44,10 @@ class PreparedCall:
     """One model tool call, ready to run."""
 
     arguments: Mapping[str, object]
-    """The model's arguments without `execution`; what the handler receives."""
+    """The model's arguments without `execution` and `output`; what the handler receives."""
     execution: ExecutionPolicy
+    to_file: bool = False
+    """Whether the model asked for the result as a saved file."""
 
 
 @dataclass(frozen=True)
@@ -42,6 +58,9 @@ class BoundTool:
     handler: ToolHandler
     runner: JobRunner
     resolve: ExecutionResolver
+    saves_large_results: bool = True
+    """Whether a result over the runner's inline limit is saved to a file without being asked;
+    off for the file tools, which bound their own results."""
 
     @property
     def name(self) -> str:
@@ -64,19 +83,45 @@ class BoundTool:
         }
 
     def prepare(self, arguments: Mapping[str, object]) -> PreparedCall:
-        """Split the model's arguments into the handler's and the resolved policy.
+        """Split the model's arguments into the handler's, the resolved policy and `to_file`.
 
-        Raises `ValueError` when the resolver rejects the `execution` argument.
+        Raises `ValueError` when the resolver rejects the `execution` argument, or for an
+        `output` argument the schema does not allow.
         """
         execution = self.resolve(self.contract, arguments)
-        handed = {name: value for name, value in arguments.items() if name != "execution"}
-        return PreparedCall(arguments=handed, execution=execution)
+        to_file = resolve_output(arguments)
+        handed = {name: value for name, value in arguments.items() if name not in _CALL_ARGUMENTS}
+        return PreparedCall(arguments=handed, execution=execution, to_file=to_file)
 
     async def run(self, call: PreparedCall) -> ToolOutcome:
         """Run the prepared call as a job under its policy."""
         return await self.runner.call(
-            self.contract, call.arguments, self.handler, policy=call.execution
+            self.contract,
+            call.arguments,
+            self.handler,
+            policy=call.execution,
+            to_file=call.to_file,
+            auto_save=self.saves_large_results,
         )
+
+    def content(self, outcome: ToolOutcome, call: PreparedCall) -> str:
+        """What the model reads for a call's outcome: a completed result rendered through the
+        runner's outputs (inline, or a saved file's reference), else the job handle or error."""
+        if isinstance(outcome, Completed):
+            return self.runner.outputs.render(
+                outcome.job_id,
+                self.name,
+                outcome.result,
+                to_file=call.to_file,
+                auto=self.saves_large_results,
+            )
+        if isinstance(outcome, Detached):
+            return (
+                f"Job {outcome.job.job_id} ({outcome.job.tool}) is still running: "
+                f"{outcome.detail}. Its result will arrive as a notice; use wait_for_jobs, "
+                f"get_job or cancel_job with job_id {outcome.job.job_id}."
+            )
+        return f"Failed: {outcome.error}"
 
 
 def bind_contract_tool(
@@ -85,9 +130,16 @@ def bind_contract_tool(
     runner: JobRunner,
     *,
     resolve: ExecutionResolver = resolve_execution,
+    saves_large_results: bool = True,
 ) -> BoundTool:
     """The tool the model calls as `contract.name`, implemented by `handler`."""
-    return BoundTool(contract=contract, handler=handler, runner=runner, resolve=resolve)
+    return BoundTool(
+        contract=contract,
+        handler=handler,
+        runner=runner,
+        resolve=resolve,
+        saves_large_results=saves_large_results,
+    )
 
 
 def job_tools(
@@ -116,6 +168,9 @@ def job_tools(
         for name, handler in handlers.items()
     )
 
+
+_CALL_ARGUMENTS = frozenset({"execution", "output"})
+"""The arguments every tool takes that steer the call rather than reach its handler."""
 
 _DEFAULT_WAIT_S = 300
 

@@ -33,6 +33,7 @@ from langchain_core.language_models import BaseChatModel
 
 from surmap.agent.contracts import tool_contracts
 from surmap.agent.event_log import log_event
+from surmap.agent.files import file_tools
 from surmap.agent.llm.fireworks import FireworksChatModel
 from surmap.agent.llm.meta import DEFAULT_AGENT_META_MODEL, META_PROVIDER, MetaResponsesChatModel
 from surmap.agent.llm.registry import ChatModelRegistry
@@ -45,6 +46,7 @@ from surmap.agent.proto import (
     survey_tools_pb2,
 )
 from surmap.agent.runtime.graph import TurnCaps
+from surmap.agent.runtime.outputs import DEFAULT_MAX_INLINE_BYTES, ToolOutputs
 from surmap.agent.runtime.session import SqliteConversationStore
 from surmap.agent.server.access import UNAUTHENTICATED_HINT, AccessGate, session_token
 from surmap.agent.server.binding import agent_tools
@@ -124,6 +126,7 @@ __all__ = [
     "conversation_store",
     "default_model_factory",
     "onboard_models",
+    "tool_outputs",
     "usage_log_path",
 ]
 
@@ -137,6 +140,10 @@ DEFAULT_CORS_ORIGINS = ("http://localhost:5173",)
 """The Vite dev server of the chat UI."""
 SKILLS_DIR_ENV = "SURMAP_AGENT_SKILLS_DIR"
 """A directory of extra skills (`<name>/SKILL.md`) overlaid on the shipped ones."""
+READ_ROOTS_ENV = "SURMAP_AGENT_READ_ROOTS"
+"""Folders (`os.pathsep`-separated) read_file and grep_files may read beside the saved outputs."""
+MAX_INLINE_OUTPUT_ENV = "SURMAP_AGENT_MAX_INLINE_OUTPUT_BYTES"
+"""Bytes of JSON a tool result may be before it is saved to a file instead of sent inline."""
 CORAL_MODEL_DIR_ENV = "SURMAP_CORAL_MODEL_DIR"
 """The prepared Coral model dir when `--coral-model-dir` names none, as for `scripts/demo.py`."""
 
@@ -163,6 +170,10 @@ the job started and name its job id, for example "run_demo started as job j-2". 
 job finished until you have its result. When your next step needs a job's result, call \
 wait_for_jobs with its id; otherwise answer and let the job report back when it ends.
 
+A tool result too big for the conversation comes back as a saved file's path with a preview \
+instead; any tool call can also ask for that with output: {"to_file": true}. Read such a file \
+with read_file and search it with grep_files, rather than asking for the whole result again.
+
 When the person steers you mid-turn, the calls that were blocking keep running as jobs; act on \
 the new guidance first, and cancel_job a job they no longer want.
 
@@ -188,7 +199,8 @@ When you need a decision only the main agent or the person can make, finish with
 your final answer; the main agent answers with a new message and you continue from where you \
 stopped. Use message_main_agent only for something it must know while you keep working. Guidance \
 from the main agent can arrive while you work; act on it first. Wait for any job you started \
-before you answer. You only build and read; you never command a vehicle.
+before you answer. A result too big for your context comes back as a saved file's path; read \
+or search it with read_file and grep_files. You only build and read; you never command a vehicle.
 """
 
 
@@ -214,6 +226,15 @@ class AgentServerConfig:
     `$SURMAP_AGENT_SKILLS_DIR` (see `surmap.agent.__main__`)."""
     timeout_scale: float = 1.0
     """Seconds one execution-policy `timeout_s` unit lasts; 1.0 outside tests."""
+    tool_outputs_dir: Path | None = None
+    """Where large or requested tool results are saved, a folder per conversation;
+    `<cache_dir>/agent-tool-outputs` when None (on Modal, the Volume)."""
+    max_inline_output_bytes: int = DEFAULT_MAX_INLINE_BYTES
+    """Bytes of JSON a tool result may be before it is saved instead; the command line fills it
+    from `$SURMAP_AGENT_MAX_INLINE_OUTPUT_BYTES`."""
+    read_roots: tuple[Path, ...] = ()
+    """Folders read_file and grep_files may read beside a conversation's saved outputs; the
+    command line fills it from `$SURMAP_AGENT_READ_ROOTS`."""
     model_factory: ModelFactory | None = None
     """Builds models instead of the registry; the seam tests inject a scripted model through."""
     sim_dir: Path | None = None
@@ -352,6 +373,12 @@ def _cache_root(config: AgentServerConfig) -> Path:
     if config.cache_dir is not None:
         return config.cache_dir
     return Path(os.environ.get("SURMAP_DEMO_CACHE_DIR", Path.home() / ".cache" / "surmap"))
+
+
+def tool_outputs(config: AgentServerConfig) -> ToolOutputs:
+    """The root the server's conversations save large or requested tool results under."""
+    directory = config.tool_outputs_dir or _cache_root(config) / "agent-tool-outputs"
+    return ToolOutputs(directory=directory, max_inline_bytes=config.max_inline_output_bytes)
 
 
 def conversation_store(config: AgentServerConfig) -> SqliteConversationStore | None:
@@ -517,6 +544,7 @@ def build_agent_description(
         tools=lambda runner: (
             *agent_tools(contracts, rpc_handlers, runner),
             *skill_tools(catalogue, runner),
+            *file_tools(runner, extra_roots=config.read_roots),
         ),
         models=models.available,
         default_model_id=config.model_id,
@@ -525,6 +553,7 @@ def build_agent_description(
         timeout_scale=config.timeout_scale,
         subagents=SubagentSetup(system_prompt=SUBAGENT_PROMPT, load_skill=catalogue.load_skill),
         store=conversation_store(config),
+        outputs=tool_outputs(config),
     )
     origins = tuple(config.cors_origins)
     gate = AccessGate(config.access_code) if config.access_code else None

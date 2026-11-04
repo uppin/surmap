@@ -6,7 +6,8 @@ START ─► model ──(tool calls)──► tools ──► model … ──(
             └─(round cap | repeated identical failures)──► cut_off ──► END
 ```
 
-Tool calls of one model batch run one at a time through their `BoundTool`. `cut_off` answers
+Tool calls of one model batch run one at a time through their `BoundTool`, whose `content` is
+what the model reads back: the result inline, or a saved file's reference. `cut_off` answers
 every unanswered call with a "Not run" tool result. There is no checkpointer: the session seeds
 the history and appends what the turn adds.
 """
@@ -40,7 +41,7 @@ from surmap.agent.runtime.events import (
     ToolCallFinished,
     ToolCallStarted,
 )
-from surmap.agent.runtime.jobs import Completed, Detached, Failed, ToolOutcome
+from surmap.agent.runtime.jobs import Detached, Failed
 from surmap.agent.runtime.tools import BoundTool
 
 __all__ = [
@@ -246,7 +247,7 @@ async def _run_call(
     outcome = await tool.run(prepared)
     writer(ToolCallFinished(call_id=call_id, tool=name, outcome=outcome))
     return ToolMessage(
-        content=_content(outcome),
+        content=tool.content(outcome, prepared),
         tool_call_id=call_id,
         name=name,
         status="error" if isinstance(outcome, Failed) else "success",
@@ -263,18 +264,6 @@ def _detached(state: TurnState) -> tuple[str, ...]:
         if message.additional_kwargs.get("detached") == STEER_DETACH_REASON:
             ids.append(message.tool_call_id)
     return tuple(reversed(ids))
-
-
-def _content(outcome: ToolOutcome) -> str:
-    if isinstance(outcome, Completed):
-        return json.dumps(outcome.result, default=str)
-    if isinstance(outcome, Detached):
-        return (
-            f"Job {outcome.job.job_id} ({outcome.job.tool}) is still running: {outcome.detail}. "
-            "Its result will arrive as a notice; use wait_for_jobs, get_job or cancel_job "
-            f"with job_id {outcome.job.job_id}."
-        )
-    return f"Failed: {outcome.error}"
 
 
 def _repeated_failure(messages: Sequence[BaseMessage], limit: int) -> bool:
