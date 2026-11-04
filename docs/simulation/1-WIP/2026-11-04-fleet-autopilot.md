@@ -12,18 +12,18 @@ PRD: `PRD-2026-11-04-fleet-autopilot.md` · Discovery: `2026-11-04-fleet-autopil
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1) · commit 1 `63e12a7`
+- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1) · commit 1 `ffbdc4a`
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ✅ 2026-11-04 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 45 failing (23 acceptance + 22 unit; 1 of them blocked on n1) — commit 2
+- [wf 2] ✅ 2026-11-04 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 45 failing (23 acceptance + 22 unit; 1 of them blocked on n1) — commit 2 `59a59fb`
   - [x] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
   - [x] Stubs this node owns (`fleet.rs`, `fleet/autopilot.rs`, `fleet/log.rs`, `ActiveDrone`, `FleetDrone`, `--fleet-log`, Python `CapturedFrame.drone_id`)
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) ·
+- [wf 3] ⏳ `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) ·
   - [ ] `fleet/log.rs`: `FleetCommand`, `Route`, `OnComplete`, `Stamped`, `FleetLog::{push, refused, for_drone, from_jsonl}`; phase checks; golden `tests/fixtures/fleet/commands.json` (every variant) parses
   - [ ] `fleet/autopilot.rs`: fixed-step (`STEP_S = 0.05`) pure `step`; `state_at(home, id, log, t)`; incremental `Autopilot` equal to cold `state_at`; limits; takeoff, legs, detour resume, set_route continuity, recall/land, hover
   - [ ] Runtime: `spawn_fleet` docks one body per `Nests` drone id (`FleetDrone { id }`, kinematic, rotors) and despawns the legacy `Drone` when the scene has nests; `fly_fleet` poses every drone from its `Autopilot` at `SimClock::now()`
@@ -264,7 +264,7 @@ at wrap.
 
 ## Validation Results
 
-**Baseline (`63e12a7`: n1 planning + n1 red + this node's planning):** `uv run mypy` clean,
+**Baseline (`ffbdc4a`: n1 planning + n1 red + this node's planning):** `uv run mypy` clean,
 `ruff check --no-cache` / `ruff format --no-cache --check` clean, `uv run pytest -q` 2154 passed,
 27 failed, 38 skipped; `cargo test --locked` 267 passed, 18 failed. All 45 failures are n1's
 (inherited, not this PR's): Python `test_sim_fleet_nests.py` (22), `test_sim_water_manifest.py`
