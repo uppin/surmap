@@ -29,6 +29,27 @@ failing call unchanged.
 Positions are ENU metres (east, north, up) from the scene origin; yaw is counter-clockwise from
 east; the wind's direction is where it blows *from*, clockwise from north (270 is a westerly).
 
+## Basing a scene on the real map
+
+When the brief names a real place or gives GPS coordinates, base the scene on the map first,
+before placing anything:
+
+1. `create_scenario` from `empty-lot` (or the closest preset), then `set_map_floor` with the
+   GPS bounding box (south-west and north-east corners, at most 1 000 m a side) that covers
+   the area. The station stitches OpenStreetMap tiles into the floor; the scenario's ENU
+   origin becomes the bbox centre, and the preset ground box is replaced by the floor.
+2. Never convert GPS to ENU yourself. For every object the brief places by GPS, call
+   `geo_to_enu` with its lat/lon and place it at the ENU the tool returns; check
+   `inside_floor` — outside means the bbox was too small, so re-set the floor wider rather
+   than placing the object off the map. `enu_to_geo` converts a placed position back.
+3. Read `set_map_floor`'s warnings: re-basing a scenario that already has elements keeps
+   their ENU positions, so they move on the map — re-place them by GPS afterwards. Elements
+   listed as outside the floor need a wider floor or a new position.
+4. `clear_map_floor` removes the floor and restores the preset ground.
+
+Report the floor's bbox and centre in your final report, and credit OpenStreetMap
+(© OpenStreetMap contributors) among the scenario's credits.
+
 ## 2. Build it
 
 - **Buildings.** `list_building_presets` once, then `set_district` for areas of one character

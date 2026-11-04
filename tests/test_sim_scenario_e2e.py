@@ -26,6 +26,7 @@ from surmap.agent.server.app import AgentServerConfig, build_agent_description
 from surmap.agent.server.sim_routes import SimulationRig
 from surmap.rpc.hosts.hypercorn import HypercornHost
 from surmap.simulation.asset_sources import AmbientCg, PolyHaven, Sketchfab
+from surmap.simulation.map_floor import TileSource
 from surmap.simulation.scenario_manifest import load_presets, validate_manifest
 from surmap.simulation.scenario_store import ScenarioStore
 from tests.agent_fakes import ScriptedChatModel, answer, calling, tool_call
@@ -117,7 +118,9 @@ def an_agent_building_a_wreck_scene() -> ScriptedChatModel:
 
 
 @asynccontextmanager
-async def a_station(tmp_path: Path, model: ScriptedChatModel) -> AsyncIterator[Station]:
+async def a_station(
+    tmp_path: Path, model: ScriptedChatModel, tile_source: TileSource | None = None
+) -> AsyncIterator[Station]:
     fetch = RecordingFetch()
     store = ScenarioStore(
         db_path=tmp_path / "simulation.sqlite",
@@ -133,6 +136,7 @@ async def a_station(tmp_path: Path, model: ScriptedChatModel) -> AsyncIterator[S
         },
         static_assets=POC_ASSETS,
         page_dist=None,
+        tile_source=tile_source,
     )
     with a_tool_rig(tmp_path) as rig:
         config = AgentServerConfig(
