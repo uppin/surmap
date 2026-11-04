@@ -61,9 +61,7 @@ def a_person_ahead(metres: float = 8.0, east: float = 0.0) -> GroundTruthBox:
     return a_box("person", east, metres, (0.6, 0.4, 1.8), "survivor-1")
 
 
-def a_detection(
-    label: str, box: tuple[float, float, float, float], frame_id: int = 1
-) -> Detection:
+def a_detection(label: str, box: tuple[float, float, float, float], frame_id: int = 1) -> Detection:
     return Detection(frame_id, box, label, 0.8, "efficientdet-lite0")
 
 
@@ -244,3 +242,18 @@ def test_a_grey_only_capture_is_detected_on_its_grey_left_eye(tmp_path: Path) ->
     detections = detect_capture(capture, PixelReadingDetector())
 
     assert [d.label for d in detections[1]] == ["128,128,128"]
+
+
+def test_finding_a_person_too_small_to_be_expected_is_not_a_false_positive() -> None:
+    # Given a person 60 m ahead: present in the image, but under the size an object must have
+    # to be expected
+    far = a_person_ahead(metres=60.0)
+    rig = a_north_facing_rig()
+    assert visible_objects((far,), rig, a_calibration()) == ()
+    (present,) = visible_objects((far,), rig, a_calibration(), min_side_px=0.0)
+
+    # When a detector finds them anyway
+    score = score_frame((), (a_detection("person", present.box_xyxy),), unresolved=(present,))
+
+    # Then that is neither a hit nor a false positive
+    assert (score.hit_ids, score.false_positives) == (frozenset(), ())

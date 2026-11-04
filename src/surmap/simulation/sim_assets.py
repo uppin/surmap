@@ -24,6 +24,8 @@ class AssetPin:
     license: str
     source: str
     member: str | None = None
+    # The credit an attribution licence (CC BY) asks for: title, author, licence.
+    attribution: str | None = None
 
 
 def _validate_relative(path: str) -> None:
@@ -52,6 +54,9 @@ def load_asset_pins(lock_path: Path) -> tuple[AssetPin, ...]:
         member = item.get("member")
         if member is not None and not isinstance(member, str):
             raise ValueError("asset pin member must be a string")
+        attribution = item.get("attribution")
+        if attribution is not None and not isinstance(attribution, str):
+            raise ValueError("asset pin attribution must be a string")
         _validate_relative(fields["path"])
         pins.append(
             AssetPin(
@@ -61,6 +66,7 @@ def load_asset_pins(lock_path: Path) -> tuple[AssetPin, ...]:
                 license=fields["license"],
                 source=fields["source"],
                 member=member,
+                attribution=attribution,
             )
         )
     return tuple(pins)

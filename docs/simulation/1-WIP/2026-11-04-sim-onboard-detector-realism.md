@@ -8,19 +8,20 @@
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-04 `/plan-red` Plan — changeset, initial discovery (PRD ➖: simulation test asset, no product surface) · this file + discovery companion
-- [wf 2] ✅ 2026-11-04 `/plan-red` Red — failing Python and Rust tests, committed · Python: collection error (no `detection_eval`) + 3 failing; Rust: 7 compile errors on missing `colour`/`bgra_to_rgb8`/`frame_line`/`FigureModel`/`clip_time`/`person_truth`
+- [wf 1] ✅ 2026-11-04 `/plan-red` Plan — changeset, initial discovery (PRD ➖: simulation test asset, no product surface) · changeset + discovery companion @ `4abdb07`
+- [wf 2] ✅ 2026-11-04 `/plan-red` Red — failing Python and Rust tests, committed · Python: collection error (no `detection_eval`) + 3 failing; Rust: 7 compile errors on missing `colour`/`bgra_to_rgb8`/`frame_line`/`FigureModel`/`clip_time`/`person_truth` @ `4abdb07`
   - [x] Python: `detection_eval` (visibility, matching, report, colour-first detection) red
   - [x] Python: `load_bevy_capture` reads `left_rgb_ref`; lock pins keep `attribution` red
   - [x] Rust: `--colour` plan flag, `bgra_to_rgb8`, `frame_line`, figure `model`, `clip_time`, person ground truth, shipped humanoid and cars pinned red
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Recorder writes colour left frames under `--colour` (grey frames unchanged)
-  - [ ] Survivors wear a rigged humanoid glTF (CesiumMan, CC-BY-4.0), posed from its walk clip on the sim clock
-  - [ ] People enter `ground_truth.json` as `person` boxes
-  - [ ] Covered cars replaced by CarConcept (CC-BY-4.0); both pinned in `assets.lock.json` with attribution
-  - [ ] `scripts/score_sim_detections.py` scores a capture per profile
-  - [ ] New fixture `tests/fixtures/bevy_sim_detector_capture/` recorded; before/after measured
-  - [ ] Opt-in e2e `tests/test_sim_detector_realism_e2e.py` (`SURMAP_REQUIRE_CORAL_E2E`) in CI `coral-e2e`
+- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes · pytest 2054 passed / 36 skipped; cargo test 182 passed; wasm32 check green
+  - [x] Recorder writes colour left frames under `--colour` (grey frames unchanged)
+  - [x] Survivors wear a rigged humanoid glTF (CesiumMan, CC-BY-4.0), posed from its walk clip on the sim clock, tinted with the coat (`coat_tint`, added after measuring the white figure lose to the capsules; red test first)
+  - [x] People enter `ground_truth.json` as `person` boxes
+  - [x] Covered cars replaced by CarConcept (CC-BY-4.0) with `normal_maps: false` (added after measuring the speckle; red test first); both pinned in `assets.lock.json` with attribution
+  - [x] `scripts/score_sim_detections.py` scores a capture per profile; detections of objects too small to be in view are not false positives (red test first)
+  - [x] New fixture `tests/fixtures/bevy_sim_detector_capture/` recorded; before/after measured
+  - [x] Opt-in e2e `tests/test_sim_detector_realism_e2e.py` (`SURMAP_REQUIRE_CORAL_E2E`) in CI `coral-e2e`
+  - [x] Served-scenario golden `tests/fixtures/sim_scenario/wreck-on-the-avenue.json` follows the shipped scene's new car entries
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs, then open the PR ready ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/simulation/bevy-simulation.md` — colour recording, humanoid figures, person ground truth, car model, detector scoring, non-COCO kinds out of scope

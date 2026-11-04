@@ -119,6 +119,19 @@ pub fn bgra_to_gray8(bgra: &[u8], width: u32, height: u32, row_bytes: u32) -> Ve
     out
 }
 
+/// BGRA8 (as read back, rows `row_bytes` apart) → tightly packed RGB8, the colour frame the
+/// ELP module's MJPEG stream gives the on-board detector.
+pub fn bgra_to_rgb8(bgra: &[u8], width: u32, height: u32, row_bytes: u32) -> Vec<u8> {
+    let (w, h, stride) = (width as usize, height as usize, row_bytes as usize);
+    let mut out = Vec::with_capacity(w * h * 3);
+    for row in 0..h {
+        for pixel in bgra[row * stride..row * stride + w * 4].chunks_exact(4) {
+            out.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
+        }
+    }
+    out
+}
+
 /// The rig's Bevy transform (x right/east, y up, -z north; the rig looks
 /// down its own -z) as the wire's ENU pose of its forward-left-up frame.
 pub fn rig_pose_enu(translation: Vec3, rotation: Quat) -> [f64; 7] {

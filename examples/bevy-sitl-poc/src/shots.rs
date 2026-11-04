@@ -100,6 +100,7 @@ impl RunMode {
                 rate_hz: number("--rate-hz", 10.0)?,
                 start_s: number("--start", 0.0)?,
                 jpeg: args.iter().any(|a| a == "--jpeg"),
+                colour: args.iter().any(|a| a == "--colour"),
             }),
             Some(None) => return Err("--record needs a directory".into()),
         };
@@ -435,7 +436,7 @@ mod tests {
         assert_eq!(mode.flight, FlightMode::SurveyLoop);
         assert_eq!(
             mode.record,
-            Some(RecordPlan { dir: PathBuf::from("cap"), frames: 120, rate_hz: 10.0, start_s: 30.0, jpeg: true })
+            Some(RecordPlan { dir: PathBuf::from("cap"), frames: 120, rate_hz: 10.0, start_s: 30.0, jpeg: true, colour: false })
         );
     }
 

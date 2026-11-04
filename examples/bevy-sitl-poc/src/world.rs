@@ -383,10 +383,10 @@ impl Builder<'_, '_, '_> {
         let figure = Figure::new(&e.id, e.position_enu, tree);
         let [x, y, z] = e.position_enu;
         self.commands
-            .spawn((figure, Visibility::default(), Transform::from_translation(enu(x, y, z))))
+            .spawn((figure, actors::FigureCoat(coat.clone()), Visibility::default(), Transform::from_translation(enu(x, y, z))))
             .with_children(|figure| {
-                figure.spawn((Mesh3d(body), MeshMaterial3d(coat), Transform::from_translation(Vec3::Y * 0.72)));
-                figure.spawn((Mesh3d(head), MeshMaterial3d(skin), Transform::from_translation(Vec3::Y * 1.62)));
+                figure.spawn((Mesh3d(body), MeshMaterial3d(coat), Transform::from_translation(Vec3::Y * 0.72), actors::FallbackBody));
+                figure.spawn((Mesh3d(head), MeshMaterial3d(skin), Transform::from_translation(Vec3::Y * 1.62), actors::FallbackBody));
             });
     }
 }

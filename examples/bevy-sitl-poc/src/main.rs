@@ -177,6 +177,8 @@ fn main() {
                 wildfire::update_fires,
                 wildfire::rain_around_cameras,
                 actors::animate_figures,
+                actors::attach_bodies,
+                actors::pose_figures,
                 actors::attach_visors,
             )
                 .chain()

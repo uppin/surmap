@@ -19,6 +19,8 @@ from surmap.types import Pose, StereoFramePair, Vec3
 class CapturedFrame:
     pair: StereoFramePair
     pose_enu: Pose
+    # The colour left image (`--record … --colour`), beside the grey eyes; None when grey only.
+    left_rgb_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -235,7 +237,16 @@ def load_bevy_capture(root: Path) -> BevyCapture:
             right_ref=str(root / right_ref),
             calibration_id=calibration_id,
         )
-        frames.append(CapturedFrame(pair=pair, pose_enu=pose))
+        rgb_ref = obj.get("left_rgb_ref")
+        if rgb_ref is not None and not isinstance(rgb_ref, str):
+            raise ValueError("left_rgb_ref must be a string")
+        frames.append(
+            CapturedFrame(
+                pair=pair,
+                pose_enu=pose,
+                left_rgb_ref=str(root / rgb_ref) if rgb_ref is not None else None,
+            )
+        )
     profile_path = root / "camera.json"
     camera = load_camera_profile(profile_path) if profile_path.is_file() else None
     object_tracks, wind = _load_object_tracks(root / "object_tracks.jsonl")

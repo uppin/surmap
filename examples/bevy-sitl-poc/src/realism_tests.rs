@@ -25,7 +25,7 @@ fn pin(path: &str) -> Option<serde_json::Value> {
 }
 
 fn a_walker() -> FigureModel {
-    FigureModel { glb: "models/man/Man.glb".into(), scale: 1.0, yaw_deg: 0.0, clip_s: 0.6 }
+    FigureModel { glb: "models/man/Man.glb".into(), scale: 1.0, yaw_deg: 0.0, clip_s: 0.6, coat_tint: false }
 }
 
 #[test]
@@ -82,7 +82,23 @@ fn a_figure_may_wear_a_humanoid_model() {
     )
     .expect("valid");
 
-    assert_eq!(def.model, Some(FigureModel { glb: "models/man/Man.glb".into(), scale: 1.16, yaw_deg: 180.0, clip_s: 0.6 }));
+    assert_eq!(def.model, Some(FigureModel { glb: "models/man/Man.glb".into(), scale: 1.16, yaw_deg: 180.0, clip_s: 0.6, coat_tint: false }));
+}
+
+#[test]
+fn a_model_wears_the_persons_coat_only_when_asked_to() {
+    let with = |extra: &str| {
+        FigureDef::from_json(&format!(
+            r#"{{"yaw_ease_s": 0.3, "bob_m": 0.03, "steps_per_s": 2, "reference_speed_m_s": 1.4,
+                "model": {{"glb": "models/man/Man.glb", "scale": 1{extra}}}}}"#
+        ))
+        .expect("valid")
+        .model
+        .expect("a model")
+    };
+
+    assert!(!with("").coat_tint);
+    assert!(with(r#", "coat_tint": true"#).coat_tint);
 }
 
 #[test]
@@ -141,4 +157,29 @@ fn the_shipped_cars_are_uncovered_models_pinned_with_an_open_licence() {
         let pinned = pin(glb).unwrap_or_else(|| panic!("{glb} is pinned"));
         assert!(["CC0-1.0", "CC-BY-4.0"].contains(&pinned["license"].as_str().unwrap_or("")), "{pinned}");
     }
+}
+
+#[test]
+fn a_model_keeps_its_normal_maps_unless_the_manifest_drops_them() {
+    let models = |extra: &str| {
+        crate::scene_manifest::SceneManifest::from_json(&format!(
+            r#"{{"version": 1, "camera": "cameras/rig.camera.json", "environment": {{"hdri": null, "sun_illuminance_lux": 1.0,
+                "sun_elevation_deg": 1.0, "sun_azimuth_deg": 1.0, "fog_visibility_m": 1.0}}, "materials": {{}},
+                "models": [{{"id": "car-0", "glb": "models/car.glb", "position_enu": [0, 0, 0], "collider": "box"{extra}}}],
+                "elements": []}}"#
+        ))
+        .expect("valid")
+        .models
+    };
+
+    assert!(models("")[0].normal_maps);
+    assert!(!models(r#", "normal_maps": false"#)[0].normal_maps);
+}
+
+#[test]
+fn the_shipped_cars_drop_the_flake_normal_maps_bevy_cannot_tile() {
+    let scene: serde_json::Value = serde_json::from_str(&shipped("scene.json")).expect("scene");
+
+    let cars: Vec<&serde_json::Value> = scene["models"].as_array().expect("models").iter().filter(|m| m["kind"] == "car").collect();
+    assert!(cars.iter().all(|car| car["normal_maps"] == false), "{cars:?}");
 }

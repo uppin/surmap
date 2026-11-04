@@ -27,13 +27,28 @@ pub fn resolve_models(
     mesh_parts: Query<(&Mesh3d, Option<&Aabb>, &GlobalTransform)>,
     meshes: Res<Assets<Mesh>>,
     mut truth: ResMut<GroundTruth>,
+    looks: Query<&MeshMaterial3d<StandardMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     for (root, pending, transform) in &models {
         let parts: Vec<Entity> = children.iter_descendants(root).filter(|e| mesh_parts.contains(*e)).collect();
         if parts.is_empty() || parts.iter().any(|e| mesh_parts.get(*e).is_ok_and(|(_, aabb, _)| aabb.is_none())) {
             continue;
         }
+        if !pending.instance.normal_maps {
+            drop_normal_maps(&parts, &looks, &mut materials);
+        }
         resolve_model(&mut commands, root, pending, transform, &parts, &mesh_parts, &meshes, &mut truth);
+    }
+}
+
+/// The manifest dropped this model's normal maps (`normal_maps: false`): clear them on every
+/// material its meshes wear.
+fn drop_normal_maps(parts: &[Entity], looks: &Query<&MeshMaterial3d<StandardMaterial>>, materials: &mut Assets<StandardMaterial>) {
+    for look in parts.iter().filter_map(|part| looks.get(*part).ok()) {
+        if let Some(material) = materials.get_mut(&look.0) {
+            material.normal_map_texture = None;
+        }
     }
 }
 
