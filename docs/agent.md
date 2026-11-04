@@ -16,6 +16,7 @@ name, description, JSON Schema arguments and default execution policy.
 | `proto/surmap/agent/v1/chat.proto` | `ChatService` — the browser's chat API (`StreamTurn`, `WatchConversation`, `Steer`, `CancelTurn`, `ListModels`, `GetConversation`), streaming `TurnEvent`s |
 | `src/surmap/agent/proto/` | Generated `_pb2.py` / `.pyi` and `agent_descriptor_set.binpb` (checked in) |
 | `src/surmap/agent/contracts.py` | `ToolContract`, `tool_contracts(service)`, `resolve_execution(contract, arguments)` |
+| `src/surmap/agent/subagents.py` | `SubagentPool`, `SubagentSetup`, `subagent_tools` — delegated work in a context of its own (*Subagents*) |
 | `src/surmap/agent/services.py` | `survey_tools_module`, `agent_jobs_module`, `chat_service_module` — `ServiceModule`s where an rpc with no handler answers `UNIMPLEMENTED` |
 
 ## Tool catalogue
@@ -76,6 +77,9 @@ leading comment, and argument descriptions are the field comments.
 | `remove_building_fire` | `SimulationTools.RemoveBuildingFire` | SYNC · 10 s · FAIL |
 | `get_scenario` | `SimulationTools.GetScenario` | SYNC · 10 s · FAIL |
 | `list_scenarios` | `SimulationTools.ListScenarios` | SYNC · 10 s · FAIL |
+| `start_subagent` | — (`surmap.agent.subagents`) | SYNC · 10 s · FAIL |
+| `message_subagent` | — (`surmap.agent.subagents`) | SYNC · 10 s · FAIL |
+| `message_main_agent` | — (a subagent's only) | SYNC · 10 s · FAIL |
 
 Every tool rpc must declare `option (default_execution)`;
 `tool_contracts` refuses a service with an rpc that does not.
@@ -288,6 +292,47 @@ Shipped skills:
 | Skill | What it teaches |
 |---|---|
 | `using-the-map` | The map tools: placing and moving GLB objects, navigating the camera, drawing routes (drawn paths, never flight plans), loading layers, scenes and revisions |
+| `creating-a-simulation` | The main agent's part of a scene build: write a complete brief, `start_subagent` with `building-a-simulation-scene`, relay its questions with `message_subagent`, report the scenario |
+| `building-a-simulation-scene` | A subagent's procedure over the simulation tools: preset, buildings, people and behaviour, weather and fire, licence-gated assets, `get_scenario` check, the report |
+
+## Subagents (`surmap.agent.subagents`)
+
+Work with many steps whose outcome is all the person needs — a simulation scene is dozens of
+edits — runs in a subagent, so its tool calls never enter the conversation's context.
+
+- **What a subagent is.** An `AgentSession` with its own `JobRunner` (its own `j-1`, …) and
+  history (conversation id `<conversation>/sa-<n>`), on the conversation's model as it is when
+  each of its turns starts, bound to the conversation's tools minus `start_subagent` and
+  `message_subagent` (subagents do not nest) plus `message_main_agent`. Its system prompt is
+  `SUBAGENT_PROMPT` (`server/app.py`) and, when the start names one, `# Your skill: <name>` and
+  that skill's body.
+- **Its turns are jobs.** Each subagent turn is an ASYNC job of the conversation's runner, tool
+  `subagent:sa-<n>`, so `wait_for_jobs`, `cancel_job`, Stop (`cancel_all`) and the jobs panel cover
+  it. Its result is `{subagent_id, name, finish_reason, reply}` — `reply` is the subagent's last
+  answer; a turn that errors fails the job. Its end reports like any job (a `job_notice` mid-turn,
+  a turn of its own while idle). Cancelling the job cancels the subagent's turn and its jobs.
+- **At most 3 run at once** (`SubagentSetup.max_running`); a start or follow-up past it fails.
+
+| Tool | Arguments | Result |
+|---|---|---|
+| `start_subagent` | `task` (the whole brief); `name` (label, default `subagent`); `skill` (a skill name) | `{subagent_id, name, job_id}`; an unknown skill fails and starts nothing |
+| `message_subagent` | `subagent_id`, `text` | running: a steer (`AgentSession.steer` — its blocking calls detach, the text is its next message), `{delivered: "STEER", job_id}` of the running turn; ended: a follow-up turn on its whole history, `{delivered: "NEW_TURN", job_id}` of the new job. Unknown id fails |
+| `message_main_agent` | `text` | `{delivered: true}`: a `SubagentNotice` on the conversation's notice queue |
+
+**Messages back.** A `SubagentNotice` (`runtime/jobs.py`) shares `JobRunner.notices` with job
+notices (`Notice = JobNotice | SubagentNotice`), so it reaches the main agent the same way: during
+a turn it is drained before the next model call as a human message tagged
+`surmap_kind = "subagent_message"` — `Subagent sa-1 (scene-builder) says: … When it asks you
+something, answer with message_subagent (subagent_id sa-1).` — and the turn emits
+`SubagentMessage`; while idle it comes out of `idle_events()` and the hub starts a
+`subagent_message` turn that opens with it. "System message" means this tagged-notice path, not a
+LangChain `SystemMessage`: the Responses mapping turns a system message into `instructions`, so
+mid-history system messages are not portable.
+
+**Limits.** A subagent's own detached jobs that end after its turn are read at its next turn, not
+reported on their own. The person steers a subagent through the main agent (`message_subagent`);
+the chat UI has no direct subagent steer, and it shows a subagent's messages and its job, not its
+tool calls.
 
 ## Regenerating the bindings
 
@@ -309,10 +354,10 @@ calls, steering and job notices are one mechanism.
 
 | Module | What |
 |---|---|
-| `jobs.py` | `JobRunner` (`call`, `detach_blocking`, `wait`, `get`, `jobs`, `cancel`, `cancel_all`, `notices`), `Job`, `JobState`, `JobNotice`, `JobWait`, `ToolOutcome` (`Completed \| Detached \| Failed`) |
+| `jobs.py` | `JobRunner` (`call`, `detach_blocking`, `wait`, `get`, `jobs`, `cancel`, `cancel_all`, `notices`), `Job`, `JobState`, `JobNotice`, `SubagentNotice`, `Notice`, `JobWait`, `ToolOutcome` (`Completed \| Detached \| Failed`) |
 | `graph.py` | `build_turn_graph(model, tools, pending, caps)`, `TurnCaps` (`from_env`), `TurnState`, `turn_input` |
-| `session.py` | `AgentSession` (`run_turn`, `steer`, `cancel`, `idle_events`), `ConversationStore`, `InMemoryConversationStore` |
-| `events.py` | `TextDelta`, `ToolCallStarted`, `ToolCallFinished`, `JobUpdate`, `SteerApplied`, `TurnFinished`, `TurnError` |
+| `session.py` | `AgentSession` (`running`, `run_turn`, `steer`, `cancel`, `idle_events`), `notice_event`, `notice_trigger`, `ConversationStore`, `InMemoryConversationStore` |
+| `events.py` | `TextDelta`, `ToolCallStarted`, `ToolCallFinished`, `JobUpdate`, `SteerApplied`, `SubagentMessage`, `TurnFinished`, `TurnError` |
 | `tools.py` | `BoundTool`, `bind_contract_tool(contract, handler, runner)`, `job_tools(runner, contracts)` |
 
 ### Graph
@@ -370,7 +415,8 @@ many seconds one `timeout_s` unit lasts (1.0 in production).
   `cancel_job` it.
 - On an idle session `steer` starts a normal turn and returns `TurnStarted(events)`.
 - Steers and notices are human messages tagged in `additional_kwargs["surmap_kind"]` (`steer`,
-  `job_notice`); the repeated-failure count restarts only at an untagged human message.
+  `job_notice`, `subagent_message`); the repeated-failure count restarts only at an untagged
+  human message.
 - Steering does not use LangGraph `interrupt`, which pauses for input; a steer adds input and the
   turn keeps running.
 
@@ -659,11 +705,11 @@ HTTP routes alike; `OPTIONS` answers the preflight.
 with `conversation_id`, `turn_id` and a per-conversation `seq`: first
 `user_message`, then `text_delta`, `tool_call_started` /
 `tool_call_finished` (with any tool `image`), `job_update`,
-`steer_applied`, and last `turn_finished` (or `error`). A conversation
+`steer_applied`, `subagent_message`, and last `turn_finished` (or `error`). A conversation
 starts with its first `StreamTurn` (one `AgentSession` each, in the
 `ChatHub`); a second `StreamTurn` while a turn runs is refused as busy.
-`WatchConversation` streams the turns a finished job starts (each opens
-with that job's `job_update`); `GetConversation` replays every event.
+`WatchConversation` streams the turns a finished job or a subagent's message starts (each opens
+with that `job_update` or `subagent_message`); `GetConversation` replays every event.
 `Steer` on an idle conversation returns `accepted=false`; `CancelTurn`
 ends the turn as `turn_finished(CANCELLED)`. `AgentJobs` requests name
 their conversation in the `surmap-conversation-id` header.
@@ -712,6 +758,8 @@ cd web/agent-chat && yarn local-install && yarn dev   # http://localhost:5173
   `AgentJobs` with the conversation header. Turns a finished job starts
   arrive on the `WatchConversation` stream, opened once the server knows
   the conversation, and begin with a job notice.
+- **Subagent messages.** A `subagent_message` is a dashed card headed
+  `Subagent sa-1 · scene-builder` with the message as Markdown, mid-turn or opening a turn.
 - **Previews.** A tool image is drawn inline from its bytes; an object
   GLB from `/geometry/…` is drawn by a lazily loaded three.js preview
   (its core, renderer and loader chunks load only when a preview is

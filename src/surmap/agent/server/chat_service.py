@@ -10,6 +10,7 @@
   `{"error": ...}`, `DETACHED` with the job's handle.
 - `JobUpdate` → `job_update`, the job's handle.
 - `SteerApplied` → `steer_applied`.
+- `SubagentMessage` → `subagent_message`.
 - `TurnFinished` → `turn_finished`: `stop` and `repeated_failure` → `STOP`, `round_cap` →
   `LENGTH`, `cancelled` → `CANCELLED`, `error` → `ERROR`.
 - `TurnError` → `error`.
@@ -39,6 +40,7 @@ from surmap.agent.runtime.events import (
     FinishReason,
     JobUpdate,
     SteerApplied,
+    SubagentMessage,
     TextDelta,
     ToolCallFinished,
     ToolCallStarted,
@@ -240,6 +242,11 @@ def turn_event_to_proto(
             text=event.text, detached_call_ids=list(event.detached_call_ids)
         )
         return _event(conversation_id, turn_id, seq, steer_applied=steer)
+    if isinstance(event, SubagentMessage):
+        message = chat_pb2.SubagentMessage(
+            subagent_id=event.subagent_id, name=event.name, text=event.text
+        )
+        return _event(conversation_id, turn_id, seq, subagent_message=message)
     if isinstance(event, TurnFinished):
         finished = chat_pb2.TurnFinished(reason=_REASONS[event.reason])
         return _event(conversation_id, turn_id, seq, turn_finished=finished)

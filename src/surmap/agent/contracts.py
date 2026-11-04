@@ -12,7 +12,7 @@ from __future__ import annotations
 import functools
 import importlib.resources
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import TypeVar
@@ -35,6 +35,7 @@ __all__ = [
     "ToolContract",
     "resolve_execution",
     "tool_contracts",
+    "tool_input_schema",
 ]
 
 E = TypeVar("E", bound=Enum)
@@ -193,12 +194,20 @@ def _timeout(value: object) -> int:
     return value
 
 
+def tool_input_schema(
+    properties: Mapping[str, object], *, required: Sequence[str] = ()
+) -> dict[str, object]:
+    """A tool's argument schema: `properties` plus the optional `execution` argument every tool
+    carries, as `tool_contracts` builds it — for tools no proto declares (skills, subagents)."""
+    all_properties = dict(properties)
+    all_properties["execution"] = _execution_schema()
+    return {"$schema": _JSON_SCHEMA_DIALECT, **_object_schema(all_properties, list(required))}
+
+
 def _tool_schema(request: Descriptor) -> dict[str, object]:
     """The request's JSON Schema with the optional `execution` argument added."""
     properties, required = _properties(request)
-    properties["execution"] = _execution_schema()
-    schema = _object_schema(properties, required)
-    return {"$schema": _JSON_SCHEMA_DIALECT, **schema}
+    return tool_input_schema(properties, required=required)
 
 
 def _execution_schema() -> dict[str, object]:

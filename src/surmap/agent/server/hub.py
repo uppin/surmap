@@ -5,8 +5,10 @@ A conversation is created by its first `StreamTurn`. Each has its own `JobRunner
 `surmap.agent.v1.TurnEvent` with the conversation's next `seq` (from 1, no gaps) and is recorded,
 so `GetConversation` replays exactly what the streams delivered.
 
-`StreamTurn` streams the turn it starts. A job that ends while no turn runs starts a `job_event`
-turn of its own; its events go to the conversation's `WatchConversation` subscribers. Steering
+`StreamTurn` streams the turn it starts. A job that ends, or a subagent that messages the
+conversation, while no turn runs starts a turn of its own; its events go to the conversation's
+`WatchConversation` subscribers. With `subagents`, each conversation also binds the subagent tools
+(`surmap.agent.subagents`), its subagents running on the conversation's current model. Steering
 and cancel act on the running turn only. Conversations live in memory and end with the process.
 """
 
@@ -21,13 +23,18 @@ from langchain_core.language_models import BaseChatModel
 
 from surmap.agent.llm.registry import ModelInfo
 from surmap.agent.proto import chat_pb2
-from surmap.agent.runtime.events import JobUpdate
 from surmap.agent.runtime.events import TurnEvent as RuntimeEvent
 from surmap.agent.runtime.graph import TurnCaps
 from surmap.agent.runtime.jobs import JobRunner
-from surmap.agent.runtime.session import AgentSession, InMemoryConversationStore
+from surmap.agent.runtime.session import (
+    AgentSession,
+    InMemoryConversationStore,
+    notice_event,
+    notice_trigger,
+)
 from surmap.agent.runtime.tools import BoundTool
 from surmap.agent.server.chat_service import turn_event_to_proto
+from surmap.agent.subagents import SubagentPool, SubagentSetup, subagent_tools
 
 __all__ = ["ChatHub", "Conversation", "ModelFactory", "ModelLister", "ToolFactory"]
 
@@ -53,7 +60,7 @@ class Conversation:
     watchers: list[asyncio.Queue[chat_pb2.TurnEvent | None]] = field(default_factory=list)
     """The `WatchConversation` streams subscribed; `None` is queued when the hub closes."""
     idle: asyncio.Task[None] | None = None
-    """The loop that starts a `job_event` turn for each job that ends while idle."""
+    """The loop that starts a turn for each notice that arrives while idle."""
 
 
 class ChatHub:
@@ -69,8 +76,10 @@ class ChatHub:
         system_prompt: str | None = None,
         caps: TurnCaps | None = None,
         timeout_scale: float = 1.0,
+        subagents: SubagentSetup | None = None,
     ) -> None:
-        """`timeout_scale` is each conversation's `JobRunner(timeout_scale=…)`."""
+        """`timeout_scale` is each conversation's `JobRunner(timeout_scale=…)`; `subagents`
+        binds the subagent tools in every conversation, none without it."""
         self.model_factory = model_factory
         self.tools = tools
         self.list_models = models
@@ -78,6 +87,7 @@ class ChatHub:
         self.system_prompt = system_prompt
         self.caps = caps
         self.timeout_scale = timeout_scale
+        self.subagents = subagents
         self._conversations: dict[str, Conversation] = {}
 
     def get(self, conversation_id: str) -> Conversation | None:
@@ -169,10 +179,22 @@ class ChatHub:
     def _open(self, conversation_id: str, model_id: str) -> Conversation:
         """A new conversation on `model_id`, with its own runner, session and idle loop."""
         runner = JobRunner(timeout_scale=self.timeout_scale)
+        model = self.model_factory(model_id)
+        tools = list(self.tools(runner))
+        if self.subagents is not None:
+            pool = SubagentPool(
+                conversation_id=conversation_id,
+                runner=runner,
+                model=lambda: session.model,
+                tools=self.tools,
+                setup=self.subagents,
+                caps=self.caps,
+            )
+            tools.extend(subagent_tools(pool))
         session = AgentSession(
             conversation_id=conversation_id,
-            model=self.model_factory(model_id),
-            tools=self.tools(runner),
+            model=model,
+            tools=tools,
             runner=runner,
             store=InMemoryConversationStore(),
             caps=self.caps,
@@ -186,12 +208,13 @@ class ChatHub:
         return conversation
 
     async def _job_turns(self, conversation: Conversation) -> None:
-        """Start a `job_event` turn for each job that ends while the conversation is idle."""
+        """Start a turn for each notice that arrives while the conversation is idle."""
         async for notice in conversation.session.idle_events():
             turn_id = uuid.uuid4().hex
-            opening = _record(conversation, turn_id, JobUpdate(job=notice.job))
+            opening = _record(conversation, turn_id, notice_event(notice))
             _publish(conversation, opening)
-            async for event in conversation.session.run_turn(notice.text, trigger="job_event"):
+            trigger = notice_trigger(notice)
+            async for event in conversation.session.run_turn(notice.text, trigger=trigger):
                 _publish(conversation, _record(conversation, turn_id, event))
 
     async def _watch(self, conversation: Conversation) -> AsyncIterator[chat_pb2.TurnEvent]:
@@ -205,12 +228,8 @@ class ChatHub:
 
 
 def _turn_running(session: AgentSession) -> bool:
-    """Whether a turn is running on `session`.
-
-    `AgentSession` has no public probe for this, so the hub reads the `_active` flag the session
-    sets when a turn starts and clears when it ends: the same state its own `run_turn` checks.
-    """
-    return session._active
+    """Whether a turn is running on `session`."""
+    return session.running
 
 
 def _record(conversation: Conversation, turn_id: str, event: RuntimeEvent) -> chat_pb2.TurnEvent:

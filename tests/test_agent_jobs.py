@@ -11,7 +11,14 @@ from langchain_core.messages import AIMessage
 
 from surmap.agent.contracts import ExecutionMode, ExecutionPolicy, OnTimeout, ToolContract
 from surmap.agent.runtime.events import ToolCallFinished, TurnEvent
-from surmap.agent.runtime.jobs import Completed, Detached, Failed, JobRunner, JobState
+from surmap.agent.runtime.jobs import (
+    Completed,
+    Detached,
+    Failed,
+    JobNotice,
+    JobRunner,
+    JobState,
+)
 from surmap.agent.runtime.tools import BoundTool, job_tools
 from tests.agent_fakes import (
     TIMEOUT_SCALE,
@@ -181,6 +188,7 @@ async def test_a_job_ending_while_the_session_is_idle_comes_out_of_idle_events()
     notice = await anext(idle)
 
     # Then the idle session emits the job's notice
+    assert isinstance(notice, JobNotice)
     assert (notice.job.job_id, notice.job.state) == ("j-1", JobState.SUCCEEDED)
     assert "Job j-1 run_demo succeeded" in notice.text
 
@@ -220,6 +228,7 @@ async def test_a_detached_job_keeps_running_and_queues_a_notice_when_it_ends() -
     # Then the job was running when it detached, and its notice names its success
     assert isinstance(outcome, Detached)
     assert outcome.job.state is JobState.RUNNING
+    assert isinstance(notice, JobNotice)
     assert (notice.job.job_id, notice.job.state) == ("j-1", JobState.SUCCEEDED)
     assert notice.text.startswith("Job j-1 run_demo succeeded")
 

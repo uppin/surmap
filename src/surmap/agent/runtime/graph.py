@@ -49,6 +49,7 @@ __all__ = [
     "NOTICE_KIND",
     "STEER_DETACH_REASON",
     "STEER_KIND",
+    "SUBAGENT_KIND",
     "PendingDrain",
     "TurnCaps",
     "TurnGraph",
@@ -62,12 +63,14 @@ MAX_ROUNDS_ENV = "SURMAP_AGENT_MAX_ROUNDS"
 STEER_DETACH_REASON = "detached by steer"
 """The detail of a call that a steer detached; `AgentSession.steer` hands it to the runner."""
 KIND_KEY = "surmap_kind"
-"""The `additional_kwargs` key that marks a pending message as a steer or a job notice."""
+"""The `additional_kwargs` key that marks a pending message as a steer or a notice."""
 STEER_KIND = "steer"
 NOTICE_KIND = "job_notice"
+SUBAGENT_KIND = "subagent_message"
+"""A subagent's message to the conversation that started it."""
 
 PendingDrain = Callable[[], Sequence[BaseMessage]]
-"""Takes the messages queued since the last call (steers, job notices), oldest first."""
+"""Takes the messages queued since the last call (notices, then steers), oldest first."""
 
 
 @dataclass(frozen=True)

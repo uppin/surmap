@@ -5,7 +5,8 @@ timeout passes first, `OnTimeout.FAIL` cancels the job and reports a timeout, `O
 returns a job handle and leaves the job running. An ASYNC call returns a handle at once. Steering
 detaches every waiting SYNC call (`detach_blocking`); a SYNC call whose caller is cancelled while
 it waits is cancelled with it. When a detached or async job ends, a `JobNotice` is queued on
-`notices` for the conversation to read.
+`notices` for the conversation to read; a subagent's message to the conversation (a
+`SubagentNotice`) is queued there too, so both reach the model the same way.
 """
 
 from __future__ import annotations
@@ -29,6 +30,8 @@ __all__ = [
     "JobRunner",
     "JobState",
     "JobWait",
+    "Notice",
+    "SubagentNotice",
     "ToolHandler",
     "ToolOutcome",
     "WaitMode",
@@ -78,6 +81,24 @@ class JobNotice:
     job: Job
     text: str
     """E.g. `"Job j-3 run_demo succeeded: {...}"`."""
+
+
+@dataclass(frozen=True)
+class SubagentNotice:
+    """A subagent sent the conversation that started it a message; read like a job notice."""
+
+    subagent_id: str
+    """`sa-1`, `sa-2`, … in the order the conversation started them."""
+    name: str
+    """The label the subagent was started with, e.g. `"scene-builder"`."""
+    message: str
+    """What the subagent wrote."""
+    text: str
+    """What the model reads: the message with who sent it and how to answer."""
+
+
+Notice = JobNotice | SubagentNotice
+"""Something the conversation reads between model calls, or that opens a turn while idle."""
 
 
 @dataclass(frozen=True)
@@ -163,7 +184,7 @@ class JobRunner:
         """`timeout_scale` is the seconds one policy `timeout_s` unit lasts (tests shrink it)."""
         self.timeout_scale = timeout_scale
         self.clock = clock
-        self.notices: asyncio.Queue[JobNotice] = asyncio.Queue()
+        self.notices: asyncio.Queue[Notice] = asyncio.Queue()
         self._entries: dict[str, _Entry] = {}
 
     async def call(
