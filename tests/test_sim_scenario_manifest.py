@@ -1,6 +1,7 @@
 """Pure scenario-manifest edits and the validation that mirrors the renderer's."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -109,3 +110,67 @@ def test_validation_refuses_what_the_renderer_refuses(
     # Then validation names the problem
     with pytest.raises(ScenarioInvalid, match=reason):
         validate_manifest(broken)
+
+
+def the_map_floor_fixture() -> dict[str, object]:
+    path = Path(__file__).parent / "fixtures" / "sim_scenario" / "map-floor.json"
+    loaded: object = json.loads(path.read_text(encoding="utf-8"))
+    assert isinstance(loaded, dict)
+    return loaded
+
+
+def test_the_shared_map_floor_fixture_validates() -> None:
+    # Given the one golden manifest the station and the renderer both read
+    # When it is validated
+    # Then it passes (the renderer reads the same file in its own tests)
+    validate_manifest(the_map_floor_fixture())
+
+
+def test_a_floor_bigger_than_a_kilometre_is_refused_by_the_station_too() -> None:
+    # Given a hand-edited floor two degrees wide on the golden fixture
+    manifest = the_map_floor_fixture()
+    manifest["map_floor"] = {
+        "sw": [54.0, 25.0],
+        "ne": [54.001, 27.0],
+        "texture": "library/map-floor/abc123.png",
+        "zoom": 17,
+    }
+
+    # When it is validated
+    # Then the station refuses it, exactly as the renderer does
+    with pytest.raises(ScenarioInvalid, match="1000"):
+        validate_manifest(manifest)
+
+
+def test_setting_a_map_floor_replaces_the_preset_ground_box() -> None:
+    # Given the empty lot, whose only element is the 200 m ground box
+    lot = load_presets(POC_ASSETS)["empty-lot"]
+
+    # When a map floor is set
+    from surmap.simulation.scenario_manifest import set_map_floor
+
+    edited = set_map_floor(
+        lot, sw=(54.0, 25.0), ne=(54.001, 25.002), texture="library/map-floor/a.png", zoom=17
+    )
+
+    # Then the ground box is gone (the floor replaces it) and the manifest validates
+    validate_manifest(edited)
+    assert element_ids(edited) == []
+
+
+def test_clearing_a_map_floor_restores_the_ground_box() -> None:
+    # Given a floored empty lot
+    from surmap.simulation.scenario_manifest import clear_map_floor, set_map_floor
+
+    lot = load_presets(POC_ASSETS)["empty-lot"]
+    floored = set_map_floor(
+        lot, sw=(54.0, 25.0), ne=(54.001, 25.002), texture="library/map-floor/a.png", zoom=17
+    )
+
+    # When the floor is cleared
+    cleared = clear_map_floor(floored)
+
+    # Then there is no floor, the ground box is back, and the manifest validates
+    validate_manifest(cleared)
+    assert "map_floor" not in cleared
+    assert element_ids(cleared) == ["ground"]
