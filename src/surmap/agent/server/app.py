@@ -96,7 +96,7 @@ from surmap.simulation.scenario_manifest import load_presets
 from surmap.simulation.scenario_store import ScenarioStore
 from surmap.slam.streaming import StreamingRtabmapBackend
 from surmap.survey.modal_hosting import STATION_APP_NAME
-from surmap.survey.sam import CentredBoxVideoSamDetector, InMemorySamDetector, VideoSamDetector
+from surmap.survey.sam import CentredBoxVideoSamDetector, VideoAsFrameSamDetector, VideoSamDetector
 from surmap.usage import UsageLedger
 
 _SURVEY_TOOLS = survey_tools_pb2.DESCRIPTOR.services_by_name["SurveyTools"]
@@ -277,14 +277,17 @@ class Closeable(Protocol):
 
 
 async def start_bevy_bridge(
-    config: AgentServerConfig, simulation: SimulationRig | None
+    config: AgentServerConfig,
+    simulation: SimulationRig | None,
+    station: StationControl | None = None,
 ) -> Closeable:
     """The stereo bridge on `config.host:config.bevy_bridge_port`: a `FleetPerception` per page
-    connection over the streaming RTAB-Map factory and the configured SAM detector, registered
+    connection over the streaming RTAB-Map factory and the agent's SAM (`bridge_segmentation`: the
+    station's, else the fake with `--sam-fake`), registered
     in `simulation.perception` so `drone_map_status` finds it. Closing it stops serving."""
     if config.bevy_bridge_port is None:
         raise ValueError("start_bevy_bridge needs config.bevy_bridge_port")
-    segmentation = bridge_segmentation(config)
+    segmentation = bridge_segmentation(config, station)
 
     def backend_factory(
         *, cam0_yaml: str, cam1_yaml: str, width: int, height: int
@@ -313,11 +316,31 @@ async def start_bevy_bridge(
     return _Bridge()
 
 
-def bridge_segmentation(config: AgentServerConfig) -> SegmentationFactory:
-    """The stereo bridge's segmentation: a `SamSegmentationSink` per drone session, on the
-    bridge's SAM detector."""
-    detector = InMemorySamDetector()
-    return lambda _drone_id: SamSegmentationSink(detector)
+def bridge_segmentation(
+    config: AgentServerConfig, station: StationControl | None = None
+) -> SegmentationFactory:
+    """The stereo bridge's segmentation: a `SamSegmentationSink` per drone session, each on its
+    own video of the agent's SAM (`agent_sam`: the station's, else the fake with `--sam-fake`,
+    else a refusal)."""
+    agent_sam(config, station)  # refuse now, not on the first drone's first frame
+
+    def segmentation(_drone_id: str) -> SamSegmentationSink:
+        return SamSegmentationSink(VideoAsFrameSamDetector(agent_sam(config, station)))
+
+    return segmentation
+
+
+def agent_sam(config: AgentServerConfig, station: StationControl | None) -> VideoSamDetector:
+    """A SAM for one video the agent runs: `station`'s detector when there is a station, else the
+    fake centred-box SAM with `--sam-fake`; neither is a refusal."""
+    if station is not None:
+        return station.detector()
+    if config.sam_fake:
+        return CentredBoxVideoSamDetector()
+    raise ValueError(
+        "the agent needs a SAM: pass --station modal|stub to run it on a station, "
+        "or --sam-fake for the fake centred-box SAM"
+    )
 
 
 def _cache_root(config: AgentServerConfig) -> Path:
@@ -374,16 +397,7 @@ def build_demo_workspace(
 
     Its SAM runs on `station` when there is one, else the fake SAM with `--sam-fake`.
     """
-    detector: VideoSamDetector
-    if station is not None:
-        detector = station.detector()
-    elif config.sam_fake:
-        detector = CentredBoxVideoSamDetector()
-    else:
-        raise ValueError(
-            "the agent needs a SAM: pass --station modal|stub to run it on a station, "
-            "or --sam-fake for the fake centred-box SAM"
-        )
+    detector = agent_sam(config, station)
     cache_dir = config.cache_dir if config.cache_dir is not None else default_cache_dir()
     server = make_demo_server(
         None,

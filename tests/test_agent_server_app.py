@@ -31,7 +31,7 @@ from surmap.agent.server.app import (
     default_model_factory,
 )
 from surmap.agent.services import Handler
-from surmap.agent.tools.station import StationState
+from surmap.agent.tools.station import StationState, StubStationControl
 from surmap.rpc.hosts.in_memory import InMemoryHost
 from surmap.simulation.fleet.perception import SegmentationSink
 from surmap.survey.sam import RawFrame
@@ -642,3 +642,27 @@ def test_a_streaming_drone_keeps_no_frames_after_segmenting_them() -> None:
 
     # Then nothing on the segmentation path still holds any of them
     assert still_held(frames) == 0
+
+
+def test_the_bridge_refuses_to_segment_without_a_station_or_the_fake_sam() -> None:
+    # Given an agent configured with neither a station nor the fake SAM
+    config = AgentServerConfig()
+
+    # When the bridge's segmentation is built / Then it refuses as the demo workspace does
+    with pytest.raises(ValueError, match="--station") as refusal:
+        bridge_segmentation(config)
+    assert "--sam-fake" in str(refusal.value)
+
+
+def test_the_bridge_segments_on_the_station_when_there_is_one() -> None:
+    # Given an agent with a stub station (its SAM is the centred-box fake)
+    station = StubStationControl()
+    segmentation = bridge_segmentation(AgentServerConfig(), station)("nest-sw-d1")
+
+    # When one left frame is segmented and the run finishes
+    segmentation.submit(a_left_frame(1))
+    segmentation.close()
+
+    # Then the station's SAM found its one object, and the station was used
+    assert (segmentation.segmented_frames, segmentation.detections) == (1, 1)
+    assert station.status().state is StationState.READY
