@@ -105,14 +105,39 @@ pub fn order_bridge_stream(app: &mut App) {
     );
 }
 
-/// The bridge socket a page URL's query (`location.search`) names: `bridge=ws://host:port`.
+/// The bridge socket a page URL's query (`location.search`) names: `bridge=ws://host:port`,
+/// plain or percent-encoded (`ws%3A%2F%2Fhost%3Aport`, as `URLSearchParams` writes it).
 pub fn bridge_url(search: &str) -> Option<String> {
     search
         .trim_start_matches('?')
         .split('&')
         .find_map(|pair| pair.strip_prefix("bridge="))
         .filter(|url| !url.is_empty())
-        .map(str::to_owned)
+        .map(percent_decoded)
+}
+
+/// `value` with each `%XX` escape decoded; a malformed escape is kept as it is.
+fn percent_decoded(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let escape = (bytes[i] == b'%')
+            .then(|| bytes.get(i + 1..i + 3))
+            .flatten()
+            .and_then(|hex| u8::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok());
+        match escape {
+            Some(byte) => {
+                out.push(byte);
+                i += 3;
+            }
+            None => {
+                out.push(bytes[i]);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// The map status line under the feed panel, from one bridge `status` reply:
@@ -315,6 +340,16 @@ mod tests {
         let url = bridge_url(search);
 
         assert_eq!(url.as_deref(), Some("ws://127.0.0.1:8773"));
+    }
+
+    #[test]
+    fn a_percent_encoded_bridge_parameter_is_decoded() {
+        // The chat builds the preview URL with `URLSearchParams`, which encodes `:` and `/`.
+        let search = "?scenario=quake-fleet&view=preview&fleet=1&bridge=ws%3A%2F%2F127.0.0.1%3A8782";
+
+        let url = bridge_url(search);
+
+        assert_eq!(url.as_deref(), Some("ws://127.0.0.1:8782"));
     }
 
     #[test]
