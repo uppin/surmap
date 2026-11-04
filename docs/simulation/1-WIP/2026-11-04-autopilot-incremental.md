@@ -16,11 +16,11 @@ Discovery: `2026-11-04-autopilot-incremental-initial-discovery.md` · PRD: none 
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-tdd-migration` Preservation tests — green against the baseline, and the step-count before-state, committed ·
-  - [ ] Baseline: `cargo test --locked` green, count recorded
-  - [ ] A deterministic step counter the measurement reads (see `## Verification`)
-  - [ ] Characterisation tests (green before and after; see `## Verification`)
-  - [ ] V3 before-output recorded in `## Verification`
+- [wf 2] ✅ 2026-11-04 `/plan-tdd-migration` Preservation tests — green against the baseline, and the step-count before-state, committed · baseline 362 tests; +3 characterisation (green on State A) +2 measurements = 367 passed, 2 `#[ignore]`d after-bounds red; before (a) 35 994 000 · (b) 5 005 000 steps
+  - [x] Baseline: `cargo test --locked` green, count recorded
+  - [x] A deterministic step counter the measurement reads (see `## Verification`)
+  - [x] Characterisation tests (green before and after; see `## Verification`)
+  - [x] V3 before-output recorded in `## Verification`
 - [wf 3] ⬜ `/green` Implement — the recorded command produces the planned after-output, preservation tests still green ·
   - [ ] `FleetLog` keeps one checker `Autopilot` per drone and answers `check` from it (no `phase_when` replay)
   - [ ] The recorder keeps one `Autopilot` per drone for `viewed_pose` (no `state_at` replay per frame)
@@ -105,8 +105,20 @@ A recording's cost therefore grows quadratically with its length (about 36 M ste
 
 **Command:** `cd examples/bevy-sitl-poc && cargo test --locked fleet -- --nocapture` (the
 measurement tests print their counts and assert the after-bound).
-**Before:** to be recorded in commit 2. The expected order of magnitude is (a) ≈ 6000 · 6000 steps
-summed, about 36 M, and (b) ≈ Σ k·10, about 5 M.
+**Before** (recorded in row 2, State A `8401744`; baseline `cargo test --locked` 362 passed):
+
+```text
+V3 (a) recording 6000 frames at 10 Hz over 600 s, two drones: 35994000 steps
+V3 (b) 1000 pushes 0.5 s apart: 5005000 steps
+```
+
+The step counter is `autopilot::counting_steps`, a `#[cfg(test)]` thread-local incremented in
+`step`. The after-bounds are the two `#[ignore]`d tests
+`recording_six_thousand_frames_takes_one_pass_per_drone` (at most 24 000) and
+`pushing_a_thousand_commands_takes_one_pass_over_the_log` (at most 11 000); they are red today, and
+row 3 removes the `ignore`s. The characterisation tests run against a seam added in row 2: a
+`ViewedPoses` recorder cache whose State A body still replays.
+
 **After:** (a) at most 12 000 + 2 · 6000 steps (one pass per drone, plus slack); (b) at most
 10 000 + 1000 steps. Exact bounds are set from the code in commit 2 and asserted.
 

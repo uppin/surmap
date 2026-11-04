@@ -174,9 +174,26 @@ fn horizontal(velocity: [f32; 3]) -> Vec2 {
     Vec2::new(velocity[0], velocity[1])
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The steps this test's thread has taken, for the step-count measurements.
+    static STEPS_TAKEN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many autopilot steps `work` takes on this thread, with its result. Test-only: production
+/// carries no counter.
+#[cfg(test)]
+pub fn counting_steps<R>(work: impl FnOnce() -> R) -> (R, usize) {
+    let before = STEPS_TAKEN.with(std::cell::Cell::get);
+    let result = work();
+    (result, STEPS_TAKEN.with(std::cell::Cell::get) - before)
+}
+
 /// Advances `state` by `dt` toward what `plan` says, within the limits; pops each target it
 /// reaches.
 pub fn step(state: &mut DroneState, plan: &mut Plan, dt: f32) {
+    #[cfg(test)]
+    STEPS_TAKEN.with(|taken| taken.set(taken.get() + 1));
     match state.phase {
         Phase::Docked => {}
         Phase::Climbing => climb(state, plan, dt),

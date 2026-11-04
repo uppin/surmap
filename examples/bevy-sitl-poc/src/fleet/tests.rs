@@ -3,7 +3,7 @@
 
 use bevy::math::{Quat, Vec3};
 
-use super::autopilot::{state_at, Phase, STEP_S};
+use super::autopilot::{counting_steps, phase_when, state_at, Phase, STEP_S};
 use super::log::{FleetCommand, OnComplete, Refusal, RefusalReason, Route, Stamped};
 use super::*;
 use crate::flight::SurveyLoop;
@@ -416,4 +416,164 @@ fn the_status_line_names_the_active_drone_its_phase_and_legs_and_lists_the_fleet
         status,
         "FLEET  nest-ne-d1  DETOURING  2 legs left  alt 18.2 m  speed 5.0 m/s  yaw 90 deg\n  nest-sw-d1 · DOCKED\n> nest-ne-d1 · DETOURING"
     );
+}
+
+// ---- preservation: the incremental paths answer as a replay from t = 0 does ------------------
+
+fn the_survey_sortie() -> FleetLog {
+    FleetLog::from_jsonl(two_drones(), &fixture("fleet/survey-sortie.fleet.jsonl")).expect("the sortie parses")
+}
+
+#[test]
+fn the_recorders_cached_pose_equals_the_replayed_pose_on_every_frame() {
+    let fleet = Fleet::new(the_survey_sortie());
+    let mut poses = ViewedPoses::default();
+
+    let cached: Vec<Viewed> = (0..600).map(|frame| poses.viewed(Some(&fleet), frame as f32 / 10.0)).collect();
+
+    let replayed: Vec<Viewed> = (0..600).map(|frame| viewed_pose(Some(&fleet), frame as f32 / 10.0)).collect();
+    assert_eq!(cached, replayed);
+}
+
+#[test]
+fn a_rewound_recorder_still_matches_the_replay() {
+    let fleet = Fleet::new(the_survey_sortie());
+    let mut poses = ViewedPoses::default();
+    poses.viewed(Some(&fleet), 30.0);
+
+    let rewound = poses.viewed(Some(&fleet), 10.0);
+
+    assert_eq!(rewound, viewed_pose(Some(&fleet), 10.0));
+}
+
+/// What the phase alone decides about `command`: the refusal a drone in `phase` gives it, if any.
+fn phase_refusal(phase: Phase, command: &FleetCommand) -> Option<RefusalReason> {
+    match command {
+        FleetCommand::Launch { .. } if phase != Phase::Docked => Some(RefusalReason::NotDocked(phase)),
+        FleetCommand::SetRoute { .. } | FleetCommand::Detour { .. } if matches!(phase, Phase::Docked | Phase::Landing) => Some(RefusalReason::NotFlying(phase)),
+        FleetCommand::Recall { .. } if phase == Phase::Docked => Some(RefusalReason::AlreadyDocked),
+        _ => None,
+    }
+}
+
+/// A push `(at_s, command)` with what the command's own shape or the log's order refuses before
+/// the phase is asked (`early`), and what its shape refuses after (`shape`).
+struct Push {
+    at_s: f32,
+    command: FleetCommand,
+    early: Option<RefusalReason>,
+    shape: Option<RefusalReason>,
+}
+
+fn push(at_s: f32, command: FleetCommand) -> Push {
+    Push { at_s, command, early: None, shape: None }
+}
+
+fn with_route(drone: &str, waypoints: &[[f32; 3]], speed_m_s: f32) -> FleetCommand {
+    launch(drone, Route { speed_m_s, ..route(waypoints) })
+}
+
+/// A sequence of pushes that meets every refusal reason, and one that rewinds the checker: a
+/// refused command advances it to 30 s, then a command at 26 s is accepted.
+fn the_scripted_pushes() -> Vec<Push> {
+    let sortie = [[-20.0, 0.0, 15.0], [-20.0, 60.0, 18.0]];
+    vec![
+        push(1.0, launch(SW_D1, route(&sortie))),
+        push(2.0, launch(SW_D1, route(&sortie))),
+        push(2.5, FleetCommand::SetRoute { drone: NE_D1.into(), route: route(&sortie) }),
+        push(3.0, FleetCommand::Recall { drone: NE_D1.into() }),
+        Push { early: Some(RefusalReason::UnknownDrone("ghost".into())), ..push(3.0, launch("ghost", route(&sortie))) },
+        Push { shape: Some(RefusalReason::NoWaypoints), ..push(4.0, launch(NE_D1, route(&[]))) },
+        Push { shape: Some(RefusalReason::SpeedOutOfRange(9.0)), ..push(4.0, with_route(NE_D1, &sortie, 9.0)) },
+        Push { shape: Some(RefusalReason::HeightOutOfRange(80.0)), ..push(4.0, launch(NE_D1, route(&[[0.0, 0.0, 80.0]]))) },
+        push(4.0, launch(NE_D1, route(&[[30.0, 90.0, 15.0]]))),
+        Push { early: Some(RefusalReason::OutOfOrder { previous_at_s: 4.0 }), ..push(3.5, detour(SW_D1, &[[0.0, 30.0, 20.0]])) },
+        push(20.0, detour(SW_D1, &[[0.0, 30.0, 20.0]])),
+        push(25.0, FleetCommand::Recall { drone: SW_D1.into() }),
+        push(30.0, launch(SW_D1, route(&sortie))),
+        push(26.0, FleetCommand::Recall { drone: NE_D1.into() }),
+        push(200.0, launch(SW_D1, route(&sortie))),
+        push(210.0, set_active(NE_D1)),
+    ]
+}
+
+#[test]
+fn every_push_decides_as_a_fresh_replay_would() {
+    let mut log = FleetLog::new(two_drones());
+    let mut decided = Vec::new();
+    let mut expected = Vec::new();
+
+    for Push { at_s, command, early, shape } in the_scripted_pushes() {
+        let home = two_drones().into_iter().find(|(id, _)| id == command.drone()).map(|(_, home)| home);
+        let by_replay = home.map(|home| phase_when(home, command.drone(), &log, at_s));
+        expected.push(early.or_else(|| by_replay.and_then(|phase| phase_refusal(phase, &command))).or(shape));
+        decided.push(log.push(at_s, command).err().map(|refusal| refusal.reason));
+    }
+
+    assert_eq!(decided, expected);
+}
+
+// ---- measurement: how many autopilot steps the replays take ----------------------------------
+
+/// Two drones launched at 1 s and 3 s onto routes that end in a hover, the second viewed from
+/// 300 s, over a 600 s recording.
+fn a_ten_minute_fleet() -> Fleet {
+    let hover = |waypoints: &[[f32; 3]]| Route { on_complete: OnComplete::Hover, ..route(waypoints) };
+    Fleet::new(a_log(vec![
+        (1.0, launch(SW_D1, hover(&[[-20.0, 0.0, 15.0], [-20.0, 60.0, 18.0]]))),
+        (3.0, launch(NE_D1, hover(&[[30.0, 90.0, 15.0], [20.0, 40.0, 20.0]]))),
+        (300.0, set_active(NE_D1)),
+    ]))
+}
+
+/// The autopilot steps taken to record 6000 frames at 10 Hz of `a_ten_minute_fleet`.
+fn steps_to_record_six_thousand_frames() -> usize {
+    let fleet = a_ten_minute_fleet();
+    let mut poses = ViewedPoses::default();
+    counting_steps(|| (0..6000).for_each(|frame| drop(poses.viewed(Some(&fleet), frame as f32 / 10.0)))).1
+}
+
+/// The autopilot steps taken to push 1000 commands 0.5 s apart to a drone that stays in the air.
+fn steps_to_push_a_thousand_commands() -> usize {
+    let mut log = FleetLog::new(two_drones());
+    let hover = Route { on_complete: OnComplete::Hover, ..route(&[[-20.0, 0.0, 15.0], [-20.0, 60.0, 18.0]]) };
+    counting_steps(|| {
+        log.push(0.5, launch(SW_D1, hover)).expect("the launch is accepted");
+        for k in 2..=1000 {
+            log.push(k as f32 * 0.5, detour(SW_D1, &[[0.0, 30.0, 20.0]])).unwrap_or_else(|refusal| panic!("push {k} refused: {refusal:?}"));
+        }
+    })
+    .1
+}
+
+#[test]
+fn recording_six_thousand_frames_reports_its_step_count() {
+    let steps = steps_to_record_six_thousand_frames();
+
+    println!("V3 (a) recording 6000 frames at 10 Hz over 600 s, two drones: {steps} steps");
+
+    assert!(steps > 0);
+}
+
+#[test]
+fn pushing_a_thousand_commands_reports_its_step_count() {
+    let steps = steps_to_push_a_thousand_commands();
+
+    println!("V3 (b) 1000 pushes 0.5 s apart: {steps} steps");
+
+    assert!(steps > 0);
+}
+
+// The after-bounds: row 3 of the changeset removes the `ignore`s, when the replays are gone.
+
+#[test]
+#[ignore = "row 3 of the autopilot-incremental changeset removes this ignore"]
+fn recording_six_thousand_frames_takes_one_pass_per_drone() {
+    assert!(steps_to_record_six_thousand_frames() <= 12_000 + 2 * 6_000);
+}
+
+#[test]
+#[ignore = "row 3 of the autopilot-incremental changeset removes this ignore"]
+fn pushing_a_thousand_commands_takes_one_pass_over_the_log() {
+    assert!(steps_to_push_a_thousand_commands() <= 10_000 + 1_000);
 }
