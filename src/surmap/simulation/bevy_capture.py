@@ -21,6 +21,9 @@ class CapturedFrame:
     pose_enu: Pose
     # The colour left image (`--record … --colour`), beside the grey eyes; None when grey only.
     left_rgb_ref: str | None = None
+    # The fleet drone whose eyes and pose the frame carries; None without a fleet.
+    # TODO(pr-2): implement — read `drone_id` from `frames.jsonl`.
+    drone_id: str | None = None
 
 
 @dataclass(frozen=True)

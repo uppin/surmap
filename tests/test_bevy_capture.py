@@ -225,6 +225,46 @@ def test_a_grey_only_capture_has_no_colour_images(tmp_path: Path) -> None:
     assert capture.frames[0].left_rgb_ref is None
 
 
+def a_capture_of(root: Path, frames: int) -> Path:
+    """A recorded session of `frames` pairs, a tenth of a second apart."""
+    recorder = CaptureRecorder(root, a_calibration(), objects=(a_car(),))
+    for i in range(frames):
+        recorder.record_pair(a_pair(i + 1, 1_000_000_000 + i * 100_000_000, float(i)))
+    recorder.finish()
+    return root
+
+
+def naming_drones(capture: Path, drone_ids: list[str]) -> Path:
+    """The capture's `frames.jsonl` rewritten as a fleet recording writes it: one drone per line."""
+    frames = capture / "frames.jsonl"
+    lines = [json.loads(line) for line in frames.read_text(encoding="utf-8").splitlines()]
+    named = [{**line, "drone_id": drone} for line, drone in zip(lines, drone_ids, strict=True)]
+    frames.write_text("".join(json.dumps(line) + "\n" for line in named), encoding="utf-8")
+    return capture
+
+
+def test_a_fleet_capture_names_the_drone_on_every_frame(tmp_path: Path) -> None:
+    # Given a fleet recording that switched to the north-east drone at its third frame
+    capture = naming_drones(a_capture_of(tmp_path, 3), ["nest-sw-d1", "nest-sw-d1", "nest-ne-d1"])
+
+    # When it is loaded
+    loaded = load_bevy_capture(capture)
+
+    # Then every frame names the drone whose eyes it carries
+    assert [frame.drone_id for frame in loaded.frames] == ["nest-sw-d1", "nest-sw-d1", "nest-ne-d1"]
+
+
+def test_an_old_capture_loads_without_drone_ids(tmp_path: Path) -> None:
+    # Given a recording made before the fleet, whose frames name no drone
+    capture = a_capture_of(tmp_path, 2)
+
+    # When it is loaded
+    loaded = load_bevy_capture(capture)
+
+    # Then its frames carry no drone id
+    assert [frame.drone_id for frame in loaded.frames] == [None, None]
+
+
 def test_a_capture_carries_what_each_tracked_body_is_and_its_heading_per_frame(
     tmp_path: Path,
 ) -> None:

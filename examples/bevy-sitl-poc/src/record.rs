@@ -137,8 +137,10 @@ fn save_rgb(path: &Path, pixels: Vec<u8>, rig: &CameraProfile, jpeg: bool) {
 }
 
 /// One `frames.jsonl` line: the frame's id, time, eye images (and colour left image, when
-/// recorded) and the rig's ENU pose.
-pub fn frame_line(frame_id: u32, t_ns: u64, left_ref: &str, right_ref: &str, left_rgb_ref: Option<&str>, pose_enu: [f64; 7]) -> String {
+/// recorded), the rig's ENU pose and, with a fleet, the viewed drone's id.
+pub fn frame_line(frame_id: u32, t_ns: u64, left_ref: &str, right_ref: &str, left_rgb_ref: Option<&str>, pose_enu: [f64; 7], drone_id: Option<&str>) -> String {
+    // TODO(pr-2): implement — write `"drone_id"` when `drone_id` is set.
+    let _ = drone_id;
     let mut line = serde_json::json!({"frame_id": frame_id, "t_ns": t_ns, "left_ref": left_ref, "right_ref": right_ref, "pose_enu": pose_enu});
     if let Some(rgb) = left_rgb_ref {
         line["left_rgb_ref"] = serde_json::Value::from(rgb);
@@ -251,7 +253,7 @@ pub fn record_frames(
     });
     let pose = SurveyLoop::disaster_block().pose_at(t_s);
     let pose_enu = wire::rig_pose_enu(pose.position, Quat::from_rotation_y(pose.yaw_rad) * rig.mount_rotation());
-    rec.lines.push(frame_line(frame + 1, t_ns, &left_ref, &right_ref, rgb_ref.as_deref(), pose_enu));
+    rec.lines.push(frame_line(frame + 1, t_ns, &left_ref, &right_ref, rgb_ref.as_deref(), pose_enu, None));
     if let Some(fires) = fires.as_ref().filter(|f| f.has_fires()) {
         rec.fire_lines.push(fire::perimeter_line(t_ns, &fires.fronts(t_s)));
     }

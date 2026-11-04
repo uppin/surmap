@@ -12,17 +12,17 @@ PRD: `PRD-2026-11-04-fleet-autopilot.md` · Discovery: `2026-11-04-fleet-autopil
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1)
+- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1) · commit 1 `63e12a7`
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
-  - [ ] Stubs this node owns (`fleet.rs`, `fleet/autopilot.rs`, `fleet/log.rs`, `ActiveDrone`, `FleetDrone`, `--fleet-log`, Python `BevyFrame.drone_id`)
-  - [ ] Acceptance tests written and failing for the right reason
-  - [ ] Unit/integration tests written and failing
-  - [ ] Tests committed with the changeset
+- [wf 2] ✅ 2026-11-04 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 45 failing (23 acceptance + 22 unit; 1 of them blocked on n1) — commit 2
+  - [x] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
+  - [x] Stubs this node owns (`fleet.rs`, `fleet/autopilot.rs`, `fleet/log.rs`, `ActiveDrone`, `FleetDrone`, `--fleet-log`, Python `CapturedFrame.drone_id`)
+  - [x] Acceptance tests written and failing for the right reason
+  - [x] Unit/integration tests written and failing
+  - [x] Tests committed with the changeset
 - [wf 3] ⬜ `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) ·
   - [ ] `fleet/log.rs`: `FleetCommand`, `Route`, `OnComplete`, `Stamped`, `FleetLog::{push, refused, for_drone, from_jsonl}`; phase checks; golden `tests/fixtures/fleet/commands.json` (every variant) parses
   - [ ] `fleet/autopilot.rs`: fixed-step (`STEP_S = 0.05`) pure `step`; `state_at(home, id, log, t)`; incremental `Autopilot` equal to cold `state_at`; limits; takeoff, legs, detour resume, set_route continuity, recall/land, hover
@@ -30,7 +30,7 @@ PRD: `PRD-2026-11-04-fleet-autopilot.md` · Discovery: `2026-11-04-fleet-autopil
   - [ ] `ActiveDrone` resource (first drone by default; `set_active` entries switch it at `at_s`); `follow_drone_rig`, `chase_camera`, `update_status` read "the viewed drone" (active fleet drone, else legacy `Drone`)
   - [ ] Recorder: `pose_enu` from the viewed drone's pure pose at `t`; `frames.jsonl` `drone_id` when fleet; `--fleet-log <path>` in `RunMode`
   - [ ] UI: status line names the active drone, phase and leg; fleet list (id · phase)
-  - [ ] Python `bevy_capture.py`: `BevyFrame.drone_id: str | None` read from `frames.jsonl`
+  - [ ] Python `bevy_capture.py`: `CapturedFrame.drone_id: str | None` read from `frames.jsonl`
   - [ ] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (tests + native stills of `earthquake-fleet` replaying `survey-sortie.fleet.jsonl`)
@@ -52,7 +52,7 @@ State A below is distilled from that file. Do not duplicate grep traces or file 
 ## Stack Context
 
 **Stack**: drone nests and an agent-tasked simulated fleet · slug **`#drone-fleet`** — this PR is
-**2 of 5** · `#pending`
+**2 of 5** · [#117](https://github.com/uppin/surmap/pull/117)
 **Branch**: `pr-2-drone-fleet` · **Base**: `pr-1-drone-fleet`
 **Successor**: `pr-3-drone-fleet`
 **Kind**: Feature · behaviour-adds
@@ -94,7 +94,7 @@ merges alone.
 - `RunMode.fleet_log` / `--fleet-log`; `frames.jsonl` `drone_id`.
 - Fixtures: `tests/fixtures/fleet/commands.json` (one of each command — **the cross-language
   command contract**; n3's Python codec reads it) and `tests/fixtures/fleet/survey-sortie.fleet.jsonl`.
-- Python: `bevy_capture.BevyFrame.drone_id`.
+- Python: `bevy_capture.CapturedFrame.drone_id` (the frame type `load_bevy_capture` returns).
 
 ### Green wave
 
@@ -110,10 +110,12 @@ Real dependency edges, as opposed to the branch line:
 
 ### Greenable independently?
 
-**no — blocked by n1** (`pr-1-drone-fleet`). The spawn tests and the fixture tests parse manifests
-with `drone_nest` elements, so they need n1's `validate_nests` and `Nests` to really work. The
-pure autopilot and log tests take a `Home` value and are green-able against n1's stubs. A spawn or
-fixture test that is still red because of `TODO(pr-1)` is blocked on n1, not a failure.
+**no — blocked by n1** (`pr-1-drone-fleet`). One red test,
+`the_survey_sortie_replays_on_the_fleet_golden_without_a_refusal`, parses the n1 golden's
+`drone_nest` elements, so it needs n1's `validate_nests` and `DroneNest::drone_ids` to really work
+(and the wrap stills need `Nests` spawned). The pure autopilot, log and `homes` tests build `Home` /
+`Nests` values directly and are green-able against n1's stubs. A test that is still red because of
+`TODO(pr-1)` is blocked on n1, not a failure.
 
 ### Trunk-merge safety
 
@@ -225,7 +227,7 @@ stays continuous (each step moves at most `MAX_SPEED_M_S · STEP_S + ε`).
   `"drone_id"` on each frame line. `--fleet-log <path>` loads a log for stills and recordings.
   Without nests, stills and recordings force `survey-loop` as today.
 - **Python.** `load_bevy_capture` accepts an optional `drone_id` per frame
-  (`BevyFrame.drone_id: str | None`). Old captures load unchanged.
+  (`CapturedFrame.drone_id: str | None`). Old captures load unchanged.
 
 ### Delta (What's Changing)
 
@@ -259,6 +261,64 @@ so the systems are tested through their pure functions (`viewed_pose`, `state_at
 Supporting evidence (not a rung): native stills at `--at 20` and `--at 40` of `earthquake-fleet`
 replaying `survey-sortie.fleet.jsonl` (two drones airborne, the feed on the active one), reviewed
 at wrap.
+
+## Validation Results
+
+**Baseline (`63e12a7`: n1 planning + n1 red + this node's planning):** `uv run mypy` clean,
+`ruff check --no-cache` / `ruff format --no-cache --check` clean, `uv run pytest -q` 2154 passed,
+27 failed, 38 skipped; `cargo test --locked` 267 passed, 18 failed. All 45 failures are n1's
+(inherited, not this PR's): Python `test_sim_fleet_nests.py` (22), `test_sim_water_manifest.py`
+(2), `test_agent_simulation_tools.py` (3); Rust `scene_manifest::tests::fleet` (18).
+
+**Red tree (commit 2):** `uv run pytest -q` 2155 passed, 28 failed, 38 skipped — 27 inherited + 1
+new; `cargo test --locked` 268 passed, 62 failed — 18 inherited + 44 new. `mypy`,
+`ruff check --no-cache`, `ruff format --no-cache --check` clean; `cargo test --locked --no-run`,
+`cargo build --locked` and `cargo check --locked --target wasm32-unknown-unknown` compile (new
+warnings: only the unregistered `fleet` stubs never used / never constructed).
+
+Why each fails: Rust — `todo!("pr-2: implement")` in `FleetLog::push` (28, most tests build their
+log through it), `FleetLog::from_jsonl` (6), `autopilot::step` (5), `fleet::homes` (1),
+`fleet::viewed_pose` (1); the two `--fleet-log` tests fail on their assertion (the flag is not
+parsed yet). Python — `CapturedFrame.drone_id` is `None` (the loader does not read it yet).
+Blocked on n1: `the_survey_sortie_replays_on_the_fleet_golden_without_a_refusal` panics in n1's
+`validate_nests` (`TODO(pr-1)`); it also needs `DroneNest::drone_ids`.
+
+Pass on the red tree by design: `every_command_in_the_shared_fixture_parses` (the serde types are
+real data, so the golden contract is pinned now) and `test_an_old_capture_loads_without_drone_ids`
+(the no-fleet regression guard).
+
+Red-step notes for `[G]`:
+
+- **Runtime systems are not registered.** `spawn_fleet` and `fly_fleet` are `todo!` stubs and are
+  not added to the schedule, so the existing app and tests run unchanged. Registering them (after
+  `build_world`), the viewed-drone queries in `follow_drone_rig` / `chase_camera` /
+  `update_status`, the `Fleet` resource and the UI are Green work with no red test (no headless
+  harness).
+- **Shapes the tests pin.** `FleetLog::new(drones: Vec<(String, Home)>)` (the log knows its drones,
+  so `push` can refuse an unknown one); `FleetLog::from_jsonl(drones, text) -> Result<FleetLog,
+  String>` (a malformed line is `Err`; an out-of-order line is a `Refusal` with
+  `RefusalReason::OutOfOrder { previous_at_s }`); `for_drone(id) -> Vec<&Stamped>`;
+  `RefusalReason { UnknownDrone(id), NotDocked(phase), NotFlying(phase), AlreadyDocked,
+  NoWaypoints, SpeedOutOfRange(v), HeightOutOfRange(up), OutOfOrder { previous_at_s } }`. A
+  refused `push` takes the next `seq` (the refusal of the 2nd push is `seq: 2`).
+- `step(&mut DroneState, &mut Plan, dt)`; `Plan { home, route, detour, speed_m_s, on_complete }`
+  holds the queues and `step` pops a reached target; `DroneState.target` / `legs_left` report
+  them. `state_at` is the state after every step at or before `t_s`. `Autopilot::new(id, home)`,
+  `advance(&log, t_s) -> DroneState` (the log may grow between calls).
+- `DroneState.position_enu` is the drone's reference point: exactly `pad_enu` when docked. The
+  viewed pose and the recorded `pose_enu` are pinned only to within 1 m of it, so a rig offset is
+  free. `yaw_deg` is ENU counter-clockwise from east, as the nests' (`0` = east, `90` = north).
+- A climb goes to `max(first target up, pad up + MIN_UP_M)`. Landing sinks at most
+  `MAX_DESCENT_M_S = 1.0` (a constant added to the planned list). A hovering drone ends at exactly
+  zero speed.
+- `Fleet::new(log)`, `Fleet::active_at(t_s) -> Option<&str>`, `homes(&Nests) -> Vec<(String,
+  Home)>` (each drone within its nest's 2.4 m pad, at deck height, facing the nest's yaw — slots
+  are free), `viewed_pose(Option<&Fleet>, t_s) -> Viewed { drone_id, pose: FlightPose }`.
+- `record::frame_line` gained a last `drone_id: Option<&str>` parameter (existing callers pass
+  `None`); it is ignored until Green writes `"drone_id"`.
+- The fixtures use the n1 golden's ground nests (`nest-sw` at (-40, -20, 0) yaw 45, `nest-ne` at
+  (40, 110, 0) yaw 225); the `earthquake-fleet` preset is still an n1 stub. If the preset places
+  them elsewhere, the sortie's waypoints are still valid (5–60 m up, within ±500 m).
 
 ## Acceptance Tests
 

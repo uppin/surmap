@@ -15,6 +15,7 @@ mod calibration;
 mod close_shots;
 mod figure_anim;
 mod fire;
+mod fleet;
 mod flight;
 mod fx;
 mod fxdef;
