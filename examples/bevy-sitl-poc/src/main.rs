@@ -13,6 +13,7 @@ mod building_fire;
 mod building_style;
 mod calibration;
 mod close_shots;
+mod figure_anim;
 mod fire;
 mod flight;
 mod fx;

@@ -15,6 +15,7 @@ fn gait() -> FigureDef {
         visor: None,
         model: None,
         body_m: [0.6, 0.6, 1.8],
+        rig: None,
     }
 }
 
@@ -124,6 +125,7 @@ fn the_track_line_carries_the_frame_time_the_wind_and_each_moving_body_by_id_wit
                 action: Some("flee_from_fire".to_owned()),
                 kind: "person".to_owned(),
                 yaw_deg: 90.0,
+                pose: None,
             },
             Body {
                 id: "evacuee-1".to_owned(),
@@ -131,6 +133,7 @@ fn the_track_line_carries_the_frame_time_the_wind_and_each_moving_body_by_id_wit
                 action: None,
                 kind: "bus".to_owned(),
                 yaw_deg: -45.0,
+                pose: None,
             },
         ],
     );
@@ -186,4 +189,53 @@ fn a_walking_figure_is_tracked_as_a_person_facing_the_way_it_walks() {
 
     let body = figure.body().expect("a moving body");
     assert_eq!((body.kind.as_str(), body.yaw_deg.round()), ("person", 90.0));
+}
+
+#[test]
+fn a_posed_persons_track_carries_the_pose() {
+    let line = track_line(
+        0,
+        Vec2::ZERO,
+        &[Body {
+            id: "survivor-1".to_owned(),
+            enu: Vec3::new(-15.0, 31.0, 0.0),
+            action: None,
+            kind: "person".to_owned(),
+            yaw_deg: 30.0,
+            pose: Some("lying".to_owned()),
+        }],
+    );
+
+    let parsed: serde_json::Value = serde_json::from_str(&line).expect("json");
+    assert_eq!(parsed["objects"][0]["pose"], "lying");
+}
+
+#[test]
+fn a_lying_survivor_without_a_tree_is_tracked_lying_where_they_lie() {
+    let survivor = Figure::new("survivor-1", [-15.0, 31.0, 0.0], None).posed(crate::figure_anim::Pose::Lying, 30.0);
+
+    let body = survivor.body().expect("a posed person is tracked");
+
+    assert_eq!((body.pose.as_deref(), body.yaw_deg, body.enu), (Some("lying"), 30.0, Vec3::new(-15.0, 31.0, 0.0)));
+}
+
+#[test]
+fn the_shipped_figure_is_rigged_with_every_clip() {
+    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/behaviour/person.figure.json")).expect("figure file");
+
+    let figure = FigureDef::from_json(&text).expect("valid figure");
+
+    let rig = figure.rig.expect("the shipped figure has a rig");
+    assert!(rig.glb.ends_with(".glb") || rig.glb.ends_with(".gltf"), "{}", rig.glb);
+}
+
+#[test]
+fn a_rig_that_runs_slower_than_it_walks_is_refused_by_name() {
+    let text = r#"{"yaw_ease_s": 0.3, "bob_m": 0.03, "steps_per_s": 2, "reference_speed_m_s": 1.4,
+        "rig": {"glb": "models/person.glb", "clips": {"idle": "Idle", "walk": "Walk", "run": "Run", "wave": "Wave", "sit": "Sit", "lie": "Death"},
+                "walk_ground_m_s": 1.4, "run_ground_m_s": 1.0, "run_above_m_s": 2.0, "blend_s": 0.25, "standing_height_m": 1.8}}"#;
+
+    let refused = FigureDef::from_json(text).unwrap_err();
+
+    assert!(refused.contains("run_ground_m_s"), "{refused}");
 }

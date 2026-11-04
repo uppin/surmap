@@ -65,6 +65,9 @@ pub struct FigureDef {
     /// whatever way the figure faces.
     #[serde(default = "default_body_m")]
     pub body_m: [f32; 3],
+    /// The rigged glTF and its clips; without one the figure is the capsule and the visor.
+    #[serde(default)]
+    pub rig: Option<crate::figure_anim::RigDef>,
 }
 
 fn default_body_m() -> [f32; 3] {
@@ -209,6 +212,8 @@ pub struct Body {
     pub kind: String,
     /// The way it faces, ENU degrees counter-clockwise from east.
     pub yaw_deg: f32,
+    /// A person's pose (`lying`, …); `None` for a vehicle.
+    pub pose: Option<String>,
 }
 
 /// One `object_tracks.jsonl` line (bevy-simulation.md § *Presets, ground truth and stills*): the
@@ -256,6 +261,14 @@ impl Figure {
             turn: Turn::default(),
             phase: phase_of(id),
         }
+    }
+
+    /// The figure in `pose`, facing `yaw_deg` (ENU, counter-clockwise from east) while it stands;
+    /// a posed person is tracked even without a tree.
+    pub fn posed(self, pose: crate::figure_anim::Pose, yaw_deg: f32) -> Self {
+        // TODO(pr-2): implement
+        let _ = (pose, yaw_deg);
+        todo!("Figure::posed")
     }
 
     /// Advance the figure's tree by one tick, and start a turn when its heading changes.
@@ -316,6 +329,8 @@ impl Figure {
             action: runner.action().map(str::to_owned),
             kind: "person".to_owned(),
             yaw_deg: enu_yaw_deg(self.turn.to),
+            // TODO(pr-2): implement — the person's pose.
+            pose: None,
         })
     }
 }

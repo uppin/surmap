@@ -215,6 +215,18 @@ pub struct Person {
     /// What the person does over time; standing still when absent.
     #[serde(default)]
     pub behaviour: Option<crate::behaviour::Tree>,
+    /// How the person holds themself when not walking.
+    #[serde(default)]
+    pub pose: crate::figure_anim::Pose,
+    /// The way a posed person faces, counter-clockwise from east.
+    #[serde(default)]
+    pub yaw_deg: f32,
+    /// Body height (0.9–2.2 m); the rig's own height when absent.
+    #[serde(default)]
+    pub height_m: Option<f32>,
+    /// Overrides the figure's rig for this person.
+    #[serde(default)]
+    pub glb: Option<String>,
 }
 
 /// A vehicle of a class (`vehicle/<class>.vehicle.json`) at its start pose, driven by its tree.
@@ -350,6 +362,7 @@ impl SceneManifest {
         manifest.validate_buildings()?;
         manifest.validate_behaviours()?;
         manifest.validate_vehicles()?;
+        manifest.validate_people()?;
         Ok(manifest)
     }
 
@@ -373,6 +386,12 @@ impl SceneManifest {
 
     /// Each vehicle: `cars` only on a train, a `glb` override that is a relative glTF path, and a
     /// tree valid for a body on the ground.
+    /// Each person: `height_m` in 0.9–2.2, a `glb` override that is a relative glTF path.
+    fn validate_people(&self) -> Result<(), ManifestError> {
+        // TODO(pr-2): implement
+        Ok(())
+    }
+
     fn validate_vehicles(&self) -> Result<(), ManifestError> {
         use crate::behaviour::Target;
         use crate::vehicle::VehicleClass;

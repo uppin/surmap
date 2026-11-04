@@ -13,17 +13,17 @@ PRD: `PRD-2026-11-04-sim-rigged-people.md` · Discovery:
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1)
+- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files @ `b3961e2` (`/plan-pr-stack` pass 1)
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
-  - [ ] Stubs this node owns (`figure_anim.rs`, `Pose`, `FigureDef` rig fields, `Body.pose`, Python pose rules, proto `PersonElement` pose/height)
-  - [ ] Acceptance tests written and failing for the right reason
-  - [ ] Unit/integration tests written and failing
-  - [ ] Tests committed with the changeset
+- [wf 2] ✅ 2026-11-04 `/plan-pr-stack` Red — acceptance and failing lower-tier tests, committed · Rust 20 red (+26 inherited from n1); Python 12 red (2 acceptance, 10 unit/it) — commit 2
+  - [x] Build and baseline healthy — on n1's red commit: `cargo test --locked` 167 green / 26 red (all n1's), wasm check ok, `uv run mypy` clean; pytest pre-existing local failure `tests/test_survey_cm5_rtabmap_e2e.py` (RTAB-Map sidecar) not this stack's
+  - [x] Stubs this node owns (`figure_anim.rs`, `Pose`, `RigDef`, `FigureDef.rig`, `Figure::posed`, `Person.pose`/`yaw_deg`/`height_m`/`glb`, `validate_people`, `Body.pose`, `surmap.simulation.people`, proto `PersonElement.pose`/`height_m`/`yaw_deg`)
+  - [x] Acceptance tests written and failing for the right reason (`tests/test_sim_people_e2e.py`)
+  - [x] Unit/integration tests written and failing
+  - [x] Tests committed with the changeset
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Pin a CC0 rigged human glTF with the clips (criteria in *Assets*); `fetch_sim_assets.py` verifies it
   - [ ] Rust `actors.rs` `FigureDef`: `rig` block (glb, clip names, ground speeds, run threshold, coat/skin material slots, standing height); old files without `rig` still load
@@ -44,7 +44,7 @@ PRD: `PRD-2026-11-04-sim-rigged-people.md` · Discovery:
 
 ## Stack Context
 
-Stack `sim-traffic` (slug `sim-traffic`) — **2 of 3** · PR `#pending`.
+Stack `sim-traffic` (slug `sim-traffic`) — **2 of 3** · PR [#107](https://github.com/uppin/surmap/pull/107).
 **Kind:** Feature · adds — **Workflow:** feature preset; pass-2 route `/plan-red` Steps 7–9.
 Branch `pr-2-sim-traffic`, base `pr-1-sim-traffic`; successor `pr-3-sim-traffic`.
 Seam: the person figure (`actors.rs` figure look, `world.rs` `Builder::person`) and a new
@@ -157,6 +157,17 @@ pinnable CC0 file meets the criteria, the Green row halts ⛔ with the candidate
 - **Supporting evidence (not a rung)** — native stills `--screenshot <dir> --at 20 --scenario
   earthquake-survivors` (`people.png`, `person-close.png`), reviewed at wrap.
 
+## Red tests (commit 2)
+
+| Test | Validates |
+|---|---|
+| `tests/test_sim_people_e2e.py` (2) | agent places a lying and a waving survivor → served, valid; preset served = golden `earthquake-survivors.json` (written at Green from the preset) |
+| `tests/test_sim_people_manifest.py` | 6 refusals naming id + reason (pose, height ×2, yaw, glb ×2); preset poses and rescuers' trees; preset = golden. The 4 *may take each pose* cases are green before and after (accept cases guarding over-strict rules) |
+| `tests/test_agent_simulation_tools.py` — person with pose/height/yaw; unknown pose `INVALID_ARGUMENT` | handler |
+| `src/figure_anim/tests.rs` (12) | pose name; idle/walk/run by speed with ground-matched rates; crossfade sums to 1; poses held; posed-but-moving walks; `clip_time` loop/phase/hold; `rig_scale`; `RigDef::validate` |
+| `src/actors/tests.rs` (4) | track `pose`; posed survivor without a tree tracked; shipped figure has a rig; bad rig refused by `FigureDef::from_json` |
+| `src/scene_manifest/tests.rs` (4) | height range; `glb` override rules and asset path; golden parses with lying/sitting/waving |
+
 ## Prerequisites
 
 Deferred-work scan: `2026-11-03-bevy-visual-checkpoints-v3-v5.md` — ℹ unrelated. Nothing blocks.
@@ -170,3 +181,6 @@ Deferred-work scan: `2026-11-03-bevy-visual-checkpoints-v3-v5.md` — ℹ unrela
 - One rig for everyone, varied by height, coat and phase, rather than a character library: one
   pinned asset; per-person `glb` override is the escape hatch.
 - Stylised CC0 characters over photo-real scans: the pinned-CC0 rule wins.
+- A posed person is tracked in `object_tracks.jsonl` even without a tree (`Figure::posed`): a
+  survivor lying still is exactly the truth a survey is judged on.
+- `FigureDef` is no longer `Copy` (the rig holds strings); callers clone or borrow.

@@ -294,6 +294,12 @@ message PersonElement {
   string coat = 3;
   // A skin material the scenario declares; the scenario's default skin when empty.
   string skin = 4;
+  // "standing" (default when empty), "lying" (an injured survivor), "sitting" or "waving".
+  string pose = 5;
+  // Body height, 0.9–2.2 m; the figure's own height when unset.
+  optional double height_m = 6;
+  // The way a posed person faces, degrees counter-clockwise from east.
+  optional double yaw_deg = 7;
 }
 
 message VegetationElement {
