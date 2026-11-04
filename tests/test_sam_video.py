@@ -5,6 +5,7 @@ The real adapter runs the tiny fake SAM3 ONNX graph through the same
 provider and the device differ.
 """
 
+import asyncio
 import io
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from surmap.survey.sam import (
     InMemoryVideoSamStreamer,
     RawFrame,
     SamDetection,
+    VideoAsFrameSamDetector,
 )
 from surmap.survey.sam3 import (
     OnnxSam3Session,
@@ -159,3 +161,17 @@ def test_the_in_memory_adapters_record_each_videos_prompt(tmp_path: Path) -> Non
     # Then the prompts are recorded per video, None where none was given
     assert detector.prompts == ["car", None]
     assert streamer.prompts == ["car", None]
+
+
+def test_a_video_detector_serves_the_frame_port_as_one_video() -> None:
+    # Given a video detector the frame port starts a video on
+    video = InMemoryVideoSamDetector((SamDetection("object", 1.0, (0.0, 0.0, 1.0, 1.0)),))
+    frames = VideoAsFrameSamDetector(video)
+
+    # When three frames are detected in order
+    found = [asyncio.run(frames.detect(_frame_with_bright_box(i, 20 * i))) for i in (1, 2, 3)]
+
+    # Then one video was started, every frame was tracked in order, and its detections came back
+    assert video.prompts == [None]
+    assert [frame.frame_id for frame in video.frames] == [1, 2, 3]
+    assert [[d.track_id for d in per_frame] for per_frame in found] == [[1], [1], [1]]

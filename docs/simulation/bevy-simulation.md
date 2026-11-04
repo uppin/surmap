@@ -79,6 +79,24 @@ own assets under `/sim/assets/`, and the built page at `/sim/` (`--sim-dist`). T
 scenario with `?scenario=<id>`; natively, `--scenario <id>` loads `scenarios/<id>.json` from
 the asset root (ids are letters, digits and dashes).
 
+For local development `./scripts/dev.sh` serves the page by default and ensures its
+prerequisites before anything starts: `uv` and `yarn` on PATH, the chat UI's
+`node_modules`, the pinned textures, models and HDRI fetched and hash-verified
+(`scripts/fetch_sim_assets.py`), and a page build whose JS/WASM are addressed under
+`/sim/` — rebuilt with `trunk build --public-url /sim/` when the build is missing or
+was made for another prefix, since root-addressed assets 404 under `/sim/` and leave
+a black canvas. `SURMAP_DEV_SIM_DIST` and `SURMAP_DEV_SIM_FETCH_CMD` override the
+page location and the fetch command.
+
+## Controls
+
+Keyboard flies the drone (Space take off/land, WASD move, Q/E yaw, R/F up/down).
+The chase view follows the viewed drone, and the trackpad orbits it (PTZ):
+two-finger scroll pans and tilts the view around the drone (tilt clamped between
+horizon and top-down), pinch zooms between 3 m and 40 m (`view_orbit.rs`, fed by
+`MouseWheel` and `PinchGesture`). With no gesture input the view is the original
+chase view, so unattended screenshot and record modes are unchanged.
+
 ## Weather, wind and fire
 
 A scenario may carry weather, stands of pines and grass that sway in its wind, and wildfires
@@ -903,10 +921,13 @@ builds, nothing is sent: native runs take their commands from `--fleet-log`.
 
 ### The station (`surmap.simulation.fleet`)
 
-- **`FleetRegistry`** is `SimulationRig.fleet`, one per server. `controller(id)` builds a
-  `FleetController` from the scenario's latest manifest (its nests) on first use and caches it.
-  `link(id, socket)` runs one page: hello first, then every frame goes to the controller until
-  the page closes, which detaches the link.
+- **`FleetRegistry`** (`fleet/registry.py`) is `SimulationRig.fleet`, one per server.
+  `controller(id)` builds a `FleetController` on first use and caches it. While no page is
+  linked, the controller reads the scenario's latest manifest nests on every validation, so a
+  nest added later has drones it knows; once linked, the page's `hello` drones are
+  authoritative. `link(id, socket)` runs one page: hello first, then every frame goes to the
+  controller until the page closes, which detaches the link. A `hello` whose `scenario` differs
+  from `?scenario=` is closed with 4400, and nothing is attached.
 - **`FleetController.send(command)`** validates, sends and waits, in that order:
   1. **Validate.** The drone must be known: one of the scenario's nests' drones, or one in the
      linked page's `hello` list. The route must be non-empty. Every waypoint must be within
@@ -921,9 +942,14 @@ builds, nothing is sent: native runs take their commands from `--fleet-log`.
 
   Requests are numbered from 1 and serialised per scenario, so the order sent is the order
   applied. The phase comes from the last telemetry, and before any telemetry every drone is
-  `docked`. A drone the page just launched counts as flying until telemetry stamped at or after
-  the launch arrives. The page still refuses on its own phase, because telemetry can be up to
-  0.5 s old.
+  `docked`. A drone the page just launched (or recalled) keeps its expected phase until telemetry
+  reaches the step the page applies the command at. `due_step` / `steps_until` and the 0.05 s
+  `STEP_S` mirror `fleet/autopilot.rs`, so telemetry from the frame a launch lands in does not
+  drop the expectation early. After the page disconnects, its retained telemetry no longer
+  decides phases. A controller that was never linked still answers a recall of a docked drone
+  with `already_docked` before it reports no simulation connected. The page still refuses on its
+  own phase, because telemetry can be up to 0.5 s old. `telemetry_time()` is the last
+  telemetry's `sim_t_s` while linked (`list_drones.sim_t_s`), else `None`.
 - **`FleetLogStore`** keeps two tables in the scenario store's SQLite file. `fleet_sessions` has
   one row per linked page (`session_id`, `scenario_id`, `started_at`, `hello`). `fleet_log` has
   the session's applied commands (`seq`, `at_s`, `command_json`). The simulation stamps the time,
@@ -984,14 +1010,20 @@ drone**. Only the active drone's frames are processed; the other drones keep fly
 
 - **Starting the bridge.** `python -m surmap.agent --bevy-bridge-port 8773` serves the bridge
   (`surmap.simulation.bevy_bridge.serve_bevy_bridge`) with a `FleetPerception` router per page
-  connection, the streaming RTAB-Map factory and the configured SAM detector (the fake under
-  `--sam-fake`). The page and the bridge share one origin through `--sim-dist`; there is no
+  connection and the streaming RTAB-Map factory. Segmentation uses the agent's configured SAM
+  (`bridge_segmentation`: the station's detector, else the centred-box fake under `--sam-fake`),
+  one `VideoAsFrameSamDetector` (one video) per drone session; no frame is kept after `detect`
+  returns. The bridge runs each connection's `handle` / `close` off the event loop
+  (`asyncio.to_thread`) under a per-connection lock, so a slow map start never stalls the agent
+  server and one connection's messages stay in order. The page and the bridge share one origin through `--sim-dist`; there is no
   separate `serve_bevy_sim.py`.
 - **The page (`fleet/bridge_wasm.rs`, wasm only).** `?bridge=` opens a binary `WebSocket` and
   sends `hello` (camera profile, ground truth, optional `scenario`) at scene ready. Each
   sim-time tick, `StreamPacer` (`fleet/stream.rs`, pure) sends at the camera's `rate_hz`: it
-  reads back the eyes (`Readback`, as `record.rs` does) and calls `encode_pair` with the active
-  drone's id (`ActiveDrone`). When `bufferedAmount` exceeds four frame sizes the pair is
+  reads back the eyes (`Readback`, as `record.rs` does). The `PendingPair` captured at the
+  request holds the active drone's id, pose and `t_ns`, so a switch during the readback still
+  labels the pair with the drone whose eyes were read. `stream_bridge` runs in
+  `BridgeStreamSet`, ordered after `fleet::fly_fleet` and `follow_drone_rig`. When `bufferedAmount` exceeds four frame sizes the pair is
   dropped, never queued without bound. A pair without a fleet carries no `drone_id` and stays
   byte-identical to the old golden (`pair.bin`); `pair-drone.bin` pins the labelled form.
 - **Per-drone sessions (`surmap.simulation.fleet.perception`).** `hello` stores the camera
@@ -1001,12 +1033,14 @@ drone**. Only the active drone's frames are processed; the other drones keep fly
   of 2, drop oldest), an optional per-drone `CaptureRecorder`, and counts. At most
   `MAX_DRONE_SESSIONS = 4` sessions live per connection; a fifth drone's pairs are answered
   `error: "drone session limit (4) reached; <id> not processed"` and the first four keep
-  working. A drone whose frames stop is idle with its backend and map alive; when its frames
+  working. A drone whose backend raises is marked errored: its backend is closed once, its
+  counts freeze, later pairs get the same `error` status, and the other drones and the socket
+  keep running. A drone whose frames stop is idle with its backend and map alive; when its frames
   resume they go to the same backend — RTAB-Map resets odometry after the gap and starts a new
   sub-map in the same graph, which joins on loop closure. Closing the page finishes every
   session (backends closed, recorders finished, in drone-id order) and unregisters it.
 - **Status.** The bridge replies with a `status` per pair (`frames`, `posed`, `lost`,
-  `keyframes`, `dropped`, `drone_id`); the page shows it under the feed panel as
+  `keyframes`, `dropped`, `drone_id`, and `error` for a failed drone); the page shows it under the feed panel as
   `MAP <drone> · <n> frames · <k> keyframes · tracking`. The agent reads every drone's counts
   with `drone_map_status` ([docs/agent.md](../agent.md), *Fleet tools*).
 
@@ -1018,7 +1052,10 @@ drone**. Only the active drone's frames are processed; the other drones keep fly
 `tests/test_fleet_perception_rtabmap_e2e.py` (CI `rtabmap-e2e`) feeds the committed capture as
 two drones in alternating blocks — both sessions gain keyframes and the first drone's backend
 is the same object with counts continuing after the switch back. V3 —
-`cargo check --locked --target wasm32-unknown-unknown` compiles `fleet/bridge_wasm.rs`. Chrome
+`cargo check --locked --target wasm32-unknown-unknown` compiles `fleet/bridge_wasm.rs`.
+2026-11-04 (#133, review fixes): V1 fail→pass — eleven reproductions (bridge SAM and frame
+retention, off-loop work, per-drone failure, scenario check, step mirror, latest nests,
+`sim_t_s`, the readback's drone label and the stream's schedule order) pass. Chrome
 run (V4) after merge —
 [`src/surmap/docs/todo/2026-11-04-fleet-browser-verification.md`](../../src/surmap/docs/todo/2026-11-04-fleet-browser-verification.md).
 

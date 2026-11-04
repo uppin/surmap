@@ -31,6 +31,7 @@ mod textures;
 mod ui;
 mod vehicle;
 mod vegetation;
+mod view_orbit;
 mod wildfire;
 mod wind;
 #[cfg(test)]
@@ -148,6 +149,7 @@ fn main() {
         .insert_resource(sim_time)
         .insert_resource(look_at)
         .init_resource::<Flight>()
+        .init_resource::<view_orbit::ViewOrbit>()
         .add_systems(Startup, move |mut commands: Commands| {
             if let Some(recorder) = recorder.take() {
                 commands.insert_resource(recorder);
@@ -166,7 +168,7 @@ fn main() {
                 takeoff_button,
                 fly_scripted,
                 follow_drone_rig.after(fly_scripted).after(fleet::fly_fleet),
-                chase_camera.after(fly_scripted).after(fleet::fly_fleet),
+                chase_camera.after(fly_scripted).after(fleet::fly_fleet).after(view_orbit::read_trackpad),
                 spin_rotors,
                 scatter_once,
                 update_status.after(fleet::fly_fleet),
@@ -180,6 +182,7 @@ fn main() {
                 sky::bake_sky,
             ),
         )
+        .add_systems(Update, view_orbit::read_trackpad)
         .add_systems(
             Update,
             (
@@ -412,13 +415,13 @@ fn chase_camera(
     mut cam: Query<&mut Transform, (With<ChaseCam>, Without<Drone>, Without<FleetDrone>)>,
     time: Res<Time>,
     mode: Res<RunMode>,
+    orbit: Res<view_orbit::ViewOrbit>,
 ) {
     let viewed = viewed_body(active.as_ref().and_then(|a| a.0.as_deref()), fleet.iter(), drone.single().ok());
     let (Some(body), Ok(mut eye)) = (viewed, cam.single_mut()) else {
         return;
     };
-    let back = body.rotation * Vec3::new(5.0, 2.6, 7.5);
-    let target = body.translation + back;
+    let target = body.translation + orbit.offset(body.rotation);
     let blend = if mode.screenshot.is_some() { 1.0 } else { 1.0 - (-3.0 * time.delta_secs()).exp() };
     eye.translation = eye.translation.lerp(target, blend);
     eye.look_at(body.translation + Vec3::new(0.0, 0.3, 0.0), Vec3::Y);

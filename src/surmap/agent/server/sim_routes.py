@@ -25,8 +25,9 @@ from surmap.agent.tools.simulation_core import scenario_url
 from surmap.agent.tools.simulation_handlers import SimulationTooling
 from surmap.rpc.http import HttpRequest, HttpResponse
 from surmap.simulation.asset_sources import AssetSource
-from surmap.simulation.fleet.controller import FleetRegistry, FleetTiming
+from surmap.simulation.fleet.controller import FleetTiming
 from surmap.simulation.fleet.perception import PerceptionRegistry
+from surmap.simulation.fleet.registry import FleetRegistry
 from surmap.simulation.scenario_bundle import SUFFIX, BundleInvalid, export_bundle, import_bundle
 from surmap.simulation.scenario_store import Scenario, ScenarioStore, UnknownRecord
 

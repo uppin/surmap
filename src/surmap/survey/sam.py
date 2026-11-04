@@ -162,6 +162,22 @@ class InMemoryVideoSamDetector:
         pass
 
 
+class VideoAsFrameSamDetector:
+    """A `SamDetector` over one `VideoSamDetector`: the frames it is given are one video.
+
+    Starts that video on construction (`reset()`, the adapter's configured prompt) and tracks
+    each frame in the order `detect` is called. It keeps no frame itself. `track` is synchronous
+    and may block on a remote call, so run `detect` where blocking is fine (a worker's own loop).
+    """
+
+    def __init__(self, video: VideoSamDetector) -> None:
+        self._video = video
+        video.reset()
+
+    async def detect(self, frame: RawFrame) -> tuple[SamDetection, ...]:
+        return self._video.track(frame)
+
+
 class InMemoryVideoSamStreamer:
     """`VideoSamStreamer` adapter for tests and simulation: configured output."""
 

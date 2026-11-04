@@ -170,6 +170,9 @@ message ListDronesResponse {
   // The id of the drone whose camera is on screen; empty when none is.
   string active = 2;
   repeated DroneStatus drones = 3;
+  // The simulation time, in seconds, of the linked page's last telemetry; absent when no page is
+  // linked.
+  optional double sim_t_s = 4;
 }
 
 message LaunchDroneRequest {
@@ -242,6 +245,9 @@ message DroneMapCounts {
   bool processing = 8;
   // Simulation time of its last processed frame, ns; 0 before any.
   int64 last_t_ns = 9;
+  // Why this drone's map stopped (its RTAB-Map failed); absent while it is running. The other
+  // drones' maps are unaffected.
+  optional string error = 10;
 }
 
 message DroneMapStatusResponse {

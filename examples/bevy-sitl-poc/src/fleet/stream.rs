@@ -1,8 +1,12 @@
 //! The page's stereo stream to the station's bridge, pure: when a pair is due on the simulation
-//! clock, whether the socket is too backed up to take it, the header that labels it with the
-//! active drone, and the `?bridge=` page parameter. The wasm socket is `bridge_wasm`.
+//! clock, whether the socket is too backed up to take it, what a pair captures when its eyes are
+//! requested and the header that labels it with its drone, where the stream's system runs in
+//! the frame, and the `?bridge=` page parameter. The wasm socket is `bridge_wasm`.
 
 #![allow(dead_code)]
+
+use bevy::app::{App, Update};
+use bevy::ecs::schedule::{IntoScheduleConfigs, SystemSet};
 
 use super::ActiveDrone;
 use crate::wire::PairHeader;
@@ -67,6 +71,40 @@ pub fn pair_for(
     PairHeader { frame_id, t_ns, width, height, pose_enu, drone_id: active.0.clone() }
 }
 
+/// A pair whose eyes are being read back: what the stream captured when it requested them.
+#[derive(Debug, Clone)]
+pub struct PendingPair {
+    requested_by: ActiveDrone,
+    t_ns: u64,
+    pose_enu: [f64; 7],
+}
+
+impl PendingPair {
+    /// Captured when the stream requests `active`'s eyes at `t_ns`, posed at `pose_enu`.
+    pub fn requested(active: &ActiveDrone, t_ns: u64, pose_enu: [f64; 7]) -> Self {
+        Self { requested_by: active.clone(), t_ns, pose_enu }
+    }
+
+    /// The pair's header as the stream's `frame_id`-th pair, once both eyes have landed. It
+    /// names the drone whose eyes were requested, whichever drone is active by then.
+    pub fn header(&self, frame_id: u64, width: u32, height: u32) -> PairHeader {
+        pair_for(&self.requested_by, frame_id, self.t_ns, width, height, self.pose_enu)
+    }
+}
+
+/// The system set the stream's system (`bridge_wasm::stream_bridge`) runs in, in `Update`.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct BridgeStreamSet;
+
+/// Places `BridgeStreamSet` in the frame's `Update` schedule: after the fleet has flown and the
+/// eyes have followed their bodies, so the pose it captures is the frame's own, not the last one's.
+pub fn order_bridge_stream(app: &mut App) {
+    app.configure_sets(
+        Update,
+        BridgeStreamSet.after(super::fly_fleet).after(crate::follow_drone_rig),
+    );
+}
+
 /// The bridge socket a page URL's query (`location.search`) names: `bridge=ws://host:port`.
 pub fn bridge_url(search: &str) -> Option<String> {
     search
@@ -89,13 +127,18 @@ pub fn status_line(drone_id: Option<&str>, frames: u64, keyframes: u64, lost: bo
 
 #[cfg(test)]
 mod tests {
+    use bevy::ecs::schedule::{InternedSystemSet, IntoSystemSet, Schedules, SystemKey};
+    use bevy::prelude::{Query, Res, Transform};
+
     use super::*;
+    use crate::fleet::fly_fleet;
     use crate::wire::encode_pair;
 
     const PAIR_GOLDEN: &[u8] = include_bytes!("../../../../tests/fixtures/bevy_sim_wire/pair.bin");
     const PAIR_DRONE_GOLDEN: &[u8] =
         include_bytes!("../../../../tests/fixtures/bevy_sim_wire/pair-drone.bin");
     const SW_D1: &str = "nest-sw-d1";
+    const POSE: [f64; 7] = [1.0, 3.0, 2.0, 0.0, 0.0, 0.0, 1.0];
     const MS: u64 = 1_000_000;
     /// A 60 fps render loop's tick, ns.
     const TICK_NS: u64 = 16_666_667;
@@ -107,6 +150,55 @@ mod tests {
         let left: Vec<u8> = (0..8).collect();
         let right: Vec<u8> = (8..16).collect();
         encode_pair(&header, &left, &right)
+    }
+
+    /// A stand-in for the stream's system: it reads what `stream_bridge` reads of the frame —
+    /// the active drone and the bodies' and eyes' poses.
+    fn reads_the_eyes(_active: Option<Res<ActiveDrone>>, _bodies: Query<&Transform>) {}
+
+    /// Builds `Update` as the frame orders `fly_fleet`, `follow_drone_rig` (after it) and
+    /// `BridgeStreamSet`, with `reads_the_eyes` in the set; the names of the systems that write
+    /// what the stand-in reads and are not ordered against it.
+    fn unordered_against_the_stream() -> Vec<String> {
+        let mut app = App::new();
+        app.add_systems(
+            Update,
+            (
+                reads_the_eyes.in_set(BridgeStreamSet),
+                fly_fleet,
+                crate::follow_drone_rig.after(fly_fleet),
+            ),
+        );
+        order_bridge_stream(&mut app);
+        let mut schedule = app
+            .world_mut()
+            .resource_mut::<Schedules>()
+            .remove(Update)
+            .expect("the Update schedule");
+        schedule.initialize(app.world_mut()).expect("the Update schedule builds");
+        let graph = schedule.graph();
+        let members = |set: InternedSystemSet| -> Vec<SystemKey> {
+            graph.systems_in_set(set).expect("the set is in the schedule").iter().copied().collect()
+        };
+        let stream = members(BridgeStreamSet.intern());
+        let writers = [
+            ("fly_fleet", members(fly_fleet.into_system_set().intern())),
+            ("follow_drone_rig", members(crate::follow_drone_rig.into_system_set().intern())),
+        ];
+        let mut unordered: Vec<String> = graph
+            .conflicting_systems()
+            .iter()
+            .filter_map(|(a, b, _)| match (stream.contains(a), stream.contains(b)) {
+                (true, false) => Some(*b),
+                (false, true) => Some(*a),
+                _ => None,
+            })
+            .filter_map(|other| {
+                writers.iter().find(|(_, keys)| keys.contains(&other)).map(|(name, _)| name.to_string())
+            })
+            .collect();
+        unordered.sort();
+        unordered
     }
 
     fn decisions(pacer: &mut StreamPacer, ticks: &[(u64, usize)]) -> Vec<Pace> {
@@ -129,6 +221,22 @@ mod tests {
         let message = the_golden_pair(&no_fleet);
 
         assert_eq!(message, PAIR_GOLDEN);
+    }
+
+    #[test]
+    fn a_switch_while_the_eyes_are_read_back_keeps_the_requesting_drones_id() {
+        let requested = PendingPair::requested(&ActiveDrone(Some(SW_D1.into())), 700_000_000, POSE);
+
+        let header = requested.header(7, 4, 2);
+
+        assert_eq!(header.drone_id.as_deref(), Some(SW_D1));
+    }
+
+    #[test]
+    fn the_stream_reads_the_eyes_only_after_the_fleet_flew_and_the_eyes_followed() {
+        let unordered = unordered_against_the_stream();
+
+        assert_eq!(unordered, Vec::<String>::new());
     }
 
     #[test]

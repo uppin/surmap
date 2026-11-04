@@ -11,11 +11,13 @@ from __future__ import annotations
 import asyncio
 import http.client
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
+from google.protobuf.json_format import MessageToDict
 
 from surmap.agent.contracts import (
     ExecutionMode,
@@ -56,7 +58,14 @@ from surmap.simulation.fleet.controller import (
 from surmap.simulation.fleet.link import DroneTelemetry, Phase
 from surmap.simulation.fleet.perception import DroneCounts
 from surmap.simulation.fleet_nests import Nest
-from tests.fleet_fakes import Applies, RecordingSleep, Refuses, StaysSilent, drone_frame
+from tests.fleet_fakes import (
+    Applies,
+    RecordingSleep,
+    Refuses,
+    StaysSilent,
+    drone_frame,
+    eventually,
+)
 from tests.fleet_perception_fakes import PerceptionRig, a_perception, blocks
 from tests.fleet_tool_fakes import (
     FIXTURES,
@@ -112,6 +121,11 @@ async def the_report(station: FleetStation) -> pb.ListDronesResponse:
     report = await station.call("ListDrones", the_drones())
     assert isinstance(report, pb.ListDronesResponse)
     return report
+
+
+def simulation_time_in(report: pb.ListDronesResponse) -> object:
+    """The report's `sim_t_s` as it goes over the wire; `None` when it is not set."""
+    return MessageToDict(report, preserving_proto_field_name=True).get("sim_t_s")
 
 
 def phases_in(report: pb.ListDronesResponse) -> dict[str, pb.DronePhase]:
@@ -232,6 +246,21 @@ async def test_set_active_drone_changes_the_active_drone(tmp_path: Path) -> None
     assert acknowledged(result) == (1, 12.5)
     assert sim.commands == [{"type": "set_active", "drone": NE_D1}]
     assert report.active == NE_D1
+
+
+async def test_list_drones_reports_the_pages_simulation_time(tmp_path: Path) -> None:
+    # Given a linked page whose last telemetry is stamped 41.5 s
+    async with a_fleet_station(tmp_path) as station:
+        async with station.a_linked_page() as sim:
+            await station.reports(sim, 41.5, SW_D1, cruising())
+
+            # When the agent lists the drones while the page is linked, and again once it is gone
+            linked = await the_report(station)
+        await eventually(lambda: not station.controller.linked)
+        unlinked = await the_report(station)
+
+    # Then the linked report carries the page's simulation time, and the unlinked one none
+    assert (simulation_time_in(linked), simulation_time_in(unlinked)) == (41.5, None)
 
 
 UNLINKED_COMMANDS: dict[str, tuple[str, CommandRequest]] = {
@@ -790,3 +819,27 @@ def test_a_drone_that_has_not_streamed_reports_no_last_frame_time() -> None:
 
     # Then its last frame time is zero
     assert reported.last_t_ns == 0
+
+
+def test_a_drone_whose_map_failed_reports_why() -> None:
+    # Given nest-ne-d1's session counts after its map failed
+    counts = DroneCounts(
+        drone_id=NE_D1,
+        frames=2,
+        posed=2,
+        lost=0,
+        keyframes=2,
+        dropped=0,
+        segmented_frames=2,
+        detections=4,
+        processing=False,
+        last_t_ns=200_000_000,
+        error="MapCrashed: the map crashed on frame 3",
+    )
+
+    # When it is reported
+    reported = drone_map_counts(counts)
+
+    # Then the failure is carried over, and a drone that runs reports none
+    assert reported.error == "MapCrashed: the map crashed on frame 3"
+    assert drone_map_counts(replace(counts, error=None)).HasField("error") is False

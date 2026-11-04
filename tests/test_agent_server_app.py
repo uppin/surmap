@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import os
+import weakref
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -22,14 +24,17 @@ from surmap.agent.proto import survey_tools_pb2 as pb
 from surmap.agent.server.app import (
     SYSTEM_PROMPT,
     AgentServerConfig,
+    bridge_segmentation,
     build_agent_description,
     build_demo_workspace,
     build_station,
     default_model_factory,
 )
 from surmap.agent.services import Handler
-from surmap.agent.tools.station import StationState
+from surmap.agent.tools.station import StationState, StubStationControl
 from surmap.rpc.hosts.in_memory import InMemoryHost
+from surmap.simulation.fleet.perception import SegmentationSink
+from surmap.survey.sam import RawFrame
 from surmap.usage import BudgetExceeded, UsageLedger
 from tests import fake_meta, fake_ollama
 from tests.agent_fakes import ScriptedChatModel, answer
@@ -131,6 +136,33 @@ def the_tool_call_then_stop(events: list[chat_pb2.TurnEvent]) -> list[str]:
     """The turn's event kinds without text deltas; asserts it stopped normally."""
     assert events[-1].turn_finished.reason == chat_pb2.TurnFinished.STOP
     return [e.WhichOneof("event") for e in events if e.WhichOneof("event") != "text_delta"]
+
+
+def a_left_frame(frame_id: int) -> RawFrame:
+    """A drone's 64 x 48 grey left frame at `frame_id` x 100 ms."""
+    return RawFrame(
+        frame_id=frame_id,
+        t_ns=frame_id * 100_000_000,
+        channel=0,
+        width=64,
+        height=48,
+        encoding="gray8",
+        data=bytes(64 * 48),
+    )
+
+
+def segmenting(sink: SegmentationSink, count: int) -> list[weakref.ref[RawFrame]]:
+    """Submits `count` left frames to `sink`, one at a time; a weak reference to each, so only
+    what the segmentation path keeps holds them."""
+    frames = [a_left_frame(frame_id) for frame_id in range(1, count + 1)]
+    for frame in frames:
+        sink.submit(frame)
+    return [weakref.ref(frame) for frame in frames]
+
+
+def still_held(frames: list[weakref.ref[RawFrame]]) -> int:
+    gc.collect()
+    return sum(1 for frame in frames if frame() is not None)
 
 
 def without_env(monkeypatch: pytest.MonkeyPatch, *names: str) -> None:
@@ -583,3 +615,54 @@ def test_an_agent_with_neither_a_station_nor_the_fake_sam_refuses_to_start(
     with pytest.raises(ValueError, match="--station") as refusal:
         build_demo_workspace(config)
     assert "--sam-fake" in str(refusal.value)
+
+
+# --- the stereo bridge's segmentation ----------------------------------------------------
+
+
+def test_the_bridge_segments_with_the_agents_configured_sam() -> None:
+    # Given the stereo bridge's segmentation of nest-sw-d1 on an agent with the fake SAM
+    segmentation = bridge_segmentation(AgentServerConfig(sam_fake=True))("nest-sw-d1")
+
+    # When one left frame is segmented and the run finishes
+    segmentation.submit(a_left_frame(1))
+    segmentation.close()
+
+    # Then the fake centred-box SAM found its one object in it
+    assert (segmentation.segmented_frames, segmentation.detections) == (1, 1)
+
+
+def test_a_streaming_drone_keeps_no_frames_after_segmenting_them() -> None:
+    # Given the stereo bridge's segmentation of nest-sw-d1 on an agent with the fake SAM
+    segmentation = bridge_segmentation(AgentServerConfig(sam_fake=True))("nest-sw-d1")
+
+    # When five left frames are segmented and the run finishes
+    frames = segmenting(segmentation, 5)
+    segmentation.close()
+
+    # Then nothing on the segmentation path still holds any of them
+    assert still_held(frames) == 0
+
+
+def test_the_bridge_refuses_to_segment_without_a_station_or_the_fake_sam() -> None:
+    # Given an agent configured with neither a station nor the fake SAM
+    config = AgentServerConfig()
+
+    # When the bridge's segmentation is built / Then it refuses as the demo workspace does
+    with pytest.raises(ValueError, match="--station") as refusal:
+        bridge_segmentation(config)
+    assert "--sam-fake" in str(refusal.value)
+
+
+def test_the_bridge_segments_on_the_station_when_there_is_one() -> None:
+    # Given an agent with a stub station (its SAM is the centred-box fake)
+    station = StubStationControl()
+    segmentation = bridge_segmentation(AgentServerConfig(), station)("nest-sw-d1")
+
+    # When one left frame is segmented and the run finishes
+    segmentation.submit(a_left_frame(1))
+    segmentation.close()
+
+    # Then the station's SAM found its one object, and the station was used
+    assert (segmentation.segmented_frames, segmentation.detections) == (1, 1)
+    assert station.status().state is StationState.READY

@@ -332,14 +332,14 @@ aircraft are never commanded.
 | Tool | Arguments | Result |
 |---|---|---|
 | `list_nests` | `scenario_id` | each `FleetNest { id, EnuPoint position, yaw_deg, repeated drone_ids }` |
-| `list_drones` | `scenario_id` | `linked`, `active` (empty when none), `repeated DroneStatus { id, nest, DronePhase phase, EnuPoint position, yaw_deg, speed_m_s, targets_left }`; without a link, `linked: false` and every drone `DOCKED` at its pad |
+| `list_drones` | `scenario_id` | `linked`, `active` (empty when none), `optional double sim_t_s` (the linked page's last telemetry time, s; unset when no page is linked), `repeated DroneStatus { id, nest, DronePhase phase, EnuPoint position, yaw_deg, speed_m_s, targets_left }`; without a link, `linked: false` and every drone `DOCKED` at its pad |
 | `launch_drone` | `scenario_id`, `drone_id`, `FlightRoute route { repeated EnuPoint waypoints; optional speed_m_s; RouteEnd on_complete }` | `FleetCommandResult { seq, at_s }` — the sequence number and simulation time it took effect |
 | `set_route` | same as `launch_drone` | `FleetCommandResult` |
 | `add_detour` | `scenario_id`, `drone_id`, `repeated EnuPoint waypoints` | `FleetCommandResult` |
 | `recall_drone` | `scenario_id`, `drone_id` | `FleetCommandResult` |
 | `set_active_drone` | `scenario_id`, `drone_id` | `FleetCommandResult` |
 | `get_fleet_log` | `scenario_id`, `optional session_id` (latest when absent) | `session_id`, `fleet_log_jsonl` (the `--fleet-log` replay file) |
-| `drone_map_status` | `scenario_id`, `optional drone_id` (one drone; every drone when absent) | `repeated DroneMapCounts { drone_id, frames, posed, lost, keyframes, segmented_frames, detections, processing, last_t_ns }` — per-drone map and segmentation counts from the stereo bridge; a drone that never streamed reports zeros, `last_t_ns` 0 before any frame |
+| `drone_map_status` | `scenario_id`, `optional drone_id` (one drone; every drone when absent) | `repeated DroneMapCounts { drone_id, frames, posed, lost, keyframes, segmented_frames, detections, processing, last_t_ns, optional string error }` — per-drone map and segmentation counts from the stereo bridge; a drone that never streamed reports zeros, `last_t_ns` 0 before any frame; `error` is set only for a drone whose map failed (its counts stay frozen, the other drones keep streaming) |
 
 Routes are ENU metres on the simulated block: waypoints 5–60 m up within ±500 m, speed
 0.5–8 m/s when given; `on_complete` is `RETURN` (the default) or `HOVER`. Phases are
@@ -827,7 +827,7 @@ uv run python -m surmap.agent --sam-fake \
 | `--sim-dir` | `<cache>/simulation` | simulation store: `simulation.sqlite` and the asset `library/` |
 | `--sim-assets` | `examples/bevy-sitl-poc/assets` | the simulation's own assets; simulation tools are off when absent |
 | `--sim-dist` | none | a `trunk build` output served at `/sim/` |
-| `--bevy-bridge-port` | none | serve the stereo bridge a `?bridge=ws://…` simulation page streams its active drone to; each drone gets its own RTAB-Map session and segmentation run, read back with `drone_map_status` |
+| `--bevy-bridge-port` | none | serve the stereo bridge a `?bridge=ws://…` simulation page streams its active drone to; each drone gets its own RTAB-Map session and its own video of the agent's SAM (the station's, else the fake with `--sam-fake`), read back with `drone_map_status` |
 
 **Access code** (`surmap.agent.server.access`). With `SURMAP_AGENT_ACCESS_CODE` set, the agent is
 behind a shared pass code: `POST /auth/session` with `{"code": …}` answers
