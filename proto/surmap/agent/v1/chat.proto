@@ -9,6 +9,8 @@ The chat service the browser talks to. A conversation is a sequence of
 turns; each turn streams TurnEvents as the agent writes text and calls
 tools. Between turns, a finished job or a subagent's message may start a turn
 of its own; a client keeps a WatchConversation stream open to receive those.
+A subagent's status reaches WatchConversation whenever it changes, inside a
+turn or between turns, and never starts a turn.
 
 This service is not a tool: its rpcs carry no default_execution.
 */
@@ -172,6 +174,22 @@ message SubagentMessage {
   string text = 3;
 }
 
+// Where a subagent the agent started is in its task, for the person's tasks panel; no model
+// reads it. Sent when the subagent starts a turn, when it reports what it is doing with
+// report_status, and when its turn ends.
+message SubagentStatus {
+  // The subagent, as start_subagent named it, e.g. "sa-1".
+  string subagent_id = 1;
+  // The label it was started with, e.g. "scene-builder".
+  string name = 2;
+  // The job its latest turn runs as; cancel_job on it stops the subagent.
+  string job_id = 3;
+  // Where its latest turn is.
+  JobStatus status = 4;
+  // What it last reported doing; empty until it reports.
+  string detail = 5;
+}
+
 // The turn ended.
 message TurnFinished {
   // Why it ended.
@@ -225,5 +243,8 @@ message TurnEvent {
     UserMessage user_message = 17;
     // A subagent's message to the agent.
     SubagentMessage subagent_message = 18;
+    // A subagent's status changed. It belongs to no turn: turn_id is empty, and it arrives on
+    // WatchConversation, never on StreamTurn.
+    SubagentStatus subagent_status = 19;
   }
 }

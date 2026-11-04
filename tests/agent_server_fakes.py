@@ -27,6 +27,7 @@ from surmap.agent.runtime.tools import BoundTool, bind_contract_tool, job_tools
 from surmap.agent.server.chat_service import agent_jobs_handlers, chat_handlers
 from surmap.agent.server.hub import ChatHub
 from surmap.agent.services import agent_jobs_module, chat_service_module
+from surmap.agent.subagents import SubagentSetup
 from surmap.agent.tools.port import CachedRecording, GalleryEntry
 from surmap.agent.tools.workspace import (
     FrameDetections,
@@ -135,15 +136,18 @@ async def a_chat_rig(
     *,
     models: Sequence[ModelInfo] = (ModelInfo(SCRIPTED_MODEL_ID, "ollama", "scripted"),),
     default_model_id: str = SCRIPTED_MODEL_ID,
+    subagents: SubagentSetup | None = None,
     **tools: FakeToolHandler,
 ) -> AsyncIterator[ChatRig]:
     """`ChatService` and `AgentJobs` over a hub whose conversations call `tools` (by tool
-    name) plus the four job tools; the hub is closed on exit."""
+    name) plus the four job tools, and the subagent tools with `subagents`; the hub is closed
+    on exit."""
     hub = ChatHub(
         model_factory=_scripted_factory(model),
         tools=_tool_factory(tools),
         models=lambda: models,
         default_model_id=default_model_id,
+        subagents=subagents,
     )
     description: ServerDescription[None] = ServerDescription(
         services=(

@@ -2,7 +2,7 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import { useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { Composer } from "@/components/Composer";
 import { DatasetGallery } from "@/components/DatasetGallery";
-import { JobsPanel } from "@/components/JobsPanel";
+import { TasksPanel } from "@/components/TasksPanel";
 import { MapPane } from "@/components/MapPane";
 import { ModelPicker } from "@/components/ModelPicker";
 import { SimulationPane } from "@/components/SimulationPane";
@@ -314,7 +314,7 @@ export function ChatPage(props: ChatPageProps): ReactNode {
                 importing={importing}
                 importError={importError}
               />
-              <JobsPanel jobs={state.jobs} now={now} onCancel={cancelJob} />
+              <TasksPanel jobs={state.jobs} subagents={state.subagents} now={now} onCancel={cancelJob} />
             </div>
           </div>
         </>
@@ -327,7 +327,7 @@ export function ChatPage(props: ChatPageProps): ReactNode {
               serverUrl={props.serverUrl}
               awaitingReply={isAwaitingReply(state)}
             />
-            <JobsPanel jobs={state.jobs} now={now} onCancel={cancelJob} />
+            <TasksPanel jobs={state.jobs} subagents={state.subagents} now={now} onCancel={cancelJob} />
           </div>
           <Composer busy={isTurnActive(state)} onSend={startTurn} onSteer={steer} onStop={stop} />
         </>

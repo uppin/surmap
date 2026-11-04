@@ -5,7 +5,7 @@ import {
   type ChatAction,
   type ChatState,
 } from "@/view-model/chat-reducer";
-import type { JobView } from "@/view-model/jobs";
+import type { JobView, SubagentView } from "@/view-model/tasks";
 import type { ToolItem, TranscriptItem } from "@/view-model/transcript";
 
 /** The client clock when a test's first event arrives, ms. */
@@ -47,4 +47,8 @@ export function toolStepOf(state: ChatState, callId: string): ToolItem | undefin
 
 export function jobOf(state: ChatState, jobId: string): JobView | undefined {
   return state.jobs.find((job) => job.jobId === jobId);
+}
+
+export function subagentOf(state: ChatState, subagentId: string): SubagentView | undefined {
+  return state.subagents.find((subagent) => subagent.subagentId === subagentId);
 }

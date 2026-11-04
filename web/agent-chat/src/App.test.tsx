@@ -291,10 +291,10 @@ describe("chat page", () => {
       "src",
       "http://127.0.0.1:8780/sim/?scenario=downtown-blaze",
     );
-    // The chat stays beside the pane: transcript, composer and jobs are all still there.
+    // The chat stays beside the pane: transcript, composer and tasks are all still there.
     expect(screen.getByRole("log", { name: "Conversation" })).toHaveTextContent("Built it.");
     expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Jobs" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Tasks" })).toBeInTheDocument();
   });
 
   it("imports a bundle into the pane's simulation and shows the version it became", async () => {

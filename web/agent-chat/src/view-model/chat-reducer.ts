@@ -1,5 +1,6 @@
 import {
   ToolCallFinished_Status,
+  type SubagentStatus,
   type ToolCallFinished,
   type TurnEvent,
 } from "@/gen/surmap/agent/v1/chat_pb";
@@ -11,7 +12,7 @@ import {
   type JobHandle,
 } from "@/gen/surmap/agent/v1/execution_pb";
 import type { ModelInfo } from "@/ports";
-import type { JobState, JobView } from "./jobs";
+import type { JobState, JobView, SubagentView } from "./tasks";
 import type {
   PolicyView,
   ToolImage,
@@ -38,6 +39,7 @@ export interface ChatState {
   lastSeq: bigint;
   transcript: TranscriptItem[];
   jobs: JobView[];
+  subagents: SubagentView[];
 }
 
 export type ChatAction =
@@ -70,6 +72,7 @@ export function initialChatState(conversationId: string, modelId: string | null 
     lastSeq: 0n,
     transcript: [],
     jobs: [],
+    subagents: [],
   };
 }
 
@@ -124,6 +127,11 @@ export function isAwaitingReply(state: ChatState): boolean {
 
 /** Applies one event of a turn, unless its `seq` is one the state already holds. */
 function receiveEvent(state: ChatState, event: TurnEvent, at: number): ChatState {
+  // A subagent's status belongs to no turn and arrives on the watch stream, possibly ahead of the
+  // running turn's own events: it neither moves the turn nor the seq the turn's events are kept by.
+  if (event.event.case === "subagentStatus") {
+    return { ...state, subagents: upsertSubagent(state.subagents, event.event.value, event.seq, at) };
+  }
   if (event.seq <= state.lastSeq) return state;
   const next: ChatState = { ...state, lastSeq: event.seq, ...turnPositionAfter(state, event) };
   const body = event.event;
@@ -267,6 +275,30 @@ function upsertJob(jobs: JobView[], handle: JobHandle, at: number, callId: strin
   return jobs.map((job) =>
     job.jobId === handle.jobId ? { ...job, status, detail: handle.detail, updatedAt: at } : job,
   );
+}
+
+/** Adds the subagent a status names, or moves a known one to it unless it is older than shown. */
+function upsertSubagent(
+  subagents: SubagentView[],
+  status: SubagentStatus,
+  seq: bigint,
+  at: number,
+): SubagentView[] {
+  const known = subagents.find((subagent) => subagent.subagentId === status.subagentId);
+  if (known !== undefined && seq <= known.seq) return subagents;
+  const view: SubagentView = {
+    subagentId: status.subagentId,
+    name: status.name,
+    jobId: status.jobId,
+    status: jobStateOf(status.status),
+    detail: status.detail,
+    seq,
+    // A follow-up turn runs as a new job, so its clock starts again.
+    startedAt: known !== undefined && known.jobId === status.jobId ? known.startedAt : at,
+    updatedAt: at,
+  };
+  if (known === undefined) return [...subagents, view];
+  return subagents.map((subagent) => (subagent === known ? view : subagent));
 }
 
 function policyOf(execution: ExecutionPolicy | undefined): PolicyView | null {

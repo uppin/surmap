@@ -201,7 +201,9 @@ left unresolved. Never claim a step you did not verify with a tool result.
 
 When you need a decision only the main agent or the person can make, finish with the question as \
 your final answer; the main agent answers with a new message and you continue from where you \
-stopped. Use message_main_agent only for something it must know while you keep working. Guidance \
+stopped. Use message_main_agent only for something it must know while you keep working. The \
+person follows your task in a tasks panel: call report_status when you start, and again at each \
+major step, with what you are doing now in a few words (e.g. "Placing the house"). Guidance \
 from the main agent can arrive while you work; act on it first. Wait for any job you started \
 before you answer. A result too big for your context comes back as a saved file's path; read \
 or search it with read_file and grep_files. You only build and read; you never command a vehicle.

@@ -4,22 +4,28 @@ A long piece of work — a simulation scene is dozens of small edits — would o
 conversation's context with every call it made. A subagent does it in a context of its own: an
 `AgentSession` with its own `JobRunner` and history, on the conversation's current model, bound
 to the conversation's tools without the subagent tools (subagents do not nest) plus
-`message_main_agent`. Its system prompt is `SubagentSetup.system_prompt` followed, when the start
-names one, by a skill's body. The conversation sees only what the subagent chooses to say — its
-messages and its final answer — never its tool calls.
+`message_main_agent` and `report_status`. Its system prompt is `SubagentSetup.system_prompt`
+followed, when the start names one, by a skill's body. The conversation sees only what the
+subagent chooses to say — its messages and its final answer — never its tool calls.
 
-Three tools:
+Four tools:
 
 - `start_subagent` starts one and returns its id (`sa-1`, `sa-2`, …) and the job its turn runs
   as. The turn is an ASYNC job of the conversation's runner, named `subagent:<id>`, so its end is
-  a job notice and `wait_for_jobs`, `cancel_job`, Stop and the jobs panel cover it like any job;
-  its result is the subagent's final answer. At most `SubagentSetup.max_running` run at once.
+  a job notice and `wait_for_jobs`, `cancel_job` and Stop cover it like any job; its result is
+  the subagent's final answer. At most `SubagentSetup.max_running` run at once.
 - `message_subagent` steers a running subagent (`AgentSession.steer`: its blocking calls detach,
   the text is the next thing it reads) or, when its turn has ended, starts a follow-up turn on the
   history it kept, as a new job.
 - `message_main_agent`, the subagent's own, queues a `SubagentNotice` on the conversation's notice
   queue: the main agent reads it before its next model call during a turn, and while the
   conversation idles it opens a turn (`AgentSession.idle_events`).
+- `report_status`, also the subagent's own, says what it is doing now, for the person's tasks
+  panel; no model reads it.
+
+The pool hands every change of a subagent's status to `on_status` as a `SubagentStatus`: running
+as its turn's job when a turn starts, the text of each `report_status`, and how the turn ended —
+succeeded, failed or cancelled, keeping the last reported text.
 
 A subagent's own detached jobs that end after its turn are read at its next turn.
 """
@@ -40,17 +46,25 @@ from surmap.agent.contracts import (
     ToolContract,
     tool_input_schema,
 )
-from surmap.agent.runtime.events import FinishReason, TurnError, TurnEvent, TurnFinished
+from surmap.agent.runtime.events import (
+    FinishReason,
+    SubagentStatus,
+    TurnError,
+    TurnEvent,
+    TurnFinished,
+)
 from surmap.agent.runtime.graph import SUBAGENT_KIND, TurnCaps
-from surmap.agent.runtime.jobs import Detached, JobRunner, SubagentNotice
+from surmap.agent.runtime.jobs import Detached, JobRunner, JobState, SubagentNotice
 from surmap.agent.runtime.session import AgentSession, InMemoryConversationStore
 from surmap.agent.runtime.tools import BoundTool, bind_contract_tool
 
 __all__ = [
     "DEFAULT_MAX_RUNNING",
     "MESSAGE_MAIN_AGENT",
+    "REPORT_STATUS",
     "SUBAGENT_KIND",
     "SUBAGENT_TOOL_NAMES",
+    "StatusSink",
     "SubagentPool",
     "SubagentSetup",
     "subagent_contracts",
@@ -61,6 +75,8 @@ SUBAGENT_TOOL_NAMES = frozenset({"start_subagent", "message_subagent"})
 """The main agent's subagent tools; a subagent is never bound to them."""
 MESSAGE_MAIN_AGENT = "message_main_agent"
 """The tool a subagent messages the conversation that started it with."""
+REPORT_STATUS = "report_status"
+"""The tool a subagent says what it is doing with, for the person's tasks panel."""
 DEFAULT_MAX_RUNNING = 3
 """How many subagents of one conversation may run at once."""
 
@@ -76,6 +92,8 @@ ModelSource = Callable[[], BaseChatModel]
 """The model a subagent's turn runs on: the conversation's, as it is when the turn starts."""
 ToolSource = Callable[[JobRunner], Sequence[BoundTool]]
 """The conversation's tools over a runner, as `surmap.agent.server.hub.ToolFactory` builds them."""
+StatusSink = Callable[[SubagentStatus], None]
+"""Where a pool hands each change of a subagent's status."""
 
 
 @dataclass(frozen=True)
@@ -96,6 +114,8 @@ class _Subagent:
     session: AgentSession
     job_id: str = ""
     """The job of its latest turn."""
+    detail: str = ""
+    """What it last reported doing with `report_status`."""
 
 
 class SubagentPool:
@@ -110,13 +130,16 @@ class SubagentPool:
         tools: ToolSource,
         setup: SubagentSetup,
         caps: TurnCaps | None = None,
+        on_status: StatusSink | None = None,
     ) -> None:
+        """`on_status` hears every change of a subagent's status; none drops them."""
         self.conversation_id = conversation_id
         self.runner = runner
         self.model = model
         self.tools = tools
         self.setup = setup
         self.caps = caps
+        self.on_status = on_status
         self._subagents: dict[str, _Subagent] = {}
 
     async def start(self, task: str, *, name: str, skill: str | None) -> dict[str, object]:
@@ -136,6 +159,7 @@ class SubagentPool:
         )
         tools = [tool for tool in self.tools(runner) if tool.name not in SUBAGENT_TOOL_NAMES]
         tools.append(self._message_main_agent(subagent_id, name, runner))
+        tools.append(self._report_status(subagent_id, runner))
         session = AgentSession(
             conversation_id=f"{self.conversation_id}/{subagent_id}",
             model=self.model(),
@@ -183,13 +207,46 @@ class SubagentPool:
         outcome = await self.runner.call(
             _turn_contract(subagent.subagent_id),
             {},
-            lambda _arguments: _follow(subagent, events),
+            lambda _arguments: self._follow(subagent, events),
             policy=_TURN_EXECUTION,
         )
         if not isinstance(outcome, Detached):
             raise RuntimeError(f"the turn of {subagent.subagent_id} did not start as a job")
         subagent.job_id = outcome.job.job_id
+        self._report(subagent, JobState.RUNNING)
         return subagent.job_id
+
+    async def _follow(
+        self, subagent: _Subagent, events: AsyncIterator[TurnEvent]
+    ) -> Mapping[str, object]:
+        """Wait out the subagent's turn and report how it ended; its final answer, or a failure
+        when the turn errored.
+
+        Cancelling the job cancels the turn and every job the subagent is running.
+        """
+        try:
+            result = await _follow(subagent, events)
+        except asyncio.CancelledError:
+            self._report(subagent, JobState.CANCELLED)
+            raise
+        except Exception:
+            self._report(subagent, JobState.FAILED)
+            raise
+        self._report(subagent, JobState.SUCCEEDED)
+        return result
+
+    def _report(self, subagent: _Subagent, state: JobState) -> None:
+        if self.on_status is None:
+            return
+        self.on_status(
+            SubagentStatus(
+                subagent_id=subagent.subagent_id,
+                name=subagent.name,
+                job_id=subagent.job_id,
+                state=state,
+                detail=subagent.detail,
+            )
+        )
 
     def _message_main_agent(self, subagent_id: str, name: str, runner: JobRunner) -> BoundTool:
         async def send(arguments: Mapping[str, object]) -> Mapping[str, object]:
@@ -206,6 +263,16 @@ class SubagentPool:
 
         contract = {contract.name: contract for contract in subagent_contracts()}
         return bind_contract_tool(contract[MESSAGE_MAIN_AGENT], send, runner)
+
+    def _report_status(self, subagent_id: str, runner: JobRunner) -> BoundTool:
+        async def report(arguments: Mapping[str, object]) -> Mapping[str, object]:
+            subagent = self._subagents[subagent_id]
+            subagent.detail = _string(arguments, "status")
+            self._report(subagent, JobState.RUNNING)
+            return {"reported": True}
+
+        contract = {contract.name: contract for contract in subagent_contracts()}
+        return bind_contract_tool(contract[REPORT_STATUS], report, runner)
 
 
 def subagent_tools(pool: SubagentPool) -> tuple[BoundTool, BoundTool]:
@@ -230,8 +297,9 @@ def subagent_tools(pool: SubagentPool) -> tuple[BoundTool, BoundTool]:
     )
 
 
-def subagent_contracts() -> tuple[ToolContract, ToolContract, ToolContract]:
-    """`start_subagent`, `message_subagent` and the subagent's own `message_main_agent`."""
+def subagent_contracts() -> tuple[ToolContract, ...]:
+    """`start_subagent`, `message_subagent`, and the subagent's own `message_main_agent` and
+    `report_status`."""
     return (
         ToolContract(
             name="start_subagent",
@@ -297,11 +365,32 @@ def subagent_contracts() -> tuple[ToolContract, ToolContract, ToolContract]:
             description=(
                 "Sends the main agent, who gave you your task, a message while you keep "
                 "working: a question only it or the person can answer, or a decision it must "
-                "know about now. Your final answer reaches it anyway; do not report progress."
+                "know about now. Your final answer reaches it anyway; report progress with "
+                "report_status instead."
             ),
             input_schema=tool_input_schema(
                 {"text": {"type": "string", "description": "The message."}},
                 required=("text",),
+            ),
+            default_execution=_DEFAULT_EXECUTION,
+        ),
+        ToolContract(
+            name=REPORT_STATUS,
+            service=_SERVICE,
+            method="ReportStatus",
+            description=(
+                "Shows the person what you are doing now, as your task's status beside the "
+                "conversation; the main agent does not read it. Call it when you start the task "
+                "and at each major step, in a few words, e.g. Placing the house."
+            ),
+            input_schema=tool_input_schema(
+                {
+                    "status": {
+                        "type": "string",
+                        "description": "What you are doing now, in a few words.",
+                    }
+                },
+                required=("status",),
             ),
             default_execution=_DEFAULT_EXECUTION,
         ),

@@ -1,4 +1,4 @@
-import type { JobState } from "./jobs";
+import type { JobState } from "./tasks";
 
 /** How a tool call stands, as its step shows it. */
 export type ToolStepStatus = "running" | "succeeded" | "failed" | "detached" | "cancelled";

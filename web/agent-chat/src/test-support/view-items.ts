@@ -1,5 +1,5 @@
 import type { ModelInfo, StationView } from "@/ports";
-import type { JobView } from "@/view-model/jobs";
+import type { JobView, SubagentView } from "@/view-model/tasks";
 import type { ToolItem } from "@/view-model/transcript";
 import { SYNC_30_THEN_DETACH } from "./turn-events";
 import { T0 } from "./chat-driver";
@@ -35,6 +35,21 @@ export function aJob(overrides: Partial<JobView> = {}): JobView {
     status: "running",
     detail: "",
     callId: "call-1",
+    startedAt: T0,
+    updatedAt: T0,
+    ...overrides,
+  };
+}
+
+/** Subagent `sa-1`, the scene builder, running as job `job-4` since `T0` with nothing reported. */
+export function aSubagent(overrides: Partial<SubagentView> = {}): SubagentView {
+  return {
+    subagentId: "sa-1",
+    name: "scene-builder",
+    jobId: "job-4",
+    status: "running",
+    detail: "",
+    seq: 1n,
     startedAt: T0,
     updatedAt: T0,
     ...overrides,

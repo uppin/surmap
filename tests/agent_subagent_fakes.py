@@ -12,9 +12,11 @@ from langchain_core.messages import (
     AIMessage,
     BaseMessage,
     HumanMessage,
+    SystemMessage,
     ToolCall,
 )
 
+from surmap.agent.runtime.events import SubagentStatus
 from surmap.agent.runtime.graph import KIND_KEY
 from surmap.agent.runtime.jobs import Job, JobRunner
 from surmap.agent.runtime.session import AgentSession, InMemoryConversationStore
@@ -53,6 +55,7 @@ __all__ = [
     "SUBAGENT_PROMPT",
     "TASK",
     "SubagentRig",
+    "TwoAgentChatModel",
     "a_main_agent_with_subagents",
     "a_scene_builder_that_asks",
     "a_skill_loader",
@@ -60,6 +63,18 @@ __all__ = [
     "starting_the_scene_builder",
     "tagged",
 ]
+
+
+class TwoAgentChatModel(ScriptedChatModel):
+    """The main agent's script, except that a call opening with a system prompt — a subagent's,
+    in a hub with no main system prompt — takes the next reply of `subagent`'s."""
+
+    subagent: ScriptedChatModel
+
+    def _next_reply(self, messages: list[BaseMessage]) -> AIMessage:
+        if messages and isinstance(messages[0], SystemMessage):
+            return self.subagent._next_reply(messages)
+        return super()._next_reply(messages)
 
 
 def a_skill_loader(skills: Mapping[str, str]) -> Callable[[str], str]:
@@ -81,6 +96,8 @@ class SubagentRig:
     main_store: InMemoryConversationStore
     subagent_model: ScriptedChatModel
     add_fire: FakeToolHandler
+    statuses: list[SubagentStatus] = field(default_factory=list)
+    """Every status the pool reported for the tasks panel, in order."""
     turns: list[asyncio.Task[object]] = field(default_factory=list)
 
     @property
@@ -112,6 +129,7 @@ def a_main_agent_with_subagents(
 
     runner = JobRunner(timeout_scale=TIMEOUT_SCALE)
     store = InMemoryConversationStore()
+    statuses: list[SubagentStatus] = []
     pool = SubagentPool(
         conversation_id="conv-1",
         runner=runner,
@@ -122,6 +140,7 @@ def a_main_agent_with_subagents(
             load_skill=a_skill_loader(skills or {"building-a-simulation-scene": SKILL_BODY}),
             max_running=max_running,
         ),
+        on_status=statuses.append,
     )
     main = AgentSession(
         conversation_id="conv-1",
@@ -137,6 +156,7 @@ def a_main_agent_with_subagents(
         main_store=store,
         subagent_model=subagent_model,
         add_fire=fire,
+        statuses=statuses,
     )
 
 

@@ -11,6 +11,9 @@ with a short report. Every edit makes a new scenario version; an invalid edit fa
 reason and changes nothing, so read the error, fix the argument and retry — never repeat a
 failing call unchanged.
 
+The person follows your build in the tasks panel: `report_status` as you start each step below
+("Creating the scenario", "Placing the house", "Checking the scene"), in a few words.
+
 ## 1. Start from the right scenario
 
 - **A change to an existing scene**: `describe_scenario` with the id from the brief to learn what

@@ -1,5 +1,6 @@
 import { create } from "@bufbuild/protobuf";
 import {
+  SubagentStatusSchema,
   ToolCallFinished_Status,
   TurnEventSchema,
   TurnFinished_Reason,
@@ -14,7 +15,7 @@ import {
   type ExecutionPolicy,
   type JobHandle,
 } from "@/gen/surmap/agent/v1/execution_pb";
-import type { JobState } from "@/view-model/jobs";
+import type { JobState } from "@/view-model/tasks";
 import type { PolicyView } from "@/view-model/transcript";
 
 /** The policy most survey tools declare: block 30 s, then keep running as a job. */
@@ -148,6 +149,29 @@ export class ConversationScript {
     });
   }
 
+  /** A subagent's status: in no turn, so its `turnId` is empty whatever `inTurn` named. */
+  subagentStatus(status: {
+    subagentId: string;
+    name: string;
+    jobId: string;
+    status: JobState;
+    detail?: string;
+  }): this {
+    return this.push(
+      {
+        case: "subagentStatus",
+        value: create(SubagentStatusSchema, {
+          subagentId: status.subagentId,
+          name: status.name,
+          jobId: status.jobId,
+          status: JOB_STATUS[status.status],
+          detail: status.detail ?? "",
+        }),
+      },
+      "",
+    );
+  }
+
   turnFinished(reason: FinishReason = "stop"): this {
     return this.push({
       case: "turnFinished",
@@ -183,11 +207,11 @@ export class ConversationScript {
     });
   }
 
-  private push(event: EventBody): this {
+  private push(event: EventBody, turnId: string = this.turnId): this {
     this.events.push(
       create(TurnEventSchema, {
         conversationId: this.conversationId,
-        turnId: this.turnId,
+        turnId,
         seq: this.seq,
         event,
       }),

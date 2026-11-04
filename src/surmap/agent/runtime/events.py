@@ -7,13 +7,14 @@ from dataclasses import dataclass
 from typing import Literal
 
 from surmap.agent.contracts import ExecutionPolicy
-from surmap.agent.runtime.jobs import Job, ToolOutcome
+from surmap.agent.runtime.jobs import Job, JobState, ToolOutcome
 
 __all__ = [
     "FinishReason",
     "JobUpdate",
     "SteerApplied",
     "SubagentMessage",
+    "SubagentStatus",
     "TextDelta",
     "ToolCallFinished",
     "ToolCallStarted",
@@ -83,6 +84,23 @@ class SubagentMessage:
 
 
 @dataclass(frozen=True)
+class SubagentStatus:
+    """Where a subagent is in its task, for the person's tasks panel; no model reads it.
+
+    It belongs to no turn: the chat hub hands it to the conversation's watchers as it happens.
+    """
+
+    subagent_id: str
+    name: str
+    job_id: str
+    """The job its latest turn runs as."""
+    state: JobState
+    """Where its latest turn is."""
+    detail: str
+    """What it last reported doing with `report_status`; empty until it reports."""
+
+
+@dataclass(frozen=True)
 class TurnFinished:
     """The turn ended; always the last event."""
 
@@ -103,6 +121,7 @@ TurnEvent = (
     | JobUpdate
     | SteerApplied
     | SubagentMessage
+    | SubagentStatus
     | TurnFinished
     | TurnError
 )
