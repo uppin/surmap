@@ -58,7 +58,8 @@
         45.0,
         -0.2
       ],
-      "collider": true
+      "collider": true,
+      "ground": true
     },
     {
       "kind": "box",

@@ -446,3 +446,40 @@ fn the_survivors_scenario_the_station_writes_is_a_valid_manifest() {
     let poses: Vec<_> = manifest.elements.iter().filter_map(|e| match e { Element::Person(p) => Some(p.pose), _ => None }).collect();
     assert!([Lying, Sitting, Waving].iter().all(|p| poses.contains(p)), "{poses:?}");
 }
+
+#[test]
+fn a_manifest_with_a_map_floor_parses_and_sizes_it_in_enu_metres() {
+    let text = r#"{"version": 1, "camera": "cameras/rig.camera.json",
+        "environment": {"hdri": null, "sun_illuminance_lux": 1.0, "sun_elevation_deg": 1.0,
+                        "sun_azimuth_deg": 1.0, "fog_visibility_m": 1.0},
+        "map_floor": {"sw": [54.0, 25.0], "ne": [54.001, 25.002],
+                      "texture": "library/map-floor/abc123.png", "zoom": 17}}"#;
+    let manifest = SceneManifest::from_json(text).expect("valid map floor");
+    assert!(manifest.asset_paths().iter().any(|p| p == "library/map-floor/abc123.png"));
+    let floor = manifest.map_floor.expect("floor present");
+    let (centre, size) = floor.centre_and_size_enu();
+    assert!((centre[0] - 54.0005).abs() < 1e-9 && (centre[1] - 25.001).abs() < 1e-9);
+    assert!((size[1] - 111.32).abs() < 0.01, "north size was {}", size[1]);
+    assert!((size[0] - 130.84).abs() < 0.1, "east size was {}", size[0]);
+}
+
+#[test]
+fn a_map_floor_with_an_absolute_texture_is_refused() {
+    let text = r#"{"version": 1, "camera": "cameras/rig.camera.json",
+        "environment": {"hdri": null, "sun_illuminance_lux": 1.0, "sun_elevation_deg": 1.0,
+                        "sun_azimuth_deg": 1.0, "fog_visibility_m": 1.0},
+        "map_floor": {"sw": [54.0, 25.0], "ne": [54.001, 25.002],
+                      "texture": "/etc/passwd.png", "zoom": 17}}"#;
+    assert!(SceneManifest::from_json(text).is_err());
+}
+
+#[test]
+fn the_shared_map_floor_fixture_parses_in_the_renderer_too() {
+    // The same golden file the station validates (tests/fixtures/sim_scenario/map-floor.json).
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/sim_scenario/map-floor.json");
+    let text = std::fs::read_to_string(path).expect("shared map-floor fixture is committed");
+    let manifest = SceneManifest::from_json(&text).expect("shared fixture validates in Rust");
+    assert!(manifest.asset_paths().iter().any(|p| p == "library/map-floor/abc123.png"));
+    let floor = manifest.map_floor.expect("fixture carries a floor");
+    assert_eq!(floor.texture, "library/map-floor/abc123.png");
+}

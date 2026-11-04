@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "camera": "cameras/elp-stereo-pinhole.camera.json",
+  "environment": {
+    "hdri": null,
+    "sun_illuminance_lux": 100000.0,
+    "sun_elevation_deg": 28.0,
+    "sun_azimuth_deg": 115.0,
+    "fog_visibility_m": 600.0
+  },
+  "materials": {
+    "ground": {
+      "color": [
+        0.4,
+        0.38,
+        0.33
+      ],
+      "perceptual_roughness": 0.95
+    }
+  },
+  "elements": [
+    {
+      "kind": "box",
+      "id": "ground",
+      "material": "ground",
+      "size_m": [
+        200.0,
+        200.0,
+        0.2
+      ],
+      "position_enu": [
+        0.0,
+        0.0,
+        -0.2
+      ],
+      "collider": true,
+      "ground": true
+    }
+  ],
+  "models": [],
+  "map_floor": {
+    "sw": [
+      54.0,
+      25.0
+    ],
+    "ne": [
+      54.001,
+      25.002
+    ],
+    "texture": "library/map-floor/abc123.png",
+    "zoom": 17
+  }
+}

@@ -16,6 +16,8 @@ use bevy::prelude::Transform;
 use serde::Deserialize;
 
 mod buildings;
+pub mod instances;
+pub mod map_floor;
 mod environment;
 mod fleet;
 mod nature;
@@ -23,6 +25,8 @@ mod people;
 mod water;
 
 pub use water::{surface_at, surfaces, Surface};
+pub use instances::{ColliderKind, ModelInstance};
+pub use map_floor::MapFloor;
 
 pub use buildings::{BuildingFireDef, DistrictDef};
 pub use environment::{Environment, PbrTextureSet};
@@ -51,6 +55,9 @@ pub struct SceneManifest {
     pub districts: Vec<DistrictDef>,
     #[serde(default)]
     pub building_fires: Vec<BuildingFireDef>,
+    /// The real map as the floor: OSM tiles cropped to a GPS bbox, stitched by the station.
+    #[serde(default)]
+    pub map_floor: Option<MapFloor>,
 }
 
 /// One declared piece of the scene; the engine knows only these kinds.
@@ -120,6 +127,9 @@ pub struct BoxElement {
     /// A water surface: vessels float on its top.
     #[serde(default)]
     pub water: bool,
+    /// A preset's ground box: a map floor replaces it (the renderer hides it).
+    #[serde(default)]
+    pub ground: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -248,47 +258,6 @@ fn tracked() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ColliderKind {
-    None,
-    Box,
-    Trimesh,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct ModelInstance {
-    pub id: String,
-    pub glb: String,
-    pub position_enu: [f32; 3],
-    #[serde(default)]
-    pub yaw_deg: f32,
-    #[serde(default = "unit_scale")]
-    pub scale: f32,
-    pub collider: ColliderKind,
-    #[serde(default)]
-    pub ground_truth: bool,
-    /// Ground-truth kind (`car`, `collapsed_building`, …); `model` when unnamed.
-    #[serde(default = "default_kind")]
-    pub kind: String,
-    /// `false` drops the model's normal maps: Bevy ignores `KHR_texture_transform` on a normal
-    /// texture, so a micro-flake map tiled 30× in glTF lands as one coarse speckle over the body.
-    #[serde(default = "keeps_normal_maps")]
-    pub normal_maps: bool,
-}
-
-fn keeps_normal_maps() -> bool {
-    true
-}
-
-fn default_kind() -> String {
-    "model".into()
-}
-
-fn unit_scale() -> f32 {
-    1.0
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ManifestError {
     Json(String),
@@ -346,6 +315,10 @@ impl SceneManifest {
             if !(model.glb.ends_with(".glb") || model.glb.ends_with(".gltf")) {
                 return Err(ManifestError::BadAssetPath(model.glb.clone()));
             }
+        }
+        if let Some(floor) = &manifest.map_floor {
+            floor.validate()?;
+            validate_asset_path(&floor.texture)?;
         }
         manifest.validate_weather_fire_vegetation()?;
         manifest.validate_buildings()?;
@@ -431,6 +404,9 @@ impl SceneManifest {
             if let Some(arm) = &material.arm {
                 paths.push(arm.clone());
             }
+        }
+        if let Some(floor) = &self.map_floor {
+            paths.push(floor.texture.clone());
         }
         for model in &self.models {
             paths.push(model.glb.clone());

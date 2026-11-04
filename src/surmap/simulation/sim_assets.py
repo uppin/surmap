@@ -149,4 +149,9 @@ def manifest_asset_paths(scene_path: Path) -> set[str]:
                 glb = model.get("glb")
                 if isinstance(glb, str):
                     paths.add(glb)
+    floor = raw.get("map_floor")
+    if isinstance(floor, dict):
+        texture = floor.get("texture")
+        if isinstance(texture, str):
+            paths.add(texture)
     return paths
