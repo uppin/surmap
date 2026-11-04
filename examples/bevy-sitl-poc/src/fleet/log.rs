@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::autopilot::{Home, Phase};
+use super::autopilot::{phase_when, Home, Phase, MAX_SPEED_M_S, MAX_UP_M, MIN_SPEED_M_S, MIN_UP_M};
 
 /// The speed a route flies at when it names none.
 pub const DEFAULT_SPEED_M_S: f32 = 5.0;
@@ -133,23 +133,79 @@ impl FleetLog {
     }
 
     /// Checks `command` against its drone's phase at `at_s` and appends it with the next `seq`,
-    /// or keeps it as a refusal.
-    pub fn push(&mut self, _at_s: f32, _command: FleetCommand) -> Result<u64, Refusal> {
-        // TODO(pr-2): implement
-        todo!("pr-2: implement")
+    /// or keeps it as a refusal. The live station link (the next PR in the stack) pushes through it.
+    #[allow(dead_code)]
+    pub fn push(&mut self, at_s: f32, command: FleetCommand) -> Result<u64, Refusal> {
+        let seq = self.entries.iter().map(|e| e.seq).chain(self.refused.iter().map(|r| r.seq)).max().map_or(1, |last| last + 1);
+        self.admit(seq, at_s, command)
     }
 
     /// The accepted commands for drone `id`, in order.
-    pub fn for_drone(&self, _id: &str) -> Vec<&Stamped> {
-        // TODO(pr-2): implement
-        todo!("pr-2: implement")
+    #[allow(dead_code)]
+    pub fn for_drone(&self, id: &str) -> Vec<&Stamped> {
+        self.entries.iter().filter(|e| e.command.drone() == id).collect()
     }
 
     /// A log read from `*.fleet.jsonl` for `drones`: each line is checked as `push` would, keeping
     /// the file's `seq`; a line earlier than the one before it is refused. A line that is not a
     /// stamped command is an error.
-    pub fn from_jsonl(_drones: Vec<(String, Home)>, _text: &str) -> Result<Self, String> {
-        // TODO(pr-2): implement
-        todo!("pr-2: implement")
+    pub fn from_jsonl(drones: Vec<(String, Home)>, text: &str) -> Result<Self, String> {
+        let mut log = Self::new(drones);
+        for (index, line) in text.lines().enumerate().filter(|(_, line)| !line.trim().is_empty()) {
+            let stamped: Stamped = serde_json::from_str(line).map_err(|e| format!("fleet log line {}: {e}", index + 1))?;
+            // A refused line is kept in `refused()`; the rest of the file is still read.
+            let _ = log.admit(stamped.seq, stamped.at_s, stamped.command);
+        }
+        Ok(log)
+    }
+
+    fn admit(&mut self, seq: u64, at_s: f32, command: FleetCommand) -> Result<u64, Refusal> {
+        match self.check(at_s, &command) {
+            Ok(()) => {
+                self.entries.push(Stamped { seq, at_s, command });
+                Ok(seq)
+            }
+            Err(reason) => {
+                let refusal = Refusal { seq, at_s, reason };
+                self.refused.push(refusal.clone());
+                Err(refusal)
+            }
+        }
+    }
+
+    /// Why `command` cannot be applied at `at_s`, if it cannot.
+    fn check(&self, at_s: f32, command: &FleetCommand) -> Result<(), RefusalReason> {
+        let id = command.drone();
+        let Some((_, home)) = self.drones.iter().find(|(drone, _)| drone == id) else {
+            return Err(RefusalReason::UnknownDrone(id.to_owned()));
+        };
+        if let Some(last) = self.entries.last().filter(|last| !(at_s >= last.at_s)) {
+            return Err(RefusalReason::OutOfOrder { previous_at_s: last.at_s });
+        }
+        let phase = phase_when(*home, id, self, at_s);
+        match command {
+            FleetCommand::Launch { .. } if phase != Phase::Docked => Err(RefusalReason::NotDocked(phase)),
+            FleetCommand::Launch { route, .. } => check_route(route),
+            FleetCommand::SetRoute { .. } | FleetCommand::Detour { .. } if matches!(phase, Phase::Docked | Phase::Landing) => Err(RefusalReason::NotFlying(phase)),
+            FleetCommand::SetRoute { route, .. } => check_route(route),
+            FleetCommand::Detour { waypoints, .. } => check_waypoints(waypoints),
+            FleetCommand::Recall { .. } if phase == Phase::Docked => Err(RefusalReason::AlreadyDocked),
+            FleetCommand::Recall { .. } | FleetCommand::SetActive { .. } => Ok(()),
+        }
+    }
+}
+
+fn check_route(route: &Route) -> Result<(), RefusalReason> {
+    check_waypoints(&route.waypoints)?;
+    if (MIN_SPEED_M_S..=MAX_SPEED_M_S).contains(&route.speed_m_s) { Ok(()) } else { Err(RefusalReason::SpeedOutOfRange(route.speed_m_s)) }
+}
+
+fn check_waypoints(waypoints: &[[f32; 3]]) -> Result<(), RefusalReason> {
+    if waypoints.is_empty() {
+        return Err(RefusalReason::NoWaypoints);
+    }
+    match waypoints.iter().map(|w| w[2]).find(|up| !(MIN_UP_M..=MAX_UP_M).contains(up)) {
+        Some(up) => Err(RefusalReason::HeightOutOfRange(up)),
+        None => Ok(()),
     }
 }

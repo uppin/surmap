@@ -24,13 +24,13 @@ PRD: `PRD-2026-11-04-fleet-autopilot.md` · Discovery: `2026-11-04-fleet-autopil
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
 - [wf 3] ⏳ `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) ·
-  - [ ] `fleet/log.rs`: `FleetCommand`, `Route`, `OnComplete`, `Stamped`, `FleetLog::{push, refused, for_drone, from_jsonl}`; phase checks; golden `tests/fixtures/fleet/commands.json` (every variant) parses
-  - [ ] `fleet/autopilot.rs`: fixed-step (`STEP_S = 0.05`) pure `step`; `state_at(home, id, log, t)`; incremental `Autopilot` equal to cold `state_at`; limits; takeoff, legs, detour resume, set_route continuity, recall/land, hover
-  - [ ] Runtime: `spawn_fleet` docks one body per `Nests` drone id (`FleetDrone { id }`, kinematic, rotors) and despawns the legacy `Drone` when the scene has nests; `fly_fleet` poses every drone from its `Autopilot` at `SimClock::now()`
-  - [ ] `ActiveDrone` resource (first drone by default; `set_active` entries switch it at `at_s`); `follow_drone_rig`, `chase_camera`, `update_status` read "the viewed drone" (active fleet drone, else legacy `Drone`)
-  - [ ] Recorder: `pose_enu` from the viewed drone's pure pose at `t`; `frames.jsonl` `drone_id` when fleet; `--fleet-log <path>` in `RunMode`
-  - [ ] UI: status line names the active drone, phase and leg; fleet list (id · phase)
-  - [ ] Python `bevy_capture.py`: `CapturedFrame.drone_id: str | None` read from `frames.jsonl`
+  - [x] `fleet/log.rs`: `FleetCommand`, `Route`, `OnComplete`, `Stamped`, `FleetLog::{push, refused, for_drone, from_jsonl}`; phase checks; golden `tests/fixtures/fleet/commands.json` (every variant) parses
+  - [x] `fleet/autopilot.rs`: fixed-step (`STEP_S = 0.05`) pure `step`; `state_at(home, id, log, t)`; incremental `Autopilot` equal to cold `state_at`; limits; takeoff, legs, detour resume, set_route continuity, recall/land, hover
+  - [x] Runtime: `spawn_fleet` docks one body per `Nests` drone id (`FleetDrone { id }`, kinematic, rotors) and despawns the legacy `Drone` when the scene has nests; `fly_fleet` poses every drone from its `Autopilot` at `SimClock::now()`
+  - [x] `ActiveDrone` resource (first drone by default; `set_active` entries switch it at `at_s`); `follow_drone_rig`, `chase_camera`, `update_status` read "the viewed drone" (active fleet drone, else legacy `Drone`)
+  - [x] Recorder: `pose_enu` from the viewed drone's pure pose at `t`; `frames.jsonl` `drone_id` when fleet; `--fleet-log <path>` in `RunMode`
+  - [x] UI: status line names the active drone, phase and leg; fleet list (id · phase)
+  - [x] Python `bevy_capture.py`: `CapturedFrame.drone_id: str | None` read from `frames.jsonl`
   - [ ] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (tests + native stills of `earthquake-fleet` replaying `survey-sortie.fleet.jsonl`)

@@ -335,6 +335,17 @@ fn a_command_pushed_while_flying_applies_from_its_moment_as_if_it_had_been_logge
     assert_eq!(at_forty, state_at(SW, SW_D1, &log, 40.0));
 }
 
+#[test]
+fn an_autopilot_asked_for_an_earlier_moment_replays_to_it() {
+    let sortie = the_survey_sortie();
+    let mut live = Autopilot::new(SW_D1, SW);
+    live.advance(&sortie, 30.0);
+
+    let rewound = live.advance(&sortie, 12.0);
+
+    assert_eq!(rewound, state_at(SW, SW_D1, &sortie, 12.0));
+}
+
 // ---- unit: one step -------------------------------------------------------------------------
 
 #[test]

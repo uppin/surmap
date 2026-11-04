@@ -6,6 +6,8 @@ use bevy::prelude::*;
 use bevy_rapier3d::prelude::Velocity;
 
 use crate::calibration::CameraProfile;
+use crate::fleet::autopilot::DroneState;
+use crate::fleet::{fleet_status, ActiveDrone, Fleet};
 use crate::{Drone, Flight, StereoFeeds};
 
 #[derive(Component)]
@@ -146,11 +148,17 @@ pub(crate) fn takeoff_button(
 pub(crate) fn update_status(
     flight: Res<Flight>,
     drone: Query<(&Transform, &Velocity), With<Drone>>,
+    fleet: Option<Res<Fleet>>,
+    active: Option<Res<ActiveDrone>>,
     mut status: Query<&mut Text, With<StatusText>>,
 ) {
-    let (Ok((body, velocity)), Ok(mut text)) = (drone.single(), status.single_mut()) else {
+    let Ok(mut text) = status.single_mut() else { return };
+    if let Some(fleet) = fleet {
+        let drones: Vec<(&str, DroneState)> = fleet.autopilots.iter().map(|pilot| (pilot.id(), pilot.state())).collect();
+        text.0 = fleet_status(active.as_ref().and_then(|a| a.0.as_deref()), &drones);
         return;
-    };
+    }
+    let Ok((body, velocity)) = drone.single() else { return };
     text.0 = format!(
         "{}  alt {:.1} m  speed {:.1} m/s  yaw {:.0} deg\nWASD move | Q/E yaw | R/F up/down | Space {}",
         if flight.engaged { "FLYING" } else { "LANDED" },

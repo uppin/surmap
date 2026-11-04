@@ -118,8 +118,11 @@ impl RunMode {
             Some(Some(id)) => Some(checked_scenario(&id)?),
             Some(None) => return Err("--scenario needs an id".into()),
         };
-        // TODO(pr-2): implement — parse `--fleet-log <path>`.
-        let fleet_log = None;
+        let fleet_log = match value("--fleet-log") {
+            None => None,
+            Some(Some(path)) => Some(PathBuf::from(path)),
+            Some(None) => return Err("--fleet-log needs a path".into()),
+        };
         Ok(Self { flight, screenshot, record, camera, scenario, fleet_log })
     }
 

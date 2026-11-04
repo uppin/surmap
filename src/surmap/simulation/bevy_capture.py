@@ -22,7 +22,6 @@ class CapturedFrame:
     # The colour left image (`--record … --colour`), beside the grey eyes; None when grey only.
     left_rgb_ref: str | None = None
     # The fleet drone whose eyes and pose the frame carries; None without a fleet.
-    # TODO(pr-2): implement — read `drone_id` from `frames.jsonl`.
     drone_id: str | None = None
 
 
@@ -251,11 +250,15 @@ def load_bevy_capture(root: Path) -> BevyCapture:
         rgb_ref = obj.get("left_rgb_ref")
         if rgb_ref is not None and not isinstance(rgb_ref, str):
             raise ValueError("left_rgb_ref must be a string")
+        drone_id = obj.get("drone_id")
+        if drone_id is not None and not isinstance(drone_id, str):
+            raise ValueError("drone_id must be a string")
         frames.append(
             CapturedFrame(
                 pair=pair,
                 pose_enu=pose,
                 left_rgb_ref=str(root / rgb_ref) if rgb_ref is not None else None,
+                drone_id=drone_id,
             )
         )
     profile_path = root / "camera.json"

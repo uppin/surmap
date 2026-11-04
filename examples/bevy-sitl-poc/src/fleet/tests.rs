@@ -366,3 +366,54 @@ fn a_scene_without_nests_records_the_survey_loop_as_before() {
 
     assert_eq!(viewed, Viewed { drone_id: None, pose: SurveyLoop::disaster_block().pose_at(t_s) });
 }
+
+// ---- unit: the drones on one pad, the viewed body and the status line ------------------------
+
+/// The smallest distance between any two of `homes`.
+fn closest_pair_m(homes: &[(String, Home)]) -> f32 {
+    homes
+        .iter()
+        .enumerate()
+        .flat_map(|(i, (_, a))| homes[i + 1..].iter().map(move |(_, b)| distance(a.pad_enu, b.pad_enu)))
+        .fold(f32::MAX, f32::min)
+}
+
+#[test]
+fn drones_sharing_a_pad_stand_clear_of_each_other() {
+    let ids = ["n-d1", "n-d2", "n-d3", "n-d4"];
+
+    let closest: Vec<f32> = (2..=4).map(|count| closest_pair_m(&homes(&Nests(vec![nest("n", [0.0, 0.0, 0.0], 30.0, &ids[..count])])))).collect();
+
+    assert!(closest.iter().all(|m| *m >= 1.0), "{closest:?}");
+}
+
+fn a_body_at(x: f32) -> Transform {
+    Transform::from_xyz(x, 0.0, 0.0)
+}
+
+#[test]
+fn the_cameras_follow_the_active_fleet_drone_else_the_legacy_one() {
+    let (sw, ne) = (FleetDrone { id: SW_D1.into() }, FleetDrone { id: NE_D1.into() });
+    let (sw_body, ne_body, legacy) = (a_body_at(1.0), a_body_at(2.0), a_body_at(3.0));
+    let fleet = [(&sw, &sw_body), (&ne, &ne_body)];
+
+    let followed = [Some(NE_D1), None].map(|active| viewed_body(active, fleet, Some(&legacy)).map(|body| body.translation.x));
+
+    assert_eq!(followed, [Some(2.0), Some(3.0)]);
+}
+
+fn a_state(phase: Phase, up: f32, legs_left: usize) -> DroneState {
+    DroneState { position_enu: [0.0, 0.0, up], velocity_enu: [3.0, 4.0, 0.0], yaw_deg: 90.0, phase, target: None, legs_left }
+}
+
+#[test]
+fn the_status_line_names_the_active_drone_its_phase_and_legs_and_lists_the_fleet() {
+    let drones = [(SW_D1, a_state(Phase::Docked, 0.0, 0)), (NE_D1, a_state(Phase::Detouring, 18.25, 2))];
+
+    let status = fleet_status(Some(NE_D1), &drones);
+
+    assert_eq!(
+        status,
+        "FLEET  nest-ne-d1  DETOURING  2 legs left  alt 18.2 m  speed 5.0 m/s  yaw 90 deg\n  nest-sw-d1 · DOCKED\n> nest-ne-d1 · DETOURING"
+    );
+}
