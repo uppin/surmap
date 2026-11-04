@@ -827,7 +827,7 @@ uv run python -m surmap.agent --sam-fake \
 | `--sim-dir` | `<cache>/simulation` | simulation store: `simulation.sqlite` and the asset `library/` |
 | `--sim-assets` | `examples/bevy-sitl-poc/assets` | the simulation's own assets; simulation tools are off when absent |
 | `--sim-dist` | none | a `trunk build` output served at `/sim/` |
-| `--bevy-bridge-port` | none | serve the stereo bridge a `?bridge=ws://…` simulation page streams its active drone to; each drone gets its own RTAB-Map session and segmentation run, read back with `drone_map_status` |
+| `--bevy-bridge-port` | none | serve the stereo bridge a `?bridge=ws://…` simulation page streams its active drone to; each drone gets its own RTAB-Map session and its own video of the agent's SAM (the station's, else the fake with `--sam-fake`), read back with `drone_map_status` |
 
 **Access code** (`surmap.agent.server.access`). With `SURMAP_AGENT_ACCESS_CODE` set, the agent is
 behind a shared pass code: `POST /auth/session` with `{"code": …}` answers

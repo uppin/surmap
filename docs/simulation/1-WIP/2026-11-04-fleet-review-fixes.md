@@ -23,18 +23,18 @@ planned.
   - [x] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
   - [x] One reproduction per finding F1–F10, each failing because of the defect (see `## Reproductions`)
   - [x] Tests committed with the changeset
-- [wf 3] ⏳ `/green` Green — fix until every reproduction passes ·
-  - [ ] F1 bridge SAM: the agent's configured SAM (station detector, else the fake under `--sam-fake`), one detector per drone session, nothing retained per frame
-  - [ ] F2 a streamed pair's `drone_id` is the drone whose eyes were read back (captured with `pending_pose` / `pending_t_ns`)
-  - [ ] F3 bridge `handle` / `close` run off the event loop (`asyncio.to_thread`), so the agent loop keeps serving while a backend starts or closes
-  - [ ] F4 an applied command's expected phase is kept until telemetry stamped at or after the step the page applies it at
-  - [ ] F5 one drone's backend failure marks that session errored and reports it in its status; the connection and the other drones keep running
-  - [ ] F6 a fleet link whose `hello.scenario` differs from `?scenario=` is closed with 4400 and never attached
-  - [ ] F7 `stream_bridge` runs after `fleet::fly_fleet` and `follow_drone_rig`
-  - [ ] F8 an unlinked controller validates against the scenario's latest nests
-  - [ ] F9 `tests/hang_dump.py` skips a dead weak proxy instead of raising `ReferenceError`
-  - [ ] F10 `ListDronesResponse.sim_t_s` (the linked page's telemetry time; unset when unlinked); proto + generated code; `docs/agent.md` field table
-  - [ ] Gates green; `cargo test --locked`; `cargo check --locked --target wasm32-unknown-unknown`
+- [wf 3] ✅ 2026-11-04 `/green` Green — fix until every reproduction passes · 11/11 reproductions green; Python 2458 passed, 38 skipped; Rust 362 passed; wasm check ok · green @ `16c085b`
+  - [x] F1 bridge SAM: the agent's configured SAM (station detector, else the fake under `--sam-fake`), one detector per drone session, nothing retained per frame
+  - [x] F2 a streamed pair's `drone_id` is the drone whose eyes were read back (captured with `pending_pose` / `pending_t_ns`)
+  - [x] F3 bridge `handle` / `close` run off the event loop (`asyncio.to_thread`), so the agent loop keeps serving while a backend starts or closes
+  - [x] F4 an applied command's expected phase is kept until telemetry stamped at or after the step the page applies it at
+  - [x] F5 one drone's backend failure marks that session errored and reports it in its status; the connection and the other drones keep running
+  - [x] F6 a fleet link whose `hello.scenario` differs from `?scenario=` is closed with 4400 and never attached
+  - [x] F7 `stream_bridge` runs after `fleet::fly_fleet` and `follow_drone_rig`
+  - [x] F8 an unlinked controller validates against the scenario's latest nests
+  - [x] F9 `tests/hang_dump.py` skips a dead weak proxy instead of raising `ReferenceError`
+  - [x] F10 `ListDronesResponse.sim_t_s` (the linked page's telemetry time; unset when unlinked); proto + generated code; `docs/agent.md` field table
+  - [x] Gates green; `cargo test --locked`; `cargo check --locked --target wasm32-unknown-unknown`
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/simulation/bevy-simulation.md` — *Live stream* / *The fleet link*: the bridge's SAM, off-loop work, per-drone failure isolation, the scenario check
@@ -181,6 +181,26 @@ the built `Update` schedule), so the V3 fallback is not needed.
   0.5 s until the loop has ticked. `a_perception(crash_on=)`. `test_fleet_perception_e2e.a_bridge`
   takes an optional backend factory.
 
+### Green (commit 3, `847cd41`…`16c085b`)
+
+All eleven reproductions pass; no test weakened, skipped or deleted. Gates: `ruff format` (599 files
+unchanged), `ruff check --no-cache` clean, `ruff format --no-cache --check` clean, `mypy` no issues
+(541 files), `pytest -q` 2458 passed / 38 skipped (was 2438 + 9 red; 11 tests added), `cargo test
+--locked` 362 passed (was 360 + 2 red), `cargo check --locked --target wasm32-unknown-unknown` ok.
+
+| # | Where it landed |
+|---|---|
+| F1 | `bridge_segmentation(config, station=None)` builds, per drone, a `SamSegmentationSink` over `VideoAsFrameSamDetector` (new, `survey/sam.py`: a `SamDetector` over one `VideoSamDetector`, one video per drone) of `agent_sam(config, station)` (the station's, else `CentredBoxVideoSamDetector` with `--sam-fake`, else the demo workspace's refusal); `start_bevy_bridge` takes the station, `serve` passes it |
+| F2 | `PendingPair.header(frame_id, width, height)` no longer takes `active_now`: it labels the pair with the drone captured at request (the one allowed signature change; the test's call lost that argument) |
+| F3 | `serve_bevy_bridge` runs `handle` / `close` through `asyncio.to_thread`, under a per-connection lock so one connection's messages stay ordered and `close` waits for a `handle` a cancelled handler left running |
+| F4 | `controller.py`: `STEP_S` / `STEP_SLACK` / `due_step` / `steps_until` mirror `autopilot.rs`; an expectation is kept until telemetry has reached its due step |
+| F5 | `DroneSession.process` catches the failure, marks the session errored, closes its backend once, ignores later pairs; `status()` and `DroneCounts` carry `error`; `DroneMapCounts.error` (proto field 10) |
+| F6 | `FleetRegistry.link` closes 4400 when `hello.scenario != scenario_id`, before attaching |
+| F7 | `order_bridge_stream` orders `BridgeStreamSet` after `fleet::fly_fleet` and `follow_drone_rig` |
+| F8 | `FleetController(latest_nests=)`: the registry passes the scenario store's latest nests, read on each unlinked validation; `detach` marks the page gone so its retained telemetry no longer decides phases |
+| F9 | `_is_event_loop` in `tests/hang_dump.py` |
+| F10 | `ListDronesResponse.sim_t_s` (`optional double`, proto field 4), `FleetController.telemetry_time()`; unset when unlinked; `docs/agent.md` tables |
+
 ## Verification
 
 **Method:** V1 fail→pass — the eleven reproduction tests for F1–F10 above, red on `main` and green
@@ -196,7 +216,7 @@ and `cd examples/bevy-sitl-poc && cargo test --locked stream`
 | Item | Verdict |
 |---|---|
 | `todo/2026-11-04-fleet-browser-verification.md` | — not touched: the developer said "disregard the browser" (2026-11-04) |
-| `todo/2026-11-03-agent-cli-sam-flags.md` | ℹ F1 follows the agent's existing SAM choice (station or `--sam-fake`); it does not lift that todo's constraint |
+| `todo/2026-11-03-agent-cli-sam-flags.md` | ℹ F1 follows the agent's existing SAM choice (station or `--sam-fake`); it does not lift that todo's constraint. Outcome: ➖ **Unchanged** — `agent_sam` is the same choice `build_demo_workspace` made, now shared; record untouched |
 | `code-issues/oversized-file-world.md`, `…-scenario-manifest.md`, `…-simulation-tools-proto.md` | — out of scope: the Refactor follow-up PR |
 | `todo/2026-11-04-fleet-obstacle-avoidance.md`, `…-fleet-routes-on-chat-map.md` | — unrelated |
 
