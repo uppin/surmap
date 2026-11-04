@@ -261,6 +261,14 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
   `water` to make it a surface vessels float on. The behaviour tools take a vehicle's id as a target too. Class files, the
   driving limits and the recorded tracks:
   [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *Vehicles*.
+- **Drone nests**: `add_element` takes a `drone_nest` (`DroneNestElement`): `id` (letters, digits
+  and `-`), the pad centre `position` at deck level (ground, or a flat roof's top), `yaw_deg` (0
+  when unset) and `drones` (1–4, 1 when unset). The nest's drones are `<id>-d1` … `<id>-dN`; they
+  share the scenario's id namespace, so a taken drone id is refused, and `remove_element` refuses
+  a drone id. A pad inside a building or solid box below its top, on water, outside ±500 m / 0–60 m
+  up, within 6 m of another nest, or past 8 nests is `INVALID_ARGUMENT` naming the nest and the
+  rule. The rules and the pad: [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md),
+  *Drone nests*.
 - **Buildings and building fires**: preset names follow Overture's `facade_material` /
   `roof_material` vocabulary (the map's `overture-buildings` layer; no geometry is imported).
   `list_building_presets` returns the facade, roof and district names — shipped, plus any files
