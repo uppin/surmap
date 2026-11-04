@@ -1,8 +1,10 @@
-//! `--record <dir> --frames N [--rate-hz 10] [--start <t_s>] [--jpeg]`:
+//! `--record <dir> --frames N [--rate-hz 10] [--start <t_s>] [--jpeg] [--colour]`:
 //! fly the survey loop frame by frame and write a stereo capture that
 //! `surmap.simulation.bevy_capture.load_bevy_capture` reads — grey8
 //! eye images, `frames.jsonl` with each frame's ground-truth rig pose,
-//! `calibration.json`, and `ground_truth.json`.
+//! `calibration.json`, and `ground_truth.json`. `--colour` also writes the
+//! left eye in RGB (`frames/left_rgb/`, `left_rgb_ref`), the colour frame the
+//! on-board detector sees; the grey eyes RTAB-Map reads are unchanged.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -10,7 +12,7 @@ use std::path::{Path, PathBuf};
 use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy::render::gpu_readback::{Readback, ReadbackComplete};
-use image::{codecs::jpeg::JpegEncoder, GrayImage};
+use image::{codecs::jpeg::JpegEncoder, GrayImage, RgbImage};
 
 use crate::actors::{self, Figure};
 use crate::building::BuildingBlaze;
@@ -28,6 +30,8 @@ pub struct RecordPlan {
     pub rate_hz: f32,
     pub start_s: f32,
     pub jpeg: bool,
+    /// Also write the left eye in colour (`frames/left_rgb/`).
+    pub colour: bool,
 }
 
 impl RecordPlan {
@@ -62,6 +66,8 @@ pub struct Recorder {
     requested: bool,
     left: Option<Vec<u8>>,
     right: Option<Vec<u8>>,
+    /// The left eye in RGB, under `--colour`.
+    left_rgb: Option<Vec<u8>>,
     lines: Vec<String>,
     /// `fire_perimeter.jsonl`: one line per frame while the scene has fires.
     fire_lines: Vec<String>,
@@ -77,7 +83,7 @@ pub struct Recorder {
 
 impl Recorder {
     pub fn new(plan: RecordPlan) -> Self {
-        Self { plan, frame: 0, wait: FIRST_SETTLE, started: false, requested: false, left: None, right: None, lines: Vec::new(), fire_lines: Vec::new(), building_lines: Vec::new(), track_lines: Vec::new(), started_at: 0.0, last_frame_at: 0.0, stall_warned: false }
+        Self { plan, frame: 0, wait: FIRST_SETTLE, started: false, requested: false, left: None, right: None, left_rgb: None, lines: Vec::new(), fire_lines: Vec::new(), building_lines: Vec::new(), track_lines: Vec::new(), started_at: 0.0, last_frame_at: 0.0, stall_warned: false }
     }
 }
 
@@ -97,7 +103,12 @@ fn on_eye_read(read: On<ReadbackComplete>, eyes: Query<&Eye>, rig: Res<CameraPro
     let Ok(eye) = eyes.get(read.entity) else { return };
     let pixels = wire::bgra_to_gray8(&read.data, rig.width, rig.height, padded_row_bytes(rig.width));
     match eye {
-        Eye::Left if recorder.left.is_none() => recorder.left = Some(pixels),
+        Eye::Left if recorder.left.is_none() => {
+            if recorder.plan.colour {
+                recorder.left_rgb = Some(wire::bgra_to_rgb8(&read.data, rig.width, rig.height, padded_row_bytes(rig.width)));
+            }
+            recorder.left = Some(pixels);
+        }
         Eye::Right if recorder.right.is_none() => recorder.right = Some(pixels),
         _ => {}
     }
@@ -112,6 +123,26 @@ fn save(path: &Path, pixels: Vec<u8>, rig: &CameraProfile, jpeg: bool) {
     } else {
         image.save(path).expect("png frame");
     }
+}
+
+fn save_rgb(path: &Path, pixels: Vec<u8>, rig: &CameraProfile, jpeg: bool) {
+    let image = RgbImage::from_raw(rig.width, rig.height, pixels).expect("colour frame size");
+    if jpeg {
+        let file = std::fs::File::create(path).expect("frame file");
+        JpegEncoder::new_with_quality(file, 90).encode_image(&image).expect("jpeg frame");
+    } else {
+        image.save(path).expect("png frame");
+    }
+}
+
+/// One `frames.jsonl` line: the frame's id, time, eye images (and colour left image, when
+/// recorded) and the rig's ENU pose.
+pub fn frame_line(frame_id: u32, t_ns: u64, left_ref: &str, right_ref: &str, left_rgb_ref: Option<&str>, pose_enu: [f64; 7]) -> String {
+    let mut line = serde_json::json!({"frame_id": frame_id, "t_ns": t_ns, "left_ref": left_ref, "right_ref": right_ref, "pose_enu": pose_enu});
+    if let Some(rgb) = left_rgb_ref {
+        line["left_rgb_ref"] = serde_json::Value::from(rgb);
+    }
+    line.to_string()
 }
 
 fn write_capture_files(plan: &RecordPlan, rig: &CameraProfile, truth: &GroundTruth, rec: &Recorder) {
@@ -170,6 +201,9 @@ pub fn record_frames(
         let dir = rec.plan.dir.clone();
         std::fs::create_dir_all(dir.join("frames/left")).expect("capture dir");
         std::fs::create_dir_all(dir.join("frames/right")).expect("capture dir");
+        if rec.plan.colour {
+            std::fs::create_dir_all(dir.join("frames/left_rgb")).expect("capture dir");
+        }
         rec.started = true;
         rec.started_at = clock.elapsed_secs_f64();
         rec.last_frame_at = rec.started_at;
@@ -208,12 +242,14 @@ pub fn record_frames(
     let (left_ref, right_ref) = (format!("frames/left/{t_ns}.{ext}"), format!("frames/right/{t_ns}.{ext}"));
     save(&rec.plan.dir.join(&left_ref), left, &rig, rec.plan.jpeg);
     save(&rec.plan.dir.join(&right_ref), right, &rig, rec.plan.jpeg);
+    let rgb_ref = rec.left_rgb.take().map(|pixels| {
+        let rgb_ref = format!("frames/left_rgb/{t_ns}.{ext}");
+        save_rgb(&rec.plan.dir.join(&rgb_ref), pixels, &rig, rec.plan.jpeg);
+        rgb_ref
+    });
     let pose = SurveyLoop::disaster_block().pose_at(t_s);
     let pose_enu = wire::rig_pose_enu(pose.position, Quat::from_rotation_y(pose.yaw_rad) * rig.mount_rotation());
-    rec.lines.push(
-        serde_json::json!({"frame_id": frame + 1, "t_ns": t_ns, "left_ref": left_ref, "right_ref": right_ref, "pose_enu": pose_enu})
-            .to_string(),
-    );
+    rec.lines.push(frame_line(frame + 1, t_ns, &left_ref, &right_ref, rgb_ref.as_deref(), pose_enu));
     if let Some(fires) = fires.as_ref().filter(|f| f.has_fires()) {
         rec.fire_lines.push(fire::perimeter_line(t_ns, &fires.fronts(t_s)));
     }
@@ -241,7 +277,7 @@ mod tests {
 
     #[test]
     fn frames_are_spaced_by_the_capture_rate_from_the_start() {
-        let plan = RecordPlan { dir: PathBuf::from("c"), frames: 3, rate_hz: 10.0, start_s: 30.0, jpeg: false };
+        let plan = RecordPlan { dir: PathBuf::from("c"), frames: 3, rate_hz: 10.0, start_s: 30.0, jpeg: false, colour: false };
 
         assert_eq!([plan.t_at(0), plan.t_at(1), plan.t_at(2)], [30.0, 30.1, 30.2]);
     }
@@ -253,7 +289,7 @@ mod tests {
 
     #[test]
     fn timestamps_are_whole_steps_of_the_rate_in_nanoseconds() {
-        let plan = RecordPlan { dir: PathBuf::from("c"), frames: 3, rate_hz: 10.0, start_s: 30.0, jpeg: false };
+        let plan = RecordPlan { dir: PathBuf::from("c"), frames: 3, rate_hz: 10.0, start_s: 30.0, jpeg: false, colour: false };
 
         assert_eq!([plan.t_ns(0), plan.t_ns(4)], [30_000_000_000, 30_400_000_000]);
     }

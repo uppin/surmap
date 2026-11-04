@@ -211,6 +211,32 @@ def test_every_asset_of_the_shipped_scene_is_pinned() -> None:
     assert referenced <= pinned
 
 
+def test_a_pin_carries_the_attribution_its_licence_asks_for(tmp_path: Path) -> None:
+    # Given a lock file pinning an attribution-licensed model with its credit
+    credited = {
+        **an_asset("models/car.glb", "0" * 64),
+        "license": "CC-BY-4.0",
+        "attribution": "Car Concept by Eric Chadwick (CC-BY-4.0)",
+    }
+
+    # When it is loaded
+    (pin,) = load_asset_pins(a_lock_file(tmp_path, [credited]))
+
+    # Then the pin keeps the credit
+    assert pin.attribution == "Car Concept by Eric Chadwick (CC-BY-4.0)"
+
+
+def test_every_attribution_licensed_pin_of_the_simulation_credits_its_author() -> None:
+    # Given the simulation's lock file
+    pins = load_asset_pins(POC / "assets" / "assets.lock.json")
+
+    # When the CC BY pins are checked for a credit
+    uncredited = [p.path for p in pins if p.license.startswith("CC-BY") and not p.attribution]
+
+    # Then every one of them names its author
+    assert uncredited == []
+
+
 def rust_assets_embedded_outside_tests() -> tuple[str, ...]:
     offenders: list[str] = []
     for source in sorted((POC / "src").glob("*.rs")):

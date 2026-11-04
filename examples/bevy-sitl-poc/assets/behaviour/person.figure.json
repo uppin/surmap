@@ -19,5 +19,17 @@
       0.05,
       0.06
     ]
-  }
+  },
+  "model": {
+    "glb": "models/cesium_man/CesiumMan.glb",
+    "scale": 1.16,
+    "yaw_deg": 180.0,
+    "clip_s": 0.25,
+    "coat_tint": true
+  },
+  "body_m": [
+    0.6,
+    0.6,
+    1.8
+  ]
 }

@@ -2,8 +2,8 @@
 
 A photo-real disaster block in Bevy 0.18 (WebGPU in the browser, or native) with a stereo
 rig whose frames RTAB-Map consumes. Everything the simulation shows — the scene, materials,
-models, sky, and the camera profile shared with RTAB-Map — is JSON and CC0 assets loaded at
-runtime from `assets/`; composing a simulation never rebuilds the WASM.
+models, sky, and the camera profile shared with RTAB-Map — is JSON and CC0 / CC BY assets
+loaded at runtime from `assets/`; composing a simulation never rebuilds the WASM.
 
 Full documentation: [docs/simulation/bevy-simulation.md](../../docs/simulation/bevy-simulation.md).
 
@@ -16,6 +16,7 @@ cd examples/bevy-sitl-poc
 cargo run --release                               # native window
 BEVY_ASSET_ROOT=$PWD cargo run --release -- --screenshot shots --at 20
 BEVY_ASSET_ROOT=$PWD cargo run --release -- --record cap --frames 90 --start 15.5 --jpeg
+BEVY_ASSET_ROOT=$PWD cargo run --release -- --record cap --frames 75 --rate-hz 1 --start 12 --jpeg --colour  # + colour left eye
 # browser (WebGPU): serve the page and assets/ from one origin
 trunk build index.html --release && ln -sfn ../assets dist/assets && python3 -m http.server 8772 -d dist
 ```

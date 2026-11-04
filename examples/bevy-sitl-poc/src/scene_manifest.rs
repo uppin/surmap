@@ -296,6 +296,14 @@ pub struct ModelInstance {
     /// Ground-truth kind (`car`, `collapsed_building`, …); `model` when unnamed.
     #[serde(default = "default_kind")]
     pub kind: String,
+    /// `false` drops the model's normal maps: Bevy ignores `KHR_texture_transform` on a normal
+    /// texture, so a micro-flake map tiled 30× in glTF lands as one coarse speckle over the body.
+    #[serde(default = "keeps_normal_maps")]
+    pub normal_maps: bool,
+}
+
+fn keeps_normal_maps() -> bool {
+    true
 }
 
 fn default_kind() -> String {
