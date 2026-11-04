@@ -16,18 +16,16 @@ import pytest
 from langchain_core.messages.tool import ToolCall
 
 from surmap.simulation.map_floor import InMemoryTileSource
+from surmap.simulation.scenario_manifest import validate_manifest
+from tests.agent_fakes import ScriptedChatModel, answer, calling, tool_call
+from tests.sim_fakes import element_ids
+from tests.test_sim_scenario_e2e import a_station
 
 
 class OsmLikeTiles(InMemoryTileSource):
     """Fake tiles that carry OpenStreetMap's attribution, as the real source does."""
 
     attribution = "© OpenStreetMap contributors"
-
-
-from surmap.simulation.scenario_manifest import validate_manifest
-from tests.agent_fakes import ScriptedChatModel, answer, calling, tool_call
-from tests.sim_fakes import element_ids
-from tests.test_sim_scenario_e2e import a_station
 
 TARGET_LAT, TARGET_LON = 54.0008, 25.0015
 # What geo_to_enu reports for the target from the Vilnius bbox centre (54.0005, 25.001).
