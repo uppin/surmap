@@ -12,6 +12,7 @@ from surmap.simulation.bevy_wire import (
     BevyPair,
     BevyWireError,
     BridgeStatus,
+    FrameKeypoints,
     decode_bevy_message,
     encode_status,
 )
@@ -211,3 +212,38 @@ def test_a_drone_s_status_names_it_and_why_its_pair_was_not_processed() -> None:
         '"drone_id":"nest-roof-d1",'
         '"error":"drone session limit (4) reached; nest-roof-d1 not processed"}'
     )
+
+
+# ---- RTAB-Map's keypoints on the frame they were tracked in ----------------------------------
+
+
+def test_a_status_carries_each_odometry_frame_s_keypoints_after_the_counts() -> None:
+    # Given a reply whose pair brought frame 7's odometry with two tracked keypoints
+    status = BridgeStatus(
+        frames=8,
+        posed=7,
+        lost=False,
+        keyframes=3,
+        dropped=0,
+        odometry=(FrameKeypoints(frame_id=7, keypoints=((1.5, 0.5, 2.25), (3.0, 1.0, 9.0))),),
+    )
+
+    # When the bridge encodes it
+    text = encode_status(status)
+
+    # Then the frame's id and its keypoints as [u, v, depth] follow the counts
+    assert text == (
+        '{"type":"status","frames":8,"posed":7,"lost":false,"keyframes":3,"dropped":0,'
+        '"odometry":[{"frame_id":7,"keypoints":[[1.5,0.5,2.25],[3.0,1.0,9.0]]}]}'
+    )
+
+
+def test_a_status_without_odometry_keeps_the_counts_only_shape() -> None:
+    # Given a reply whose pair brought no odometry yet
+    status = BridgeStatus(frames=1, posed=0, lost=False, keyframes=0, dropped=0, odometry=())
+
+    # When the bridge encodes it
+    text = encode_status(status)
+
+    # Then no odometry field appears
+    assert "odometry" not in json.loads(text)

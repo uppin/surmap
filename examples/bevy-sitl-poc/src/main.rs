@@ -28,6 +28,7 @@ mod sea;
 mod shots;
 mod sky;
 mod textures;
+mod preview;
 mod ui;
 mod vehicle;
 mod vegetation;

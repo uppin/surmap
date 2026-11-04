@@ -82,15 +82,22 @@ def a_ready_sim_page(directory: pathlib.Path) -> pathlib.Path:
 def start_dev_stack(tmp_path: pathlib.Path) -> Iterator[Callable[..., DevStack]]:
     started: list[DevStack] = []
 
-    def start(env: dict[str, str] | None = None, **commands: str) -> DevStack:
+    def start(
+        env: dict[str, str] | None = None, args: tuple[str, ...] = (), **commands: str
+    ) -> DevStack:
         env = dict(os.environ) | (env or {})
         env.setdefault("SURMAP_DEV_SIM_DIST", str(a_ready_sim_page(tmp_path / "sim-dist")))
         env.setdefault("SURMAP_DEV_SIM_FETCH_CMD", f"echo ok > {tmp_path}/sim-fetch.txt")
+        env.setdefault("SURMAP_DEV_RTABMAP_INIT_CMD", f"echo ok > {tmp_path}/rtabmap-init.txt")
         for name in SERVICES:
             command = commands.get(name, a_long_running_service(tmp_path, name))
             env[f"SURMAP_DEV_{name.upper()}_CMD"] = command
         process = subprocess.Popen(
-            [str(SCRIPT)], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            [str(SCRIPT), *args],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
         )
         stack = DevStack(process, tmp_path)
         started.append(stack)
@@ -206,6 +213,33 @@ def test_the_agent_serves_the_simulation_page_by_default(tmp_path: pathlib.Path)
 
     # Then the agent serves that page, so `/sim/?scenario=…` opens on its origin
     assert f"--sim-dist {sim_dist}" in commands["agent"]
+
+
+def test_the_stereo_bridge_is_off_by_default() -> None:
+    # When the stack is planned without options
+    commands = planned_commands()
+
+    # Then the agent serves no bridge and the chat is told of none
+    assert "--bevy-bridge-port" not in commands["agent"]
+    assert "VITE_SURMAP_BRIDGE_URL" not in commands["chat"]
+
+
+def test_with_bridge_the_agent_serves_the_stereo_bridge_and_the_chat_links_its_preview() -> None:
+    # When the stack is planned with the bridge
+    commands = planned_commands("--bridge")
+
+    # Then the agent serves the bridge on its default port and the chat's preview streams there
+    assert "--bevy-bridge-port 8790" in commands["agent"]
+    assert "VITE_SURMAP_BRIDGE_URL=ws://127.0.0.1:8790" in commands["chat"]
+
+
+def test_the_bridge_port_can_be_chosen() -> None:
+    # When the stack is planned with the bridge on another port
+    commands = planned_commands("--bridge", env={"SURMAP_DEV_BRIDGE_PORT": "9911"})
+
+    # Then the agent and the chat agree on it
+    assert "--bevy-bridge-port 9911" in commands["agent"]
+    assert "VITE_SURMAP_BRIDGE_URL=ws://127.0.0.1:9911" in commands["chat"]
 
 
 def a_stub_trunk(bin_dir: pathlib.Path, record: pathlib.Path) -> pathlib.Path:
@@ -337,6 +371,51 @@ def test_a_failed_asset_fetch_stops_the_stack_before_any_service_starts(
     assert status != 0
     assert stack.pids() == []
     assert "fetch" in stack.output()
+
+
+def test_with_bridge_the_rtabmap_image_is_prepared_before_the_stack_starts(
+    tmp_path: pathlib.Path, start_dev_stack: Callable[..., DevStack]
+) -> None:
+    # Given a bridge stack whose RTAB-Map image preparation is stubbed to leave a record
+    stack = start_dev_stack(args=("--bridge",))
+
+    # When the services come up
+    eventually(all_services_up(stack), "every service and its child is running")
+    stack.process.send_signal(signal.SIGINT)
+
+    # Then the streaming RTAB-Map image was made ready before anything started
+    assert stack.process.wait(timeout=DEADLINE_S) == 130
+    assert (tmp_path / "rtabmap-init.txt").read_text().strip() == "ok"
+
+
+def test_without_bridge_the_rtabmap_image_is_left_alone(
+    tmp_path: pathlib.Path, start_dev_stack: Callable[..., DevStack]
+) -> None:
+    # Given a stack started without the bridge
+    stack = start_dev_stack()
+
+    # When the services come up
+    eventually(all_services_up(stack), "every service and its child is running")
+    stack.process.send_signal(signal.SIGINT)
+
+    # Then no RTAB-Map image was prepared
+    assert stack.process.wait(timeout=DEADLINE_S) == 130
+    assert not (tmp_path / "rtabmap-init.txt").exists()
+
+
+def test_a_failed_rtabmap_image_preparation_stops_the_stack_before_any_service_starts(
+    start_dev_stack: Callable[..., DevStack],
+) -> None:
+    # Given a bridge stack whose RTAB-Map image cannot be prepared (no Docker, a failed build)
+    stack = start_dev_stack(env={"SURMAP_DEV_RTABMAP_INIT_CMD": "false"}, args=("--bridge",))
+
+    # When the script gives up before starting anything
+    status = stack.process.wait(timeout=DEADLINE_S)
+
+    # Then it exits non-zero, names RTAB-Map, and no service was started
+    assert status != 0
+    assert stack.pids() == []
+    assert "RTAB-Map" in stack.output()
 
 
 def test_each_output_line_is_labelled_with_its_service(

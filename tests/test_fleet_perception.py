@@ -15,13 +15,14 @@ import threading
 import pytest
 from PIL import Image
 
-from surmap.simulation.bevy_wire import BevyWireError, BridgeStatus
+from surmap.simulation.bevy_wire import BevyWireError, BridgeStatus, FrameKeypoints
 from surmap.simulation.fleet.perception import (
     MAX_DRONE_SESSIONS,
     DroneCounts,
     PerceptionRegistry,
     SamSegmentationSink,
 )
+from surmap.slam.stream_protocol import Keypoint, Rectification
 from surmap.survey.sam import InMemorySamDetector, RawFrame, SamDetection
 from tests.fleet_perception_fakes import (
     HELLO,
@@ -412,3 +413,49 @@ def test_the_sam_sink_drops_the_oldest_frame_when_the_detector_falls_behind() ->
     # Then frame 2 was dropped and the two newest were segmented after frame 1
     assert detector.frames == [1, 3, 4]
     assert (sink.segmented_frames, sink.dropped_frames) == (3, 1)
+
+
+# ---- RTAB-Map's keypoints, on the frame they were tracked in ---------------------------------
+
+A_TRACKED_KEYPOINT = Keypoint(word_id=11, u=1.0, v=0.5, depth=2.5)
+OUTSIDE_THE_FRAME = Keypoint(word_id=12, u=9.0, v=0.5, depth=4.0)
+# A rectification that only moves the principal point one pixel right: rectified u = raw u + 1.
+SHIFTED_ONE_PIXEL = Rectification(
+    rotation=(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
+    rectified=(100.0, 100.0, 3.0, 1.0),
+    raw=(100.0, 100.0, 2.0, 1.0),
+    distortion=(0.0, 0.0, 0.0, 0.0),
+)
+
+
+def test_a_status_carries_its_frame_s_tracked_keypoints() -> None:
+    # Given a fleet page whose drone's map tracks one keypoint on every frame
+    rig = a_perception(keypoints=(A_TRACKED_KEYPOINT,)).opened()
+
+    # When nest-sw-d1's frame 5 arrives and its odometry comes back
+    (status,) = rig.streams(a_pair(5, SW_D1))
+
+    # Then the reply carries frame 5's keypoint as [u, v, depth]
+    assert status.odometry == (FrameKeypoints(frame_id=5, keypoints=((1.0, 0.5, 2.5),)),)
+
+
+def test_keypoints_are_reported_in_raw_pixels_of_the_left_camera() -> None:
+    # Given a map whose rectification shifts the image one pixel
+    rig = a_perception(keypoints=(A_TRACKED_KEYPOINT,), rectification=SHIFTED_ONE_PIXEL).opened()
+
+    # When a frame's odometry comes back
+    (status,) = rig.streams(a_pair(5, SW_D1))
+
+    # Then its keypoint sits where it is in the raw frame the page holds
+    assert status.odometry == (FrameKeypoints(frame_id=5, keypoints=((0.0, 0.5, 2.5),)),)
+
+
+def test_keypoints_outside_the_frame_are_left_out() -> None:
+    # Given a map that tracks one keypoint inside the 4x2 frame and one beyond its right edge
+    rig = a_perception(keypoints=(A_TRACKED_KEYPOINT, OUTSIDE_THE_FRAME)).opened()
+
+    # When a frame's odometry comes back
+    (status,) = rig.streams(a_pair(5, SW_D1))
+
+    # Then only the one in the frame is reported
+    assert status.odometry == (FrameKeypoints(frame_id=5, keypoints=((1.0, 0.5, 2.5),)),)
