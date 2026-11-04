@@ -20,7 +20,7 @@ from surmap.simulation.bevy_wire import (
     decode_bevy_message,
 )
 from surmap.simulation.camera_profile import profile_sensor_yaml
-from surmap.slam.stream_protocol import OdomUpdate
+from surmap.slam.stream_protocol import OdomUpdate, Rectification
 from surmap.types import Pose, StereoFramePair, Vec3
 
 GOLDENS = Path(__file__).parent / "fixtures" / "bevy_sim_wire"
@@ -36,6 +36,7 @@ class FakeBackend:
         self.updates: list[OdomUpdate] = []
         self.keyframe_count = 3
         self.dropped_frames = 1
+        self.rectification: Rectification | None = None
         self.closed = False
 
     def process_frame(self, frame: StereoFramePair) -> None:

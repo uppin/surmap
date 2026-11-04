@@ -51,6 +51,15 @@ class BevyPair:
 
 
 @dataclass(frozen=True)
+class FrameKeypoints:
+    """One frame's odometry as the page draws it: the pair it sent as `frame_id`, and the
+    keypoints RTAB-Map tracked in it as (u, v, depth m), raw left-camera pixels in the frame."""
+
+    frame_id: int
+    keypoints: tuple[tuple[float, float, float], ...]
+
+
+@dataclass(frozen=True)
 class BridgeStatus:
     frames: int
     posed: int
@@ -61,10 +70,13 @@ class BridgeStatus:
     """The drone whose map the status describes; absent for a pair without a drone id."""
     error: str | None = None
     """Why the pair was not processed (e.g. the drone session limit)."""
+    odometry: tuple[FrameKeypoints, ...] = ()
+    """The odometry that came back while this pair was handled, oldest first: usually an
+    earlier pair's, as RTAB-Map answers asynchronously."""
 
 
 def encode_status(status: BridgeStatus) -> str:
-    """The status text message; `drone_id` and `error` appear only when set."""
+    """The status text message; `drone_id`, `error` and `odometry` appear only when set."""
     body: dict[str, object] = {
         "type": "status",
         "frames": status.frames,
@@ -77,6 +89,11 @@ def encode_status(status: BridgeStatus) -> str:
         body["drone_id"] = status.drone_id
     if status.error is not None:
         body["error"] = status.error
+    if status.odometry:
+        body["odometry"] = [
+            {"frame_id": frame.frame_id, "keypoints": [list(k) for k in frame.keypoints]}
+            for frame in status.odometry
+        ]
     return json.dumps(body, separators=(",", ":"))
 
 

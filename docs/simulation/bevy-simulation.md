@@ -1080,6 +1080,12 @@ drone**. Only the active drone's frames are processed; the other drones keep fly
   `keyframes`, `dropped`, `drone_id`, and `error` for a failed drone); the page shows it under the feed panel as
   `MAP <drone> · <n> frames · <k> keyframes · tracking`. The agent reads every drone's counts
   with `drone_map_status` ([docs/agent.md](../agent.md), *Fleet tools*).
+  A reply also carries `odometry` — `[{"frame_id": n, "keypoints": [[u, v, depth_m], …]}]`,
+  oldest first, omitted when empty — for each odometry update that came back while the pair
+  was handled (usually an earlier pair's: RTAB-Map answers asynchronously). The keypoints are
+  RTAB-Map's odometry inliers mapped rectified → raw left-camera pixels with the backend's
+  `rectification` (`surmap.slam.keypoint_pixels.rectified_to_raw`, shared with the demo page),
+  those outside the frame left out (`fleet.perception.frame_keypoints`).
 
 ### Verified
 
@@ -1096,6 +1102,37 @@ retention, off-loop work, per-drone failure, scenario check, step mirror, latest
 run (V4) after merge —
 [`src/surmap/docs/todo/2026-11-04-fleet-browser-verification.md`](../../src/surmap/docs/todo/2026-11-04-fleet-browser-verification.md).
 
+
+## The chat preview: overview, then FPV with RTAB-Map keypoints
+
+The agent chat's simulation pane embeds the scenario page as
+`/sim/?scenario=<id>&view=preview&fleet=1[&bridge=<url>]` and shows **only the camera view**:
+`index.html` hides its header and hint and fills the iframe with the canvas, and the app spawns
+none of the full page's stereo panel, HUD or Take off button (`preview.rs`). "Open simulation"
+opens the full page.
+
+- **Overview on the ground, FPV in the air.** `preview_view` (pure) is `Overview` while the
+  viewed fleet drone is `Docked` (or, without a fleet, the keyboard drone is not engaged): the
+  chase view with its trackpad PTZ. Airborne, a full-window layer shows the drone's left camera
+  at its aspect ratio, letterboxed.
+- **Points on their own frame.** With `?bridge=`, each pair the page sends also keeps its left
+  eye's RGBA pixels in `HeldFrames` (12, by `frame_id`). A `status` reply's `odometry` takes the
+  frame it names (dropping older ones) and the newest becomes `FpvFrame`, drawn with its
+  keypoints as dots placed as fractions of the frame, coloured by depth (`depth_colour`, the demo
+  page's ramp on a 1–60 m log scale). The FPV therefore lags the live camera by RTAB-Map's
+  latency, but a point never sits on another frame. Without a bridge the FPV is the live eye.
+- **Locally.** `scripts/dev.sh --bridge` makes the streaming RTAB-Map image ready
+  (`scripts/build_rtabmap_stream.py`, once per source hash; a failure stops the stack before any
+  service starts), runs the agent with `--bevy-bridge-port $SURMAP_DEV_BRIDGE_PORT` (8782) and
+  the chat with `VITE_SURMAP_BRIDGE_URL`; the chat also takes `?bridge=`.
+
+### Verified
+
+2026-11-04: V1 — `tests/test_bevy_wire.py`, `tests/test_fleet_perception.py`,
+`tests/test_dev_script.py`, `preview::tests` / `fleet::stream::tests` (`cargo test`) and the
+chat's `SimulationPane` / `App` tests pass. V4 — a release `trunk build` served by an agent with
+the bridge and the real streaming sidecar, opened in Chrome in preview mode: landed, only the
+overview; after take-off, the FPV with RTAB-Map's keypoints on the held frame.
 ## The stereo rig: one camera profile
 
 `cameras/elp-stereo-pinhole.camera.json` (the SurMap ELP rig): 640×480, fx = fy = 381.36,

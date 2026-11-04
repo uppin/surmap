@@ -125,6 +125,42 @@ pub fn status_line(drone_id: Option<&str>, frames: u64, keyframes: u64, lost: bo
     )
 }
 
+/// One frame's odometry from a bridge `status` reply: the frame the page sent as `frame_id`,
+/// and the keypoints RTAB-Map tracked in it as `[u, v, depth_m]`, raw left-camera pixels.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FrameKeypoints {
+    pub frame_id: u64,
+    pub keypoints: Vec<[f32; 3]>,
+}
+
+/// The odometry frames a `status` reply carries (`"odometry"`), in order; none when it has no
+/// such field. A malformed entry or keypoint is skipped.
+pub fn parse_odometry(reply: &serde_json::Value) -> Vec<FrameKeypoints> {
+    let Some(entries) = reply.get("odometry").and_then(serde_json::Value::as_array) else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter_map(|entry| {
+            let frame_id = entry.get("frame_id")?.as_u64()?;
+            let keypoints = entry
+                .get("keypoints")
+                .and_then(serde_json::Value::as_array)
+                .map(|points| points.iter().filter_map(keypoint).collect())
+                .unwrap_or_default();
+            Some(FrameKeypoints { frame_id, keypoints })
+        })
+        .collect()
+}
+
+/// One `[u, v, depth]` keypoint; anything else is `None`.
+fn keypoint(value: &serde_json::Value) -> Option<[f32; 3]> {
+    match value.as_array()?.as_slice() {
+        [u, v, depth] => Some([u.as_f64()? as f32, v.as_f64()? as f32, depth.as_f64()? as f32]),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use bevy::ecs::schedule::{InternedSystemSet, IntoSystemSet, Schedules, SystemKey};
@@ -288,5 +324,44 @@ mod tests {
         let url = bridge_url(search);
 
         assert_eq!(url, None);
+    }
+
+    #[test]
+    fn a_status_reply_s_odometry_names_each_frame_and_its_keypoints() {
+        let reply = serde_json::json!({
+            "type": "status", "frames": 8,
+            "odometry": [
+                {"frame_id": 6, "keypoints": [[1.5, 0.5, 2.25]]},
+                {"frame_id": 7, "keypoints": [[3.0, 1.0, 9.0], [0.0, 0.0, 1.0]]}
+            ]
+        });
+
+        assert_eq!(
+            parse_odometry(&reply),
+            vec![
+                FrameKeypoints { frame_id: 6, keypoints: vec![[1.5, 0.5, 2.25]] },
+                FrameKeypoints { frame_id: 7, keypoints: vec![[3.0, 1.0, 9.0], [0.0, 0.0, 1.0]] },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_status_reply_without_odometry_has_no_frames() {
+        assert_eq!(parse_odometry(&serde_json::json!({"type": "status", "frames": 1})), vec![]);
+    }
+
+    #[test]
+    fn a_malformed_odometry_entry_or_keypoint_is_skipped() {
+        let reply = serde_json::json!({
+            "odometry": [
+                {"keypoints": [[1.0, 1.0, 1.0]]},
+                {"frame_id": 4, "keypoints": [[1.0, 1.0], "x", [2.0, 2.0, 3.0]]}
+            ]
+        });
+
+        assert_eq!(
+            parse_odometry(&reply),
+            vec![FrameKeypoints { frame_id: 4, keypoints: vec![[2.0, 2.0, 3.0]] }]
+        );
     }
 }

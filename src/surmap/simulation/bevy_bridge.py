@@ -20,7 +20,7 @@ from surmap.simulation.bevy_wire import (
     encode_status,
 )
 from surmap.simulation.camera_profile import profile_sensor_yaml
-from surmap.slam.stream_protocol import OdomUpdate
+from surmap.slam.stream_protocol import OdomUpdate, Rectification
 from surmap.types import StereoFramePair
 
 
@@ -30,6 +30,9 @@ class StreamingBackend(Protocol):
 
     @property
     def dropped_frames(self) -> int: ...
+
+    @property
+    def rectification(self) -> Rectification | None: ...
 
     def process_frame(self, frame: StereoFramePair) -> None: ...
 

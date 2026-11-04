@@ -25,6 +25,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final, Protocol, cast
 
+import numpy as np
 from PIL import Image
 
 from surmap.simulation.bevy_bridge import BackendFactory, PairRecorder, StreamingBackend
@@ -33,10 +34,12 @@ from surmap.simulation.bevy_wire import (
     BevyPair,
     BevyWireError,
     BridgeStatus,
+    FrameKeypoints,
     decode_bevy_message,
 )
 from surmap.simulation.camera_profile import profile_sensor_yaml
-from surmap.slam.stream_protocol import MapUpdate, OdomUpdate
+from surmap.slam.keypoint_pixels import rectified_to_raw
+from surmap.slam.stream_protocol import MapUpdate, OdomUpdate, Rectification
 from surmap.survey.sam import RawFrame, SamDetector
 from surmap.types import StereoFramePair
 
@@ -128,6 +131,7 @@ class DroneSession:
         self._lost_now = False
         self._last_t_ns: int | None = None
         self._error: str | None = None
+        self._odometry: tuple[FrameKeypoints, ...] = ()
 
     @property
     def error(self) -> str | None:
@@ -181,14 +185,19 @@ class DroneSession:
         )
         self._frames += 1
         self._last_t_ns = pair.t_ns
+        odometry: list[FrameKeypoints] = []
         for update in cast("list[MapUpdate]", self.backend.poll_updates()):
             if not isinstance(update, OdomUpdate):
                 continue
+            odometry.append(
+                frame_keypoints(update, self.backend.rectification, pair.width, pair.height)
+            )
             if update.pose is not None:
                 self._posed += 1
             if update.lost:
                 self._lost += 1
             self._lost_now = update.lost
+        self._odometry = tuple(odometry)
 
     def status(self) -> BridgeStatus:
         """The status reply for this drone's last pair."""
@@ -200,6 +209,7 @@ class DroneSession:
             dropped=self.backend.dropped_frames,
             drone_id=None if self.drone_id == DEFAULT_DRONE else self.drone_id,
             error=self._error,
+            odometry=self._odometry,
         )
 
     def counts(self, *, processing: bool) -> DroneCounts:
@@ -225,6 +235,26 @@ class DroneSession:
         self.segmentation.close()
         if self.recorder is not None:
             self.recorder.finish()
+
+
+def frame_keypoints(
+    update: OdomUpdate, rectification: Rectification | None, width: int, height: int
+) -> FrameKeypoints:
+    """`update`'s tracked keypoints at their raw pixels in the `width` x `height` left frame
+    (rectified ones mapped back through `rectification`); those outside the frame are left out."""
+    if not update.keypoints:
+        return FrameKeypoints(update.frame_id, ())
+    pixels = np.array([(k.u, k.v) for k in update.keypoints], dtype=np.float64)
+    if rectification is not None:
+        pixels = rectified_to_raw(pixels, rectification)
+    return FrameKeypoints(
+        update.frame_id,
+        tuple(
+            (round(u, 1), round(v, 1), round(k.depth, 2))
+            for (u, v), k in zip(pixels.tolist(), update.keypoints, strict=True)
+            if 0 <= u < width and 0 <= v < height
+        ),
+    )
 
 
 def _png(gray: bytes, width: int, height: int) -> bytes:

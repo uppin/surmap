@@ -206,7 +206,7 @@ test("a simulation the agent creates shows in a right-side pane inside the chat"
   await expect(chat.simulation()).toContainText("Downtown blaze");
   await expect(chat.simulationFrame("Downtown blaze")).toHaveAttribute(
     "src",
-    `${server.url}/sim/?scenario=downtown-blaze`,
+    `${server.url}/sim/?scenario=downtown-blaze&view=preview&fleet=1`,
   );
   await expect(chat.conversation()).toContainText("Built it.");
 });

@@ -14,12 +14,21 @@ const SIMULATION: SimulationView = {
 };
 
 describe("SimulationPane", () => {
-  it("embeds the live simulation page for the created scenario", () => {
+  it("embeds the scenario's live preview, linked to the fleet", () => {
     render(<SimulationPane simulation={SIMULATION} serverUrl={SERVER_URL} />);
 
     expect(screen.getByTitle("Simulation: Downtown blaze")).toHaveAttribute(
       "src",
-      "http://127.0.0.1:8780/sim/?scenario=downtown-blaze",
+      "http://127.0.0.1:8780/sim/?scenario=downtown-blaze&view=preview&fleet=1",
+    );
+  });
+
+  it("streams the preview to the stereo bridge when the chat knows one", () => {
+    render(<SimulationPane simulation={SIMULATION} serverUrl={SERVER_URL} bridgeUrl="ws://127.0.0.1:8790" />);
+
+    expect(screen.getByTitle("Simulation: Downtown blaze")).toHaveAttribute(
+      "src",
+      "http://127.0.0.1:8780/sim/?scenario=downtown-blaze&view=preview&fleet=1&bridge=ws%3A%2F%2F127.0.0.1%3A8790",
     );
   });
 
@@ -62,7 +71,7 @@ describe("SimulationPane", () => {
 
     expect(screen.getByTitle("Simulation: Downtown blaze")).toHaveAttribute(
       "src",
-      "http://station.test/sim/?scenario=downtown-blaze",
+      "http://station.test/sim/?scenario=downtown-blaze&view=preview&fleet=1",
     );
   });
 

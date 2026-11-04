@@ -289,12 +289,38 @@ describe("chat page", () => {
     expect(pane).toHaveTextContent("Downtown blaze");
     expect(screen.getByTitle("Simulation: Downtown blaze")).toHaveAttribute(
       "src",
-      "http://127.0.0.1:8780/sim/?scenario=downtown-blaze",
+      "http://127.0.0.1:8780/sim/?scenario=downtown-blaze&view=preview&fleet=1",
     );
     // The chat stays beside the pane: transcript, composer and tasks are all still there.
     expect(screen.getByRole("log", { name: "Conversation" })).toHaveTextContent("Built it.");
     expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Tasks" })).toBeInTheDocument();
+  });
+
+  it("streams the simulation preview to the bridge the chat was opened with", async () => {
+    window.history.replaceState({}, "", "/?bridge=ws://127.0.0.1:8790");
+    const created = JSON.stringify({
+      scenario: { id: "downtown-blaze", name: "Downtown blaze", version: 1, credits: [], url: "/sim/?scenario=downtown-blaze" },
+    });
+    const { port } = fakePort({
+      turn: aConversation("conv-9")
+        .userMessage("Build a downtown blaze")
+        .toolStarted("call-1", "create_scenario")
+        .toolSucceeded("call-1", { resultJson: created })
+        .turnFinished("stop")
+        .build(),
+    });
+    render(<App port={port} />);
+    const user = userEvent.setup();
+
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "Build a downtown blaze");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await screen.findByRole("region", { name: "Simulation" });
+    expect(screen.getByTitle("Simulation: Downtown blaze").getAttribute("src")).toContain(
+      "&bridge=ws%3A%2F%2F127.0.0.1%3A8790",
+    );
+    window.history.replaceState({}, "", "/");
   });
 
   it("imports a bundle into the pane's simulation and shows the version it became", async () => {
