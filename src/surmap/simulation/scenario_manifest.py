@@ -3,7 +3,8 @@
 A scenario *is* a scene manifest (examples/bevy-sitl-poc/src/scene_manifest.rs): the station
 stores and serves it, the page loads it at runtime. Edits here are pure — they return a new
 manifest — and every result is validated by the same rules the renderer applies, so the
-station never serves a scene the simulation would refuse.
+station never serves a scene the simulation would refuse. The behaviour-tree rules live in
+`behaviour_tree` and the shared refusal in `manifest_checks`; both are re-exported here.
 """
 
 from __future__ import annotations
@@ -14,23 +15,24 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
+from surmap.simulation.behaviour_tree import (
+    EVACUATION_WIND,
+    evacuee_tree,
+    replace_node,
+    resolve_target,
+)
+from surmap.simulation.behaviour_tree import behaviour_of as behaviour_of
+from surmap.simulation.behaviour_tree import validate_behaviour as validate_behaviour
+from surmap.simulation.manifest_checks import Manifest as Manifest
+from surmap.simulation.manifest_checks import ScenarioInvalid as ScenarioInvalid
+from surmap.simulation.manifest_checks import number as _number
+from surmap.simulation.manifest_checks import object_list as _list
+
 if TYPE_CHECKING:
     from surmap.simulation.scenario_store import StoredAsset
 
-Manifest = dict[str, object]
 ELEMENT_KINDS = ("box", "collapsed_building", "building", "person", "vegetation")
 COLLIDERS = ("none", "box", "trimesh")
-
-
-class ScenarioInvalid(ValueError):
-    """A manifest the renderer would refuse, and why."""
-
-
-def _list(manifest: Mapping[str, object], key: str) -> list[dict[str, object]]:
-    value = manifest.get(key, [])
-    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
-        raise ScenarioInvalid(f"{key} must be a list of objects")
-    return [{str(k): v for k, v in item.items()} for item in value]
 
 
 def _materials(manifest: Mapping[str, object]) -> dict[str, dict[str, object]]:
@@ -47,12 +49,6 @@ def _relative(path: object, what: str) -> str:
     if pure.is_absolute() or ".." in pure.parts or "" in path.split("/"):
         raise ScenarioInvalid(f"{what} {path!r} must stay inside the assets")
     return path
-
-
-def _number(value: object, what: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ScenarioInvalid(f"{what} must be a number")
-    return float(value)
 
 
 def _file(path: object, what: str, suffix: str) -> str:
@@ -80,6 +76,8 @@ def _validate_weather(weather: object) -> None:
             raise ScenarioInvalid(f"weather wind {key} must be >= 0")
     if "rain_fx" in weather:
         _file(weather["rain_fx"], "weather rain_fx", ".fx.json")
+    if wind.get("behaviour") is not None:
+        validate_behaviour(wind["behaviour"], "wind")
 
 
 def _validate_fire(fire: Mapping[str, object], seen: set[str]) -> None:
@@ -165,6 +163,8 @@ def validate_manifest(manifest: Mapping[str, object]) -> None:
         scatters += isinstance(element.get("scatter"), dict)
         if element.get("kind") == "vegetation":
             _validate_vegetation(element)
+        if element.get("kind") == "person" and element.get("behaviour") is not None:
+            validate_behaviour(element["behaviour"], "object")
     if scatters > 1:
         raise ScenarioInvalid("at most one element may scatter debris")
     if "weather" in manifest:
@@ -292,6 +292,47 @@ def remove_fire(manifest: Mapping[str, object], fire_id: str) -> Manifest:
     return _with(manifest, "fires", [f for f in fires if f.get("id") != fire_id])
 
 
+def set_behaviour(
+    manifest: Mapping[str, object], target_id: str, tree: Mapping[str, object]
+) -> Manifest:
+    """A new manifest in which the person (or the wind) runs `tree`, refused unless it is valid."""
+    kind = resolve_target(manifest, target_id)
+    validate_behaviour(tree, "wind" if kind == "wind" else "object")
+    edited: Manifest = copy.deepcopy(dict(manifest))
+    holders: list[object]
+    if kind == "wind":
+        weather = edited.get("weather")
+        holders = [weather.get("wind")] if isinstance(weather, dict) else []
+    else:
+        elements = edited.get("elements")
+        holders = (
+            [e for e in elements if isinstance(e, dict) and e.get("id") == target_id]
+            if isinstance(elements, list)
+            else []
+        )
+    for holder in holders:
+        if isinstance(holder, dict):
+            holder["behaviour"] = copy.deepcopy(dict(tree))
+    validate_manifest(edited)
+    return edited
+
+
+def update_behaviour_node(
+    manifest: Mapping[str, object],
+    target_id: str,
+    node_id: str,
+    node: Mapping[str, object],
+) -> Manifest:
+    """A new manifest whose tree has the node `node_id` replaced by `node` and its subtree."""
+    tree = behaviour_of(manifest, target_id)
+    if tree is None:
+        raise ScenarioInvalid(f"{target_id!r} has no behaviour tree to update")
+    replaced = replace_node(tree, node_id, node)
+    if replaced is None:
+        raise ScenarioInvalid(f"no node {node_id!r} in the behaviour tree of {target_id!r}")
+    return set_behaviour(manifest, target_id, replaced)
+
+
 def _stand(
     stand_id: str,
     species: str,
@@ -356,9 +397,29 @@ def _flood_street(block: Manifest) -> Manifest:
     )
 
 
+def _evacuation(edge: Manifest) -> Manifest:
+    """The wildfire edge with three people at the pines' downwind edge, each fleeing the fire or
+    wandering, and the wind driven by `EVACUATION_WIND`."""
+    scenario = edge
+    for seed, (person_id, north) in enumerate(
+        (("evacuee-1", 52.0), ("evacuee-2", 60.0), ("evacuee-3", 68.0)), start=7
+    ):
+        person = {
+            "kind": "person",
+            "id": person_id,
+            "position_enu": [-16.0, north, 0.0],
+            "coat": "coat_orange",
+            "skin": "skin",
+        }
+        scenario = add_element(scenario, person)
+        scenario = set_behaviour(scenario, person_id, evacuee_tree(seed))
+    return set_behaviour(scenario, "wind", EVACUATION_WIND)
+
+
 def load_presets(assets_dir: Path) -> dict[str, Manifest]:
-    """`earthquake-block` (the shipped scene), `empty-lot` (its rig, sky and bare ground), and
-    `wildfire-edge` and `flood-street` built from them."""
+    """`earthquake-block` (the shipped scene), `empty-lot` (its rig, sky and bare ground),
+    `wildfire-edge` and `flood-street` built from them, and `wildfire-evacuation`: the edge with
+    people and a veering wind."""
     block: Manifest = json.loads((Path(assets_dir) / "scene.json").read_text(encoding="utf-8"))
     materials = _materials(block)
     lot: Manifest = {
@@ -380,9 +441,11 @@ def load_presets(assets_dir: Path) -> dict[str, Manifest]:
     }
     for manifest in (block, lot):
         validate_manifest(manifest)
+    edge = _wildfire_edge(lot)
     return {
         "earthquake-block": block,
         "empty-lot": lot,
-        "wildfire-edge": _wildfire_edge(lot),
+        "wildfire-edge": edge,
+        "wildfire-evacuation": _evacuation(edge),
         "flood-street": _flood_street(block),
     }

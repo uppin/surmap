@@ -1,0 +1,330 @@
+{
+  "version": 1,
+  "camera": "cameras/elp-stereo-pinhole.camera.json",
+  "environment": {
+    "hdri": "hdri/kloofendal_28d_misty_puresky_2k.hdr",
+    "sun_illuminance_lux": 130000.0,
+    "sun_elevation_deg": 28.0,
+    "sun_azimuth_deg": 115.0,
+    "fog_visibility_m": 600.0
+  },
+  "materials": {
+    "asphalt": {
+      "base_color": "textures/aerial_asphalt_01_diff_2k.jpg",
+      "normal": "textures/aerial_asphalt_01_nor_gl_2k.jpg",
+      "arm": "textures/aerial_asphalt_01_arm_2k.jpg",
+      "uv_scale": 0.25,
+      "reflectance": 0.35
+    },
+    "ground": {
+      "base_color": "textures/rocks_ground_02_diff_2k.jpg",
+      "normal": "textures/rocks_ground_02_nor_gl_2k.jpg",
+      "arm": "textures/rocks_ground_02_arm_2k.jpg",
+      "uv_scale": 0.15,
+      "reflectance": 0.35
+    },
+    "mud": {
+      "base_color": "textures/brown_mud_03_diff_2k.jpg",
+      "normal": "textures/brown_mud_03_nor_gl_2k.jpg",
+      "arm": "textures/brown_mud_03_arm_2k.jpg",
+      "uv_scale": 0.33,
+      "reflectance": 0.35
+    },
+    "concrete_slab": {
+      "base_color": "textures/concrete_floor_worn_001_diff_2k.jpg",
+      "normal": "textures/concrete_floor_worn_001_nor_gl_2k.jpg",
+      "arm": "textures/concrete_floor_worn_001_arm_2k.jpg",
+      "uv_scale": 0.5,
+      "reflectance": 0.2
+    },
+    "facade": {
+      "base_color": "textures/white_plaster_02_diff_2k.jpg",
+      "normal": "textures/white_plaster_02_nor_gl_2k.jpg",
+      "arm": "textures/white_plaster_02_arm_2k.jpg",
+      "uv_scale": 0.33,
+      "reflectance": 0.35
+    },
+    "water": {
+      "color": [
+        0.16,
+        0.15,
+        0.11
+      ],
+      "perceptual_roughness": 0.14,
+      "reflectance": 0.5
+    },
+    "glass": {
+      "color": [
+        0.06,
+        0.07,
+        0.08
+      ],
+      "perceptual_roughness": 0.15,
+      "reflectance": 0.5
+    },
+    "coat_orange": {
+      "color": [
+        0.95,
+        0.42,
+        0.05
+      ],
+      "perceptual_roughness": 0.75
+    },
+    "coat_yellow": {
+      "color": [
+        0.9,
+        0.8,
+        0.1
+      ],
+      "perceptual_roughness": 0.75
+    },
+    "skin": {
+      "color": [
+        0.25,
+        0.22,
+        0.2
+      ],
+      "perceptual_roughness": 0.9
+    }
+  },
+  "elements": [
+    {
+      "kind": "box",
+      "id": "ground",
+      "material": "ground",
+      "size_m": [
+        200.0,
+        200.0,
+        0.2
+      ],
+      "position_enu": [
+        0.0,
+        0.0,
+        -0.2
+      ],
+      "collider": true
+    },
+    {
+      "kind": "vegetation",
+      "id": "grass",
+      "species": "species/dry_grass.species.json",
+      "position_enu": [
+        0.0,
+        60.0,
+        0.0
+      ],
+      "size_m": [
+        150.0,
+        80.0
+      ],
+      "density_per_100m2": 30.0,
+      "seed": 7
+    },
+    {
+      "kind": "vegetation",
+      "id": "pines-west",
+      "species": "species/pine.species.json",
+      "position_enu": [
+        -40.0,
+        60.0,
+        0.0
+      ],
+      "size_m": [
+        40.0,
+        60.0
+      ],
+      "density_per_100m2": 3.0,
+      "seed": 11
+    },
+    {
+      "kind": "vegetation",
+      "id": "pines-east",
+      "species": "species/pine.species.json",
+      "position_enu": [
+        35.0,
+        55.0,
+        0.0
+      ],
+      "size_m": [
+        30.0,
+        40.0
+      ],
+      "density_per_100m2": 3.0,
+      "seed": 23
+    },
+    {
+      "kind": "person",
+      "id": "evacuee-1",
+      "position_enu": [
+        -16.0,
+        52.0,
+        0.0
+      ],
+      "coat": "coat_orange",
+      "skin": "skin",
+      "behaviour": {
+        "node": "repeat",
+        "child": {
+          "node": "selector",
+          "id": "root",
+          "children": [
+            {
+              "node": "sequence",
+              "id": "escape",
+              "children": [
+                {
+                  "node": "near_fire",
+                  "id": "smell-fire",
+                  "within_m": 20.0
+                },
+                {
+                  "node": "flee_from_fire",
+                  "id": "run",
+                  "speed_m_s": 3.0,
+                  "clearance_m": 30.0
+                }
+              ]
+            },
+            {
+              "node": "wander",
+              "id": "mill-about",
+              "radius_m": 6.0,
+              "speed_m_s": 0.8,
+              "seed": 7
+            }
+          ]
+        }
+      }
+    },
+    {
+      "kind": "person",
+      "id": "evacuee-2",
+      "position_enu": [
+        -16.0,
+        60.0,
+        0.0
+      ],
+      "coat": "coat_orange",
+      "skin": "skin",
+      "behaviour": {
+        "node": "repeat",
+        "child": {
+          "node": "selector",
+          "id": "root",
+          "children": [
+            {
+              "node": "sequence",
+              "id": "escape",
+              "children": [
+                {
+                  "node": "near_fire",
+                  "id": "smell-fire",
+                  "within_m": 20.0
+                },
+                {
+                  "node": "flee_from_fire",
+                  "id": "run",
+                  "speed_m_s": 3.0,
+                  "clearance_m": 30.0
+                }
+              ]
+            },
+            {
+              "node": "wander",
+              "id": "mill-about",
+              "radius_m": 6.0,
+              "speed_m_s": 0.8,
+              "seed": 8
+            }
+          ]
+        }
+      }
+    },
+    {
+      "kind": "person",
+      "id": "evacuee-3",
+      "position_enu": [
+        -16.0,
+        68.0,
+        0.0
+      ],
+      "coat": "coat_orange",
+      "skin": "skin",
+      "behaviour": {
+        "node": "repeat",
+        "child": {
+          "node": "selector",
+          "id": "root",
+          "children": [
+            {
+              "node": "sequence",
+              "id": "escape",
+              "children": [
+                {
+                  "node": "near_fire",
+                  "id": "smell-fire",
+                  "within_m": 20.0
+                },
+                {
+                  "node": "flee_from_fire",
+                  "id": "run",
+                  "speed_m_s": 3.0,
+                  "clearance_m": 30.0
+                }
+              ]
+            },
+            {
+              "node": "wander",
+              "id": "mill-about",
+              "radius_m": 6.0,
+              "speed_m_s": 0.8,
+              "seed": 9
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "models": [],
+  "weather": {
+    "rain_mm_h": 0.0,
+    "wind": {
+      "from_deg": 270.0,
+      "speed_m_s": 6.0,
+      "gust_m_s": 2.0,
+      "behaviour": {
+        "node": "sequence",
+        "id": "veer",
+        "children": [
+          {
+            "node": "idle",
+            "id": "calm",
+            "s": 20.0
+          },
+          {
+            "node": "set_wind",
+            "id": "veer-to-300",
+            "from_deg": 300.0,
+            "speed_m_s": 10.0,
+            "gust_m_s": 3.0,
+            "over_s": 30.0
+          }
+        ]
+      }
+    }
+  },
+  "fires": [
+    {
+      "id": "front-1",
+      "ignition_enu": [
+        -58.0,
+        60.0,
+        0.0
+      ],
+      "start_s": 2.0,
+      "spread_m_s": 0.15,
+      "max_radius_m": 35.0,
+      "smoke": true
+    }
+  ]
+}

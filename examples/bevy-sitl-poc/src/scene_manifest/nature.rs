@@ -24,12 +24,15 @@ pub struct Weather {
 }
 
 /// Meteorological: `from_deg` is where the wind blows from, clockwise from north.
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct WindDef {
     pub from_deg: f32,
     pub speed_m_s: f32,
     #[serde(default)]
     pub gust_m_s: f32,
+    /// A behaviour tree that changes the wind over time (`set_wind` leaves).
+    #[serde(default)]
+    pub behaviour: Option<crate::behaviour::Tree>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

@@ -346,3 +346,43 @@ fn the_store_written_wildfire_scenario_is_a_valid_manifest() {
 
     assert!(!manifest.fires.is_empty() && manifest.weather.is_some());
 }
+
+fn a_person_with(behaviour: &str) -> String {
+    format!(
+        r#"{{"version": 1, "camera": "cameras/rig.camera.json", "environment": {{"hdri": null,
+            "sun_illuminance_lux": 1.0, "sun_elevation_deg": 1.0, "sun_azimuth_deg": 1.0,
+            "fog_visibility_m": 1.0}},
+            "materials": {{"coat": {{"color": [0.9, 0.4, 0.1]}}, "skin": {{"color": [0.8, 0.6, 0.5]}}}},
+            "elements": [{{"kind": "person", "id": "evacuee-1", "position_enu": [0, 0, 0],
+                           "coat": "coat", "skin": "skin", "behaviour": {behaviour}}}]}}"#
+    )
+}
+
+#[test]
+fn a_person_carries_its_behaviour_tree() {
+    let text = a_person_with(r#"{"node": "wander", "radius_m": 6, "speed_m_s": 0.8, "seed": 7}"#);
+
+    let manifest = SceneManifest::from_json(&text).expect("valid");
+
+    assert!(matches!(&manifest.elements[0], Element::Person(p)
+        if matches!(p.behaviour.as_ref().map(|b| &b.root.kind), Some(crate::behaviour::Kind::Wander { seed: 7, .. }))));
+}
+
+#[test]
+fn a_person_whose_tree_sets_the_wind_is_refused() {
+    let text = a_person_with(r#"{"node": "set_wind", "from_deg": 0, "speed_m_s": 5, "gust_m_s": 0, "over_s": 1}"#);
+
+    assert!(matches!(SceneManifest::from_json(&text), Err(ManifestError::Invalid(_))));
+}
+
+#[test]
+fn the_store_written_evacuation_scenario_drives_people_and_the_wind() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/sim_scenario/wildfire-evacuation.json");
+    let text = std::fs::read_to_string(path).expect("the station store's evacuation fixture");
+
+    let manifest = SceneManifest::from_json(&text).expect("the renderer accepts the store's evacuation scenario");
+
+    let walkers = manifest.elements.iter().filter(|e| matches!(e, Element::Person(p) if p.behaviour.is_some())).count();
+    assert_eq!(walkers, 3);
+    assert!(manifest.weather.expect("weather").wind.behaviour.is_some());
+}

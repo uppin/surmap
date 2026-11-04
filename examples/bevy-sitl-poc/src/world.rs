@@ -17,6 +17,7 @@ use bevy_rapier3d::prelude::*;
 
 use std::collections::BTreeMap;
 
+use crate::actors::{self, Figure};
 use crate::scene_manifest::{
     BoxElement, Building, CollapsedBuilding, Element, Environment, ManifestError, ModelInstance, PbrTextureSet,
     Person, SceneManifest,
@@ -191,6 +192,10 @@ pub fn build_world(
     let fog_visibility_m = manifest.weather.as_ref().and_then(|w| w.fog_visibility_m);
     spawn_sun_and_haze(&mut commands, &assets, &mut state.pending, &manifest.environment, fog_visibility_m);
     commands.insert_resource(Wildfire::new(manifest.weather.as_ref(), &manifest.fires, &assets, &mut meshes, &mut state.pending));
+    let gait: Handle<actors::FigureAsset> = assets.load("behaviour/person.figure.json");
+    state.pending.push(gait.clone().untyped());
+    commands.insert_resource(actors::FigureLook(gait));
+    commands.insert_resource(actors::Behaviour::new(actors::wind_runner(manifest.weather.as_ref())));
     for element in &manifest.elements {
         if let Element::Vegetation(stand) = element {
             plan_stand(&assets, &mut state.pending, &mut stands, stand);
@@ -357,12 +362,22 @@ impl Builder<'_, '_, '_> {
         }
     }
 
+    /// A survivor: a figure whose root stands on the ground, carrying its behaviour tree (if any),
+    /// with the capsule body and the head as its children.
     fn person(&mut self, e: &Person) {
-        let [x, y, z] = e.position_enu;
         let coat = self.materials.add(self.library.material(&e.coat, Vec2::ONE, None, None));
         let skin = self.materials.add(self.library.material(&e.skin, Vec2::ONE, None, None));
-        self.commands.spawn((Mesh3d(self.meshes.add(Capsule3d::new(0.17, 1.05))), MeshMaterial3d(coat), Transform::from_translation(enu(x, y, z + 0.72))));
-        self.commands.spawn((Mesh3d(self.meshes.add(Sphere::new(0.13))), MeshMaterial3d(skin), Transform::from_translation(enu(x, y, z + 1.62))));
+        let body = self.meshes.add(Capsule3d::new(0.17, 1.05));
+        let head = self.meshes.add(Sphere::new(0.13));
+        let tree = e.behaviour.clone();
+        let figure = Figure::new(&e.id, e.position_enu, tree);
+        let [x, y, z] = e.position_enu;
+        self.commands
+            .spawn((figure, Visibility::default(), Transform::from_translation(enu(x, y, z))))
+            .with_children(|figure| {
+                figure.spawn((Mesh3d(body), MeshMaterial3d(coat), Transform::from_translation(Vec3::Y * 0.72)));
+                figure.spawn((Mesh3d(head), MeshMaterial3d(skin), Transform::from_translation(Vec3::Y * 1.62)));
+            });
     }
 }
 

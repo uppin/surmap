@@ -6,6 +6,8 @@
 //! ground debris, and a stereo rig built from the runtime camera
 //! profile renders the left/right feeds RTAB-Map receives.
 
+mod actors;
+mod behaviour;
 mod calibration;
 mod fire;
 mod flight;
@@ -104,6 +106,9 @@ fn main() {
         .init_asset_loader::<fxdef::FxLoader>()
         .init_asset::<fxdef::SpeciesAsset>()
         .init_asset_loader::<fxdef::SpeciesLoader>()
+        .init_asset::<actors::FigureAsset>()
+        .init_asset_loader::<actors::FigureLoader>()
+        .init_resource::<actors::Behaviour>()
         .init_resource::<fx::SoftDiscs>()
         .init_resource::<vegetation::PendingStands>()
         .init_resource::<vegetation::PineKits>()
@@ -142,7 +147,8 @@ fn main() {
                 update_status,
                 take_shots,
                 shots::aim_overview_at_fire,
-                record::record_frames.after(fly_scripted),
+                shots::aim_people_cam,
+                record::record_frames.after(fly_scripted).after(actors::tick_behaviours),
                 apply_look,
                 sky::bake_sky,
             ),
@@ -150,10 +156,12 @@ fn main() {
         .add_systems(
             Update,
             (
+                actors::tick_behaviours,
                 wildfire::drive_wind,
                 (vegetation::sync_vegetation_wind, vegetation::grow_stands, vegetation::scatter_stands.run_if(in_state(ScatterState::Ready)), vegetation::show_grass, vegetation::burn_vegetation),
                 wildfire::update_fires,
                 wildfire::rain_around_cameras,
+                actors::animate_figures,
             )
                 .chain()
                 .after(build_world),

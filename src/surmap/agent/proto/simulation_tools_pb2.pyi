@@ -203,14 +203,16 @@ class CollapsedBuildingElement(_message.Message):
     def __init__(self, id: _Optional[str] = ..., material: _Optional[str] = ..., footprint_east_m: _Optional[float] = ..., footprint_north_m: _Optional[float] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., yaw_deg: _Optional[float] = ..., seed: _Optional[int] = ...) -> None: ...
 
 class PersonElement(_message.Message):
-    __slots__ = ("id", "position", "coat")
+    __slots__ = ("id", "position", "coat", "skin")
     ID_FIELD_NUMBER: _ClassVar[int]
     POSITION_FIELD_NUMBER: _ClassVar[int]
     COAT_FIELD_NUMBER: _ClassVar[int]
+    SKIN_FIELD_NUMBER: _ClassVar[int]
     id: str
     position: EnuPoint
     coat: str
-    def __init__(self, id: _Optional[str] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., coat: _Optional[str] = ...) -> None: ...
+    skin: str
+    def __init__(self, id: _Optional[str] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., coat: _Optional[str] = ..., skin: _Optional[str] = ...) -> None: ...
 
 class VegetationElement(_message.Message):
     __slots__ = ("id", "species", "position", "size_east_m", "size_north_m", "density_per_100m2", "seed")
@@ -295,6 +297,46 @@ class RemoveFireRequest(_message.Message):
     scenario_id: str
     fire_id: str
     def __init__(self, scenario_id: _Optional[str] = ..., fire_id: _Optional[str] = ...) -> None: ...
+
+class SetBehaviourRequest(_message.Message):
+    __slots__ = ("scenario_id", "target_id", "tree_json")
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    TARGET_ID_FIELD_NUMBER: _ClassVar[int]
+    TREE_JSON_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    target_id: str
+    tree_json: str
+    def __init__(self, scenario_id: _Optional[str] = ..., target_id: _Optional[str] = ..., tree_json: _Optional[str] = ...) -> None: ...
+
+class UpdateBehaviourNodeRequest(_message.Message):
+    __slots__ = ("scenario_id", "target_id", "node_id", "node_json")
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    TARGET_ID_FIELD_NUMBER: _ClassVar[int]
+    NODE_ID_FIELD_NUMBER: _ClassVar[int]
+    NODE_JSON_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    target_id: str
+    node_id: str
+    node_json: str
+    def __init__(self, scenario_id: _Optional[str] = ..., target_id: _Optional[str] = ..., node_id: _Optional[str] = ..., node_json: _Optional[str] = ...) -> None: ...
+
+class GetBehaviourRequest(_message.Message):
+    __slots__ = ("scenario_id", "target_id")
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    TARGET_ID_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    target_id: str
+    def __init__(self, scenario_id: _Optional[str] = ..., target_id: _Optional[str] = ...) -> None: ...
+
+class BehaviourResponse(_message.Message):
+    __slots__ = ("target_id", "tree_json", "version")
+    TARGET_ID_FIELD_NUMBER: _ClassVar[int]
+    TREE_JSON_FIELD_NUMBER: _ClassVar[int]
+    VERSION_FIELD_NUMBER: _ClassVar[int]
+    target_id: str
+    tree_json: str
+    version: int
+    def __init__(self, target_id: _Optional[str] = ..., tree_json: _Optional[str] = ..., version: _Optional[int] = ...) -> None: ...
 
 class GetScenarioRequest(_message.Message):
     __slots__ = ("scenario_id",)

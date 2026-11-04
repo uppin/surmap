@@ -143,6 +143,11 @@ impl Wildfire {
     pub fn has_fires(&self) -> bool {
         !self.fires.is_empty()
     }
+
+    /// Every fire's geometry, for the behaviour trees' sensing.
+    pub fn fire_specs(&self) -> Vec<FireSpec> {
+        self.fires.iter().map(|fire| fire.spec.clone()).collect()
+    }
 }
 
 fn layer(kind: Kind, fx: Handle<FxAsset>) -> Layer {
