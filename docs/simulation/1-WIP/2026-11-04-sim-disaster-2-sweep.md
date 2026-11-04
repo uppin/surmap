@@ -21,7 +21,7 @@ PRD: none (sweep of recorded TODOs; each TODO file is the requirement) · Discov
 - [wf 2] ✅ 2026-11-04 `/plan-red` Red — failing tests for every testable item, committed · Rust 9 red (`sweep_tests.rs`: flipbook, prewarm, window glow, metallic packing, visor, per-stand grass), Python 4 red (district floors ×2, recorded dynamics ×2); 155 Rust inherited green
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes, then the visual items · Rust 167/167 (9 red now green), Python 1924 passed / 33 skipped, ruff/mypy clean, wasm check ok, clippy clean in touched code; C4 10/10 under `yes > /dev/null` on every core; fixtures evacuation 68 KB, blaze 28 KB; S1 stills taken (planner judges)
+- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes, then the visual items · visual review round 1 applied; Rust 167/167 (9 red now green), Python 1924 passed / 33 skipped, ruff/mypy clean, wasm check ok, clippy clean in touched code; C4 10/10 under `yes > /dev/null` on every core; fixtures evacuation 68 KB, blaze 28 KB; S1 stills taken (planner judges)
   - [x] C1 floors from the district preset (`2026-11-04-building-fire-floor-from-district`)
   - [x] C2 recorded dynamics fixtures, end to end (`2026-11-03-fire-perimeter-capture-end-to-end`)
   - [x] C3 per-stand grass seed (`2026-11-03-per-stand-grass-seed`)
@@ -120,5 +120,7 @@ The TODO gate is this node's prerequisite scan; nothing else open touches these 
 
 ## Decisions & Trade-offs
 
+- Fire lights matter at dusk/night scenes only; no daylight retune (A/B W2-t40, D2-t400): a point light cannot compete with a 100 klx sun, so the lights keep their values (planner, review round 1).
+- Review round 1: `glow_intensity` settled at 0.8 (colour [1.0, 0.32, 0.05], `glow_variation` 0.5): the unlit glow desaturates above about 1, so brightest windows (x1.5) stay saturated orange. Flame gradient intensities scaled by 0.4 so flipbook tongues resolve instead of washing out. Close stills `flame-close.png`, `person-close.png` (constants in `close_shots.rs`).
 - One sweep PR for both groups: they touch the same JSON and screenshot runs; splitting would
   re-shoot twice.

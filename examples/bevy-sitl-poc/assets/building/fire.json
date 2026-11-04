@@ -12,8 +12,8 @@
   },
   "glow_colour": [
     1.0,
-    0.42,
-    0.1
+    0.32,
+    0.05
   ],
-  "glow_intensity": 3.5
+  "glow_intensity": 0.8
 }

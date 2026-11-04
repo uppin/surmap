@@ -210,6 +210,16 @@ impl Figure {
             .map_or(self.base, |runner| runner.position)
     }
 
+    /// The figure's ground place in Bevy space (public form of `bevy_base`).
+    pub fn bevy_position(&self) -> Vec3 {
+        self.bevy_base()
+    }
+
+    /// The yaw (Bevy, about +Y) the figure is turning to; its front is −Z rotated by it.
+    pub fn facing_yaw(&self) -> f32 {
+        self.turn.to
+    }
+
     /// The figure's place on the ground in Bevy space, before its bob.
     fn bevy_base(&self) -> Vec3 {
         let at = self.position();
