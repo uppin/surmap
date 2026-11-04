@@ -59,6 +59,35 @@ async def test_a_model_answering_without_tools_finishes_with_stop_and_streams_it
     assert finish_reason(events) == "stop"
 
 
+def unstreamed(*replies: AIMessage) -> ScriptedChatModel:
+    """A model that answers whole, never in chunks, as the Meta Responses model does."""
+    return ScriptedChatModel(script=list(replies), disable_streaming=True)
+
+
+async def test_a_model_that_does_not_stream_still_shows_its_whole_answer() -> None:
+    # Given a model that answers in one piece rather than streaming
+    rig = a_session(unstreamed(answer("Hi there! How can I help?")))
+
+    # When a person says hi
+    events = await collect(rig.session.run_turn("hi"))
+
+    # Then its whole answer reaches the turn as text, and the turn ends with reason stop
+    assert "".join(text_deltas(events)) == "Hi there! How can I help?"
+    assert finish_reason(events) == "stop"
+
+
+async def test_a_model_that_does_not_stream_shows_its_answer_after_a_tool_call() -> None:
+    # Given a non-streaming model that calls a tool, then answers from its result
+    demo = FakeToolHandler.returning({"run_id": "run-7"})
+    rig = a_session(unstreamed(run_the_demo(), answer("The demo ran as run-7.")), (RUN_DEMO, demo))
+
+    # When a person asks for the demo
+    events = await collect(rig.session.run_turn("Run the EuRoC demo."))
+
+    # Then the answer after the tool call reaches the turn
+    assert "".join(text_deltas(events)) == "The demo ran as run-7."
+
+
 async def test_a_tool_result_is_fed_back_as_the_last_message_of_the_models_next_history() -> None:
     # Given a model that runs the demo, then answers
     demo = FakeToolHandler.returning({"run_id": "run-7"})
