@@ -67,6 +67,12 @@ leading comment, and argument descriptions are the field comments.
 | `set_behaviour` | `SimulationTools.SetBehaviour` | SYNC · 10 s · FAIL |
 | `update_behaviour_node` | `SimulationTools.UpdateBehaviourNode` | SYNC · 10 s · FAIL |
 | `get_behaviour` | `SimulationTools.GetBehaviour` | SYNC · 10 s · FAIL |
+| `list_building_presets` | `SimulationTools.ListBuildingPresets` | SYNC · 10 s · FAIL |
+| `set_district` | `SimulationTools.SetDistrict` | SYNC · 10 s · FAIL |
+| `remove_district` | `SimulationTools.RemoveDistrict` | SYNC · 10 s · FAIL |
+| `style_building` | `SimulationTools.StyleBuilding` | SYNC · 10 s · FAIL |
+| `add_building_fire` | `SimulationTools.AddBuildingFire` | SYNC · 10 s · FAIL |
+| `remove_building_fire` | `SimulationTools.RemoveBuildingFire` | SYNC · 10 s · FAIL |
 | `get_scenario` | `SimulationTools.GetScenario` | SYNC · 10 s · FAIL |
 | `list_scenarios` | `SimulationTools.ListScenarios` | SYNC · 10 s · FAIL |
 
@@ -190,11 +196,15 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
 - **Store** (`surmap.simulation.scenario_store`, `<sim-dir>/simulation.sqlite` + `library/`):
   assets with every file's SHA-256 under `library/<source>/<id>/`; scenarios with every edit as a
   new version; credits derived from the CC BY assets a scenario uses.
+  `ScenarioStore(..., assets_dir=)` is the simulation's own assets directory (`--sim-assets`),
+  where the building preset files are listed from; `None` lists only the shipped names.
 - **Scenarios** are the simulation's own `scene.json` manifests (`surmap.simulation.scenario_manifest`
   validates them by the renderer's rules). Presets: `earthquake-block` (the shipped scene),
   `empty-lot`, `wildfire-edge` (pine stands in dry grass, a westerly, a fire at their upwind edge),
   `wildfire-evacuation` (the edge with three people who wander and flee the fire, and a wind that
-  veers) and `flood-street` (the block in rain and fog).
+  veers), `flood-street` (the block in rain and fog), `district-showcase` (the four building
+  districts side by side, no fire) and `downtown-blaze` (a downtown block whose glass tower
+  burns on floor 3 from t = 5 s in a 5 m/s westerly, a neighbour 5 m downwind).
 - **Weather and fire**: `set_weather` sets rain (mm/h), fog visibility and the one wind (where it
   blows from, speed, gusts) that sways the vegetation and drives the fire and its smoke;
   `add_fire` lights a fire (ignition, start, spread rate, maximum radius, smoke) and `remove_fire`
@@ -212,6 +222,24 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
   `update_behaviour_node`; the rules in `surmap.simulation.behaviour_tree`). `add_element`'s
   `person` takes a `skin` material (`skin` when empty). Node kinds, the tick and the recorded tracks:
   [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *Behaviour trees*.
+- **Buildings and building fires**: preset names follow Overture's `facade_material` /
+  `roof_material` vocabulary (the map's `overture-buildings` layer; no geometry is imported).
+  `list_building_presets` returns the facade, roof and district names — shipped, plus any files
+  added under the assets' `building/`; `set_district` places a district preset (`old-town`,
+  `downtown`, `industrial`, `suburban` or a path) over an ENU rectangle with a seed, replacing one
+  with that id, and `remove_district` removes it; `style_building` sets one building's facade,
+  roof, roof shape (`flat`, `gabled`, `hipped`, `pyramidal`), facade and roof colours, floors and
+  glazing (`punched`, `curtain_wall`, `none`, with a window ratio) — an unset field stays, or comes
+  from the district; `add_building_fire` lights a building on a floor (from 0) at a start time
+  and `remove_building_fire` removes it by id. A building outside every district needs a
+  `material`, or a facade and a roof; unknown names, shapes, kinds, out-of-range colours, ratios
+  or floors are `INVALID_ARGUMENT` with the reason. The edits are pure functions in
+  `surmap.simulation.building_presets` (re-exported by `scenario_manifest`), the presets in
+  `building_scenes`. Handlers: `simulation_building_tools.py` holds the six; the shared
+  plumbing (`SimulationTooling`, `edit_scenario`, `blocking`, scenario info) lives in
+  `simulation_core.py`, beside `simulation_handlers.py`. Files, resolution and the fire model:
+  [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *Buildings: presets,
+  districts and building fires*.
 - **Serving** (`surmap.agent.server.sim_routes`): `/sim/assets/scenarios/<id>.json` (latest
   version), `/sim/assets/library/…`, `/sim/assets/…` (the PoC's assets) and, with `--sim-dist`,
   the built page at `/sim/`; the page opens `?scenario=<id>`. One origin, no CORS.

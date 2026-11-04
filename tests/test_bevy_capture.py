@@ -166,3 +166,31 @@ def test_a_capture_without_moving_bodies_has_no_tracks(tmp_path: Path) -> None:
     capture = load_bevy_capture(tmp_path)
 
     assert (capture.object_tracks, capture.wind) == ({}, {})
+
+
+def test_a_capture_carries_each_buildings_burning_and_burnt_floors_per_frame(
+    tmp_path: Path,
+) -> None:
+    # Given a recorded session whose recorder wrote the building fires beside its frames
+    recorder = CaptureRecorder(tmp_path, a_calibration(), objects=(a_car(),))
+    recorder.record_pair(a_pair(1, 1_000_000_000, 0.0))
+    recorder.finish()
+    line = {
+        "t_ns": 1_000_000_000,
+        "buildings": [{"id": "tower-2", "burning": [3, 4], "burnt": [2]}],
+    }
+    (tmp_path / "building_fires.jsonl").write_text(json.dumps(line) + "\n", encoding="utf-8")
+
+    # When it is loaded
+    capture = load_bevy_capture(tmp_path)
+
+    # Then each frame has every burning building's floors
+    assert capture.building_fires[1_000_000_000]["tower-2"] == ((3, 4), (2,))
+
+
+def test_a_capture_without_building_fires_has_none(tmp_path: Path) -> None:
+    recorder = CaptureRecorder(tmp_path, a_calibration(), objects=(a_car(),))
+    recorder.record_pair(a_pair(1, 1_000_000_000, 0.0))
+    recorder.finish()
+
+    assert load_bevy_capture(tmp_path).building_fires == {}

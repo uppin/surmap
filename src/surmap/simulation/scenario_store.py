@@ -120,7 +120,9 @@ class ScenarioStore:
         db_path: Path,
         library_dir: Path,
         presets: Mapping[str, Manifest],
+        assets_dir: Path | None = None,
     ) -> None:
+        self._assets_dir = None if assets_dir is None else Path(assets_dir)
         self._db_path = Path(db_path)
         self._library = Path(library_dir)
         self._presets = dict(presets)
@@ -131,6 +133,11 @@ class ScenarioStore:
                 for statement in _SCHEMA:
                     db.execute(statement)
                 db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+    @property
+    def assets_dir(self) -> Path | None:
+        """The simulation's own assets (preset files), when the store knows where they are."""
+        return self._assets_dir
 
     @property
     def library_dir(self) -> Path:

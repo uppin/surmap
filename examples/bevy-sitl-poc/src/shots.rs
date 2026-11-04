@@ -10,6 +10,7 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, T
 use bevy::render::view::screenshot::{save_to_disk, Screenshot, ScreenshotCaptured};
 
 use crate::actors::Figure;
+use crate::building::BuildingBlaze;
 use crate::flight::SurveyLoop;
 use crate::record::{RecordPlan, SimTime};
 use crate::look::{photographic, Lens};
@@ -120,6 +121,16 @@ impl RunMode {
     /// No window chrome: stills and recordings run unattended.
     pub fn unattended(&self) -> bool {
         self.screenshot.is_some() || self.record.is_some()
+    }
+}
+
+/// `--look-at <district id>`: the overview still frames that district instead of the default view.
+#[derive(Resource, Debug, Clone, Default, PartialEq)]
+pub struct LookAt(pub Option<String>);
+
+impl LookAt {
+    pub fn from_args(args: &[String]) -> Self {
+        Self(args.iter().position(|a| a == "--look-at").and_then(|i| args.get(i + 1).cloned()))
     }
 }
 
@@ -261,6 +272,59 @@ pub fn aim_overview_at_fire(
     eye_camera.is_active = true;
 }
 
+/// Where the building stills stand: a district still is `DISTRICT_BACK` of its depth south of its
+/// centre and `DISTRICT_UP` of its depth up; a burning tower is seen from the south-west.
+const DISTRICT_BACK: f32 = 1.2;
+const DISTRICT_BACK_EXTRA_M: f32 = 10.0;
+const DISTRICT_UP: f32 = 0.9;
+const DISTRICT_LOOK_M: f32 = 5.0;
+const TOWER_OVERVIEW_M: Vec3 = Vec3::new(-35.0, -60.0, 0.0);
+const TOWER_OVERVIEW_UP: f32 = 0.6;
+const TOWER_EYE_SOUTH_M: f32 = 55.0;
+const TOWER_EYE_ALTITUDE_M: f32 = 12.0;
+const TOWER_EYE_ABOVE_FLOOR_M: f32 = 6.0;
+
+type OverviewAndEye<'w, 's> = (
+    Query<'w, 's, &'static mut Transform, OverviewNotEye>,
+    Query<'w, 's, (&'static mut Transform, &'static mut Camera), EyeNotOverview>,
+);
+
+/// Building stills (screenshot mode): `--look-at <district>` frames that district; otherwise a
+/// scene whose buildings burn is aimed at the first building fire — overview and rig eye. A
+/// wildfire scene keeps `aim_overview_at_fire`'s aim. Aimed once, when the scene has built.
+pub fn aim_at_buildings(
+    look_at: Res<LookAt>,
+    state: Option<Res<crate::world::SceneState>>,
+    manifests: Res<Assets<crate::world::ManifestAsset>>,
+    blaze: Option<Res<BuildingBlaze>>,
+    wildfire: Option<Res<crate::wildfire::Wildfire>>,
+    (mut overview, mut eye): OverviewAndEye,
+    mut aimed: Local<bool>,
+) {
+    if *aimed || wildfire.is_some_and(|w| w.has_fires()) {
+        return;
+    }
+    let (Some(state), Ok(mut view)) = (state, overview.single_mut()) else { return };
+    let Some(manifest) = manifests.get(&state.manifest).map(|m| &m.0) else { return };
+    if let Some(id) = &look_at.0 {
+        let Some(district) = manifest.districts.iter().find(|d| &d.id == id) else { return };
+        let [cx, cy, _] = district.position_enu;
+        let depth = district.size_m[1];
+        *view = Transform::from_translation(enu(cx, cy - depth * DISTRICT_BACK - DISTRICT_BACK_EXTRA_M, depth * DISTRICT_UP))
+            .looking_at(enu(cx, cy, DISTRICT_LOOK_M), Vec3::Y);
+        *aimed = true;
+        return;
+    }
+    let Some((centre, height, floor_mid)) = blaze.as_ref().and_then(|b| b.first_fire()) else { return };
+    let Ok((mut eye_at, mut eye_camera)) = eye.single_mut() else { return };
+    *aimed = true;
+    *view = Transform::from_translation(enu(centre.x + TOWER_OVERVIEW_M.x, centre.y + TOWER_OVERVIEW_M.y, height * TOWER_OVERVIEW_UP))
+        .looking_at(enu(centre.x, centre.y, height / 2.0), Vec3::Y);
+    *eye_at = Transform::from_translation(enu(centre.x, centre.y - TOWER_EYE_SOUTH_M, TOWER_EYE_ALTITUDE_M))
+        .looking_at(enu(centre.x, centre.y, floor_mid + TOWER_EYE_ABOVE_FLOOR_M), Vec3::Y);
+    eye_camera.is_active = true;
+}
+
 /// Frames to wait after everything loaded: mips upload, shadows and TAA settle.
 const SETTLE_FRAMES: u32 = 90;
 
@@ -275,6 +339,7 @@ pub fn take_shots(
     feeds: Option<Res<StereoFeeds>>,
     fire_eye: Option<Res<FireEyeFeed>>,
     fires: Option<Res<crate::wildfire::Wildfire>>,
+    blaze: Option<Res<BuildingBlaze>>,
     figures: Query<(), With<Figure>>,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -285,7 +350,8 @@ pub fn take_shots(
         return;
     }
     let Some(feeds) = feeds else { return };
-    let fire_eye = fire_eye.filter(|_| fires.as_ref().is_some_and(|f| f.has_fires()));
+    let burning_building = blaze.as_ref().is_some_and(|b| b.first_fire().is_some());
+    let fire_eye = fire_eye.filter(|_| fires.as_ref().is_some_and(|f| f.has_fires()) || burning_building);
     let people_present = !figures.is_empty();
     if shots.captured == 3 + u32::from(fire_eye.is_some()) + u32::from(people_present) {
         exit.write(AppExit::Success);
@@ -389,6 +455,12 @@ mod tests {
     #[test]
     fn a_scenario_id_that_could_leave_the_folder_is_refused() {
         assert!(RunMode::from_args(&args(&["--scenario", "../secrets"])).is_err());
+    }
+
+    #[test]
+    fn a_look_at_flag_names_the_district_to_frame() {
+        assert_eq!(LookAt::from_args(&args(&["--look-at", "old-town"])), LookAt(Some("old-town".into())));
+        assert_eq!(LookAt::from_args(&args(&[])), LookAt(None));
     }
 
     #[test]

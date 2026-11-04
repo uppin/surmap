@@ -1,0 +1,68 @@
+{
+  "colour_gradient": [
+    [
+      0.0,
+      [
+        1.0,
+        0.7,
+        0.3
+      ],
+      3.0,
+      0.0
+    ],
+    [
+      0.12,
+      [
+        1.0,
+        0.55,
+        0.14
+      ],
+      2.5,
+      0.95
+    ],
+    [
+      0.55,
+      [
+        0.92,
+        0.25,
+        0.04
+      ],
+      1.2,
+      0.75
+    ],
+    [
+      1.0,
+      [
+        0.25,
+        0.06,
+        0.02
+      ],
+      0.3,
+      0.0
+    ]
+  ],
+  "size_m": [
+    1.0,
+    2.2
+  ],
+  "lifetime_s": [
+    0.5,
+    0.9
+  ],
+  "motion": {
+    "up": 2.5,
+    "wind_coupling": 0.5,
+    "gravity": 0.0
+  },
+  "blend": "additive",
+  "spawn": {
+    "per_metre": 8.0
+  },
+  "max_particles": 20000,
+  "emitter_spacing_m": 1.5,
+  "refresh_s": 1.0,
+  "stretch": 1.8,
+  "shape": "soft_disc",
+  "softness": 0.7,
+  "emit_radius_m": 0.35
+}

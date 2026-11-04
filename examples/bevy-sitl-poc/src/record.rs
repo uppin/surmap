@@ -13,6 +13,7 @@ use bevy::render::gpu_readback::{Readback, ReadbackComplete};
 use image::{codecs::jpeg::JpegEncoder, GrayImage};
 
 use crate::actors::{self, Figure};
+use crate::building::BuildingBlaze;
 use crate::calibration::CameraProfile;
 use crate::fire;
 use crate::flight::SurveyLoop;
@@ -64,6 +65,8 @@ pub struct Recorder {
     lines: Vec<String>,
     /// `fire_perimeter.jsonl`: one line per frame while the scene has fires.
     fire_lines: Vec<String>,
+    /// `building_fires.jsonl`: one line per frame while the scene has buildings that can burn.
+    building_lines: Vec<String>,
     /// `object_tracks.jsonl`: one line per frame, always: the wind and each moving body.
     track_lines: Vec<String>,
     /// Wall-clock seconds at the start and at the last written frame.
@@ -74,7 +77,7 @@ pub struct Recorder {
 
 impl Recorder {
     pub fn new(plan: RecordPlan) -> Self {
-        Self { plan, frame: 0, wait: FIRST_SETTLE, started: false, requested: false, left: None, right: None, lines: Vec::new(), fire_lines: Vec::new(), track_lines: Vec::new(), started_at: 0.0, last_frame_at: 0.0, stall_warned: false }
+        Self { plan, frame: 0, wait: FIRST_SETTLE, started: false, requested: false, left: None, right: None, lines: Vec::new(), fire_lines: Vec::new(), building_lines: Vec::new(), track_lines: Vec::new(), started_at: 0.0, last_frame_at: 0.0, stall_warned: false }
     }
 }
 
@@ -111,7 +114,8 @@ fn save(path: &Path, pixels: Vec<u8>, rig: &CameraProfile, jpeg: bool) {
     }
 }
 
-fn write_capture_files(plan: &RecordPlan, rig: &CameraProfile, truth: &GroundTruth, lines: &[String], fire_lines: &[String], track_lines: &[String]) {
+fn write_capture_files(plan: &RecordPlan, rig: &CameraProfile, truth: &GroundTruth, rec: &Recorder) {
+    let (lines, fire_lines, building_lines, track_lines) = (&rec.lines, &rec.fire_lines, &rec.building_lines, &rec.track_lines);
     // The exact profile the eyes rendered with: RTAB-Map's calibration is derived from it.
     std::fs::write(plan.dir.join("camera.json"), serde_json::to_string_pretty(rig).expect("json")).expect("camera.json");
     let calibration = serde_json::json!({
@@ -124,6 +128,9 @@ fn write_capture_files(plan: &RecordPlan, rig: &CameraProfile, truth: &GroundTru
     std::fs::write(plan.dir.join("ground_truth.json"), serde_json::to_string_pretty(&truth.0).expect("json")).expect("ground_truth.json");
     if !fire_lines.is_empty() {
         std::fs::write(plan.dir.join("fire_perimeter.jsonl"), fire_lines.iter().map(|l| format!("{l}\n")).collect::<String>()).expect("fire_perimeter.jsonl");
+    }
+    if !building_lines.is_empty() {
+        std::fs::write(plan.dir.join("building_fires.jsonl"), building_lines.iter().map(|l| format!("{l}\n")).collect::<String>()).expect("building_fires.jsonl");
     }
     std::fs::write(plan.dir.join("object_tracks.jsonl"), track_lines.iter().map(|l| format!("{l}\n")).collect::<String>()).expect("object_tracks.jsonl");
     let mut frames = std::fs::File::create(plan.dir.join("frames.jsonl")).expect("frames.jsonl");
@@ -144,6 +151,7 @@ pub fn record_frames(
     rig: Option<Res<CameraProfile>>,
     truth: Res<GroundTruth>,
     fires: Option<Res<Wildfire>>,
+    blaze: Option<Res<BuildingBlaze>>,
     figures: Query<&Figure>,
     clock: Res<Time<Real>>,
     mut exit: MessageWriter<AppExit>,
@@ -174,7 +182,7 @@ pub fn record_frames(
         rec.stall_warned = true;
     }
     if rec.frame == rec.plan.frames {
-        write_capture_files(&rec.plan, &rig, &truth, &rec.lines, &rec.fire_lines, &rec.track_lines);
+        write_capture_files(&rec.plan, &rig, &truth, &rec);
         info!("recorded {} frames into {}", rec.frame, rec.plan.dir.display());
         exit.write(AppExit::Success);
         return;
@@ -208,6 +216,9 @@ pub fn record_frames(
     );
     if let Some(fires) = fires.as_ref().filter(|f| f.has_fires()) {
         rec.fire_lines.push(fire::perimeter_line(t_ns, &fires.fronts(t_s)));
+    }
+    if let Some(blaze) = blaze.as_ref() {
+        rec.building_lines.push(blaze.record_line(t_ns));
     }
     let wind = fires.as_ref().map_or(Vec2::ZERO, |scene| scene.wind.velocity_enu(t_s));
     let bodies: Vec<actors::Body> = figures.iter().filter_map(Figure::body).collect();

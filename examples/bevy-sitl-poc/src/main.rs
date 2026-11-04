@@ -8,6 +8,9 @@
 
 mod actors;
 mod behaviour;
+mod building;
+mod building_fire;
+mod building_style;
 mod calibration;
 mod fire;
 mod flight;
@@ -72,6 +75,7 @@ fn main() {
     };
     let interactive = !mode.unattended();
     let hidden = !mode.record.is_none();
+    let look_at = shots::LookAt::from_args(&args);
     let sim_time = record::SimTime(mode.screenshot.as_ref().map(|plan| plan.at_s));
     let mut recorder = mode.record.clone().map(record::Recorder::new);
     let exit = App::new()
@@ -95,6 +99,7 @@ fn main() {
         )
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(MeshMaterialAssetBackendPlugin)
+        .add_plugins(building::BuildingPlugin)
         .add_plugins(ExtendedWindAffectedScatterPlugin)
         .add_plugins((
             InstancedWindAffectedScatterPlugin,
@@ -122,6 +127,7 @@ fn main() {
         .insert_resource(WinitSettings { focused_mode: UpdateMode::Continuous, unfocused_mode: UpdateMode::Continuous })
         .insert_resource(mode)
         .insert_resource(sim_time)
+        .insert_resource(look_at)
         .init_resource::<Flight>()
         .add_systems(Startup, move |mut commands: Commands| {
             if let Some(recorder) = recorder.take() {
@@ -148,6 +154,7 @@ fn main() {
                 take_shots,
                 shots::aim_overview_at_fire,
                 shots::aim_people_cam,
+                shots::aim_at_buildings,
                 record::record_frames.after(fly_scripted).after(actors::tick_behaviours),
                 apply_look,
                 sky::bake_sky,

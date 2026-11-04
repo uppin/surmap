@@ -165,6 +165,7 @@ def build_simulation_rig(config: AgentServerConfig) -> SimulationRig | None:
         db_path=root / "simulation.sqlite",
         library_dir=root / "library",
         presets=load_presets(config.sim_assets),
+        assets_dir=config.sim_assets,
     )
     sources: dict[str, AssetSource] = {
         "polyhaven": PolyHaven(http_fetch),

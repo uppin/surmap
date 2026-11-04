@@ -1,0 +1,18 @@
+{
+  "material": {
+    "base_color": "textures/Grass004_2K-JPG_Color.jpg",
+    "normal": "textures/Grass004_2K-JPG_NormalGL.jpg",
+    "roughness": "textures/Grass004_2K-JPG_Roughness.jpg",
+    "uv_scale": 0.71,
+    "reflectance": 0.4
+  },
+  "colourable": false,
+  "burnt": {
+    "color": [
+      0.05,
+      0.045,
+      0.04
+    ],
+    "perceptual_roughness": 1.0
+  }
+}

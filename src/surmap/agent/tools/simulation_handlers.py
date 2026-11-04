@@ -12,10 +12,8 @@ refused licence or a source that cannot serve (e.g. no Sketchfab token).
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass, field
 from functools import partial
 from typing import Any, TypeVar
 
@@ -24,10 +22,25 @@ from connectrpc.errors import ConnectError
 
 from surmap.agent.proto import simulation_tools_pb2 as pb
 from surmap.agent.services import Handler
-from surmap.simulation.asset_sources import AssetHit, AssetKind, AssetSource, AssetSourceError
+from surmap.agent.tools.simulation_building_tools import (
+    add_building_fire_tool,
+    list_building_presets,
+    remove_building_fire_tool,
+    remove_district_tool,
+    set_district_tool,
+    style_building_tool,
+)
+from surmap.agent.tools.simulation_core import (
+    SimulationTooling as SimulationTooling,
+)
+from surmap.agent.tools.simulation_core import (
+    blocking,
+    edit_scenario,
+    scenario_info,
+)
+from surmap.simulation.asset_sources import AssetHit, AssetKind, AssetSource
 from surmap.simulation.licences import check_licence
 from surmap.simulation.scenario_manifest import (
-    ScenarioInvalid,
     add_element,
     add_fire,
     add_model,
@@ -39,11 +52,8 @@ from surmap.simulation.scenario_manifest import (
     update_behaviour_node,
 )
 from surmap.simulation.scenario_store import (
-    LicenceRefused,
-    Scenario,
     ScenarioStore,
     StoredAsset,
-    UnknownRecord,
 )
 
 DEFAULT_LIMIT = 5
@@ -60,27 +70,6 @@ _COLLIDERS: Mapping[pb.Collider, str] = {
     pb.COLLIDER_BOX: "box",
     pb.COLLIDER_TRIMESH: "trimesh",
 }
-
-
-@dataclass
-class SimulationTooling:
-    """What the handlers share: the store, the sources and the hits seen so far."""
-
-    store: ScenarioStore
-    sources: Mapping[str, AssetSource]
-    hits: dict[str, AssetHit] = field(default_factory=dict)
-
-
-async def _blocking(call: Callable[[], T]) -> T:
-    """Run a store/source call in a thread, mapping its failures to Connect codes."""
-    try:
-        return await asyncio.to_thread(call)
-    except UnknownRecord as exc:
-        raise ConnectError(Code.NOT_FOUND, str(exc)) from exc
-    except ScenarioInvalid as exc:
-        raise ConnectError(Code.INVALID_ARGUMENT, str(exc)) from exc
-    except (LicenceRefused, AssetSourceError) as exc:
-        raise ConnectError(Code.FAILED_PRECONDITION, str(exc)) from exc
 
 
 def simulation_tool_handlers(
@@ -109,6 +98,12 @@ def simulation_tool_handlers(
         "SetBehaviour": bind(set_behaviour_tool),
         "UpdateBehaviourNode": bind(update_behaviour_node_tool),
         "GetBehaviour": bind(get_behaviour),
+        "ListBuildingPresets": bind(list_building_presets),
+        "SetDistrict": bind(set_district_tool),
+        "RemoveDistrict": bind(remove_district_tool),
+        "StyleBuilding": bind(style_building_tool),
+        "AddBuildingFire": bind(add_building_fire_tool),
+        "RemoveBuildingFire": bind(remove_building_fire_tool),
         "GetScenario": bind(get_scenario),
         "ListScenarios": bind(list_scenarios),
     }
@@ -142,23 +137,6 @@ def _asset_info(asset: StoredAsset) -> pb.StoredAssetInfo:
     )
 
 
-def scenario_url(scenario_id: str) -> str:
-    """Where the station's simulation page opens a scenario."""
-    return f"/sim/?scenario={scenario_id}"
-
-
-def _scenario_info(scenario: Scenario, *, with_manifest: bool = True) -> pb.ScenarioInfo:
-    return pb.ScenarioInfo(
-        id=scenario.id,
-        name=scenario.name,
-        version=scenario.version,
-        manifest_json=json.dumps(scenario.manifest) if with_manifest else "",
-        credits=[c.line() for c in scenario.credits],
-        url=scenario_url(scenario.id),
-        updated_at=scenario.updated_at,
-    )
-
-
 async def search_assets(
     request: pb.SearchAssetsRequest, tooling: SimulationTooling
 ) -> pb.SearchAssetsResponse:
@@ -174,7 +152,7 @@ async def search_assets(
     hits: list[AssetHit] = []
     for name in names:
         source = tooling.sources[name]
-        hits += await _blocking(partial(source.search, request.query, kind, limit))
+        hits += await blocking(partial(source.search, request.query, kind, limit))
     for hit in hits:
         tooling.hits[hit.ref] = hit
     return pb.SearchAssetsResponse(hits=[_hit_info(h) for h in hits])
@@ -188,43 +166,33 @@ async def download_asset(
     if hit is None:
         raise ConnectError(Code.NOT_FOUND, f"{request.ref!r} was not found by search_assets")
     source = tooling.sources[hit.source]
-    stored = await _blocking(lambda: tooling.store.download(source, hit))
+    stored = await blocking(lambda: tooling.store.download(source, hit))
     return pb.AssetResponse(asset=_asset_info(stored))
 
 
 async def list_assets(
     _request: pb.ListAssetsRequest, tooling: SimulationTooling
 ) -> pb.ListAssetsResponse:
-    assets = await _blocking(tooling.store.assets)
+    assets = await blocking(tooling.store.assets)
     return pb.ListAssetsResponse(assets=[_asset_info(a) for a in assets])
 
 
 async def create_scenario(
     request: pb.CreateScenarioRequest, tooling: SimulationTooling
 ) -> pb.ScenarioResponse:
-    scenario = await _blocking(lambda: tooling.store.create_scenario(request.name, request.preset))
-    return pb.ScenarioResponse(scenario=_scenario_info(scenario))
-
-
-async def _edit(
-    tooling: SimulationTooling, scenario_id: str, edit: Callable[[Scenario], dict[str, object]]
-) -> pb.ScenarioResponse:
-    def apply() -> Scenario:
-        current = tooling.store.scenario(scenario_id)
-        return tooling.store.save(scenario_id, edit(current))
-
-    return pb.ScenarioResponse(scenario=_scenario_info(await _blocking(apply)))
+    scenario = await blocking(lambda: tooling.store.create_scenario(request.name, request.preset))
+    return pb.ScenarioResponse(scenario=scenario_info(scenario))
 
 
 async def add_model_tool(
     request: pb.AddModelRequest, tooling: SimulationTooling
 ) -> pb.ScenarioResponse:
     """`AddModel`: place a library model at an ENU pose."""
-    asset = await _blocking(lambda: tooling.store.asset(request.asset_ref))
+    asset = await blocking(lambda: tooling.store.asset(request.asset_ref))
     element_id = request.element_id if request.HasField("element_id") else asset.asset_id
     collider = _COLLIDERS.get(request.collider, "box")
     p = request.position
-    return await _edit(
+    return await edit_scenario(
         tooling,
         request.scenario_id,
         lambda s: add_model(
@@ -268,11 +236,12 @@ def _element(request: pb.AddElementRequest) -> dict[str, object]:
         element = {
             "kind": "building",
             "id": b.id,
-            "material": b.material,
             "size_m": _xyz(b.size),
             "position_enu": _xyz(b.position),
             "yaw_deg": b.yaw_deg,
         }
+        if b.material:
+            element["material"] = b.material
         if b.windows:
             element["windows"] = {"material": "glass"}
         return element
@@ -316,13 +285,15 @@ async def add_element_tool(
     request: pb.AddElementRequest, tooling: SimulationTooling
 ) -> pb.ScenarioResponse:
     element = _element(request)
-    return await _edit(tooling, request.scenario_id, lambda s: add_element(s.manifest, element))
+    return await edit_scenario(
+        tooling, request.scenario_id, lambda s: add_element(s.manifest, element)
+    )
 
 
 async def remove_element_tool(
     request: pb.RemoveElementRequest, tooling: SimulationTooling
 ) -> pb.ScenarioResponse:
-    return await _edit(
+    return await edit_scenario(
         tooling, request.scenario_id, lambda s: remove_element(s.manifest, request.element_id)
     )
 
@@ -332,7 +303,7 @@ async def set_weather_tool(
 ) -> pb.ScenarioResponse:
     """`SetWeather`: the scenario's rain, fog visibility and one wind."""
     fog = request.fog_visibility_m if request.HasField("fog_visibility_m") else None
-    return await _edit(
+    return await edit_scenario(
         tooling,
         request.scenario_id,
         lambda s: set_weather(
@@ -358,13 +329,13 @@ async def add_fire_tool(
         "max_radius_m": request.max_radius_m,
         "smoke": request.smoke if request.HasField("smoke") else True,
     }
-    return await _edit(tooling, request.scenario_id, lambda s: add_fire(s.manifest, fire))
+    return await edit_scenario(tooling, request.scenario_id, lambda s: add_fire(s.manifest, fire))
 
 
 async def remove_fire_tool(
     request: pb.RemoveFireRequest, tooling: SimulationTooling
 ) -> pb.ScenarioResponse:
-    return await _edit(
+    return await edit_scenario(
         tooling, request.scenario_id, lambda s: remove_fire(s.manifest, request.fire_id)
     )
 
@@ -385,7 +356,7 @@ async def set_behaviour_tool(
 ) -> pb.ScenarioResponse:
     """`SetBehaviour`: a person's tree, or the wind's, replaced whole."""
     tree = _tree_json(request.tree_json, "the behaviour tree")
-    return await _edit(
+    return await edit_scenario(
         tooling,
         request.scenario_id,
         lambda s: set_behaviour(s.manifest, request.target_id, tree),
@@ -397,7 +368,7 @@ async def update_behaviour_node_tool(
 ) -> pb.ScenarioResponse:
     """`UpdateBehaviourNode`: the node with that id, in a target's tree, replaced."""
     node = _tree_json(request.node_json, "the behaviour node")
-    return await _edit(
+    return await edit_scenario(
         tooling,
         request.scenario_id,
         lambda s: update_behaviour_node(s.manifest, request.target_id, request.node_id, node),
@@ -413,7 +384,7 @@ async def get_behaviour(
         scenario = tooling.store.scenario(request.scenario_id)
         return scenario.version, behaviour_of(scenario.manifest, request.target_id)
 
-    version, tree = await _blocking(read)
+    version, tree = await blocking(read)
     return pb.BehaviourResponse(
         target_id=request.target_id,
         tree_json="" if tree is None else json.dumps(tree),
@@ -424,14 +395,14 @@ async def get_behaviour(
 async def get_scenario(
     request: pb.GetScenarioRequest, tooling: SimulationTooling
 ) -> pb.ScenarioResponse:
-    scenario = await _blocking(lambda: tooling.store.scenario(request.scenario_id))
-    return pb.ScenarioResponse(scenario=_scenario_info(scenario))
+    scenario = await blocking(lambda: tooling.store.scenario(request.scenario_id))
+    return pb.ScenarioResponse(scenario=scenario_info(scenario))
 
 
 async def list_scenarios(
     _request: pb.ListScenariosRequest, tooling: SimulationTooling
 ) -> pb.ListScenariosResponse:
-    scenarios = await _blocking(tooling.store.scenarios)
+    scenarios = await blocking(tooling.store.scenarios)
     return pb.ListScenariosResponse(
-        scenarios=[_scenario_info(s, with_manifest=False) for s in scenarios]
+        scenarios=[scenario_info(s, with_manifest=False) for s in scenarios]
     )

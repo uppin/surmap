@@ -386,3 +386,65 @@ fn the_store_written_evacuation_scenario_drives_people_and_the_wind() {
     assert_eq!(walkers, 3);
     assert!(manifest.weather.expect("weather").wind.behaviour.is_some());
 }
+
+fn a_downtown(extra: &str) -> String {
+    format!(
+        r#"{{"version": 1, "camera": "cameras/rig.camera.json", "environment": {{"hdri": null,
+            "sun_illuminance_lux": 1.0, "sun_elevation_deg": 1.0, "sun_azimuth_deg": 1.0,
+            "fog_visibility_m": 1.0}},
+            "districts": [{{"id": "core", "preset": "downtown", "position_enu": [0, 0, 0], "size_m": [120, 80], "seed": 4}}],
+            {extra}}}"#
+    )
+}
+
+fn a_tower(fields: &str) -> String {
+    format!(r#"{{"kind": "building", "id": "tower-2", "size_m": [18, 18, 42], "position_enu": [30, 10, 0]{fields}}}"#)
+}
+
+#[test]
+fn a_building_in_a_district_needs_no_material_of_its_own() {
+    let text = a_downtown(&format!(r#""elements": [{}]"#, a_tower(r#", "facade": "glass", "roof": "metal", "floors": 12"#)));
+
+    let manifest = SceneManifest::from_json(&text).expect("the district styles it");
+
+    assert!(matches!(&manifest.elements[0], Element::Building(b) if b.facade.as_deref() == Some("glass") && b.floors == Some(12)));
+    assert_eq!(manifest.districts[0].preset, "downtown");
+}
+
+#[test]
+fn a_facade_that_is_not_an_overture_value_or_a_facade_file_is_refused() {
+    let text = a_downtown(&format!(r#""elements": [{}]"#, a_tower(r#", "facade": "marble""#)));
+
+    assert!(matches!(SceneManifest::from_json(&text), Err(ManifestError::Invalid(_))));
+}
+
+#[test]
+fn a_building_outside_every_district_without_a_material_is_refused() {
+    let text = a_downtown(r#""elements": [{"kind": "building", "id": "barn", "size_m": [8, 8, 6], "position_enu": [500, 0, 0]}]"#);
+
+    assert!(matches!(SceneManifest::from_json(&text), Err(ManifestError::Invalid(_))));
+}
+
+#[test]
+fn a_building_fire_names_an_existing_building_and_one_of_its_floors() {
+    let tower = a_tower(r#", "floors": 12"#);
+    let fire = |building: &str, floor: u32| {
+        a_downtown(&format!(r#""elements": [{tower}], "building_fires": [{{"id": "blaze-1", "building": "{building}", "floor": {floor}, "start_s": 5}}]"#))
+    };
+
+    let manifest = SceneManifest::from_json(&fire("tower-2", 3)).expect("valid");
+
+    assert_eq!(manifest.building_fires[0].tuning, "building/fire.json");
+    assert!(matches!(SceneManifest::from_json(&fire("tower-9", 3)), Err(ManifestError::Invalid(_))));
+    assert!(matches!(SceneManifest::from_json(&fire("tower-2", 12)), Err(ManifestError::Invalid(_))));
+}
+
+#[test]
+fn the_store_written_downtown_blaze_scenario_is_a_valid_manifest() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/sim_scenario/downtown-blaze.json");
+    let text = std::fs::read_to_string(path).expect("the station store's downtown-blaze fixture");
+
+    let manifest = SceneManifest::from_json(&text).expect("the renderer accepts the store's downtown-blaze scenario");
+
+    assert!(!manifest.districts.is_empty() && !manifest.building_fires.is_empty());
+}

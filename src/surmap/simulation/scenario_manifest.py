@@ -23,6 +23,32 @@ from surmap.simulation.behaviour_tree import (
 )
 from surmap.simulation.behaviour_tree import behaviour_of as behaviour_of
 from surmap.simulation.behaviour_tree import validate_behaviour as validate_behaviour
+from surmap.simulation.building_presets import (
+    OVERTURE_FACADES as OVERTURE_FACADES,
+)
+from surmap.simulation.building_presets import (
+    OVERTURE_ROOFS as OVERTURE_ROOFS,
+)
+from surmap.simulation.building_presets import (
+    add_building_fire as add_building_fire,
+)
+from surmap.simulation.building_presets import (
+    building_presets as building_presets,
+)
+from surmap.simulation.building_presets import (
+    remove_building_fire as remove_building_fire,
+)
+from surmap.simulation.building_presets import (
+    remove_district as remove_district,
+)
+from surmap.simulation.building_presets import (
+    set_district as set_district,
+)
+from surmap.simulation.building_presets import (
+    style_building as style_building,
+)
+from surmap.simulation.building_presets import validate_buildings
+from surmap.simulation.building_scenes import district_showcase, downtown_blaze
 from surmap.simulation.manifest_checks import Manifest as Manifest
 from surmap.simulation.manifest_checks import ScenarioInvalid as ScenarioInvalid
 from surmap.simulation.manifest_checks import number as _number
@@ -183,13 +209,15 @@ def validate_manifest(manifest: Mapping[str, object]) -> None:
             raise ScenarioInvalid(f"model {model_id}: collider must be one of {COLLIDERS}")
     for fire in _list(manifest, "fires"):
         _validate_fire(fire, seen)
+    validate_buildings(manifest)
 
 
 def element_ids(manifest: Mapping[str, object]) -> list[str]:
     """Ids a new element, model or fire must not reuse (a fire shares the namespace)."""
     ids = [str(e.get("id")) for e in _list(manifest, "elements")]
     ids += [str(m.get("id")) for m in _list(manifest, "models")]
-    return ids + [str(f.get("id")) for f in _list(manifest, "fires")]
+    ids += [str(f.get("id")) for f in _list(manifest, "fires")]
+    return ids + [str(f.get("id")) for f in _list(manifest, "building_fires")]
 
 
 def _with(manifest: Mapping[str, object], key: str, items: Sequence[dict[str, object]]) -> Manifest:
@@ -418,8 +446,8 @@ def _evacuation(edge: Manifest) -> Manifest:
 
 def load_presets(assets_dir: Path) -> dict[str, Manifest]:
     """`earthquake-block` (the shipped scene), `empty-lot` (its rig, sky and bare ground),
-    `wildfire-edge` and `flood-street` built from them, and `wildfire-evacuation`: the edge with
-    people and a veering wind."""
+    `wildfire-edge` and `flood-street` built from them, `wildfire-evacuation`: the edge with
+    people and a veering wind, and the building presets `district-showcase` and `downtown-blaze`."""
     block: Manifest = json.loads((Path(assets_dir) / "scene.json").read_text(encoding="utf-8"))
     materials = _materials(block)
     lot: Manifest = {
@@ -445,6 +473,8 @@ def load_presets(assets_dir: Path) -> dict[str, Manifest]:
     return {
         "earthquake-block": block,
         "empty-lot": lot,
+        "district-showcase": district_showcase(lot),
+        "downtown-blaze": downtown_blaze(lot),
         "wildfire-edge": edge,
         "wildfire-evacuation": _evacuation(edge),
         "flood-street": _flood_street(block),

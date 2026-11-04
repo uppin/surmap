@@ -1,0 +1,20 @@
+{
+  "material": {
+    "color": [
+      0.78,
+      0.84,
+      0.86
+    ],
+    "perceptual_roughness": 0.35,
+    "reflectance": 0.5
+  },
+  "colourable": true,
+  "burnt": {
+    "color": [
+      0.05,
+      0.045,
+      0.04
+    ],
+    "perceptual_roughness": 1.0
+  }
+}
