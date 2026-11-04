@@ -22,7 +22,7 @@
   - [x] ChatPage right-column layout (simulation above Jobs)
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
-  - [ ] `docs/agent.md` — chat UI section names the simulation pane
+  - [x] `docs/agent.md` — chat UI section names the simulation pane
 
 ## Initial Discovery
 
