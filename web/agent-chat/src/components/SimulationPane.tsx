@@ -7,6 +7,8 @@ export interface SimulationPaneProps {
   simulation: SimulationView;
   /** The agent server, against which the scenario's relative URL resolves. */
   serverUrl: string;
+  /** The agent's stereo bridge the preview streams its drone's camera to; none: no stream. */
+  bridgeUrl?: string;
   /** Called with a bundle the person picked to import into this simulation; no picker without it. */
   onImport?: (bundle: File) => void;
   /** Whether an import is running; the picker is disabled meanwhile. */
@@ -17,7 +19,10 @@ export interface SimulationPaneProps {
 
 /**
  * The right-side simulation pane: the created scenario's name and version, its
- * credits, and the live Bevy simulation page embedded at its `/sim/` URL. The
+ * credits, and the scenario's live preview embedded: its `/sim/` page in preview mode (only the
+ * camera view — the overview on the ground, the drone's FPV in the air), linked to the fleet so
+ * it shows what the agent flies, and streaming to `bridgeUrl` when there is one, so the FPV
+ * carries RTAB-Map's keypoints. "Open simulation" opens the full page. The
  * iframe is keyed by id and version, so an agent edit (or an import) that bumps
  * the version reloads the page onto the latest manifest. Export downloads the
  * scenario's bundle; Import hands a picked bundle to `onImport`.
@@ -25,6 +30,7 @@ export interface SimulationPaneProps {
 export function SimulationPane(props: SimulationPaneProps): ReactNode {
   const { simulation } = props;
   const src = resolveUrl(props.serverUrl, simulation.url);
+  const preview = previewUrl(src, props.bridgeUrl);
   const exportUrl = resolveUrl(props.serverUrl, `/sim/export/${encodeURIComponent(simulation.id)}.zip`);
   const { onImport } = props;
   return (
@@ -69,7 +75,7 @@ export function SimulationPane(props: SimulationPaneProps): ReactNode {
       <iframe
         key={`${simulation.id}:${simulation.version ?? ""}`}
         title={`Simulation: ${simulation.name}`}
-        src={src}
+        src={preview}
         className="h-96 w-full rounded-md border bg-muted"
       />
       {simulation.credits.length > 0 && (
@@ -81,6 +87,13 @@ export function SimulationPane(props: SimulationPaneProps): ReactNode {
       )}
     </section>
   );
+}
+
+/** The simulation page at `src` in preview mode, fleet-linked, streaming to `bridgeUrl` if any. */
+function previewUrl(src: string, bridgeUrl: string | undefined): string {
+  const params = new URLSearchParams({ view: "preview", fleet: "1" });
+  if (bridgeUrl) params.set("bridge", bridgeUrl);
+  return `${src}${src.includes("?") ? "&" : "?"}${params}`;
 }
 
 /** `url` against `serverUrl`; an absolute `url` is used as it is. */

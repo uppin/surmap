@@ -136,8 +136,29 @@ pub struct FrameKeypoints {
 /// The odometry frames a `status` reply carries (`"odometry"`), in order; none when it has no
 /// such field. A malformed entry or keypoint is skipped.
 pub fn parse_odometry(reply: &serde_json::Value) -> Vec<FrameKeypoints> {
-    let _ = reply;
-    todo!("parse_odometry")
+    let Some(entries) = reply.get("odometry").and_then(serde_json::Value::as_array) else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter_map(|entry| {
+            let frame_id = entry.get("frame_id")?.as_u64()?;
+            let keypoints = entry
+                .get("keypoints")
+                .and_then(serde_json::Value::as_array)
+                .map(|points| points.iter().filter_map(keypoint).collect())
+                .unwrap_or_default();
+            Some(FrameKeypoints { frame_id, keypoints })
+        })
+        .collect()
+}
+
+/// One `[u, v, depth]` keypoint; anything else is `None`.
+fn keypoint(value: &serde_json::Value) -> Option<[f32; 3]> {
+    match value.as_array()?.as_slice() {
+        [u, v, depth] => Some([u.as_f64()? as f32, v.as_f64()? as f32, depth.as_f64()? as f32]),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

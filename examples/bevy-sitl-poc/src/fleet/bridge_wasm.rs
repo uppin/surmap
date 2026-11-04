@@ -3,7 +3,10 @@
 //! (camera profile, ground truth, scenario); then, on each tick `stream::StreamPacer` says is
 //! due, it reads the eyes back (`Readback`, as `record.rs` does) and sends `wire::encode_pair`
 //! labelled with `ActiveDrone`'s id, dropping the pair when the socket is backed up. The bridge's
-//! status replies feed the map status line under the feed panel. Natively nothing streams.
+//! status replies feed the map status line under the feed panel. In the preview
+//! (`preview::ViewMode::Preview`) each sent pair's left eye is also held by its frame id, and a
+//! reply's odometry turns the held frame it names into the `preview::FpvFrame` with its
+//! keypoints. Natively nothing streams.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -15,10 +18,12 @@ use wasm_bindgen::JsCast;
 use web_sys::{BinaryType, CloseEvent, ErrorEvent, MessageEvent, WebSocket};
 
 use super::stream::{
-    bridge_url, order_bridge_stream, status_line, BridgeStreamSet, Pace, PendingPair, StreamPacer,
+    bridge_url, order_bridge_stream, parse_odometry, status_line, BridgeStreamSet, FrameKeypoints,
+    Pace, PendingPair, StreamPacer,
 };
 use super::ActiveDrone;
 use crate::calibration::CameraProfile;
+use crate::preview::{bgra_to_rgba, FpvFrame, HeldFrames, HELD_FRAMES};
 use crate::ui::MapStatusLine;
 use crate::wildfire::SimClock;
 use crate::wire::{bgra_to_gray8, encode_hello_with_scenario, encode_pair, rig_pose_enu};
@@ -38,11 +43,13 @@ pub struct BridgeStreamPlugin {
     pub url: String,
     /// The scenario the page runs (`?scenario=`), sent in the `hello`.
     pub scenario: Option<String>,
+    /// The page is the preview: hold sent frames for the FPV.
+    pub preview: bool,
 }
 
 impl Plugin for BridgeStreamPlugin {
     fn build(&self, app: &mut App) {
-        match BridgeStream::open(&self.url, self.scenario.clone()) {
+        match BridgeStream::open(&self.url, self.scenario.clone(), self.preview) {
             Ok(stream) => {
                 app.insert_resource(MapStatusLine::default());
                 app.insert_non_send_resource(stream);
@@ -77,6 +84,11 @@ struct BridgeStream {
     right: Option<Vec<u8>>,
     pending: Option<PendingPair>,
     status: Rc<RefCell<String>>,
+    /// The odometry replies carried, not yet matched to a held frame.
+    odometry: Rc<RefCell<Vec<FrameKeypoints>>>,
+    /// The sent left eyes waiting for their odometry; only in the preview.
+    held: Option<HeldFrames>,
+    left_rgba: Option<Vec<u8>>,
     _callbacks: (
         Closure<dyn FnMut(MessageEvent)>,
         Closure<dyn FnMut(CloseEvent)>,
@@ -85,11 +97,13 @@ struct BridgeStream {
 }
 
 impl BridgeStream {
-    fn open(url: &str, scenario: Option<String>) -> Result<Self, String> {
+    fn open(url: &str, scenario: Option<String>, preview: bool) -> Result<Self, String> {
         let socket = WebSocket::new(url).map_err(|_| format!("cannot open {url}"))?;
         socket.set_binary_type(BinaryType::Arraybuffer);
         let status: Rc<RefCell<String>> = Rc::default();
         let shared = Rc::clone(&status);
+        let odometry: Rc<RefCell<Vec<FrameKeypoints>>> = Rc::default();
+        let arrived = Rc::clone(&odometry);
         let on_message = Closure::<dyn FnMut(MessageEvent)>::new(move |event: MessageEvent| {
             let Some(text) = event.data().as_string() else {
                 return;
@@ -100,6 +114,7 @@ impl BridgeStream {
             if reply.get("type").and_then(serde_json::Value::as_str) != Some("status") {
                 return;
             }
+            arrived.borrow_mut().extend(parse_odometry(&reply));
             let number = |key: &str| {
                 reply
                     .get(key)
@@ -141,6 +156,9 @@ impl BridgeStream {
             right: None,
             pending: None,
             status,
+            odometry,
+            held: preview.then(|| HeldFrames::new(HELD_FRAMES)),
+            left_rgba: None,
             _callbacks: (on_message, on_close, on_error),
         })
     }
@@ -174,11 +192,30 @@ fn on_bridge_eye(
         padded_row_bytes(rig.width),
     );
     match eye {
-        BridgeEye::Left if stream.left.is_none() => stream.left = Some(pixels),
+        BridgeEye::Left if stream.left.is_none() => {
+            if stream.held.is_some() {
+                stream.left_rgba =
+                    Some(bgra_to_rgba(&read.data, rig.width, rig.height, padded_row_bytes(rig.width)));
+            }
+            stream.left = Some(pixels);
+        }
         BridgeEye::Right if stream.right.is_none() => stream.right = Some(pixels),
         _ => {}
     }
     commands.entity(read.entity).despawn();
+}
+
+/// The newest held frame whose odometry came back becomes the preview's `FpvFrame`.
+fn show_answered_frame(commands: &mut Commands, stream: &mut BridgeStream) {
+    let arrived: Vec<FrameKeypoints> = stream.odometry.borrow_mut().drain(..).collect();
+    let Some(held) = stream.held.as_mut() else { return };
+    let answered = arrived
+        .into_iter()
+        .filter_map(|frame| held.take(frame.frame_id).map(|rgba| FpvFrame { rgba, keypoints: frame.keypoints }))
+        .last();
+    if let Some(frame) = answered {
+        commands.insert_resource(frame);
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -201,6 +238,7 @@ fn stream_bridge(
     if status_line.0 != latest {
         status_line.0 = latest;
     }
+    show_answered_frame(&mut commands, &mut stream);
     if !stream.is_open() {
         return;
     }
@@ -238,6 +276,10 @@ fn stream_bridge(
         };
         let header = pending.header(stream.frame_id, rig.width, rig.height);
         stream.send(&encode_pair(&header, &left, &right));
+        let frame_id = stream.frame_id;
+        if let (Some(rgba), Some(held)) = (stream.left_rgba.take(), stream.held.as_mut()) {
+            held.hold(frame_id, rgba);
+        }
         return;
     }
     let t_ns = (f64::from(clock.now()) * 1e9).round() as u64;

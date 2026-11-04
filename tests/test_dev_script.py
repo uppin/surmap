@@ -229,8 +229,8 @@ def test_with_bridge_the_agent_serves_the_stereo_bridge_and_the_chat_links_its_p
     commands = planned_commands("--bridge")
 
     # Then the agent serves the bridge on its default port and the chat's preview streams there
-    assert "--bevy-bridge-port 8790" in commands["agent"]
-    assert "VITE_SURMAP_BRIDGE_URL=ws://127.0.0.1:8790" in commands["chat"]
+    assert "--bevy-bridge-port 8782" in commands["agent"]
+    assert "VITE_SURMAP_BRIDGE_URL=ws://127.0.0.1:8782" in commands["chat"]
 
 
 def test_the_bridge_port_can_be_chosen() -> None:
@@ -319,6 +319,39 @@ def test_a_sim_page_already_built_for_the_sim_prefix_is_not_rebuilt(
     # Then trunk never ran: the build is left alone
     assert stack.process.wait(timeout=DEADLINE_S) == 130
     assert not (tmp_path / "trunk.args").exists()
+
+
+def test_a_sim_page_older_than_the_simulation_s_source_is_rebuilt(
+    tmp_path: pathlib.Path, start_dev_stack: Callable[..., DevStack]
+) -> None:
+    # Given a `/sim/` page build made before the simulation's source last changed
+    sim_dist = a_ready_sim_page(tmp_path / "stale-sim-dist")
+    os.utime(sim_dist / "index.html", (0, 0))
+
+    # When the stack starts
+    stack = start_dev_stack(env=env_with_stub_trunk(tmp_path, sim_dist))
+    eventually(all_services_up(stack), "every service and its child is running")
+    stack.process.send_signal(signal.SIGINT)
+
+    # Then the page was rebuilt, so the agent serves the simulation as the source now is
+    assert stack.process.wait(timeout=DEADLINE_S) == 130
+    assert "--public-url /sim/" in (tmp_path / "trunk.args").read_text()
+
+
+def test_the_sim_page_is_an_incremental_dev_build(
+    tmp_path: pathlib.Path, start_dev_stack: Callable[..., DevStack]
+) -> None:
+    # Given no sim page build yet
+    sim_dist = tmp_path / "dev-sim-dist"
+
+    # When the stack starts
+    stack = start_dev_stack(env=env_with_stub_trunk(tmp_path, sim_dist))
+    eventually(all_services_up(stack), "every service and its child is running")
+    stack.process.send_signal(signal.SIGINT)
+
+    # Then trunk built the dev profile, which cargo rebuilds incrementally, not a release
+    assert stack.process.wait(timeout=DEADLINE_S) == 130
+    assert "--release" not in (tmp_path / "trunk.args").read_text()
 
 
 def test_a_sim_page_that_cannot_be_built_stops_the_stack_before_any_service_starts(

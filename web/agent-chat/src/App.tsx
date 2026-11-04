@@ -15,13 +15,15 @@ export interface AppProps {
  * The chat page. `?server=` names the agent server (default: this page's origin, or
  * `http://127.0.0.1:8780` under the Vite dev server). `?code=` is the agent's access code: it is
  * traded for a session token once and dropped from the URL. `?server=` aside,
- * `?conversation=` the conversation and `?model=` the model its turns use. The page writes the
+ * `?conversation=` the conversation and `?model=` the model its turns use. `?bridge=` (default:
+ * `VITE_SURMAP_BRIDGE_URL`) is the agent's stereo bridge, which the simulation preview streams to. The page writes the
  * conversation (a new one when the URL names none) and the model in use back into the URL, so a
  * reload reopens the same chat on the same model.
  */
 export default function App(props: AppProps): ReactNode {
   const [params] = useState(() => new URLSearchParams(window.location.search));
   const serverUrl = params.get("server") ?? defaultServerUrl(window.location, import.meta.env.DEV);
+  const bridgeUrl = params.get("bridge") ?? (import.meta.env.VITE_SURMAP_BRIDGE_URL as string | undefined);
   const [conversationId] = useState(() => params.get("conversation") ?? crypto.randomUUID());
   useEffect(() => setUrlParam("conversation", conversationId), [conversationId]);
   const code = params.get("code");
@@ -47,6 +49,7 @@ export default function App(props: AppProps): ReactNode {
     <ChatPage
       port={port}
       serverUrl={serverUrl}
+      bridgeUrl={bridgeUrl}
       conversationId={conversationId}
       initialModelId={params.get("model")}
       onModelChange={setUrlModel}

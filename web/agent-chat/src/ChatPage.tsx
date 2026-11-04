@@ -21,6 +21,8 @@ export interface ChatPageProps {
   port: ChatPort;
   /** The agent server the port talks to; relative geometry URLs resolve against it. */
   serverUrl: string;
+  /** The agent's stereo bridge the simulation preview streams to; none: the preview does not. */
+  bridgeUrl?: string;
   conversationId: string;
   /** The model to start on, kept when the server lists it; otherwise the server's default. */
   initialModelId?: string | null;
@@ -310,6 +312,7 @@ export function ChatPage(props: ChatPageProps): ReactNode {
               <SimulationPane
                 simulation={simulation}
                 serverUrl={props.serverUrl}
+                bridgeUrl={props.bridgeUrl}
                 onImport={importSimulation}
                 importing={importing}
                 importError={importError}

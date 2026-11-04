@@ -29,11 +29,20 @@
   #sim-frame canvas { width: 100% !important; height: 100% !important; display: block; }
   .hint { color: #93a5b5; font-size: 12.5px; margin-top: 10px; }
   .hint b { color: #d7dee6; font-weight: 600; }
+  /* The chat's preview (?view=preview): only the camera view, edge to edge. */
+  html.preview header, html.preview .hint { display: none; }
+  html.preview main { padding: 0; }
+  html.preview #sim-frame {
+    aspect-ratio: auto; height: 100vh; max-height: none; border: 0; border-radius: 0;
+  }
   code {
     font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
     background: #1c242e; padding: 1px 5px; border-radius: 3px;
   }
 </style>
+<script>
+  if (/[?&]view=preview(&|$)/.test(location.search)) document.documentElement.classList.add("preview");
+</script>
 <link data-trunk rel="rust" data-wasm-opt="z" />
 </head>
 <body>

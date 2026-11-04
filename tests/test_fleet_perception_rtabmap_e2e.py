@@ -29,7 +29,7 @@ from PIL import Image
 
 from surmap.simulation.bevy_capture import BevyCapture, CapturedFrame, load_bevy_capture
 from surmap.simulation.fleet.perception import DroneCounts, FleetPerception
-from surmap.slam.stream_protocol import OdomUpdate
+from surmap.slam.stream_protocol import OdomUpdate, Rectification
 from surmap.slam.streaming import StreamingRtabmapBackend, stream_image_tag
 from surmap.types import StereoFramePair
 from tests.fleet_perception_fakes import (
@@ -80,6 +80,10 @@ class LockstepBackend:
     @property
     def dropped_frames(self) -> int:
         return self.inner.dropped_frames
+
+    @property
+    def rectification(self) -> Rectification | None:
+        return self.inner.rectification
 
     def process_frame(self, frame: StereoFramePair) -> None:
         self.inner.process_frame(frame)

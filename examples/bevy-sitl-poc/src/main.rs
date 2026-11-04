@@ -87,6 +87,9 @@ fn main() {
         WindowResolution::default()
     };
     let interactive = !mode.unattended();
+    let view = preview::page_view_mode(&args);
+    // The preview shows only the camera view: none of the full page's panel, HUD or button.
+    let full_page = interactive && view == preview::ViewMode::Full;
     let hidden = !mode.record.is_none();
     let look_at = shots::LookAt::from_args(&args);
     let sim_time = record::SimTime(mode.screenshot.as_ref().map(|plan| plan.at_s));
@@ -157,7 +160,8 @@ fn main() {
             }
         })
         .add_systems(Startup, (start_loading, setup_drone, setup_cameras, setup_overview, close_shots::setup_close_shots).chain())
-        .add_systems(Update, (setup_ui, setup_button).chain().run_if(move || interactive).run_if(resource_added::<StereoFeeds>))
+        .insert_resource(view)
+        .add_systems(Update, (setup_ui, setup_button).chain().run_if(move || full_page).run_if(resource_added::<StereoFeeds>))
         .add_systems(
             Update,
             (
@@ -216,6 +220,9 @@ fn main() {
             (prewarm::prewarm_effects.before(take_shots), close_shots::aim_flame_close, close_shots::aim_person_close),
         )
         .add_systems(FixedUpdate, apply_thrust);
+    if interactive && view == preview::ViewMode::Preview {
+        app.add_plugins(preview::PreviewPlugin);
+    }
     // The station link, only on a page opened with `?fleet=1` for a scenario.
     #[cfg(target_arch = "wasm32")]
     if let (true, Some(scenario)) = (fleet::link_wasm::page_fleet_enabled(), linked_scenario.clone()) {
@@ -224,7 +231,11 @@ fn main() {
     // The stereo stream, only on a page opened with `?bridge=ws://…`.
     #[cfg(target_arch = "wasm32")]
     if let Some(url) = fleet::bridge_wasm::page_bridge_url() {
-        app.add_plugins(fleet::bridge_wasm::BridgeStreamPlugin { url, scenario: linked_scenario });
+        app.add_plugins(fleet::bridge_wasm::BridgeStreamPlugin {
+            url,
+            scenario: linked_scenario,
+            preview: view == preview::ViewMode::Preview,
+        });
     }
     let exit = app.run();
     if exit.is_error() {

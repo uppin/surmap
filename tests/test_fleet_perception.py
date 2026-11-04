@@ -129,7 +129,14 @@ def test_a_frame_without_a_drone_id_is_processed_as_before() -> None:
 
     # Then one map processes it as the default drone, and the reply is the single-drone status
     assert [backend.frame_ids for backend in rig.backends.built] == [[7]]
-    assert status == BridgeStatus(frames=1, posed=1, lost=False, keyframes=1, dropped=0)
+    assert status == BridgeStatus(
+        frames=1,
+        posed=1,
+        lost=False,
+        keyframes=1,
+        dropped=0,
+        odometry=(FrameKeypoints(frame_id=7, keypoints=()),),
+    )
     assert [counts.drone_id for counts in rig.perception.counts()] == ["default"]
 
 
@@ -218,7 +225,13 @@ def test_the_status_names_the_drone_its_frame_came_from() -> None:
 
     # Then the reply is that drone's map status
     assert status == BridgeStatus(
-        frames=1, posed=1, lost=False, keyframes=1, dropped=0, drone_id=SW_D1
+        frames=1,
+        posed=1,
+        lost=False,
+        keyframes=1,
+        dropped=0,
+        drone_id=SW_D1,
+        odometry=(FrameKeypoints(frame_id=7, keypoints=()),),
     )
 
 

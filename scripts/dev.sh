@@ -5,12 +5,15 @@
 # one service exiting, in which case the script exits with that service's status.
 # A SIGKILL of this script cannot be trapped: stop the groups by hand then.
 #
-# Usage: scripts/dev.sh [--model <id>] [--with-sam] [--dry-run]
+# Usage: scripts/dev.sh [--model <id>] [--with-sam] [--bridge] [--dry-run]
 #
 #   --with-sam  the station serves SAM 3.1 on the Mac GPU (MPS) instead of the in-memory
 #               detector; torch and sam3 are layered on by `uv run --with` (the project's
 #               .venv and uv.lock stay as they are). facebook/sam3.1 is gated: HF_TOKEN in
 #               .env or the shell. The agent keeps its fake SAM: it has no real-SAM option yet.
+#   --bridge    the agent serves the stereo bridge, so the chat's simulation preview streams
+#               its drone's camera to RTAB-Map and draws the keypoints it tracks; the
+#               streaming RTAB-Map image is made ready first (Docker; built once per source)
 #   --dry-run   print each service's command and exit
 #
 # Environment:
@@ -18,10 +21,14 @@
 #   SURMAP_DEV_CM5_PORT      CM5 server port (default 8080)
 #   SURMAP_DEV_STATION_PORT  station server port (default 8081)
 #   SURMAP_DEV_SIM_DIST      sim page build the agent serves at /sim/ (default:
-#                            examples/bevy-sitl-poc/dist; built for /sim/ when missing
-#                            or built for another prefix — needs `trunk`)
+#                            examples/bevy-sitl-poc/dist; built for /sim/ when missing,
+#                            built for another prefix or older than the sim's source —
+#                            needs `trunk`)
 #   SURMAP_DEV_SIM_FETCH_CMD fetches the sim's pinned assets (default:
 #                            `uv run python scripts/fetch_sim_assets.py`)
+#   SURMAP_DEV_BRIDGE_PORT   stereo bridge port with --bridge (default 8782)
+#   SURMAP_DEV_RTABMAP_INIT_CMD makes the streaming RTAB-Map image ready with --bridge
+#                            (default: `uv run python scripts/build_rtabmap_stream.py`)
 #   SURMAP_DEV_STOP_TIMEOUT  seconds a service gets to stop before SIGKILL (default 5)
 #   SURMAP_DEV_<NAME>_CMD    replaces a service's command (NAME: CM5, STATION, AGENT, CHAT)
 set -uo pipefail
@@ -29,16 +36,18 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 usage() {
-  sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 MODEL="${SURMAP_DEV_MODEL:-}"
 WITH_SAM=0
+BRIDGE=0
 DRY_RUN=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --model) MODEL="${2:?--model needs a model id}"; shift 2 ;;
     --with-sam) WITH_SAM=1; shift ;;
+    --bridge) BRIDGE=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "dev.sh: unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -51,9 +60,16 @@ SIM_DIST="${SURMAP_DEV_SIM_DIST:-$ROOT/examples/bevy-sitl-poc/dist}"
 SIM_FETCH_CMD="${SURMAP_DEV_SIM_FETCH_CMD:-uv run python scripts/fetch_sim_assets.py}"
 SIM_ASSETS="$ROOT/examples/bevy-sitl-poc/assets"
 STOP_TIMEOUT="${SURMAP_DEV_STOP_TIMEOUT:-5}"
+BRIDGE_PORT="${SURMAP_DEV_BRIDGE_PORT:-8782}"
+RTABMAP_INIT_CMD="${SURMAP_DEV_RTABMAP_INIT_CMD:-uv run python scripts/build_rtabmap_stream.py}"
 
 AGENT_ARGS="--sam-fake"
 [ -n "$MODEL" ] && AGENT_ARGS="$AGENT_ARGS --model $MODEL"
+CHAT_ENV=""
+if [ "$BRIDGE" = 1 ]; then
+  AGENT_ARGS="$AGENT_ARGS --bevy-bridge-port $BRIDGE_PORT"
+  CHAT_ENV="VITE_SURMAP_BRIDGE_URL=ws://127.0.0.1:$BRIDGE_PORT "
+fi
 
 STATION_RUN="uv run"
 STATION_ARGS="--host 127.0.0.1 --port $STATION_PORT"
@@ -66,7 +82,7 @@ SERVICES="cm5 station agent chat"
 CMD_cm5="${SURMAP_DEV_CM5_CMD:-exec uv run python -m surmap.survey.cm5_main --host 127.0.0.1 --port $CM5_PORT}"
 CMD_station="${SURMAP_DEV_STATION_CMD:-exec $STATION_RUN python -m surmap.survey.station_main $STATION_ARGS}"
 CMD_agent="${SURMAP_DEV_AGENT_CMD:-exec uv run python -m surmap.agent $AGENT_ARGS --sim-dist $SIM_DIST}"
-CMD_chat="${SURMAP_DEV_CHAT_CMD:-cd web/agent-chat && exec yarn dev}"
+CMD_chat="${SURMAP_DEV_CHAT_CMD:-cd web/agent-chat && ${CHAT_ENV}exec yarn dev}"
 
 if [ "$DRY_RUN" = 1 ]; then
   for name in $SERVICES; do
@@ -109,12 +125,27 @@ if ! bash -c "$SIM_FETCH_CMD"; then
   echo "dev.sh: could not fetch the simulation's pinned assets; check the network and re-run" >&2
   exit 1
 fi
+# The bridge hands each drone's frames to a streaming RTAB-Map sidecar; its image is
+# derived from the pinned one and tagged by source hash, so this builds it at most once.
+if [ "$BRIDGE" = 1 ]; then
+  echo "dev.sh: ensuring the streaming RTAB-Map image (build_rtabmap_stream.py)" >&2
+  if ! bash -c "$RTABMAP_INIT_CMD"; then
+    echo "dev.sh: could not make the streaming RTAB-Map image ready; start Docker and re-run" >&2
+    exit 1
+  fi
+fi
 # The agent serves the Bevy simulation at /sim/ from $SIM_DIST. A page built without
 # `--public-url /sim/` addresses its JS/WASM from the server root, which 404s under
-# /sim/ and leaves a black canvas — so a missing or foreign-prefix build is (re)built.
-if [ ! -f "$SIM_DIST/index.html" ] || ! grep -q "/sim/" "$SIM_DIST/index.html"; then
-  echo "dev.sh: building the simulation page for /sim/ (trunk build --public-url /sim/)" >&2
-  if ! (cd "$ROOT/examples/bevy-sitl-poc" && trunk build index.html --release --public-url /sim/ --dist "$SIM_DIST"); then
+# /sim/ and leaves a black canvas — so a missing or foreign-prefix build is (re)built,
+# and so is one older than the simulation's source (it would serve yesterday's page).
+SIM_SRC="$ROOT/examples/bevy-sitl-poc"
+sim_page_stale() {
+  [ -n "$(find "$SIM_SRC/src" "$SIM_SRC/index.html" "$SIM_SRC/Cargo.toml" "$SIM_SRC/Cargo.lock" \
+    -newer "$SIM_DIST/index.html" -print -quit 2>/dev/null)" ]
+}
+if [ ! -f "$SIM_DIST/index.html" ] || ! grep -q "/sim/" "$SIM_DIST/index.html" || sim_page_stale; then
+  echo "dev.sh: building the simulation page for /sim/ (trunk build --public-url /sim/, incremental dev profile)" >&2
+  if ! (cd "$ROOT/examples/bevy-sitl-poc" && trunk build index.html --public-url /sim/ --dist "$SIM_DIST"); then
     echo "dev.sh: could not build the simulation page; install trunk (cargo install trunk) and re-run" >&2
     exit 1
   fi
