@@ -10,6 +10,7 @@ from PIL import Image
 from surmap.simulation.map_floor import (
     GeoBBox,
     InMemoryTileSource,
+    OsmTileSource,
     MapFloorError,
     bbox_geometry,
     choose_zoom,
@@ -201,3 +202,74 @@ def test_choose_zoom_also_respects_the_texture_pixel_cap() -> None:
     # Then the stitched texture is no wider or taller than the cap
     assert floor.width_px <= 4096
     assert floor.height_px <= 4096
+
+
+def _a_counting_osm_source(
+    tmp_path: object, monkeypatch: pytest.MonkeyPatch, payload: bytes
+) -> tuple[OsmTileSource, list[str]]:
+    from pathlib import Path
+
+    import surmap.simulation.map_floor as map_floor
+
+    assert isinstance(tmp_path, Path)
+    fetches: list[str] = []
+
+    class _Response(io.BytesIO):
+        def __enter__(self) -> _Response:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            self.close()
+
+    def fake_urlopen(request: object, timeout: int = 0) -> _Response:
+        fetches.append(str(request.full_url if hasattr(request, "full_url") else request))
+        return _Response(payload)
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    return map_floor.OsmTileSource(cache_dir=tmp_path / "tiles"), fetches
+
+
+def _a_png_bytes() -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (256, 256), (9, 9, 9)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def test_a_tile_answer_that_is_not_a_png_is_refused_and_never_cached(
+    tmp_path: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given a mirror that answers 200 with an HTML error page
+    from pathlib import Path
+
+    from surmap.simulation.map_floor import MapFloorUnavailable
+
+    assert isinstance(tmp_path, Path)
+    source, _ = _a_counting_osm_source(tmp_path, monkeypatch, b"<html>oops</html>")
+
+    # When the tile is fetched
+    # Then it is refused by name, and nothing poisoned the cache
+    with pytest.raises(MapFloorUnavailable, match="not a PNG"):
+        source.fetch_tile(17, 100, 200)
+    assert not (tmp_path / "tiles" / "17" / "100" / "200.png").exists()
+
+
+def test_an_expired_cached_tile_is_fetched_again(
+    tmp_path: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given a cached tile older than the cache's lifetime
+    import os
+    import time
+    from pathlib import Path
+
+    assert isinstance(tmp_path, Path)
+    source, fetches = _a_counting_osm_source(tmp_path, monkeypatch, _a_png_bytes())
+    source.fetch_tile(17, 100, 200)
+    cached = tmp_path / "tiles" / "17" / "100" / "200.png"
+    old = time.time() - 8 * 24 * 3600
+    os.utime(cached, (old, old))
+
+    # When it is fetched again
+    source.fetch_tile(17, 100, 200)
+
+    # Then it was re-downloaded rather than served stale forever
+    assert len(fetches) == 2
