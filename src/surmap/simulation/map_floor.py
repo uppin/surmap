@@ -25,13 +25,14 @@ from typing import Protocol
 
 from PIL import Image
 
-from surmap.agent.tools.map_layers import OSM_TILE_URL_TEMPLATE
-
 METRES_PER_DEGREE_LATITUDE = 111_320.0
 MAX_FLOOR_SIZE_M = 1000.0
 MAX_TILES = 64
 MAX_ZOOM = 18
 TILE_PX = 256
+OSM_TILE_URL_TEMPLATE = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+"""The OpenStreetMap raster tile URL template (`{z}/{x}/{y}`). The station map's OSM
+layer (`surmap.agent.tools.map_layers`) imports this same constant."""
 MAX_TEXTURE_PX = 4096
 """The stitched floor texture is at most this wide or tall, in pixels."""
 _USER_AGENT = "SurMap/1.0 (simulation map floor; https://tile.openstreetmap.org)"
@@ -130,9 +131,16 @@ class OsmTileSource:
         cache = cache_dir or os.environ.get(TILE_CACHE_ENV)
         self._cache_dir = Path(cache) if cache else None
 
+    @property
+    def attribution(self) -> str | None:
+        """Who must be credited for these tiles, when the server names one."""
+        if "openstreetmap.org" in self._url_template:
+            return "© OpenStreetMap contributors"
+        return None
+
     def fetch_tile(self, zoom: int, x: int, y: int) -> bytes:
         cached = None if self._cache_dir is None else self._cache_dir / f"{zoom}/{x}/{y}.png"
-        if cached is not None and cached.is_file():
+        if cached is not None and cached.is_file() and not _expired(cached):
             return cached.read_bytes()
         url = self._url_template.format(z=zoom, x=x, y=y)
         request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
@@ -141,10 +149,39 @@ class OsmTileSource:
                 data = bytes(response.read())
         except OSError as exc:
             raise MapFloorUnavailable(f"could not fetch map tile {url}: {exc}") from exc
+        if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise MapFloorUnavailable(f"map tile {url} is not a PNG; refusing to cache it")
         if cached is not None:
-            cached.parent.mkdir(parents=True, exist_ok=True)
-            cached.write_bytes(data)
+            _write_atomically(cached, data)
         return data
+
+
+CACHE_TTL_S = 7 * 24 * 3600
+"""How long a cached tile is served before it is re-fetched (OSM tiles are
+short-lived; a floor may be re-stitched, and stale tiles should not live forever)."""
+
+
+def _expired(path: Path) -> bool:
+    import time
+
+    return time.time() - path.stat().st_mtime > CACHE_TTL_S
+
+
+def _write_atomically(path: Path, data: bytes) -> None:
+    """Write via a sibling temp file and rename, so a concurrent reader never
+    sees a half-written tile."""
+    import os
+    import tempfile
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 class InMemoryTileSource:
@@ -246,6 +283,7 @@ def stitch_floor(source: TileSource, bbox: GeoBBox, *, zoom: int | None = None) 
 
 __all__ = [
     "MAX_FLOOR_SIZE_M",
+    "OSM_TILE_URL_TEMPLATE",
     "FloorImage",
     "GeoBBox",
     "InMemoryTileSource",

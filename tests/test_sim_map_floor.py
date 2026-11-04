@@ -10,8 +10,8 @@ from PIL import Image
 from surmap.simulation.map_floor import (
     GeoBBox,
     InMemoryTileSource,
-    OsmTileSource,
     MapFloorError,
+    OsmTileSource,
     bbox_geometry,
     choose_zoom,
     enu_to_wgs84,

@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
 
+from surmap.simulation.map_floor import OSM_TILE_URL_TEMPLATE as OSM_TILE_URL_TEMPLATE
+
 __all__ = [
     "DEFAULT_OVERTURE_RELEASE",
     "OSM_LAYER_ID",
@@ -32,8 +34,6 @@ DEFAULT_OVERTURE_RELEASE = "2026-10-21.0"
 OSM_LAYER_ID = "osm"
 """The default base layer: OpenStreetMap raster tiles."""
 
-OSM_TILE_URL_TEMPLATE = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-"""The OpenStreetMap raster tile URL template (`{z}/{x}/{y}`), shared with the simulation floor."""
 _OVERTURE_TILES = "https://overturemaps-extras-us-west-2.s3.us-west-2.amazonaws.com/tiles"
 
 
