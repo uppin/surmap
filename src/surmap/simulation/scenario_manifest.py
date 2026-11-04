@@ -201,34 +201,42 @@ def set_map_floor(
     }
     elements = edited.get("elements")
     if isinstance(elements, list):
-        edited["elements"] = [
-            e
-            for e in elements
-            if not (isinstance(e, dict) and e.get("kind") == "box" and e.get("id") == "ground")
-        ]
+        removed = [e for e in elements if _is_ground_box(e)]
+        if removed:
+            floor = edited["map_floor"]
+            assert isinstance(floor, dict)
+            floor["replaced_ground"] = removed
+        edited["elements"] = [e for e in elements if not _is_ground_box(e)]
     validate_manifest(edited)
     return edited
 
 
+_GROUND_IDS = ("ground", "block-ground", "apron")
+
+
+def _is_ground_box(element: object) -> bool:
+    """A preset's ground box: flagged `ground`, or a legacy ground id (pre-flag manifests)."""
+    if not isinstance(element, dict) or element.get("kind") != "box":
+        return False
+    return element.get("ground") is True or element.get("id") in _GROUND_IDS
+
+
 def clear_map_floor(manifest: Mapping[str, object]) -> Manifest:
-    """A new manifest with no map floor; the preset ground box is restored if absent."""
+    """A new manifest with no map floor; the ground boxes the floor replaced come back.
+
+    `set_map_floor` records what it removed in `map_floor.replaced_ground`, so clearing
+    restores the preset's own ground (an apron, a block ground) rather than inventing one.
+    A floor set by hand, with nothing recorded, clears to no ground at all.
+    """
     edited: Manifest = copy.deepcopy(dict(manifest))
-    edited.pop("map_floor", None)
+    floor = edited.pop("map_floor", None)
+    restored: list[object] = []
+    if isinstance(floor, dict) and isinstance(floor.get("replaced_ground"), list):
+        restored = list(floor["replaced_ground"])
     elements = edited.get("elements")
     items = list(elements) if isinstance(elements, list) else []
-    if not any(isinstance(e, dict) and e.get("id") == "ground" for e in items):
-        items.insert(
-            0,
-            {
-                "kind": "box",
-                "id": "ground",
-                "material": "ground",
-                "size_m": [200.0, 200.0, 0.2],
-                "position_enu": [0.0, 0.0, -0.2],
-                "collider": True,
-            },
-        )
-        edited["elements"] = items
+    present = {e.get("id") for e in items if isinstance(e, dict)}
+    edited["elements"] = [e for e in restored if not (isinstance(e, dict) and e.get("id") in present)] + items
     validate_manifest(edited)
     return edited
 
@@ -573,6 +581,7 @@ def load_presets(assets_dir: Path) -> dict[str, Manifest]:
             {
                 "kind": "box",
                 "id": "ground",
+                "ground": True,
                 "material": "ground",
                 "size_m": [200.0, 200.0, 0.2],
                 "position_enu": [0.0, 0.0, -0.2],

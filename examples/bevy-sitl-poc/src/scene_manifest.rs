@@ -168,6 +168,9 @@ pub struct BoxElement {
     /// A water surface: vessels float on its top.
     #[serde(default)]
     pub water: bool,
+    /// A preset's ground box: a map floor replaces it (the renderer hides it).
+    #[serde(default)]
+    pub ground: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

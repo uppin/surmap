@@ -151,7 +151,8 @@
         0.76,
         0.7
       ],
-      "uv_scale": 0.06
+      "uv_scale": 0.06,
+      "ground": true
     },
     {
       "kind": "box",
@@ -171,7 +172,8 @@
       "scatter": {
         "material": "concrete_slab",
         "density": 28.0
-      }
+      },
+      "ground": true
     },
     {
       "kind": "box",
