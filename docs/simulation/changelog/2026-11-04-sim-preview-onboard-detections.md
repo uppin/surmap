@@ -14,3 +14,6 @@
   `<label> #<track> <score>%` laid out by `layout_cards` (the demo's `layoutCards` ported): near
   its object, joined by a leader, never overlapping another card, inside the image, in display
   pixels.
+- Verification: pytest 2618 passed / 38 skipped, cargo test 410, wasm check clean; ruff, mypy
+  clean. V4 in Chrome: boxes and non-overlapping cards on the FPV with `ssdlite-mobiledet`
+  (`ssd-mobilenet-v2` finds no cars on these grey frames).

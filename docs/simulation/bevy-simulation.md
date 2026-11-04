@@ -1154,6 +1154,13 @@ opens the full page.
 chat's `SimulationPane` / `App` tests pass. V4 — a release `trunk build` served by an agent with
 the bridge and the real streaming sidecar, opened in Chrome in preview mode: landed, only the
 overview; after take-off, the FPV with RTAB-Map's keypoints on the held frame.
+2026-11-05 (on-board detections): V1 — `tests/test_fleet_perception.py`,
+`tests/test_bevy_wire.py`, `tests/test_agent_fleet_tools.py` (`set_onboard_model` over the
+server rig) and `preview::tests` / `fleet::stream::tests` pass. V4 — Chrome, preview mode, an
+agent with the bridge, the real sidecar and the Coral fixture models: after `set_onboard_model`
+and a launch, the FPV showed the held frame with its keypoints, outlines, leaders and
+non-overlapping cards (`ssdlite-mobiledet` found the scene's cars; `ssd-mobilenet-v2` found
+nothing on the same grey frames).
 ## The stereo rig: one camera profile
 
 `cameras/elp-stereo-pinhole.camera.json` (the SurMap ELP rig): 640×480, fx = fy = 381.36,
