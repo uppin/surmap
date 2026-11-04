@@ -1,4 +1,4 @@
-# Changeset: Simulation map floor — map-floor-tool
+# Changeset: Simulation map floor — agent tools
 
 **Date**: 2026-11-04
 **Status**: 🚧 In Progress
@@ -8,57 +8,48 @@
 
 ## Summary
 
-`set_map_floor` SimulationTools rpc: stitches, stores the texture in the library, anchors the scenario; response carries centre/size/zoom.
-
-## Initial Discovery
-
-[2026-11-04-map-floor-tool-initial-discovery.md](2026-11-04-map-floor-tool-initial-discovery.md)
+The agent's hands on the floor: `set_map_floor` (stitch → store texture → anchor scenario;
+the scenario is resolved before anything is written, so a bad id leaves no orphan),
+`clear_map_floor`, and `geo_to_enu` / `enu_to_geo` so the agent places objects by GPS
+through a tool instead of doing cos(lat) maths itself. `set_map_floor` warns when
+re-anchoring keeps placed elements' ENU positions or leaves an element outside the new
+floor. © OpenStreetMap contributors enters the scenario's credits whenever a floor is set.
 
 ## Stack Context
 
-**Stack**: simulation map floor · slug **`#map-floor`** — this PR is **3/5**
-**Branch**: `pr-3-map-floor-tool` · **Base**: predecessor in the `#map-floor` stack (or `origin/main` for the bottom PR)
-**Kind**: Feature · behaviour-adds
-**Workflow**: preset `feature` · planned by `/plan-pr-stack` · pass-2 = failing tests
+**Stack**: `#map-floor` — **3 of 5** · **Branch**: `pr-3-map-floor-tool` · **Base**: `pr-2-map-floor-tiles`
+**Kind**: Feature · behaviour-adds · **Workflow**: preset `feature`
 
 ### Green wave
 
-**Wave:** 2 of 3
-**Node:** n3
-**Blocks:** the nodes above it in the `#map-floor` line
+**Wave:** 2 of 3 · **Node:** n3 · **Blocks:** n5 (the agent e2e drives these tools)
 
 ### Greenable independently?
 
-**no — needs n1+n2 green for its handler test**
+**no — needs #127 + #128 green**: the handler test drives the real manifest contract and
+the real stitch port (through the in-memory adapter).
 
 ## Inherited Dependencies — do not implement here
 
 | Symbol / module | Owned by | State during this PR's green | What this PR does |
 |---|---|---|---|
-| (see Summary) | n2 manifest shape + n1 stitch port (stubs during planning) | stub / fixture | calls it; does not implement it |
+| `set_map_floor` / `clear_map_floor` manifest edits | #127 | implemented below | calls them; does not reimplement |
+| `stitch_floor`, `GeoBBox`, geodesy | #128 | implemented below | calls them through `TileSource` |
 
 ## Verification
 
-**Method:** V1 — handler test over fake tiles + real store
-- [ ] Verification executed — result recorded
-
-## Workflow
-
-- [wf 1] ✅ 2026-11-04 `/plan-red` Plan — changeset, initial discovery · this file
-- [wf 2] ✅ 2026-11-04 `/plan-red` Red — failing tests, committed ·
-- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes ·
-- [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
-  - [ ] Verification executed — result recorded
+V1 executed: handler tests over fake tiles + a real store (floor set, geo conversion both
+ways, clear restores ground, texture on disk, warnings/credits asserted at the store).
+Green at this branch's tip.
 
 ## Prerequisites
 
-Step 2b cross-check (`src/surmap/docs/todo/`, `src/surmap/docs/code-issues/`):
+As #127. **Outcome:** none blocking.
 
-| Record | Verdict |
-|---|---|
-| `src/surmap/docs/todo/2026-11-04-texture-uv-scale-measured.md` | — unrelated: facade/roof `uv_scale`; the floor texture is untiled |
-| `src/surmap/docs/todo/2026-11-04-cmu-and-pvc-textures.md` | — unrelated: facade texture sourcing |
-| `src/surmap/docs/todo/2026-11-03-bevy-visual-checkpoints-v3-v5.md` | ℹ answered: native-still inspection is this stack's V1 visual check precedent; V3–V5 themselves stay open |
-| `src/surmap/docs/code-issues/oversized-file-demo-server.md` | — unrelated: demo server file size |
+## Workflow
 
-**Outcome:** none blocking, no restructure prerequisite.
+- [wf 1] ✅ 2026-11-04 `/plan-red` Plan — changeset and discovery · this file
+- [wf 2] ✅ 2026-11-04 `/plan-red` Red — failing tool tests · red commit `9defd35`
+- [wf 3] ✅ 2026-11-04 `/green` Green — geo tools, clear, credits, warnings · green commit
+- [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
+  - [ ] Verification executed — result recorded
