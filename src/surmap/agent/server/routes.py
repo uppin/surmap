@@ -6,6 +6,9 @@
   recorded. `?crop=x0,y0,x1,y1` (pixels of the frame) crops it and `?max_side=<px>` downscales
   it. A malformed `crop` or `max_side` is 400.
 - `OPTIONS` on any path — the CORS preflight.
+- With `web_dist`, `GET /` and `GET /assets/…` — the built chat page.
+- With `gate`, `POST /auth/session` trades the pass code for a session token
+  (`surmap.agent.server.access`), and every `GET` but `/health` and the page needs one (401).
 
 An unknown run, object or frame is 404. A request whose `Origin` is one of `cors_origins` gets
 `Access-Control-Allow-Origin` with that origin; any other origin gets no CORS headers.
@@ -16,10 +19,18 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Mapping, Sequence
+from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 from urllib.parse import parse_qs
 
-from surmap.agent.server.sim_routes import SimulationRig, serve_simulation
+from surmap.agent.server.access import (
+    SESSION_PATH,
+    UNAUTHENTICATED_HINT,
+    AccessGate,
+    session_cookie,
+    session_token,
+)
+from surmap.agent.server.sim_routes import SimulationRig, serve_simulation, static_file
 from surmap.agent.tools.frames import frame_image
 from surmap.agent.tools.workspace import BoxXYXY, FrameImage
 from surmap.demo.gallery import GalleryEntry
@@ -75,14 +86,24 @@ def agent_http_routes(
     cors_origins: Sequence[str],
     datasets: DatasetThumbnailReader | None = None,
     simulation: SimulationRig | None = None,
+    gate: AccessGate | None = None,
+    web_dist: Path | None = None,
 ) -> tuple[HttpRoute[Any], ...]:
-    """The health, geometry, frame, thumbnail, `/sim/` and CORS-preflight routes."""
+    """The health, geometry, frame, thumbnail, `/sim/`, page, sign-in and CORS-preflight routes."""
     origins = tuple(cors_origins)
 
     async def health(request: HttpRequest) -> HttpResponse:
         return HttpResponse(status=200, body=b"ok", headers={**_PLAIN, **_cors(request, origins)})
 
     async def serve(request: HttpRequest) -> HttpResponse:
+        if web_dist is not None and (request.path == "/" or request.path.startswith("/assets/")):
+            if request.path == "/":
+                return static_file(web_dist, ["index.html"])
+            if any(part in ("", ".", "..") for part in request.path.split("/")[1:]):
+                return HttpResponse(status=404)
+            return static_file(web_dist, list(PurePosixPath(request.path).parts[1:]))
+        if gate is not None and not _signed_in(gate, request):
+            return HttpResponse(status=401, body=UNAUTHENTICATED_HINT.encode(), headers=_PLAIN)
         if simulation is not None:
             served = serve_simulation(simulation, request.path)
             if served is not None:
@@ -112,11 +133,34 @@ def agent_http_routes(
         }
         return HttpResponse(status=204, headers=headers)
 
+    async def sign_in(request: HttpRequest) -> HttpResponse:
+        assert gate is not None
+        try:
+            code = json.loads(request.body or b"{}").get("code", "")
+        except (ValueError, AttributeError):
+            code = ""
+        token = gate.issue(code) if isinstance(code, str) else None
+        if token is None:
+            return HttpResponse(status=401, body=b"wrong access code", headers=_PLAIN)
+        body = json.dumps({"token": token, "expires_in": gate.ttl_s}).encode()
+        headers = {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+            "set-cookie": session_cookie(token, gate.ttl_s),
+        }
+        return HttpResponse(status=200, body=body, headers=headers)
+
     return (
         HttpRoute("GET", HEALTH_PATH, lambda _context: health),
         HttpRoute("GET", _ANY_PATH, lambda _context: serve),
         HttpRoute("OPTIONS", _ANY_PATH, lambda _context: preflight),
+        *((HttpRoute("POST", SESSION_PATH, lambda _context: sign_in),) if gate is not None else ()),
     )
+
+
+def _signed_in(gate: AccessGate, request: HttpRequest) -> bool:
+    token = session_token({key.lower(): value for key, value in request.headers.items()})
+    return token is not None and gate.allows(token)
 
 
 def _dataset_json(entry: GalleryEntry) -> dict[str, object]:

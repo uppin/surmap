@@ -35,6 +35,9 @@ _TYPES: Mapping[str, str] = {
     ".png": "image/png",
     ".hdr": "image/vnd.radiance",
     ".css": "text/css",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".woff2": "font/woff2",
 }
 
 
@@ -74,6 +77,11 @@ def _file(path: Path | None) -> HttpResponse:
         return _not_found()
     content_type = _TYPES.get(path.suffix.lower(), "application/octet-stream")
     return HttpResponse(status=200, body=path.read_bytes(), headers={"content-type": content_type})
+
+
+def static_file(root: Path, parts: Sequence[str]) -> HttpResponse:
+    """The file at `root/parts…` with its content type; 404 outside `root` or when absent."""
+    return _file(_inside(root, parts))
 
 
 def serve_simulation(rig: SimulationRig, raw_path: str) -> HttpResponse | None:

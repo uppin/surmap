@@ -1,4 +1,4 @@
-"""What the Modal deploy targets run: the simulated CM5 and the station, as web servers.
+"""What the Modal deploy targets run: the CM5, the station and the agent, as web servers.
 
 The app files (`modal_cm5_app.py`, `modal_station_app.py`) import `modal`, which CI does not
 install; everything they decide lives here so it is tested directly. Each app runs one survey
@@ -12,14 +12,22 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+AGENT_APP_NAME = "surmap-agent"
 CM5_APP_NAME = "surmap-cm5-sim"
 STATION_APP_NAME = "surmap-station"
 
 CM5_PORT = 8080
 STATION_PORT = 8081
 
-# Modal secret holding SURMAP_SURVEY_TOKEN, read by both apps.
+# Modal secret holding SURMAP_SURVEY_TOKEN, read by every app.
 SURVEY_SECRET = "surmap-survey"
+
+# The survey agent and its chat page: one CPU web server. Its secret holds MODEL_API_KEY and
+# SURMAP_AGENT_ACCESS_CODE; the built page and the demo cache (a Volume) sit at these paths.
+AGENT_PORT = 8780
+AGENT_SECRET = "surmap-agent"
+AGENT_WEB_DIST = "/opt/surmap/web"
+AGENT_CACHE = "/cache"
 
 # Where the CM5 image builds RTAB-Map and its stream tool (scripts/build_rtabmap_native.sh).
 RTABMAP_WORK = "/opt/surmap-rtabmap"
@@ -106,6 +114,25 @@ def cm5_command(rtabmap_binary: str = RTABMAP_BINARY) -> list[str]:
         "--region-points",
         "--detector",
         "none",
+    ]
+
+
+def agent_command() -> list[str]:
+    """The survey agent behind its pass code, serving the chat page, its SAM on the station app."""
+    return [
+        "python",
+        "-m",
+        "surmap.agent",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        str(AGENT_PORT),
+        "--station",
+        "modal",
+        "--web-dist",
+        AGENT_WEB_DIST,
+        "--cache-dir",
+        AGENT_CACHE,
     ]
 
 

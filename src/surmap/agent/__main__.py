@@ -43,6 +43,9 @@ from surmap.survey.modal_hosting import STATION_APP_NAME
 
 __all__ = ["build_parser", "config_from_args", "main", "serve"]
 
+ACCESS_CODE_ENV = "SURMAP_AGENT_ACCESS_CODE"
+"""The pass code the agent gates every call behind; unset: no gate."""
+
 
 def build_parser() -> argparse.ArgumentParser:
     """The agent process command line."""
@@ -105,6 +108,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--station-prompt", default="object", help="SAM concept a station link starts with"
     )
+    parser.add_argument(
+        "--web-dist", type=Path, default=None, help="a built chat page (yarn build) served at /"
+    )
     return parser
 
 
@@ -145,6 +151,8 @@ def config_from_args(
         station_idle_s=args.station_idle_s,
         station_prompt=args.station_prompt,
         survey_token=survey_token(None, env),
+        access_code=env.get(ACCESS_CODE_ENV, "").strip() or None,
+        web_dist=args.web_dist,
     )
 
 
