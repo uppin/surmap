@@ -30,12 +30,17 @@ across elements, models, fires and building fires, known materials, relative ass
 referenced file of the right kind (`.fx.json`, `.species.json`), and the ranges below.
 
 Fetch the pinned assets (≈ 66 MB, git-ignored) with `uv run python scripts/fetch_sim_assets.py`.
-All are CC0. From Poly Haven: textures `aerial_asphalt_01`, `rocks_ground_02`,
+From Poly Haven (CC0): textures `aerial_asphalt_01`, `rocks_ground_02`,
 `brown_mud_03`, `concrete_floor_worn_001`, `white_plaster_02`; models
-`concrete_road_barrier`, `old_tyre`, `Barrel_01`, `covered_car`; HDRI
+`concrete_road_barrier`, `old_tyre`, `Barrel_01`, `covered_car` (pinned, no longer placed); HDRI
 `kloofendal_28d_misty_puresky`; and the building presets' textures (17 Poly Haven and 3
 ambientCG sets, CC0). An ambientCG set is one zip, downloaded once per run however many of its
 members are pinned; requests carry a `User-Agent` (ambientCG refuses urllib's default).
+From the Khronos glTF-Sample-Assets, pinned at commit `8f492390`, two CC-BY-4.0 models whose
+pins carry their credit (`attribution` in `assets.lock.json`; a test refuses a CC BY pin
+without one): **Car Concept** by Eric Chadwick, Darmstadt Graphics Group GmbH (the scene's
+cars) and **Cesium Man** by Cesium (every survivor). Poly Haven has no uncovered car and no
+human, and a Sketchfab download needs a token and gives a signed URL no lock can pin.
 
 ## Look
 
@@ -291,11 +296,15 @@ its yaw eased, and bobs while it walks; standing (`idle`, a finished tree) it do
 | `bob_m` | height of a step's bob (0.03) |
 | `steps_per_s` | steps per second at `reference_speed_m_s`; faster walking steps faster in proportion (2) |
 | `reference_speed_m_s` | the speed `steps_per_s` is quoted at (1.4) |
-| `visor` | optional `{"size_m", "offset_m", "colour"}`: a box on the figure (`size_m` x, y, z in the figure's frame; `offset_m` from its feet, −z its front; solid sRGB `colour`) — shipped 0.18 × 0.05 × 0.06 m, 1.63 m up and 0.12 m forward, near-black |
+| `visor` | optional `{"size_m", "offset_m", "colour"}`: a box on the figure (`size_m` x, y, z in the figure's frame; `offset_m` from its feet, −z its front; solid sRGB `colour`) — shipped 0.18 × 0.05 × 0.06 m, 1.63 m up and 0.12 m forward, near-black; drawn on the capsule figure only |
+| `model` | optional `{"glb", "scale", "yaw_deg", "clip_s", "coat_tint"}`: a rigged humanoid glTF worn instead of the capsule, scaled and turned to stand on the feet facing −z, posed from its first clip — held at `clip_s` standing, played at `speed / reference_speed_m_s` from the figure's phase walking, seeked on the sim clock so a recording repeats; `coat_tint` multiplies its colours by the person's `coat` — shipped `models/cesium_man/CesiumMan.glb`, 1.16 (1.75 m), 180°, 0.25 s, tinted |
+| `body_m` | the `person` ground-truth box (east, north, up) over the feet, holding the body whatever way it faces (0.6 × 0.6 × 1.8 m) |
 
-Each figure's bob has its own phase, derived from its id. The figure is the capsule and sphere
-every `person` has, plus the visor on the front of its head (`actors::attach_visors`, once the
-look has loaded), so the way it faces and turns reads ([sweep](changelog/2026-11-04-sim-disaster-2-sweep.md)).
+Each figure's bob has its own phase, derived from its id. Without a `model` the figure is the
+capsule and sphere every `person` is built with, plus the visor on the front of its head
+(`actors::attach_visors`), so the way it faces and turns reads ([sweep](changelog/2026-11-04-sim-disaster-2-sweep.md)).
+With one (`actors::attach_bodies`, once the look has loaded) the capsule is dropped for the
+humanoid; either way every survivor enters `ground_truth.json` as a `person` box.
 
 ### Presets, ground truth and stills
 
@@ -566,14 +575,15 @@ BEVY_ASSET_ROOT=$PWD cargo run --release -- --screenshot shots --at 1 --scenario
 BEVY_ASSET_ROOT=$PWD cargo run --release -- --screenshot shots --at 60 --scenario wildfire-evacuation
 # a stereo capture RTAB-Map can replay (hidden window, GPU readback, progress logged):
 BEVY_ASSET_ROOT=$PWD cargo run --release -- --record cap --frames 90 --start 15.5 --jpeg \
-  [--rate-hz 10] [--camera cameras/wide-baseline-pinhole.camera.json]
+  [--rate-hz 10] [--camera cameras/wide-baseline-pinhole.camera.json] [--colour]
 ```
 
 `--flight survey-loop` flies the deterministic rounded-rectangle loop over the block
 (1.5 m/s, 7 ± 1.5 m up, ≤ 10.7 °/s yaw, 182 m, 121 s); stills and recordings imply it. A
 capture holds `camera.json`, `calibration.json`, `ground_truth.json` (ENU boxes of every
-ground-truth element and model), `frames.jsonl` (each frame's rig pose in ENU), grey8
-frames, `object_tracks.jsonl` (the wind and every person with a behaviour tree), with
+ground-truth element and model, and every survivor), `frames.jsonl` (each frame's rig pose
+in ENU), grey8 frames (with `--colour` also the left eye in RGB under `frames/left_rgb/`,
+named by `left_rgb_ref`; the grey eyes RTAB-Map reads are unchanged), `object_tracks.jsonl` (the wind and every person with a behaviour tree), with
 fires `fire_perimeter.jsonl`, and with buildings that can burn `building_fires.jsonl`; `surmap.simulation.bevy_capture.load_bevy_capture` reads it.
 
 `BEVY_ASSET_ROOT=$PWD`, run from `examples/bevy-sitl-poc`, points Bevy's asset server at the
@@ -622,3 +632,73 @@ the map-corrected pose does not — see
 RTAB-Map identity odometry covariance) and `2026-11-03-bevy-loop-closure-acceptance.md`.
 
 Open work: `src/surmap/docs/todo/2026-11-03-*` (`bevy-*`, `camera-profile-*`, `sidecar-*`).
+
+## On-board detectors (measured)
+
+The ELP module streams MJPEG from a colour sensor (`docs/camera-elp-stereo.md`), so the Coral
+COCO profiles (`surmap.detection.profiles`) see colour on board; `--colour` records that frame.
+`surmap.simulation.detection_eval` projects every ground-truth `car` and `person` box onto the
+left image of each frame (`bevy_ground_truth.project_box`). An object is **in view** when at
+least half its projected box is inside the image and its shorter side is ≥ 12 px; a detection
+**finds** it when its label is one the kind answers to (`car`: car, truck, bus; `person`:
+person) at IoU ≥ 0.3. A detection of an object present but too small or too clipped to be in
+view is neither; every other detection is a false positive. Occlusion is not tested (no depth
+is recorded). `building`, `collapsed_building`, `debris`, `box` and `fire` are not COCO
+classes: no on-board detector can name them, so they are never expected — SAM labels them
+([meta-sam.md](../meta-sam.md)).
+
+```bash
+uv run python scripts/fetch_coral_model.py
+uv run python scripts/score_sim_detections.py tests/fixtures/bevy_sim_detector_capture [--grey]
+```
+
+`tests/fixtures/bevy_sim_detector_capture/` (6.6 MB, colour left frames only — the grey eyes
+are left out, as the dynamics fixtures leave out `frames/`) is the shipped scene recorded with
+`--record cap --frames 75 --rate-hz 1 --start 12 --jpeg --colour`: the loop's east side past
+the cars, then the north-east corner and the north side past the survivors. The *before* rows
+re-record the same pass from the scene and figure before this change (cars under a tarp,
+capsule survivors in hi-vis coats). Object-frames found / in view, score 0.3:
+
+| Pass | Frames | Profile | Cars | People | False positives |
+|---|---|---|---|---|---|
+| PR #89 fixture (`bevy_sim_capture`, 15.5–24.4 s, grey, no people in its truth) | 90 | efficientdet-lite0 | 0/130 | — | 47 |
+| | | ssd-mobilenet-v2 | 0/130 | — | 10 |
+| | | ssdlite-mobiledet | 0/130 | — | 500 |
+| before, grey | 75 | efficientdet-lite0 | 0/46 | 0/113 | 42 |
+| | | ssd-mobilenet-v2 | 0/46 | 2/113 | 10 |
+| | | ssdlite-mobiledet | 0/46 | 11/113 | 292 |
+| before, colour | 75 | efficientdet-lite0 | 0/46 | 1/113 | 47 |
+| | | ssd-mobilenet-v2 | 0/46 | 14/113 | 14 |
+| | | ssdlite-mobiledet | 0/46 | 35/113 | 266 |
+| after, grey | 75 | efficientdet-lite0 | 5/46 | 4/113 | 37 |
+| | | ssd-mobilenet-v2 | 1/46 | 0/113 | 15 |
+| | | ssdlite-mobiledet | 8/46 | 8/113 | 272 |
+| **after, colour (the fixture)** | 75 | efficientdet-lite0 | **9/46** | **7/113** | 52 |
+| | | ssd-mobilenet-v2 | **1/46** | **15/113** | 29 |
+| | | ssdlite-mobiledet | **15/46** | **38/113** | 254 |
+
+What moved it, and what did not:
+
+- **Cars** went from never found to found: the uncovered model, with its normal maps dropped
+  (`normal_maps: false` on the model — Bevy ignores `KHR_texture_transform` on a normal
+  texture, so Car Concept's 30×-tiled paint-flake map landed as one coarse speckle that the
+  detectors called a cake or a donut). Seen from 8 m up at 35° pitch the cars are mostly
+  top-down views, which COCO's training data rarely shows; the hits come from the oblique
+  frames.
+- **People**: an untinted Cesium Man (white) was found *less* often than the orange capsules
+  on the same pass (colour, ssdlite-mobiledet 6/113 vs 35/113), so the humanoid wears its
+  coat (`coat_tint`). Tinted, it is found a little more often than the capsule (34 % vs 31 %
+  ssdlite, 6 % vs 1 % efficientdet). In 99 of the 113 object-frames the survivor is under
+  64 px tall (under 32 px at the networks' 300–320 px input); one cropped to fill the input
+  is called a person by all three profiles (0.59–0.77). The pass's geometry, not the figure,
+  now bounds person recall.
+- **Colour** matters for every profile (grey after: cars 5/8, people 4/8 for efficientdet /
+  ssdlite).
+- **False positives** did not go down: the profiles still fire on rubble slabs, water and sky
+  (`tv`, `airplane`, `bird`, `bench`, `book`); ssdlite-mobiledet is the noisiest.
+
+`tests/test_sim_detector_realism_e2e.py` (in CI's `coral-e2e` job, `SURMAP_REQUIRE_CORAL_E2E=1`)
+holds floors under these numbers: efficientdet-lite0 finds cars in ≥ 10 % of their frames,
+ssdlite-mobiledet finds cars and people in ≥ 25 %. To re-record, from `examples/bevy-sitl-poc`,
+keep `frames/left_rgb/` and the JSON files of
+`BEVY_ASSET_ROOT=$PWD cargo run --release -- --record cap --frames 75 --rate-hz 1 --start 12 --jpeg --colour`.
