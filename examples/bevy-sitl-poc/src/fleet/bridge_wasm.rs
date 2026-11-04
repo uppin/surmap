@@ -4,9 +4,9 @@
 //! due, it reads the eyes back (`Readback`, as `record.rs` does) and sends `wire::encode_pair`
 //! labelled with `ActiveDrone`'s id, dropping the pair when the socket is backed up. The bridge's
 //! status replies feed the map status line under the feed panel. In the preview
-//! (`preview::ViewMode::Preview`) each sent pair's left eye is also held by its frame id, and a
-//! reply's odometry turns the held frame it names into the `preview::FpvFrame` with its
-//! keypoints. Natively nothing streams.
+//! (`preview::ViewMode::Preview`) the newest reply's odometry, while fresh, is the
+//! `preview::FpvKeypoints` drawn over the live eye, and the frame a pair is requested in is
+//! `preview::PairDue`. Nothing waits on the station's replies. Natively nothing streams.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -23,7 +23,7 @@ use super::stream::{
 };
 use super::ActiveDrone;
 use crate::calibration::CameraProfile;
-use crate::preview::{bgra_to_rgba, FpvFrame, HeldFrames, HELD_FRAMES};
+use crate::preview::{fresh_keypoints, FpvKeypoints, PairDue};
 use crate::ui::MapStatusLine;
 use crate::wildfire::SimClock;
 use crate::wire::{bgra_to_gray8, encode_hello_with_scenario, encode_pair, rig_pose_enu};
@@ -84,11 +84,12 @@ struct BridgeStream {
     right: Option<Vec<u8>>,
     pending: Option<PendingPair>,
     status: Rc<RefCell<String>>,
-    /// The odometry replies carried, not yet matched to a held frame.
+    /// The odometry replies carried, not yet read by the stream.
     odometry: Rc<RefCell<Vec<FrameKeypoints>>>,
-    /// The sent left eyes waiting for their odometry; only in the preview.
-    held: Option<HeldFrames>,
-    left_rgba: Option<Vec<u8>>,
+    /// The page is the preview: it draws the newest answer's keypoints.
+    preview: bool,
+    /// The newest answer's keypoints.
+    answer: Option<FrameKeypoints>,
     _callbacks: (
         Closure<dyn FnMut(MessageEvent)>,
         Closure<dyn FnMut(CloseEvent)>,
@@ -157,8 +158,8 @@ impl BridgeStream {
             pending: None,
             status,
             odometry,
-            held: preview.then(|| HeldFrames::new(HELD_FRAMES)),
-            left_rgba: None,
+            preview,
+            answer: None,
             _callbacks: (on_message, on_close, on_error),
         })
     }
@@ -192,29 +193,26 @@ fn on_bridge_eye(
         padded_row_bytes(rig.width),
     );
     match eye {
-        BridgeEye::Left if stream.left.is_none() => {
-            if stream.held.is_some() {
-                stream.left_rgba =
-                    Some(bgra_to_rgba(&read.data, rig.width, rig.height, padded_row_bytes(rig.width)));
-            }
-            stream.left = Some(pixels);
-        }
+        BridgeEye::Left if stream.left.is_none() => stream.left = Some(pixels),
         BridgeEye::Right if stream.right.is_none() => stream.right = Some(pixels),
         _ => {}
     }
     commands.entity(read.entity).despawn();
 }
 
-/// The newest held frame whose odometry came back becomes the preview's `FpvFrame`.
-fn show_answered_frame(commands: &mut Commands, stream: &mut BridgeStream) {
-    let arrived: Vec<FrameKeypoints> = stream.odometry.borrow_mut().drain(..).collect();
-    let Some(held) = stream.held.as_mut() else { return };
-    let answered = arrived
-        .into_iter()
-        .filter_map(|frame| held.take(frame.frame_id).map(|rgba| FpvFrame { rgba, keypoints: frame.keypoints }))
-        .last();
-    if let Some(frame) = answered {
-        commands.insert_resource(frame);
+/// The keypoints of the newest answer while it is fresh become the preview's `FpvKeypoints`
+/// (written only when they change).
+fn show_fresh_keypoints(commands: &mut Commands, stream: &mut BridgeStream, shown: Option<&FpvKeypoints>) {
+    let arrived = stream.odometry.borrow_mut().drain(..).last();
+    if arrived.is_some() {
+        stream.answer = arrived;
+    }
+    if !stream.preview {
+        return;
+    }
+    let fresh = fresh_keypoints(stream.answer.as_ref(), stream.frame_id).unwrap_or_default();
+    if shown.map(|shown| &shown.0[..]) != Some(fresh) {
+        commands.insert_resource(FpvKeypoints(fresh.to_vec()));
     }
 }
 
@@ -233,12 +231,14 @@ fn stream_bridge(
     fleet: Query<(&FleetDrone, &Transform)>,
     legacy: Query<&Transform, With<crate::Drone>>,
     mut status_line: ResMut<MapStatusLine>,
+    shown: Option<Res<FpvKeypoints>>,
+    due: Option<ResMut<PairDue>>,
 ) {
     let latest = stream.status.borrow().clone();
     if status_line.0 != latest {
         status_line.0 = latest;
     }
-    show_answered_frame(&mut commands, &mut stream);
+    show_fresh_keypoints(&mut commands, &mut stream, shown.as_deref());
     if !stream.is_open() {
         return;
     }
@@ -276,10 +276,6 @@ fn stream_bridge(
         };
         let header = pending.header(stream.frame_id, rig.width, rig.height);
         stream.send(&encode_pair(&header, &left, &right));
-        let frame_id = stream.frame_id;
-        if let (Some(rgba), Some(held)) = (stream.left_rgba.take(), stream.held.as_mut()) {
-            held.hold(frame_id, rgba);
-        }
         return;
     }
     let t_ns = (f64::from(clock.now()) * 1e9).round() as u64;
@@ -320,4 +316,7 @@ fn stream_bridge(
             .observe(on_bridge_eye);
     }
     stream.requested = true;
+    if let Some(mut due) = due {
+        due.0 = true;
+    }
 }

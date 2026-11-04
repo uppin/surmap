@@ -177,6 +177,16 @@ def decode_bevy_message(message: bytes) -> BevyHello | BevyPair:
     raise BevyWireError(f"unknown message type {kind!r}")
 
 
+def is_pair_message(message: bytes) -> bool:
+    """Whether `message`'s header names a `pair`; a malformed message is not one."""
+    try:
+        (header_len,) = struct.unpack_from("<I", message, 0)
+        header: object = json.loads(message[4 : 4 + header_len].decode("utf-8"))
+    except (struct.error, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    return isinstance(header, dict) and header.get("type") == "pair"
+
+
 def _decode_hello(header: dict[str, object]) -> BevyHello:
     try:
         camera = parse_camera_profile(_req(header, "camera"))

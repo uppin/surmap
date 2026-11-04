@@ -32,6 +32,11 @@ web-sys = { version = "0.3", features = ["Window", "Location", "WebSocket", "Bin
 [profile.dev]
 opt-level = 1
 
+# `scripts/dev.sh` serves trunk's dev build: optimise the engine (Bevy, Rapier, Hanabi, Feronia)
+# fully, so the page runs at speed while the PoC's own crate keeps rebuilding fast.
+[profile.dev.package."*"]
+opt-level = 3
+
 [profile.release]
 opt-level = 3
 lto = "thin"
