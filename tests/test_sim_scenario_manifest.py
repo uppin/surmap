@@ -147,7 +147,7 @@ def test_setting_a_map_floor_replaces_the_preset_ground_box() -> None:
     lot = load_presets(POC_ASSETS)["empty-lot"]
 
     # When a map floor is set
-    from surmap.simulation.scenario_manifest import set_map_floor
+    from surmap.simulation.floor_edits import set_map_floor
 
     edited = set_map_floor(
         lot, sw=(54.0, 25.0), ne=(54.001, 25.002), texture="library/map-floor/a.png", zoom=17
@@ -160,7 +160,7 @@ def test_setting_a_map_floor_replaces_the_preset_ground_box() -> None:
 
 def test_clearing_a_map_floor_restores_the_ground_box() -> None:
     # Given a floored empty lot
-    from surmap.simulation.scenario_manifest import clear_map_floor, set_map_floor
+    from surmap.simulation.floor_edits import clear_map_floor, set_map_floor
 
     lot = load_presets(POC_ASSETS)["empty-lot"]
     floored = set_map_floor(
@@ -178,7 +178,7 @@ def test_clearing_a_map_floor_restores_the_ground_box() -> None:
 
 def test_setting_a_floor_on_the_block_removes_both_of_its_ground_boxes() -> None:
     # Given the earthquake block, whose ground is an apron and a block-ground box
-    from surmap.simulation.scenario_manifest import set_map_floor
+    from surmap.simulation.floor_edits import set_map_floor
 
     block = the_earthquake_block()
 
@@ -195,7 +195,7 @@ def test_setting_a_floor_on_the_block_removes_both_of_its_ground_boxes() -> None
 
 def test_clearing_a_floor_restores_the_presets_own_ground_not_a_default() -> None:
     # Given the floored earthquake block
-    from surmap.simulation.scenario_manifest import clear_map_floor, set_map_floor
+    from surmap.simulation.floor_edits import clear_map_floor, set_map_floor
 
     block = the_earthquake_block()
     floored = set_map_floor(

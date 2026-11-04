@@ -41,7 +41,7 @@ pub struct PbrTextureSet {
     /// sRGB colour; multiplies `base_color` when both are set.
     #[serde(default = "white")]
     pub color: [f32; 3],
-    #[serde(default = "super::unit_scale")]
+    #[serde(default = "crate::scene_manifest::instances::unit_scale")]
     pub perceptual_roughness: f32,
     #[serde(default)]
     pub metallic: f32,
