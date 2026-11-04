@@ -475,6 +475,38 @@ class RemoveBuildingFireRequest(_message.Message):
     fire_id: str
     def __init__(self, scenario_id: _Optional[str] = ..., fire_id: _Optional[str] = ...) -> None: ...
 
+class SetMapFloorRequest(_message.Message):
+    __slots__ = ("scenario_id", "sw_lat", "sw_lon", "ne_lat", "ne_lon")
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    SW_LAT_FIELD_NUMBER: _ClassVar[int]
+    SW_LON_FIELD_NUMBER: _ClassVar[int]
+    NE_LAT_FIELD_NUMBER: _ClassVar[int]
+    NE_LON_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    sw_lat: float
+    sw_lon: float
+    ne_lat: float
+    ne_lon: float
+    def __init__(self, scenario_id: _Optional[str] = ..., sw_lat: _Optional[float] = ..., sw_lon: _Optional[float] = ..., ne_lat: _Optional[float] = ..., ne_lon: _Optional[float] = ...) -> None: ...
+
+class MapFloorResponse(_message.Message):
+    __slots__ = ("scenario", "centre_lat", "centre_lon", "size_east_m", "size_north_m", "zoom", "texture")
+    SCENARIO_FIELD_NUMBER: _ClassVar[int]
+    CENTRE_LAT_FIELD_NUMBER: _ClassVar[int]
+    CENTRE_LON_FIELD_NUMBER: _ClassVar[int]
+    SIZE_EAST_M_FIELD_NUMBER: _ClassVar[int]
+    SIZE_NORTH_M_FIELD_NUMBER: _ClassVar[int]
+    ZOOM_FIELD_NUMBER: _ClassVar[int]
+    TEXTURE_FIELD_NUMBER: _ClassVar[int]
+    scenario: ScenarioInfo
+    centre_lat: float
+    centre_lon: float
+    size_east_m: float
+    size_north_m: float
+    zoom: int
+    texture: str
+    def __init__(self, scenario: _Optional[_Union[ScenarioInfo, _Mapping[str, _Any]]] = ..., centre_lat: _Optional[float] = ..., centre_lon: _Optional[float] = ..., size_east_m: _Optional[float] = ..., size_north_m: _Optional[float] = ..., zoom: _Optional[int] = ..., texture: _Optional[str] = ...) -> None: ...
+
 class GetScenarioRequest(_message.Message):
     __slots__ = ("scenario_id",)
     SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]

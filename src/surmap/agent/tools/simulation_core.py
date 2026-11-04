@@ -21,6 +21,7 @@ from connectrpc.errors import ConnectError
 from surmap.agent.proto import simulation_tools_pb2 as pb
 from surmap.simulation.asset_sources import AssetHit, AssetSource, AssetSourceError
 from surmap.simulation.manifest_checks import ScenarioInvalid
+from surmap.simulation.map_floor import MapFloorError, MapFloorUnavailable, TileSource
 from surmap.simulation.scenario_store import (
     LicenceRefused,
     Scenario,
@@ -49,6 +50,7 @@ class SimulationTooling:
 
 class StaleScenario(Exception):
     """An edit based on a scenario version older than its latest."""
+    tile_source: TileSource | None = None
 
 
 async def blocking(call: Callable[[], T]) -> T:
@@ -60,6 +62,10 @@ async def blocking(call: Callable[[], T]) -> T:
     except StaleScenario as exc:
         raise ConnectError(Code.ABORTED, str(exc)) from exc
     except ScenarioInvalid as exc:
+        raise ConnectError(Code.INVALID_ARGUMENT, str(exc)) from exc
+    except MapFloorUnavailable as exc:
+        raise ConnectError(Code.FAILED_PRECONDITION, str(exc)) from exc
+    except MapFloorError as exc:
         raise ConnectError(Code.INVALID_ARGUMENT, str(exc)) from exc
     except (LicenceRefused, AssetSourceError) as exc:
         raise ConnectError(Code.FAILED_PRECONDITION, str(exc)) from exc

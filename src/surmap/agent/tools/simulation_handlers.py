@@ -42,6 +42,7 @@ from surmap.agent.tools.simulation_core import (
 )
 from surmap.simulation.asset_sources import AssetHit, AssetKind, AssetSource
 from surmap.simulation.licences import check_licence
+from surmap.simulation.map_floor import FloorImage, GeoBBox, OsmTileSource, TileSource, stitch_floor
 from surmap.simulation.scenario_contents import scene_items, weather_line
 from surmap.simulation.scenario_manifest import (
     add_element,
@@ -51,10 +52,12 @@ from surmap.simulation.scenario_manifest import (
     remove_element,
     remove_fire,
     set_behaviour,
+    set_map_floor,
     set_weather,
     update_behaviour_node,
 )
 from surmap.simulation.scenario_store import (
+    Scenario,
     ScenarioStore,
     StoredAsset,
 )
@@ -76,10 +79,14 @@ _COLLIDERS: Mapping[pb.Collider, str] = {
 
 
 def simulation_tool_handlers(
-    store: ScenarioStore, sources: Mapping[str, AssetSource]
+    store: ScenarioStore,
+    sources: Mapping[str, AssetSource],
+    tile_source: TileSource | None = None,
 ) -> Mapping[str, Handler]:
     """Every `SimulationTools` rpc, by rpc name, as a `(request, ctx)` handler."""
-    tooling = SimulationTooling(store=store, sources=sources)
+    tooling = SimulationTooling(
+        store=store, sources=sources, tile_source=tile_source or OsmTileSource()
+    )
 
     def bind(tool: Callable[[Any, SimulationTooling], Awaitable[Any]]) -> Handler:
         async def serve(request: object, _ctx: object) -> Any:
@@ -107,6 +114,7 @@ def simulation_tool_handlers(
         "StyleBuilding": bind(style_building_tool),
         "AddBuildingFire": bind(add_building_fire_tool),
         "RemoveBuildingFire": bind(remove_building_fire_tool),
+        "SetMapFloor": bind(set_map_floor_tool),
         "GetScenario": bind(get_scenario),
         "DescribeScenario": bind(describe_scenario),
         "ListScenarios": bind(list_scenarios),
@@ -434,6 +442,46 @@ async def get_behaviour(
         target_id=request.target_id,
         tree_json="" if tree is None else json.dumps(tree),
         version=version,
+    )
+
+
+async def set_map_floor_tool(
+    request: pb.SetMapFloorRequest, tooling: SimulationTooling
+) -> pb.MapFloorResponse:
+    """`SetMapFloor`: stitch the bbox's tiles, store the texture, anchor the scenario."""
+    source = tooling.tile_source or OsmTileSource()
+
+    def apply() -> tuple[Scenario, FloorImage]:
+        bbox = GeoBBox(
+            sw_lat=request.sw_lat,
+            sw_lon=request.sw_lon,
+            ne_lat=request.ne_lat,
+            ne_lon=request.ne_lon,
+        )
+        floor = stitch_floor(source, bbox)
+        texture = tooling.store.store_floor_texture(floor.png, floor.texture_path)
+        current = tooling.store.scenario(request.scenario_id)
+        saved = tooling.store.save(
+            request.scenario_id,
+            set_map_floor(
+                current.manifest,
+                sw=(bbox.sw_lat, bbox.sw_lon),
+                ne=(bbox.ne_lat, bbox.ne_lon),
+                texture=texture,
+                zoom=floor.zoom,
+            ),
+        )
+        return saved, floor
+
+    saved, floor = await blocking(apply)
+    return pb.MapFloorResponse(
+        scenario=scenario_info(saved),
+        centre_lat=floor.centre_lat,
+        centre_lon=floor.centre_lon,
+        size_east_m=floor.size_east_m,
+        size_north_m=floor.size_north_m,
+        zoom=floor.zoom,
+        texture=floor.texture_path,
     )
 
 

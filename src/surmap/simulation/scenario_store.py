@@ -274,6 +274,14 @@ class ScenarioStore:
         if len(parts) < 2 or parts[0] != "library" or any(p in ("", ".", "..") for p in parts):
             raise ValueError(f"{path} is not a file of the library")
         return self._library.joinpath(*parts[1:])
+    def store_floor_texture(self, png: bytes, texture_path: str) -> str:
+        """Write a stitched map-floor PNG under the library; returns its asset path."""
+        relative = texture_path.removeprefix("library/")
+        target = self._library / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.exists():
+            target.write_bytes(png)
+        return texture_path
 
     def asset(self, ref: str) -> StoredAsset:
         with self._connect() as db:

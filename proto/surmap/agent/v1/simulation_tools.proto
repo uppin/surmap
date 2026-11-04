@@ -132,6 +132,14 @@ service SimulationTools {
     option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
   }
 
+  // Bases a scenario on the real map: stitches OpenStreetMap tiles cropped to the GPS
+  // bounding box (south-west to north-east corners) into a floor texture the simulation
+  // renders as its ground, centred on the bbox. Positions the other tools take stay ENU
+  // metres from that centre; the response gives the centre and size to convert with.
+  rpc SetMapFloor(SetMapFloorRequest) returns (MapFloorResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 60 on_timeout: DETACH};
+  }
+
   // Returns a scenario's latest version: its manifest, credits, and the URL the simulation
   // page opens it at.
   rpc GetScenario(GetScenarioRequest) returns (ScenarioResponse) {
@@ -490,6 +498,32 @@ message AddBuildingFireRequest {
 message RemoveBuildingFireRequest {
   string scenario_id = 1;
   string fire_id = 2;
+}
+
+message SetMapFloorRequest {
+  string scenario_id = 1;
+  // South-west corner: latitude, degrees north.
+  double sw_lat = 2;
+  // South-west corner: longitude, degrees east.
+  double sw_lon = 3;
+  // North-east corner: latitude, degrees north.
+  double ne_lat = 4;
+  // North-east corner: longitude, degrees east.
+  double ne_lon = 5;
+}
+
+message MapFloorResponse {
+  ScenarioInfo scenario = 1;
+  // The bbox centre: the ENU origin every other tool's positions are measured from.
+  double centre_lat = 2;
+  double centre_lon = 3;
+  // The floor's size in metres: east and north.
+  double size_east_m = 4;
+  double size_north_m = 5;
+  // The tile zoom the floor was stitched at.
+  int32 zoom = 6;
+  // The floor texture's path in the simulation's assets.
+  string texture = 7;
 }
 
 message GetScenarioRequest {
