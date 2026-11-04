@@ -96,6 +96,19 @@ two-finger scroll pans and tilts the view around the drone (tilt clamped between
 horizon and top-down), pinch zooms between 3 m and 40 m (`view_orbit.rs`, fed by
 `MouseWheel` and `PinchGesture`). With no gesture input the view is the original
 chase view, so unattended screenshot and record modes are unchanged.
+### The map as the floor
+
+A scenario may be based on the real map: `set_map_floor` takes a GPS bounding box (south-west
+and north-east corners), the station stitches OpenStreetMap raster tiles cropped to that box
+into one PNG — content-hashed under `library/map-floor/`, cached by construction, "© OpenStreetMap
+contributors" — and the manifest gains `map_floor {sw, ne, texture, zoom}`. The renderer draws it
+as one untiled plane at the ENU origin, sized from the bbox, just under the elements' bases.
+The ENU origin is the bbox centre (111 320 m per degree of latitude, longitude scaled by
+cos(latitude) — the semantic snapshot's rule), so the agent converts a GPS target to the ENU
+positions the other tools take with the centre and size `set_map_floor` reports; the placed 3D
+objects then stand on the streets they were placed over. A floor is at most 1 000 m a side and
+zoom 18. The floor is flat and printed: it gives the stereo rig no ground depth of its own —
+the placed objects supply the 3D — and it is display geometry only, never a control signal.
 
 ## Weather, wind and fire
 
