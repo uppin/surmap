@@ -17,17 +17,21 @@ use bevy_rapier3d::prelude::*;
 
 use std::collections::BTreeMap;
 
-use crate::actors::{self, Figure};
+use crate::actors::{self, bevy_yaw, Figure};
+use crate::figure_anim::Pose;
 use crate::building;
 use crate::scene_manifest::{
     BoxElement, Building, CollapsedBuilding, DistrictDef, Element, Environment, ManifestError, ModelInstance,
-    PbrTextureSet, Person, SceneManifest,
+    PbrTextureSet, Person, SceneManifest, Vehicle,
 };
 use crate::rig::{ProfileAsset, RigSource};
+use crate::scene_manifest::{surface_at, surfaces, Surface};
 use crate::shots::RunMode;
 use crate::sky::SkySource;
 use crate::textures::{load_texture_set, tiled_material, RoughnessPacking, TextureSetHandles};
 use crate::vegetation::{plan_stand, PendingStands};
+use crate::sea::{phase_of, sea_state, SeaState};
+use crate::vehicle::scene::{Float, VehicleActor, VehicleClasses};
 use crate::wildfire::Wildfire;
 use crate::wire::GroundTruthObject;
 
@@ -91,7 +95,9 @@ pub struct PendingModel {
 
 pub fn start_loading(mut commands: Commands, assets: Res<AssetServer>, mode: Res<RunMode>) {
     let path = crate::shots::manifest_path(mode.scenario.as_deref());
-    commands.insert_resource(SceneState { manifest: assets.load(path), built: false, failed: None, pending: Vec::new(), buildings_ready: true });
+    let classes = VehicleClasses::load(&assets);
+    commands.insert_resource(SceneState { manifest: assets.load(path), built: false, failed: None, pending: classes.handles().collect(), buildings_ready: true });
+    commands.insert_resource(classes);
     commands.init_resource::<GroundTruth>();
 }
 
@@ -209,7 +215,18 @@ pub fn build_world(
         state.buildings_ready = false;
         commands.insert_resource(plan);
     }
-    let mut world = Builder { commands: &mut commands, meshes: &mut meshes, materials: &mut materials, library: &library, truth: &mut truth, districts: &manifest.districts };
+    let waters = surfaces(&manifest.elements);
+    let sea = sea_state(manifest.weather.as_ref().map_or(0.0, |weather| weather.wind.speed_m_s));
+    let mut world = Builder {
+        commands: &mut commands,
+        meshes: &mut meshes,
+        materials: &mut materials,
+        library: &library,
+        truth: &mut truth,
+        districts: &manifest.districts,
+        waters: &waters,
+        sea,
+    };
     for element in &manifest.elements {
         world.element(element);
     }
@@ -254,6 +271,9 @@ struct Builder<'a, 'w, 's> {
     library: &'a Library,
     truth: &'a mut GroundTruth,
     districts: &'a [DistrictDef],
+    /// The water boxes vessels float on, and the sea the scene's wind raises over them.
+    waters: &'a [Surface],
+    sea: SeaState,
 }
 
 impl Builder<'_, '_, '_> {
@@ -265,6 +285,7 @@ impl Builder<'_, '_, '_> {
             Element::Building(_) => {}
             Element::Person(e) => self.person(e),
             Element::Vegetation(_) => {}
+            Element::Vehicle(e) => self.vehicle(e),
         }
     }
 
@@ -374,16 +395,33 @@ impl Builder<'_, '_, '_> {
 
     /// A survivor: a figure whose root stands on the ground, carrying its behaviour tree (if any),
     /// with the capsule body and the head as its children.
+    /// A vehicle's root at its start pose; its class glTF is attached once its class file loads.
+    fn vehicle(&mut self, e: &Vehicle) {
+        let [x, y, z] = e.position_enu;
+        let turn = Quat::from_rotation_y(bevy_yaw(Vec2::from_angle(e.yaw_deg.to_radians())));
+        let float = e.class.is_vessel().then(|| surface_at(self.waters, Vec2::new(x, y))).flatten().map(|water| Float {
+            surface_top_m: water.top_z_m,
+            sea: self.sea,
+            phase: phase_of(&e.id),
+        });
+        self.commands
+            .spawn((VehicleActor::new(e, float), Visibility::default(), Transform::from_translation(enu(x, y, z)).with_rotation(turn)));
+    }
+
     fn person(&mut self, e: &Person) {
         let coat = self.materials.add(self.library.material(&e.coat, Vec2::ONE, None, None));
         let skin = self.materials.add(self.library.material(&e.skin, Vec2::ONE, None, None));
         let body = self.meshes.add(Capsule3d::new(0.17, 1.05));
         let head = self.meshes.add(Sphere::new(0.13));
         let tree = e.behaviour.clone();
-        let figure = Figure::new(&e.id, e.position_enu, tree);
+        let mut figure = Figure::new(&e.id, e.position_enu, tree);
+        if e.pose != Pose::Standing {
+            figure = figure.posed(e.pose, e.yaw_deg);
+        }
+        let figure = figure.with_stature(e.height_m, e.glb.clone());
         let [x, y, z] = e.position_enu;
         self.commands
-            .spawn((figure, actors::FigureCoat(coat.clone()), Visibility::default(), Transform::from_translation(enu(x, y, z))))
+            .spawn((figure, actors::FigureCoat(coat.clone()), actors::FigureSkin(skin.clone()), Visibility::default(), Transform::from_translation(enu(x, y, z))))
             .with_children(|figure| {
                 figure.spawn((Mesh3d(body), MeshMaterial3d(coat), Transform::from_translation(Vec3::Y * 0.72), actors::FallbackBody));
                 figure.spawn((Mesh3d(head), MeshMaterial3d(skin), Transform::from_translation(Vec3::Y * 1.62), actors::FallbackBody));

@@ -13,6 +13,7 @@ mod building_fire;
 mod building_style;
 mod calibration;
 mod close_shots;
+mod figure_anim;
 mod fire;
 mod flight;
 mod fx;
@@ -22,10 +23,12 @@ mod prewarm;
 mod record;
 mod rig;
 mod scene_manifest;
+mod sea;
 mod shots;
 mod sky;
 mod textures;
 mod ui;
+mod vehicle;
 mod vegetation;
 mod wildfire;
 mod wind;
@@ -119,7 +122,10 @@ fn main() {
         .init_asset_loader::<fxdef::SpeciesLoader>()
         .init_asset::<actors::FigureAsset>()
         .init_asset_loader::<actors::FigureLoader>()
+        .init_asset::<vehicle::scene::VehicleAsset>()
+        .init_asset_loader::<vehicle::scene::VehicleLoader>()
         .init_resource::<actors::Behaviour>()
+        .init_resource::<actors::rig::Rigs>()
         .init_resource::<fx::SoftDiscs>()
         .init_resource::<prewarm::Prewarm>()
         .init_resource::<textures::RoughnessPacking>()
@@ -180,6 +186,13 @@ fn main() {
                 actors::attach_bodies,
                 actors::pose_figures,
                 actors::attach_visors,
+                vehicle::scene::attach_vehicles,
+                vehicle::scene::tint_vehicles,
+                vehicle::scene::spin_wheels,
+                vehicle::scene::place_vehicles,
+                actors::rig::prepare_rigs,
+                actors::rig::spawn_rigs,
+                actors::rig::drive_rigs,
             )
                 .chain()
                 .after(build_world),

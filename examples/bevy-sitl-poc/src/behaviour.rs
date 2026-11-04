@@ -20,6 +20,16 @@ mod tests;
 
 pub use tick::Runner;
 
+/// Where the running leaf is taking its body this tick, for bodies that cannot step straight
+/// there (vehicles): the point, the leaf's speed, and whether the body must stop on it (the end
+/// of a `move_to` or a `follow_path`) or may drive through it (a path's inner point).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Goal {
+    pub point: Vec2,
+    pub speed_m_s: f32,
+    pub stop: bool,
+}
+
 /// Ticks per simulated second.
 pub const TICK_HZ: f32 = 10.0;
 

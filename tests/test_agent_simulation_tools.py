@@ -196,3 +196,129 @@ async def test_an_unknown_scenario_is_not_found(tmp_path: Path) -> None:
     with pytest.raises(ConnectError) as raised:
         await call(a_toolset(tmp_path), "GetScenario", pb.GetScenarioRequest(scenario_id="nowhere"))
     assert raised.value.code == Code.NOT_FOUND
+
+
+async def test_a_vehicle_with_a_drive_is_added_as_a_new_version(tmp_path: Path) -> None:
+    # Given the earthquake block
+    tools = a_toolset(tmp_path)
+    created = await call(
+        tools, "CreateScenario", pb.CreateScenarioRequest(name="Block", preset="earthquake-block")
+    )
+    assert isinstance(created, pb.ScenarioResponse)
+    drive = {"node": "follow_path", "enu": [[-2.5, 120.0]], "speed_m_s": 8.0}
+
+    # When a bus that drives up the avenue is added
+    added = await call(
+        tools,
+        "AddElement",
+        pb.AddElementRequest(
+            scenario_id=created.scenario.id,
+            vehicle=pb.VehicleElement(
+                id="bus-1",
+                vehicle_class="bus",
+                position=pb.EnuPoint(east=-2.5, north=-40.0, up=0.0),
+                yaw_deg=90.0,
+                behaviour_json=json.dumps(drive),
+            ),
+        ),
+    )
+
+    # Then the new version holds the bus, its pose and its drive
+    assert isinstance(added, pb.ScenarioResponse)
+    manifest = json.loads(added.scenario.manifest_json)
+    buses = [e for e in manifest["elements"] if e["id"] == "bus-1"]
+    assert buses == [
+        {
+            "kind": "vehicle",
+            "id": "bus-1",
+            "class": "bus",
+            "position_enu": [-2.5, -40.0, 0.0],
+            "yaw_deg": 90.0,
+            "behaviour": drive,
+        }
+    ]
+
+
+async def test_a_vehicle_of_an_unknown_class_is_invalid(tmp_path: Path) -> None:
+    # Given the earthquake block
+    tools = a_toolset(tmp_path)
+    created = await call(
+        tools, "CreateScenario", pb.CreateScenarioRequest(name="Block", preset="earthquake-block")
+    )
+    assert isinstance(created, pb.ScenarioResponse)
+
+    # Then a hovercraft is INVALID_ARGUMENT, naming the class
+    with pytest.raises(ConnectError) as raised:
+        await call(
+            tools,
+            "AddElement",
+            pb.AddElementRequest(
+                scenario_id=created.scenario.id,
+                vehicle=pb.VehicleElement(
+                    id="hover-1",
+                    vehicle_class="hovercraft",
+                    position=pb.EnuPoint(east=0.0, north=0.0, up=0.0),
+                ),
+            ),
+        )
+    assert raised.value.code == Code.INVALID_ARGUMENT
+    assert "hovercraft" in raised.value.message
+
+
+async def test_a_lying_survivor_is_added_with_their_pose_height_and_facing(tmp_path: Path) -> None:
+    # Given the earthquake block
+    tools = a_toolset(tmp_path)
+    created = await call(
+        tools, "CreateScenario", pb.CreateScenarioRequest(name="Block", preset="earthquake-block")
+    )
+    assert isinstance(created, pb.ScenarioResponse)
+
+    # When a survivor lying by the rubble is added
+    added = await call(
+        tools,
+        "AddElement",
+        pb.AddElementRequest(
+            scenario_id=created.scenario.id,
+            person=pb.PersonElement(
+                id="survivor-9",
+                position=pb.EnuPoint(east=-15.0, north=31.0, up=0.0),
+                coat="coat_yellow",
+                pose="lying",
+                height_m=1.68,
+                yaw_deg=30.0,
+            ),
+        ),
+    )
+
+    # Then the new version holds the survivor lying, at their height, facing their way
+    assert isinstance(added, pb.ScenarioResponse)
+    manifest = json.loads(added.scenario.manifest_json)
+    survivor = next(e for e in manifest["elements"] if e["id"] == "survivor-9")
+    assert (survivor["pose"], survivor["height_m"], survivor["yaw_deg"]) == ("lying", 1.68, 30.0)
+
+
+async def test_a_person_in_an_unknown_pose_is_invalid(tmp_path: Path) -> None:
+    # Given the earthquake block
+    tools = a_toolset(tmp_path)
+    created = await call(
+        tools, "CreateScenario", pb.CreateScenarioRequest(name="Block", preset="earthquake-block")
+    )
+    assert isinstance(created, pb.ScenarioResponse)
+
+    # Then a person cartwheeling is INVALID_ARGUMENT, naming the pose
+    with pytest.raises(ConnectError) as raised:
+        await call(
+            tools,
+            "AddElement",
+            pb.AddElementRequest(
+                scenario_id=created.scenario.id,
+                person=pb.PersonElement(
+                    id="p9",
+                    position=pb.EnuPoint(east=0.0, north=0.0, up=0.0),
+                    coat="coat_yellow",
+                    pose="cartwheeling",
+                ),
+            ),
+        )
+    assert raised.value.code == Code.INVALID_ARGUMENT
+    assert "cartwheeling" in raised.value.message

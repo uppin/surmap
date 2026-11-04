@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import PurePosixPath
 
 Manifest = dict[str, object]
 
@@ -26,3 +27,9 @@ def number(value: object, what: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ScenarioInvalid(f"{what} must be a number")
     return float(value)
+
+
+def is_relative_path(path: str) -> bool:
+    """A path that stays inside its assets directory: not absolute, no `..`, no empty segment."""
+    pure = PurePosixPath(path)
+    return not pure.is_absolute() and ".." not in pure.parts and "" not in path.split("/")

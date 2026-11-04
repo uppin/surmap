@@ -17,12 +17,13 @@ fetches, at runtime, from `examples/bevy-sitl-poc/assets/`:
 | `fx/<name>.fx.json` | one particle effect (flames, embers, smoke, rain) — see *Weather, wind and fire* |
 | `species/<name>.species.json` | one vegetation species (pine, dry grass) — see *Weather, wind and fire* |
 | `building/{facades,roofs,districts}/<name>.*.json`, `building/look.json`, `building/fire.json` | wall, roof and district presets, the buildings' look and the building fire's tuning — see *Buildings: presets, districts and building fires* |
-| `assets.lock.json` | every fetched file: URL, SHA-256, licence (CC0-1.0), source page |
+| `vehicle/<class>.vehicle.json` | one vehicle class: glTF, size, wheels, driving limits, carriages — see *Vehicles* |
+| `assets.lock.json` | every fetched file: URL, SHA-256, licence (CC0-1.0, or CC-BY with its `attribution`), source page |
 
 Element kinds the engine knows (positions are ENU metres at the element's base, yaw in
 degrees): `box` (ground, roads, water, pads; optional `scatter` of debris and a
 `ground_truth` kind), `collapsed_building` (slabs, tilt and a rubble fan laid out by `seed`),
-`building` (a window grid and one material, or wall, roof and glazing presets — see *Buildings*), `person`, `vegetation` (a stand of one species). `models` are
+`building` (a window grid and one material, or wall, roof and glazing presets — see *Buildings*), `person`, `vegetation` (a stand of one species), `vehicle` (a car, bus, truck or train that drives — see *Vehicles*). `models` are
 glTF/GLB instances with a collider (`none` / `box` / `trimesh`) and an optional ground-truth
 kind. The manifest is validated at load, by the renderer (`scene_manifest.rs`) and by the
 station (`surmap.simulation.scenario_manifest`) with the same rules: version 1, unique ids
@@ -36,11 +37,19 @@ From Poly Haven (CC0): textures `aerial_asphalt_01`, `rocks_ground_02`,
 `kloofendal_28d_misty_puresky`; and the building presets' textures (17 Poly Haven and 3
 ambientCG sets, CC0). An ambientCG set is one zip, downloaded once per run however many of its
 members are pinned; requests carry a `User-Agent` (ambientCG refuses urllib's default).
-From the Khronos glTF-Sample-Assets, pinned at commit `8f492390`, two CC-BY-4.0 models whose
-pins carry their credit (`attribution` in `assets.lock.json`; a test refuses a CC BY pin
+From the Khronos glTF-Sample-Assets, pinned at commit `8f492390`, one CC-BY-4.0 model whose
+pin carries its credit (`attribution` in `assets.lock.json`; a test refuses a CC BY pin
 without one): **Car Concept** by Eric Chadwick, Darmstadt Graphics Group GmbH (the scene's
-cars) and **Cesium Man** by Cesium (every survivor). Poly Haven has no uncovered car and no
-human, and a Sketchfab download needs a token and gives a signed URL no lock can pin.
+cars). Poly Haven has no uncovered car and no human, and a Sketchfab download needs a token
+and gives a signed URL no lock can pin. The people are two CC0 Quaternius characters from Poly
+Pizza (`models/person/wave.glb`, `sit.glb`), pinned with the animation names the tests read.
+
+From Poly Pizza, one CC-BY-3.0 model, by a developer decision of 2026-11-04 (no CC0 bus can be
+pinned): the bus (`models/poly-pizza/bus.glb`, the `bus` vehicle class), credited as *"Bus" by
+Poly by Google, https://poly.pizza/m/4CPpvEmrMoF, CC BY 3.0
+(https://creativecommons.org/licenses/by/3.0/)* in its lock entry. The model is
+authored at 157 × 50 × 49 units, not metres, so its class file scales it by `model_scale` 0.07 to
+11.0 × 3.5 × 3.4 m.
 
 ## Look
 
@@ -293,18 +302,41 @@ its yaw eased, and bobs while it walks; standing (`idle`, a finished tree) it do
 | Field | Meaning (shipped) |
 |---|---|
 | `yaw_ease_s` | seconds a turn takes to ease to the new heading, the short way round (0.3) |
-| `bob_m` | height of a step's bob (0.03) |
+| `bob_m` | height of a step's bob (0.03); applied to the capsule figure only, since a rig's clips carry the gait |
 | `steps_per_s` | steps per second at `reference_speed_m_s`; faster walking steps faster in proportion (2) |
 | `reference_speed_m_s` | the speed `steps_per_s` is quoted at (1.4) |
-| `visor` | optional `{"size_m", "offset_m", "colour"}`: a box on the figure (`size_m` x, y, z in the figure's frame; `offset_m` from its feet, −z its front; solid sRGB `colour`) — shipped 0.18 × 0.05 × 0.06 m, 1.63 m up and 0.12 m forward, near-black; drawn on the capsule figure only |
-| `model` | optional `{"glb", "scale", "yaw_deg", "clip_s", "coat_tint"}`: a rigged humanoid glTF worn instead of the capsule, scaled and turned to stand on the feet facing −z, posed from its first clip — held at `clip_s` standing, played at `speed / reference_speed_m_s` from the figure's phase walking, seeked on the sim clock so a recording repeats; `coat_tint` multiplies its colours by the person's `coat` — shipped `models/cesium_man/CesiumMan.glb`, 1.16 (1.75 m), 180°, 0.25 s, tinted |
+| `visor` | optional `{"size_m", "offset_m", "colour"}`: a box on the figure (`size_m` x, y, z in the figure's frame; `offset_m` from its feet, −z its front; solid sRGB `colour`). Shipped 0.18 × 0.05 × 0.06 m, 1.63 m up and 0.12 m forward, near-black; drawn on the capsule figure only |
+| `model` | optional `{"glb", "scale", "yaw_deg", "clip_s", "coat_tint", "rig"}`: a humanoid glTF worn instead of the capsule, scaled and turned to stand on the feet facing −z. Without a `rig` it is posed from its first clip (held at `clip_s` standing, played in step walking); with one, its named clips play (below). `coat_tint` multiplies its colours by the person's `coat`. Shipped `models/person/wave.glb` (Quaternius, CC0), scale 1, 180°, rigged |
+| `model.rig` | `clips` (`idle`, `walk`, `run` required; `wave`, `sit`, `lie` the poses this file carries) → the glTF's animation names; `walk_ground_m_s` / `run_ground_m_s`, the ground each clip covers per second at rate 1 (no foot slide); `run_above_m_s`, where walking crosses to running; `blend_s`, the crossfade; `standing_height_m`, the rig's height at scale 1; `coat_slots` / `skin_slots`, the glTF material names that take the person's `coat` / `skin`. Shipped: idle, walk, run, wave, and `Death` as `lie`; 1.1 / 2.5 m/s, run above 1.8 m/s, 0.3 s, 1.8 m, coat on the shirt (`White`) |
+| `pose_models` | optional `{pose: model}`: a pose drawn on its own rigged model, because no single CC0 file carries every clip. Never `standing`, which the figure's `model` carries. Shipped `sitting` → `models/person/sit.glb` (Quaternius, CC0, `SitIdle`), scale 0.346, coat-tinted |
 | `body_m` | the `person` ground-truth box (east, north, up) over the feet, holding the body whatever way it faces (0.6 × 0.6 × 1.8 m) |
 
+`FigureDef::from_json` refuses a figure where some pose has no clip in `model` or in its
+`pose_models` entry, and `the_shipped_figure_has_a_clip_for_every_pose_in_a_pinned_file` checks
+the shipped clip names against the `animations` that `assets/assets.lock.json` records for each
+pinned file. CI does not fetch models, so it checks the same names.
+
+**Poses and clips (`figure_anim.rs`, pure).** A person's `pose` is `standing` (the default),
+`sitting`, `waving` or `lying`. `locomotion(rig, speed, pose)` gives weighted clips with their
+rates. Standing still plays `idle`, walking plays `walk` at `speed / walk_ground_m_s`, and the walk
+crossfades to `run` around `run_above_m_s`. A posed person who stands still plays the pose clip:
+`wave` loops, while `sit` and `lie` are held at their last frame. A posed person with a tree walks
+while it moves. `clip_time(now, phase, rate, duration)` uses the per-id phase (`phase_of`), so a
+crowd is not in step. The app builds one `AnimationGraph` per rig file (`actors/rig.rs`) and seeks
+every `AnimationPlayer` to its clip time from `SimClock` each frame. Players never free-run, so a
+still at `--at t` and a recording replay exactly. A person's `height_m` (0.9–2.2) scales the rig
+and its ground speeds (`RigDef::at_height`), their `glb` replaces the model file, and their `yaw_deg`
+faces a posed person.
+
 Each figure's bob has its own phase, derived from its id. Without a `model` the figure is the
-capsule and sphere every `person` is built with, plus the visor on the front of its head
+capsule and sphere every `person` is built with (`FallbackBody`), plus the visor on the front of its head
 (`actors::attach_visors`), so the way it faces and turns reads ([sweep](changelog/2026-11-04-sim-disaster-2-sweep.md)).
 With one (`actors::attach_bodies`, once the look has loaded) the capsule is dropped for the
-humanoid; either way every survivor enters `ground_truth.json` as a `person` box.
+humanoid. A missing model file (assets not fetched) keeps the capsule, so a checkout without
+assets still renders people. Either way, every survivor enters `ground_truth.json` as a `person`
+box. A posed person is tracked in `object_tracks.jsonl` even without a tree, with its `pose`, and a
+lying person's truth box is horizontal: `body_m`'s height laid along its `yaw_deg`, 0.3 m thick
+(`posed_person_truth`) ([changelog](changelog/2026-11-04-sim-rigged-people.md)).
 
 ### Presets, ground truth and stills
 
@@ -315,10 +347,19 @@ running the tree above — wander 6 m at 0.8 m/s; when the front comes within 20
 tree `sequence[idle 20 s, set_wind 300° 10 m/s gust 3 over 30 s]`: the 6 m/s westerly holds,
 then veers and builds.
 
+The preset `earthquake-survivors` is the earthquake block with its seven standing survivors
+replaced by five people in the poses a survey looks for: `survivor-lying` on open ground south of
+`collapsed-0`, `survivor-sitting` on the rubble of `collapsed-2`, `survivor-waving` facing the
+route by `collapsed-3` (yellow coats, 1.7–1.75 m), and `rescuer-1`/`rescuer-2` in orange walking
+a `follow_path` between them. The station writes it as the golden
+`tests/fixtures/sim_scenario/earthquake-survivors.json`, which Rust parses
+([decision](deferred-answers/2026-11-04-earthquake-survivors-cast.md)).
+
 Every capture adds `object_tracks.jsonl`, one line per frame:
-`{"t_ns": n, "wind_enu": [ve, vn], "objects": [{"id": "evacuee-1", "enu": [e, n, u], "action": "flee_from_fire"}]}`
-— the wind's velocity and every person with a tree, sorted by id (`action` is `null` once its
-tree finished). `load_bevy_capture(dir).object_tracks` (`t_ns` → id → `Vec3`) and `.wind`
+`{"t_ns": n, "wind_enu": [ve, vn], "objects": [{"id": "evacuee-1", "enu": [e, n, u], "action": "flee_from_fire", "kind": "person", "yaw_deg": 92.0}]}`
+— the wind's velocity and every person with a tree and every tracked vehicle (*Vehicles*),
+sorted by id, plus every posed person with or without a tree, which also carries `"pose"`. `action` is `null` once its tree has finished, `kind` is `person` or the
+vehicle's class, and `yaw_deg` is the way it faces (ENU, counter-clockwise from east). `load_bevy_capture(dir).object_tracks` (`t_ns` → id → `Vec3`) and `.wind`
 (`t_ns` → `(ve, vn)`) read it; both are empty without the file.
 
 A still of a scene with people adds `people.png` (1280×720, 50° field of view): from 25 m
@@ -534,6 +575,171 @@ panes), pre-warmed smoke in stills, district-resolved floors in the station and 
 end to end. Open work:
 `src/surmap/docs/todo/2026-11-04-{legacy-buildings-burn,cmu-and-pvc-textures,texture-uv-scale-measured}.md`.
 
+## Vehicles
+
+Cars, buses, trucks and trains drive, and boats and ships sail on water (*Boats and ships*). Each is a `vehicle` element of a class: a pinned glTF,
+moved by the same behaviour trees people use (*Behaviour trees*), with speed, acceleration,
+braking and turning limited the way a real vehicle's are. A train runs as a locomotive with
+carriages trailing it along its path. Moving vehicles are layered ground truth for the survey,
+recorded per frame in `object_tracks.jsonl`. They are never written into `ground_truth.json`,
+the static scene or RTAB-Map's map ([architecture.md](../architecture.md) §1).
+
+Why this shape: one motion mechanism. The trees are already validated by the station and the
+renderer and already editable by the agent's tools, so a vehicle is just a body that cannot turn
+on the spot. The trees stay target-agnostic, and `Drive` limits whatever they propose. Trains
+follow their path, not a rail graph, so there is no switching and no collision.
+
+### In the manifest
+
+```json
+{"kind": "vehicle", "id": "bus-cross-1", "class": "bus", "position_enu": [-45.0, 62.5, 0.0],
+ "tint": [1.0, 0.78, 0.1],
+ "behaviour": {"node": "repeat", "child": {"node": "sequence", "children": [
+   {"node": "follow_path", "enu": [[45.0, 62.5]], "speed_m_s": 8.0},
+   {"node": "idle", "s": 10.0},
+   {"node": "follow_path", "enu": [[-45.0, 62.5]], "speed_m_s": 8.0}]}}}
+{"kind": "vehicle", "id": "freight", "class": "train", "cars": 6, "yaw_deg": 90.0,
+ "position_enu": [-62.0, -50.0, 0.0], "behaviour": {"node": "follow_path", "enu": [[-62.0, 140.0]], "speed_m_s": 15.0}}
+```
+
+| Field | Meaning |
+|---|---|
+| `class` | `car` \| `bus` \| `truck` \| `train` \| `boat` \| `ship`; picks `vehicle/<class>.vehicle.json` |
+| `position_enu`, `yaw_deg` | the start pose (yaw counter-clockwise from east, as for `models`) |
+| `behaviour` | optional tree, validated as a ground body's (no `set_wind`); parked without one |
+| `glb` | optional override of the class glTF (a relative asset path, `.glb` / `.gltf`), e.g. a station-library asset |
+| `cars` | trains only: carriages behind the locomotive (default 0; refused on any other class) |
+| `tint` | optional sRGB multiplier on the glTF's base colours |
+| `ground_truth` | default `true`: tracked in `object_tracks.jsonl` with `kind` = `class` |
+
+The renderer (`scene_manifest.rs`) and the station (`surmap.simulation.vehicles`, through
+`scenario_manifest`) apply the same rules and refuse a vehicle by its id with the reason.
+
+### Class files (`assets/vehicle/<class>.vehicle.json`, data, no rebuild)
+
+| Field | Meaning |
+|---|---|
+| `glb` | the class glTF |
+| `model_scale` | uniform scale of the glTF and its carriages (default 1, > 0), for a model not authored in metres |
+| `model_yaw_deg` | the turn that points the glTF's nose along the vehicle's forward |
+| `length_m`, `width_m`, `height_m` | the collider and ground-truth extent |
+| `wheel_nodes`, `wheel_radius_m` | glTF node-name prefixes spun about their own bounds centre by distance / radius (road classes; empty when the model has no separable wheels) |
+| `max_speed_m_s`, `accel_m_s2`, `brake_m_s2`, `turn_rate_deg_s` | the driving limits |
+| `carriage_glb`, `carriage_spacing_m` | trains only |
+
+| Class | Model (licence) | Size (m) | Max speed · accel · brake · turn |
+|---|---|---|---|
+| `car` | Quaternius car (CC0) | 4.2 × 1.8 × 1.2 | 15 m/s · 3 · 6 m/s² · 45°/s |
+| `bus` | "Bus" by Poly by Google (CC BY 3.0), `model_scale` 0.07 | 11.0 × 3.5 × 3.4 | 12 · 1.2 · 3 · 20 |
+| `truck` | Quaternius truck (CC0), `model_scale` 1.25 | 6.6 × 3.4 × 3.6 | 12 · 1.0 · 3 · 18 |
+| `train` | Quaternius locomotive and wagon (CC0), carriages 8.4 m apart | 8.1 × 2.9 × 6.1 | 30 · 0.5 · 1.0 · 6 |
+
+The Quaternius models are pinned from poly.pizza. The fetch sends a `Referer` for
+`static.poly.pizza`, which refuses hot links without one. Kenney's kits cannot be pinned because
+their download links are signed and expire. The bus is the one non-CC0 vehicle asset (see
+*Everything is data*), and `test_the_only_pin_off_cc0_is_the_named_cc_by_bus` holds that line.
+It is one coach mesh, so its `wheel_nodes` is empty and its wheels do not spin. Its nose is +Z
+(`model_yaw_deg` 180), the end with the mirror arms.
+
+### Boats and ships
+
+`boat` and `ship` are vehicle classes with `"medium": "water"`. They are driven by the same trees
+and the same `Drive` limits as the road classes, and they ride a water surface instead of the
+ground:
+
+- **Water** is a `box` with `"water": true` (an explicit flag, because material keys are
+  free-form). A vessel floats on the top of the box it starts in.
+- **Validation** (`scene_manifest/water.rs`, and `surmap.simulation.water` for the station): a
+  vessel must start on water, and every `move_to` / `follow_path` point must lie on water. A
+  vessel's tree may not contain `wander` or `flee_from_fire`, whose points are not known at load.
+  A road or rail class may not start on water. A refused vessel is named with the reason.
+- **Sea state** (`sea.rs`, pure, kinematic, no buoyancy physics): wave height follows the
+  scenario's base wind speed (a 100 m fetch, capped at 1 m), and the period runs from 2.5 to 6 s.
+  Three swells give each vessel heave, pitch and roll, scaled by its class's `wave_response` and
+  phased by its id, so a still at `--at t` and a recording replay identically. The sea follows
+  the base wind, not the live (behaviour-tree) wind.
+- **Class fields** beside the road ones: `medium` (`water`), `draft_m`, `wave_response` (required
+  for a water class), and `keel_below_origin_m`, which lifts the model so its keel sits on the
+  surface. `wheel_nodes` is empty.
+
+| Class | Model (licence) | Size (m) | Max speed · accel · brake · turn | Draft · wave response |
+|---|---|---|---|---|
+| `boat` | Quaternius boat (CC0), `model_scale` 0.56, `model_yaw_deg` 180 | 5.0 × 2.6 × 1.1 | 8 m/s · 1.5 · 1.0 m/s² · 25°/s | 0.6 m · 1.0 |
+| `ship` | Quaternius ship (CC0), `model_scale` 3.9, `model_yaw_deg` 270 | 60.0 × 20.7 × 44.9 | 7 · 0.1 · 0.08 · 2 | 4.0 m · 0.1 |
+
+Kenney's *Watercraft Kit* was the first choice, but its download refuses a scripted fetch, so the
+equivalent Quaternius CC0 pair is pinned from poly.pizza. The ship is a three-masted sailing
+ship, the only CC0 ship that could be pinned. Its masts make it 44.9 m tall.
+
+The preset `flood-rescue` (golden `tests/fixtures/sim_scenario/flood-rescue.json`) is the flood
+with a 10 m × 100 m water channel and two rescue boats shuttling along it in opposite
+directions. It has no ship, because a 20.7 m beam does not fit the channel.
+
+### Kinematics (`vehicle.rs`, pure, deterministic)
+
+The tree's running leaf proposes a **goal** (`behaviour::Goal`: a point, a speed, and `stop` at a
+path's end). `Drive` turns the goal into motion the class allows:
+
+- **Speed** eases toward the node's `speed_m_s`, capped at `max_speed_m_s`, at `accel_m_s2`. It
+  slows at `brake_m_s2` to stop at a stopping goal (the last point of a `move_to` or
+  `follow_path`). It closes that goal no faster than its stopping distance allows, and no faster
+  than half of turn rate × distance, so it creeps onto the goal and never overshoots.
+- **Heading** turns toward the goal at most at `turn_rate_deg_s`, and the body moves along it.
+  A goal to the side or behind is approached only at the speed that keeps the bearing turning
+  at most half the turn rate (`BEARING_SHARE`). The heading always catches up, so a vehicle never
+  circles a goal.
+- **A drive-through point** (a path corner) counts as reached when the vehicle passes it.
+- **Wheels** turn by distance / `wheel_radius_m`.
+
+Each tick the runner is reset to where the vehicle really is (`VehicleBody`), so a tree's
+`near_object` and its path ends see the vehicle's place. Vehicles tick with the people at 10 Hz
+(`actors/tick.rs`), and each body senses the others. A train's heading follows its path, and its
+carriages are placed `k × carriage_spacing_m` behind the locomotive **along the travelled
+polyline** (`carriage_poses`), so they stay on the track through bends. `vehicle/scene.rs` puts
+it on screen: the class glTF under a moving root, its wheel nodes spun, the carriages as
+separate roots.
+
+### Ground truth
+
+Every `object_tracks.jsonl` object carries `kind` (`person`, `car`, `bus`, `truck`, `train`, `boat`, `ship`) and
+`yaw_deg` (ENU, counter-clockwise from east), beside `id`, `enu` and `action`. A train is tracked
+as its locomotive, and its carriages are not tracked. A parked vehicle (no tree) is still only a
+track. `load_bevy_capture(...).object_kinds` (id → kind) and `.object_yaw_deg` (`t_ns` → id →
+degrees) read them, and both are empty for older tracks. How the on-board detectors are scored
+against them: *On-board detectors (measured)* § *Road and rail vehicles*.
+
+### Station, agent and preset
+
+`add_element` takes `VehicleElement {id, vehicle_class, position, yaw_deg, cars,
+behaviour_json}`. The proto field is `vehicle_class` because `class` is a Python keyword, and
+the manifest key stays `class`. The tree is validated by `surmap.simulation.behaviour_tree`. The
+behaviour tools (`set_behaviour`, …) take a vehicle's id as their target. The preset
+`street-traffic` (golden `tests/fixtures/sim_scenario/street-traffic.json`, parsed by the
+renderer's tests) is the shipped block with:
+
+- two cars driving the avenue and one parked;
+- a school-bus-yellow bus and a truck on the cross street;
+- a rail line (`box`, material `ballast`) along the block's west edge, with a six-carriage
+  freight train.
+
+### Verified
+
+Rust tests pin the following. `Drive` never exceeds speed, acceleration or turn rate, and it
+reaches a path's end without overshoot or circling. A scenario replays the same track.
+Carriages stay on the path at their spacing through a 90° bend. Wheel angle follows distance.
+The manifest rules (unknown class, `cars` off a train, a bad `glb`, a tree that sets the wind)
+and the golden `street-traffic.json` hold, and so does the track line with `kind`/`yaw_deg`.
+Python tests pin the same validation, the preset, `add_element` with a vehicle through the
+tool, the capture's kinds and headings, and an agent turn on a real socket that adds a truck
+driving up the avenue. A native still and a 64-frame recording of `street-traffic` were
+reviewed at wrap (2026-11-04):
+
+- the cars drive the avenue, and the bus and truck drive the cross street side by side;
+- the bus's mirror end leads along its travel, which confirms `model_yaw_deg` 180, and its
+  wheels sit on the road;
+- the truck's cab leads;
+- the train stands on its ballast line at the west edge.
+
 ## The stereo rig: one camera profile
 
 `cameras/elp-stereo-pinhole.camera.json` (the SurMap ELP rig): 640×480, fx = fy = 381.36,
@@ -641,7 +847,8 @@ COCO profiles (`surmap.detection.profiles`) see colour on board; `--colour` reco
 left image of each frame (`bevy_ground_truth.project_box`). An object is **in view** when at
 least half its projected box is inside the image and its shorter side is ≥ 12 px; a detection
 **finds** it when its label is one the kind answers to (`car`: car, truck, bus; `person`:
-person) at IoU ≥ 0.3. A detection of an object present but too small or too clipped to be in
+person; a `bus`, `truck` or `train` only its own label — see *Road and rail vehicles* below) at
+IoU ≥ 0.3. A detection of an object present but too small or too clipped to be in
 view is neither; every other detection is a false positive. Occlusion is not tested (no depth
 is recorded). `building`, `collapsed_building`, `debris`, `box` and `fire` are not COCO
 classes: no on-board detector can name them, so they are never expected — SAM labels them
@@ -697,8 +904,117 @@ What moved it, and what did not:
 - **False positives** did not go down: the profiles still fire on rubble slabs, water and sky
   (`tv`, `airplane`, `bird`, `bench`, `book`); ssdlite-mobiledet is the noisiest.
 
+**Rigged CC0 people (PR #107).** The survivors' Cesium Man gives way to two CC0 Quaternius
+characters (a waving/walking/running/lying one, a sitting one), re-measured on the same pass
+and on the `earthquake-survivors` scenario (`scripts/score_sim_detections.py` now also counts
+person object-frames by pose from the tracks' `pose`). Object-frames found / in view, score 0.3:
+
+| Pass | Profile | People, Cesium Man (#111) | People, rigged CC0 |
+|---|---|---|---|
+| shipped scene, `--record … --frames 75 --rate-hz 1 --start 12 --jpeg --colour` | efficientdet-lite0 | 7/113 | 20/113 |
+| | ssd-mobilenet-v2 | 15/113 | 27/113 |
+| | ssdlite-mobiledet | 38/113 | **65/113** |
+
+| `earthquake-survivors`, `--frames 200 --rate-hz 1 --start 0` (the whole loop) | efficientdet | ssd-mobilenet | ssdlite-mobiledet |
+|---|---|---|---|
+| standing (rescuers, walking) | 0/66 | 0/66 | 18/66 (27 %) |
+| sitting | 7/38 | 5/38 | 18/38 (47 %) |
+| waving | 0/33 | 0/33 | 0/33 |
+| lying | 0/6 | 0/6 | 0/6 |
+
+Three realism iterations on the scenario: (1) the whole figure in the hi-vis coat (shirt and
+trousers) found people *less* (ssdlite standing 4/66 against 11/66 with the shirt only), so only
+the shirt wears it and the model's own skin is kept (a flat library skin read as grey); (2) the
+waving and lying survivors stood half inside a slab and under its lean, so they are moved onto
+open ground (the scene does not test occlusion, so a hidden person still counts as in view);
+(3) the waving survivor faces the route. Waving and lying stay unfound: the loop sees them from
+above at 15-40 px, a raised arm and a body lying on tarmac are not what COCO's person class was
+trained on, and a lying person's truth box is now horizontal (`posed_person_truth`).
+Recorded in `src/surmap/docs/todo/2026-11-04-waving-and-lying-people-undetected.md`.
+
+### Road and rail vehicles (`street-traffic`)
+
+The vehicles of `street-traffic` are not in `ground_truth.json`: only `object_tracks.jsonl` places
+them (`kind`, `yaw_deg`, position per frame). `detection_eval` gives each tracked vehicle the
+footprint of its class (`VEHICLE_FOOTPRINT_M`, from `assets/vehicle/<class>.vehicle.json`; a train
+is its locomotive) at its recorded position, the axis-aligned box around its yawed rectangle. A
+`car` answers to car, truck or bus; a `bus`, `truck` or `train` only to its own label. A vehicle
+that is not found but is covered (IoU ≥ 0.3) by a detection with another vehicle's label counts as
+**found as another vehicle** (`+n` in the score script's table); that detection is not a false
+positive.
+
+```bash
+uv run python scripts/fetch_coral_model.py
+cd examples/bevy-sitl-poc
+BEVY_ASSET_ROOT=$PWD cargo run --release -- --record <dir> --scenario street-traffic --colour --jpeg --rate-hz 1 --start 0 --frames 128
+cd ../.. && uv run python scripts/score_sim_detections.py <dir>
+```
+
+`--scenario street-traffic` loads `assets/scenarios/street-traffic.json` (copy
+`tests/fixtures/sim_scenario/street-traffic.json` there, the folder is not tracked); 128 frames at
+1 Hz are one lap of the survey loop (127 s): the loop passes the avenue, the cross street (bus and
+truck) and the rail line (train, in view for six frames). Frames are not committed. Object-frames
+found / in view, score 0.3, colour (the bar: the best profile finds each kind in ≥ 20 % of its
+object-frames, and no kind is 0 across all profiles):
+
+| Pass | Profile | Cars | Bus | Truck | Train | False positives |
+|---|---|---|---|---|---|---|
+| before (white bus, truck on the avenue, scale 1) | efficientdet-lite0 | 12/90 | 1/16 +1 | 1/13 +1 | 0/6 | 84 |
+| | ssd-mobilenet-v2 | 3/90 | 0/16 | 0/13 | 0/6 | 35 |
+| | ssdlite-mobiledet | 33/90 | 0/16 +5 | 2/13 | 0/6 | 355 |
+| **after (the preset)** | efficientdet-lite0 | 12/90 | **5/16** | **8/14** | 0/6 | 85 |
+| | ssd-mobilenet-v2 | 2/90 | 0/16 +2 | 1/14 | 0/6 | 32 |
+| | ssdlite-mobiledet | **34/90** | 1/16 +6 | **10/14** | 0/6 | 344 |
+
+What moved it, and what did not (three iterations at most per class, each a full re-record):
+
+- **Bus** 1/16 → 5/16: the model is white, and a red tint scored 0/16 on the same pass; school-bus
+  yellow (`tint [1.0, 0.78, 0.1]`) is read as a bus by efficientdet-lite0. ssdlite-mobiledet calls
+  it another vehicle (car or truck) in 6 more frames.
+- **Truck** 1/13 → 10/14: the Quaternius truck reads as a van at 8 m up, and on the avenue it was
+  seen end-on, far off and behind rubble slabs (occlusion is not tested). It now drives the cross
+  street (5 m south of the bus's lane), side-on and close to the loop's passes, and its class is
+  scaled 1.25 (6.6 × 3.4 × 3.6 m) so it is not smaller than the bus beside it. (On the same pass a
+  scale-only change, with the avenue unchanged, left it 1/13.)
+- **Cars** are unchanged by this PR (12/90, 34/90 here; 9/46, 15/46 on #111's fixture window).
+- **Train** stays at 0/6 on every profile, **under the bar**. Tried: the rail 36 m closer to the
+  loop (x −30, then −26; the locomotive is then clipped by the top of the image — box 0–45 px tall
+  — and ssdlite calls the tender's figure a person), and 22 m closer with the train slowed to
+  8 m/s (the same six frames, 51–56 s). A tint cannot lighten the locomotive: its glTF colours are
+  linear 0.02–0.04, near black. Recorded as
+  `src/surmap/docs/todo/2026-11-04-train-detectors-blind.md`.
+- A recording's light can differ from run to run: one capture of the same scenario was 25 %
+  darker and scored lower on every class; it was discarded and re-recorded. Re-record before
+  comparing a pass with another.
+
 `tests/test_sim_detector_realism_e2e.py` (in CI's `coral-e2e` job, `SURMAP_REQUIRE_CORAL_E2E=1`)
 holds floors under these numbers: efficientdet-lite0 finds cars in ≥ 10 % of their frames,
 ssdlite-mobiledet finds cars and people in ≥ 25 %. To re-record, from `examples/bevy-sitl-poc`,
 keep `frames/left_rgb/` and the JSON files of
 `BEVY_ASSET_ROOT=$PWD cargo run --release -- --record cap --frames 75 --rate-hz 1 --start 12 --jpeg --colour`.
+
+### Boats and ships (`flood-rescue`)
+
+`boat` and `ship` both answer to COCO's `boat` label. Their footprints come from the class files
+(`VEHICLE_FOOTPRINT_M`), as the road classes' do. Boats are scored on the preset. The ship is
+scored on an untracked variant of the preset with the water widened to 40 m and one moored ship
+at (0, 62), because the preset's channel cannot hold one. One lap each (`--frames 128 --rate-hz 1
+--start 0 --colour --jpeg`), score 0.3, object-frames found / in view:
+
+| Scene | Profile | Boat | Ship | False positives |
+|---|---|---|---|---|
+| `flood-rescue` | efficientdet-lite0 | 0/47 | – | 90 |
+| | ssd-mobilenet-v2 | 0/47 | – | 57 |
+| | ssdlite-mobiledet | 3/47 (6 %) | – | 407 (66 of them `boat`) |
+| ship variant | efficientdet-lite0 | 0/47 | 0/0 | 71 |
+| | ssd-mobilenet-v2 | 0/47 | 0/0 | 47 |
+| | ssdlite-mobiledet | 0/47 | 0/0 | 423 (23 of them `boat`) |
+
+Both classes are **under the bar**, and no realism iteration was run (fast-tracked).
+- **Boat:** ssdlite-mobiledet fires `boat` 66 times on the preset, yet matches only 3 boats. The
+  detections may be falling beside the expected boxes, for example because heave and keel lift
+  are not in the tracked height, or because they land on the water box itself.
+- **Ship:** never counts as in view. Its 60 × 20.7 × 44.9 m box (the masts) is never half inside
+  the frame from the survey loop's height.
+
+Recorded as `src/surmap/docs/todo/2026-11-04-vessels-detectors-miss.md`.

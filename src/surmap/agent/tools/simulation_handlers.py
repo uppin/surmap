@@ -230,6 +230,8 @@ def _element(request: pb.AddElementRequest) -> dict[str, object]:
         }
         if box.HasField("ground_truth_kind"):
             element["ground_truth"] = box.ground_truth_kind
+        if box.water:
+            element["water"] = True
         return element
     if which == "building":
         b = request.building
@@ -258,13 +260,20 @@ def _element(request: pb.AddElementRequest) -> dict[str, object]:
         }
     if which == "person":
         person = request.person
-        return {
+        person_element: dict[str, object] = {
             "kind": "person",
             "id": person.id,
             "position_enu": _xyz(person.position),
             "coat": person.coat,
             "skin": person.skin or "skin",
         }
+        if person.pose:
+            person_element["pose"] = person.pose
+        if person.HasField("height_m"):
+            person_element["height_m"] = person.height_m
+        if person.HasField("yaw_deg"):
+            person_element["yaw_deg"] = person.yaw_deg
+        return person_element
     if which == "vegetation":
         stand = request.vegetation
         return {
@@ -276,8 +285,24 @@ def _element(request: pb.AddElementRequest) -> dict[str, object]:
             "density_per_100m2": stand.density_per_100m2,
             "seed": stand.seed,
         }
+    if which == "vehicle":
+        vehicle = request.vehicle
+        element = {
+            "kind": "vehicle",
+            "id": vehicle.id,
+            "class": vehicle.vehicle_class,
+            "position_enu": _xyz(vehicle.position),
+        }
+        if vehicle.HasField("yaw_deg"):
+            element["yaw_deg"] = vehicle.yaw_deg
+        if vehicle.cars:
+            element["cars"] = vehicle.cars
+        if vehicle.behaviour_json:
+            element["behaviour"] = _tree_json(vehicle.behaviour_json, "vehicle behaviour")
+        return element
     raise ConnectError(
-        Code.INVALID_ARGUMENT, "give one of box, building, collapsed_building, person, vegetation"
+        Code.INVALID_ARGUMENT,
+        "give one of box, building, collapsed_building, person, vegetation, vehicle",
     )
 
 

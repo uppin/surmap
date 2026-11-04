@@ -11,14 +11,22 @@
 
 use std::collections::BTreeMap;
 
+use bevy::math::Vec2;
 use bevy::prelude::Transform;
 use serde::Deserialize;
 
 mod buildings;
+mod environment;
 mod nature;
+mod people;
+mod water;
+
+pub use water::{surface_at, surfaces, Surface};
 
 pub use buildings::{BuildingFireDef, DistrictDef};
+pub use environment::{Environment, PbrTextureSet};
 pub use nature::{FireDef, Vegetation, Weather, WindDef};
+pub use people::Person;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct SceneManifest {
@@ -43,66 +51,6 @@ pub struct SceneManifest {
     pub building_fires: Vec<BuildingFireDef>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct Environment {
-    pub hdri: Option<String>,
-    pub sun_illuminance_lux: f32,
-    pub sun_elevation_deg: f32,
-    pub sun_azimuth_deg: f32,
-    pub fog_visibility_m: f32,
-    /// Skybox and image-light brightness (cd/m² per HDRI unit); tune here.
-    #[serde(default = "sky_brightness")]
-    pub sky_brightness: f32,
-    /// One fixed exposure for every camera (the eyes must match).
-    #[serde(default = "exposure")]
-    pub exposure_ev100: f32,
-}
-
-fn sky_brightness() -> f32 {
-    15_000.0
-}
-
-fn exposure() -> f32 {
-    14.0
-}
-
-/// A material: textured (a `base_color` map, optional normal/ARM maps)
-/// or solid (no maps, `color` and the scalar values only).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct PbrTextureSet {
-    pub base_color: Option<String>,
-    pub normal: Option<String>,
-    pub roughness: Option<String>,
-    /// Poly Haven ARM map (R occlusion, G roughness, B metalness); when
-    /// set it drives both metallic-roughness and occlusion (spec §2.1).
-    pub arm: Option<String>,
-    #[serde(default = "unit_uv_scale")]
-    pub uv_scale: f32,
-    /// sRGB colour; multiplies `base_color` when both are set.
-    #[serde(default = "white")]
-    pub color: [f32; 3],
-    #[serde(default = "unit_scale")]
-    pub perceptual_roughness: f32,
-    #[serde(default)]
-    pub metallic: f32,
-    #[serde(default = "default_reflectance")]
-    pub reflectance: f32,
-    #[serde(default)]
-    pub clearcoat: f32,
-}
-
-fn unit_uv_scale() -> f32 {
-    1.0
-}
-
-fn white() -> [f32; 3] {
-    [1.0, 1.0, 1.0]
-}
-
-fn default_reflectance() -> f32 {
-    0.5
-}
-
 /// One declared piece of the scene; the engine knows only these kinds.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -112,6 +60,7 @@ pub enum Element {
     Building(Box<Building>),
     Person(Person),
     Vegetation(Vegetation),
+    Vehicle(Vehicle),
 }
 
 impl Element {
@@ -122,6 +71,7 @@ impl Element {
             Self::Building(e) => &e.id,
             Self::Person(e) => &e.id,
             Self::Vegetation(e) => &e.id,
+            Self::Vehicle(e) => &e.id,
         }
     }
 
@@ -139,7 +89,7 @@ impl Element {
                 keys
             }
             Self::Person(e) => vec![e.coat.as_str(), e.skin.as_str()],
-            Self::Vegetation(_) => vec![],
+            Self::Vegetation(_) | Self::Vehicle(_) => vec![],
         }
     }
 }
@@ -163,6 +113,9 @@ pub struct BoxElement {
     pub scatter: Option<Scatter>,
     /// Ground-truth kind, when a region query may target this box.
     pub ground_truth: Option<String>,
+    /// A water surface: vessels float on its top.
+    #[serde(default)]
+    pub water: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -261,16 +214,34 @@ fn first_row() -> f32 {
     4.2
 }
 
-/// A survivor at an ENU pose (feet at `position_enu`).
+/// A vehicle of a class (`vehicle/<class>.vehicle.json`) at its start pose, driven by its tree.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct Person {
+pub struct Vehicle {
     pub id: String,
+    pub class: crate::vehicle::VehicleClass,
     pub position_enu: [f32; 3],
-    pub coat: String,
-    pub skin: String,
-    /// What the person does over time; standing still when absent.
+    /// Counter-clockwise from east, as `models`.
+    #[serde(default)]
+    pub yaw_deg: f32,
+    /// Where the vehicle drives; parked when absent.
     #[serde(default)]
     pub behaviour: Option<crate::behaviour::Tree>,
+    /// Overrides the class glTF.
+    #[serde(default)]
+    pub glb: Option<String>,
+    /// Trains only: carriages behind the locomotive.
+    #[serde(default)]
+    pub cars: u32,
+    /// sRGB multiplier on the glTF's base colours.
+    #[serde(default)]
+    pub tint: Option<[f32; 3]>,
+    /// Tracked in `object_tracks.jsonl` with its class as `kind`.
+    #[serde(default = "tracked")]
+    pub ground_truth: bool,
+}
+
+fn tracked() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -375,6 +346,9 @@ impl SceneManifest {
         manifest.validate_weather_fire_vegetation()?;
         manifest.validate_buildings()?;
         manifest.validate_behaviours()?;
+        manifest.validate_vehicles()?;
+        manifest.validate_people()?;
+        manifest.validate_vessels()?;
         Ok(manifest)
     }
 
@@ -396,6 +370,29 @@ impl SceneManifest {
         Ok(())
     }
 
+    /// Each vehicle: `cars` only on a train, a `glb` override that is a relative glTF path, and a
+    /// tree valid for a body on the ground.
+    fn validate_vehicles(&self) -> Result<(), ManifestError> {
+        use crate::behaviour::Target;
+        use crate::vehicle::VehicleClass;
+        for element in &self.elements {
+            let Element::Vehicle(vehicle) = element else {
+                continue;
+            };
+            let refused = |reason: String| ManifestError::Invalid(format!("vehicle {}: {reason}", vehicle.id));
+            if vehicle.cars > 0 && vehicle.class != VehicleClass::Train {
+                return Err(refused(format!("cars ({}) only on a train", vehicle.cars)));
+            }
+            if let Some(glb) = &vehicle.glb {
+                expect_suffix(glb, ".glb").or_else(|_| expect_suffix(glb, ".gltf"))?;
+            }
+            if let Some(tree) = &vehicle.behaviour {
+                tree.validate(Target::Object).map_err(refused)?;
+            }
+        }
+        Ok(())
+    }
+
     fn referenced_paths(&self) -> Vec<String> {
         let mut paths = vec![self.camera.clone()];
         if let Some(weather) = &self.weather {
@@ -409,8 +406,10 @@ impl SceneManifest {
             ]);
         }
         for element in &self.elements {
-            if let Element::Vegetation(stand) = element {
-                paths.push(stand.species.clone());
+            match element {
+                Element::Vegetation(stand) => paths.push(stand.species.clone()),
+                Element::Vehicle(vehicle) => paths.extend(vehicle.glb.clone()),
+                _ => {}
             }
         }
         if let Some(hdri) = &self.environment.hdri {
@@ -430,6 +429,11 @@ impl SceneManifest {
         }
         for model in &self.models {
             paths.push(model.glb.clone());
+        }
+        for element in &self.elements {
+            if let Element::Person(person) = element {
+                paths.extend(person.glb.clone());
+            }
         }
         paths
     }
@@ -460,6 +464,11 @@ fn validate_asset_path(path: &str) -> Result<(), ManifestError> {
         return Err(ManifestError::BadAssetPath(path.to_string()));
     }
     Ok(())
+}
+
+/// A relative glTF asset path: inside `assets/`, ending `.glb` or `.gltf`.
+pub fn is_relative_gltf(path: &str) -> bool {
+    validate_asset_path(path).is_ok() && (path.ends_with(".glb") || path.ends_with(".gltf"))
 }
 
 impl ModelInstance {
