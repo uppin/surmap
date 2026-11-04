@@ -28,6 +28,8 @@ from surmap.simulation.fleet.controller import (
     FleetTiming,
     FleetUnavailable,
     InvalidRule,
+    due_step,
+    steps_until,
 )
 from surmap.simulation.fleet.link import (
     Applied,
@@ -306,6 +308,38 @@ async def test_a_page_that_unlinks_fails_the_waiting_command_as_no_simulation_co
     # Then the waiting command reports no simulation connected
     with pytest.raises(FleetUnavailable):
         await sending
+
+
+async def test_a_page_that_left_in_flight_no_longer_decides_which_commands_pass(
+    tmp_path: Path,
+) -> None:
+    # Given a linked page that last reported nest-sw-d1 cruising
+    controller, _link = a_linked_controller(tmp_path)
+    controller.receive(telemetry_of(a_drone(SW_D1, "cruising")))
+
+    # When the page leaves and a launch is sent
+    controller.detach()
+
+    # Then the launch fails for want of a page, not as a launch of a drone in flight
+    with pytest.raises(FleetUnavailable):
+        await controller.send(a_launch())
+
+
+@pytest.mark.parametrize(
+    ("at_s", "due"), [(0.0, 0), (1.02, 21), (1.05, 21), (1.0502, 22), (1.06, 22), (3.0, 60)]
+)
+def test_a_command_takes_effect_at_the_step_the_renderer_applies_it_at(
+    at_s: float, due: int
+) -> None:
+    # Given the renderer's fixed 0.05 s step, which applies a command before the first step at or
+    # after its moment, give or take float noise (autopilot.rs `due_step` / `steps_until`)
+
+    # When the station works out that step, and the telemetry that has reached it
+    reached = steps_until(due * 0.05)
+    just_before = steps_until(due * 0.05 - 0.01)
+
+    # Then telemetry stamped at the step has reached it, and telemetry a little before has not
+    assert (due_step(at_s), reached, just_before < due or due == 0) == (due, due, True)
 
 
 async def test_a_drone_just_launched_can_be_tasked_before_telemetry_shows_it_flying(

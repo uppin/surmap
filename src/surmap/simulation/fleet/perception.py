@@ -17,6 +17,7 @@ limit and processed by nothing. Closing the connection finishes every session.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import queue
 import threading
@@ -101,6 +102,8 @@ class DroneCounts:
     """Whether this drone's frames are the ones being processed now."""
     last_t_ns: int | None
     """The simulation time of its last processed frame; `None` before any."""
+    error: str | None = None
+    """Why its map stopped (the backend failed); `None` while it runs."""
 
 
 class DroneSession:
@@ -118,15 +121,40 @@ class DroneSession:
         self.backend = backend
         self.segmentation = segmentation
         self.recorder = recorder
+        self._backend_open = True
         self._frames = 0
         self._posed = 0
         self._lost = 0
         self._lost_now = False
         self._last_t_ns: int | None = None
+        self._error: str | None = None
+
+    @property
+    def error(self) -> str | None:
+        """Why this session stopped; `None` while it runs. An errored session takes no more
+        pairs, and its counts stay as they were."""
+        return self._error
 
     def process(self, pair: BevyPair, calibration_id: str) -> None:
         """Records `pair`, feeds it to the backend as a stereo frame, submits its left frame to
-        segmentation, and counts the backend's odometry updates."""
+        segmentation, and counts the backend's odometry updates. A failure of any of that marks
+        the session errored (its backend is closed, once) instead of escaping, so the drone's
+        failure stays this session's; an errored session ignores later pairs."""
+        if self._error is not None:
+            return
+        try:
+            self._process(pair, calibration_id)
+        except Exception as failure:
+            self._error = f"{type(failure).__name__}: {failure}"
+            with contextlib.suppress(Exception):  # the map is already failing; its error stands
+                self._close_backend()
+
+    def _close_backend(self) -> None:
+        if self._backend_open:
+            self._backend_open = False
+            self.backend.close()
+
+    def _process(self, pair: BevyPair, calibration_id: str) -> None:
         if self.recorder is not None:
             self.recorder.record_pair(pair)
         self.backend.process_frame(
@@ -171,6 +199,7 @@ class DroneSession:
             keyframes=self.backend.keyframe_count,
             dropped=self.backend.dropped_frames,
             drone_id=None if self.drone_id == DEFAULT_DRONE else self.drone_id,
+            error=self._error,
         )
 
     def counts(self, *, processing: bool) -> DroneCounts:
@@ -186,11 +215,13 @@ class DroneSession:
             detections=self.segmentation.detections,
             processing=processing,
             last_t_ns=self._last_t_ns,
+            error=self._error,
         )
 
     def close(self) -> None:
-        """Closes the backend and the segmentation run, and finishes the recorder."""
-        self.backend.close()
+        """Closes the backend (unless a failure already did) and the segmentation run, and
+        finishes the recorder."""
+        self._close_backend()
         self.segmentation.close()
         if self.recorder is not None:
             self.recorder.finish()

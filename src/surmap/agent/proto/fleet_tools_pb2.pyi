@@ -104,14 +104,16 @@ class ListDronesRequest(_message.Message):
     def __init__(self, scenario_id: _Optional[str] = ...) -> None: ...
 
 class ListDronesResponse(_message.Message):
-    __slots__ = ("linked", "active", "drones")
+    __slots__ = ("linked", "active", "drones", "sim_t_s")
     LINKED_FIELD_NUMBER: _ClassVar[int]
     ACTIVE_FIELD_NUMBER: _ClassVar[int]
     DRONES_FIELD_NUMBER: _ClassVar[int]
+    SIM_T_S_FIELD_NUMBER: _ClassVar[int]
     linked: bool
     active: str
     drones: _containers.RepeatedCompositeFieldContainer[DroneStatus]
-    def __init__(self, linked: bool = ..., active: _Optional[str] = ..., drones: _Optional[_Iterable[_Union[DroneStatus, _Mapping[str, _Any]]]] = ...) -> None: ...
+    sim_t_s: float
+    def __init__(self, linked: bool = ..., active: _Optional[str] = ..., drones: _Optional[_Iterable[_Union[DroneStatus, _Mapping[str, _Any]]]] = ..., sim_t_s: _Optional[float] = ...) -> None: ...
 
 class LaunchDroneRequest(_message.Message):
     __slots__ = ("scenario_id", "drone_id", "route")
@@ -184,7 +186,7 @@ class DroneMapStatusRequest(_message.Message):
     def __init__(self, scenario_id: _Optional[str] = ..., drone_id: _Optional[str] = ...) -> None: ...
 
 class DroneMapCounts(_message.Message):
-    __slots__ = ("drone_id", "frames", "posed", "lost", "keyframes", "segmented_frames", "detections", "processing", "last_t_ns")
+    __slots__ = ("drone_id", "frames", "posed", "lost", "keyframes", "segmented_frames", "detections", "processing", "last_t_ns", "error")
     DRONE_ID_FIELD_NUMBER: _ClassVar[int]
     FRAMES_FIELD_NUMBER: _ClassVar[int]
     POSED_FIELD_NUMBER: _ClassVar[int]
@@ -194,6 +196,7 @@ class DroneMapCounts(_message.Message):
     DETECTIONS_FIELD_NUMBER: _ClassVar[int]
     PROCESSING_FIELD_NUMBER: _ClassVar[int]
     LAST_T_NS_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
     drone_id: str
     frames: int
     posed: int
@@ -203,7 +206,8 @@ class DroneMapCounts(_message.Message):
     detections: int
     processing: bool
     last_t_ns: int
-    def __init__(self, drone_id: _Optional[str] = ..., frames: _Optional[int] = ..., posed: _Optional[int] = ..., lost: _Optional[int] = ..., keyframes: _Optional[int] = ..., segmented_frames: _Optional[int] = ..., detections: _Optional[int] = ..., processing: bool = ..., last_t_ns: _Optional[int] = ...) -> None: ...
+    error: str
+    def __init__(self, drone_id: _Optional[str] = ..., frames: _Optional[int] = ..., posed: _Optional[int] = ..., lost: _Optional[int] = ..., keyframes: _Optional[int] = ..., segmented_frames: _Optional[int] = ..., detections: _Optional[int] = ..., processing: bool = ..., last_t_ns: _Optional[int] = ..., error: _Optional[str] = ...) -> None: ...
 
 class DroneMapStatusResponse(_message.Message):
     __slots__ = ("drones",)

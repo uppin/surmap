@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import http.client
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -818,3 +819,27 @@ def test_a_drone_that_has_not_streamed_reports_no_last_frame_time() -> None:
 
     # Then its last frame time is zero
     assert reported.last_t_ns == 0
+
+
+def test_a_drone_whose_map_failed_reports_why() -> None:
+    # Given nest-ne-d1's session counts after its map failed
+    counts = DroneCounts(
+        drone_id=NE_D1,
+        frames=2,
+        posed=2,
+        lost=0,
+        keyframes=2,
+        dropped=0,
+        segmented_frames=2,
+        detections=4,
+        processing=False,
+        last_t_ns=200_000_000,
+        error="MapCrashed: the map crashed on frame 3",
+    )
+
+    # When it is reported
+    reported = drone_map_counts(counts)
+
+    # Then the failure is carried over, and a drone that runs reports none
+    assert reported.error == "MapCrashed: the map crashed on frame 3"
+    assert drone_map_counts(replace(counts, error=None)).HasField("error") is False

@@ -124,6 +124,7 @@ def fleet_tool_handlers(store: ScenarioStore, registry: FleetRegistry) -> Mappin
             linked=True,
             active=fleet.active() or "",
             drones=drone_statuses(found, fleet.drones()),
+            sim_t_s=fleet.telemetry_time(),
         )
 
     async def command(request: CommandRequest, _ctx: object) -> pb.FleetCommandResult:
@@ -319,7 +320,7 @@ def drone_map_status_handler(store: ScenarioStore, perception: PerceptionRegistr
 
 def drone_map_counts(counts: DroneCounts) -> pb.DroneMapCounts:
     """A drone session's counts as `drone_map_status` reports them (`last_t_ns` 0 before any
-    frame)."""
+    frame; `error` set only for a session whose map failed)."""
     return pb.DroneMapCounts(
         drone_id=counts.drone_id,
         frames=counts.frames,
@@ -330,4 +331,5 @@ def drone_map_counts(counts: DroneCounts) -> pb.DroneMapCounts:
         detections=counts.detections,
         processing=counts.processing,
         last_t_ns=counts.last_t_ns if counts.last_t_ns is not None else 0,
+        error=counts.error,
     )
