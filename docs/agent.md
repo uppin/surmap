@@ -39,6 +39,9 @@ leading comment, and argument descriptions are the field comments.
 | `get_dataset` | `SurveyTools.GetDataset` | SYNC · 10 s · FAIL |
 | `prepare_dataset` | `SurveyTools.PrepareDataset` | SYNC · 30 s · DETACH |
 | `run_rtabmap` | `SurveyTools.RunRtabmap` | SYNC · 30 s · DETACH |
+| `get_station_status` | `StationTools.GetStationStatus` (with `--station`) | SYNC · 10 s · FAIL |
+| `start_station` | `StationTools.StartStation` (with `--station`) | SYNC · 30 s · DETACH |
+| `stop_station` | `StationTools.StopStation` (with `--station`) | SYNC · 30 s · DETACH |
 | `run_sam_on_dataset` | `SurveyTools.RunSamOnDataset` | SYNC · 60 s · DETACH |
 | `wait_for_jobs` | `AgentJobs.WaitForJobs` | SYNC · 300 s · FAIL |
 | `get_job` | `AgentJobs.GetJob` | SYNC · 10 s · FAIL |
@@ -281,6 +284,47 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
 - **Serving** (`surmap.agent.server.sim_routes`): `/sim/assets/scenarios/<id>.json` (latest
   version), `/sim/assets/library/…`, `/sim/assets/…` (the PoC's assets) and, with `--sim-dist`,
   the built page at `/sim/`; the page opens `?scenario=<id>`. One origin, no CORS.
+
+## SAM station (`surmap.agent.tools.station`, `station_modal`)
+
+The GPU the agent's SAM runs on, brought up on first use and taken down when idle. One
+interface, `StationControl` (`status()`, `start()`, `stop()`, `check_idle()`, `detector()`), and
+two implementations: `StubStationControl` (in process, the fake SAM behind it; tests and
+`--station stub`) and `ModalStationControl` (the deployed `surmap-station` app,
+[modal.md §5](modal.md#5-the-survey-servers-on-modal-a-simulated-drone-and-the-station)). The
+station tools, the workspace's SAM and the chat header depend on the interface only.
+
+| State | Meaning |
+|---|---|
+| `off` | no container; costs nothing |
+| `queued` | a request waits for a GPU to be free |
+| `starting` | a container is up but has not answered its health check |
+| `ready` | SAM calls run on it |
+| `stopping` | asked to stop; the idle container is leaving, or still serves another client's stream |
+| `error` | it failed to start, or Modal cannot be reached; `detail` says why |
+
+- **First use.** The workspace's detector is a `StationSamDetector`: its first `track()` starts
+  the station and waits for it (about 20 s cold on Modal; longer while no GPU is free), each frame
+  restarts the idle timeout, and a link opened after a stop is reset to the run's prompt.
+- **Idle.** `IdleTicker` calls `check_idle()` every 15 s; `idle_timeout_s` (default 300,
+  `--station-idle-s`) after the last SAM frame — or after a start with no frame — the agent stops
+  it. Stopping the agent process stops it too.
+- **Reading is free.** `ModalStationControl.status()` reads `Function.get_current_stats()` and
+  what the control saw itself, never the station over HTTP: on Modal any request is an input, which
+  would boot a GPU or hold one up. So the chat page may poll it.
+- **Start / stop on Modal.** Start sets the scaledown window to the idle timeout, then GETs
+  `/health/is_alive` until it answers 200 (that GET is what boots a container; it gives up after
+  600 s as `error`). Stop closes the agent's link and calls
+  `autoscaler.update(min_containers=0, scaledown_window=2)`; a container holding another
+  client's stream stays until that client closes it (TODO
+  `src/surmap/docs/todo/2026-11-04-station-idle-close-foreign-sockets.md`).
+- **The SDK** is the optional extra `modal` (`uv sync --extra modal`), imported only in
+  `modal_station_function()`; everything else sees the `ModalFunction` protocol. The station's
+  link is `surmap.demo.remote.RemoteSamDetector` with `$SURMAP_SURVEY_TOKEN`.
+- **Tests.** `tests/test_agent_station.py` runs one contract suite against both implementations
+  (the Modal one over `tests/agent_station_fakes.FakeModalFunction`);
+  `tests/test_agent_station_modal.py`, `tests/test_agent_station_tools.py`, and station config
+  tests in `tests/test_agent_server_app.py`.
 
 ## Skills (`surmap.agent.skills`)
 
@@ -678,6 +722,7 @@ agent on hypercorn:
 
 ```bash
 uv run python -m surmap.agent --sam-fake                          # Muse (meta:) default model
+uv run --extra modal python -m surmap.agent --station modal       # SAM on the Modal GPU station
 uv run python -m surmap.agent --sam-fake --model ollama:llama3.2  # a local Ollama model
 uv run python -m surmap.agent --sam-fake \
     --model fireworks:accounts/fireworks/models/llama-v3p3-70b-instruct  # a Fireworks model
@@ -690,7 +735,12 @@ uv run python -m surmap.agent --sam-fake \
 | `--model` | `meta:<DEFAULT_AGENT_META_MODEL>` | default model id (`ListModels` lists the rest) |
 | `--history-db` | demo default | demo run history DB |
 | `--cache-dir` | demo default | demo scene cache; object GLBs go to `<cache-dir>/agent-geometry` |
-| `--sam-fake` | off | fake centred-box SAM — **required for now** |
+| `--sam-fake` | off | fake centred-box SAM; one of it or `--station` is required |
+| `--station` | none | `modal` (the deployed station app; needs `uv sync --extra modal` and a Modal token) or `stub`: SAM runs on the station, which is up on first use and down when idle |
+| `--station-app` | `surmap-station` | the station's deployed Modal app |
+| `--station-env` | the profile's | its Modal environment |
+| `--station-idle-s` | `300` | stop the station this long after its last SAM frame |
+| `--station-prompt` | `object` | the SAM concept a station link starts with; each run's prompt replaces it |
 | `--coral-model-dir` | `$SURMAP_CORAL_MODEL_DIR` | prepared Coral model dir (`scripts/fetch_coral_model.py`); without one no on-board model is available |
 | `--coral-model` | `efficientdet-lite0` | on-board model a run uses when the agent names none; `none` for no on-board model |
 | `--sim-dir` | `<cache>/simulation` | simulation store: `simulation.sqlite` and the asset `library/` |
@@ -707,7 +757,8 @@ default port — see *Models* above). The process loads the project
 prints `survey agent stopped`.
 
 **Served.** Connect services `surmap.agent.v1.ChatService`, `AgentJobs`
-and `SurveyTools` (the UI may call a survey tool directly), plus HTTP:
+and `SurveyTools` (the UI may call a survey tool directly), `StationTools` with `--station`,
+plus HTTP:
 
 | Route | Returns |
 |---|---|
@@ -733,9 +784,9 @@ their conversation in the `surmap-conversation-id` header.
 
 **Limits.**
 
-- **`--sam-fake` only.** Without it the process refuses to start: the
-  CLI has no SAM device / model / route flags yet. Recorded:
-  `src/surmap/docs/todo/2026-11-03-agent-cli-sam-flags.md`.
+- **SAM is the station or the fake.** The process refuses to start with neither `--station`
+  nor `--sam-fake`; a local SAM model and device (`scripts/demo.py`'s `--sam-model`) are not
+  agent flags yet. Recorded: `src/surmap/docs/todo/2026-11-03-agent-cli-sam-flags.md`.
 - **Tool images reach the model as a placeholder**
   (`<image/jpeg, N bytes, shown to the user>`); the stream carries the
   real bytes to the UI. Recorded:
@@ -757,6 +808,11 @@ cd web/agent-chat && yarn local-install && yarn dev   # http://localhost:5173
 
 ![Chat UI after one turn: a list_demos tool step with its policy and the reply](images/agent-chat.png)
 
+- **SAM station.** With `--station`, the header shows `SAM · <state>` (dot coloured by state;
+  the tooltip carries the detail, or `idle m:ss of m:ss` while ready) and **Start SAM** /
+  **Stop SAM**. It polls `GetStationStatus` every 5 s, shows `starting` / `stopping` as soon as
+  a button is pressed, and is absent when the agent has no station (`StationTools` answers
+  `Unimplemented`). Component: `src/components/StationIndicator.tsx`.
 - **Query parameters.** `?server=` names the agent server (default
   `http://127.0.0.1:8780`; its origin must be in
   `SURMAP_AGENT_CORS_ORIGINS`). `?conversation=` names the conversation;

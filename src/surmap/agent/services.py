@@ -20,6 +20,7 @@ from surmap.agent.proto import (
     jobs_pb2,
     map_tools_pb2,
     simulation_tools_pb2,
+    station_tools_pb2,
     survey_tools_pb2,
 )
 from surmap.rpc.compose import Brick
@@ -50,6 +51,11 @@ def map_tools_module(handlers: Mapping[str, Handler]) -> ServiceModule[Any]:
 def simulation_tools_module(handlers: Mapping[str, Handler]) -> ServiceModule[Any]:
     """The module mounting `surmap.agent.v1.SimulationTools`."""
     return _module(simulation_tools_pb2.DESCRIPTOR.services_by_name["SimulationTools"], handlers)
+
+
+def station_tools_module(handlers: Mapping[str, Handler]) -> ServiceModule[Any]:
+    """The module mounting `surmap.agent.v1.StationTools`."""
+    return _module(station_tools_pb2.DESCRIPTOR.services_by_name["StationTools"], handlers)
 
 
 def agent_jobs_module(handlers: Mapping[str, Handler]) -> ServiceModule[Any]:

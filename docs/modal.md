@@ -186,6 +186,15 @@ uv run --with modal modal serve src/surmap/survey/modal_station_app.py
 uv run python scripts/verify_station.py wss://<url> --expect-device gpu   # --prompt mattress by default
 ```
 
+**The station for the agent.** `python -m surmap.agent --station modal` drives a *deployed*
+station (`uv run --with modal modal deploy src/surmap/survey/modal_station_app.py`): it scales to
+zero, the agent's first SAM frame (or `start_station`, or **Start SAM** in the chat header) boots
+a container, and the agent stops it `--station-idle-s` (300) after its last frame, or on
+`stop_station` / **Stop SAM** — see [agent.md, *SAM station*](agent.md#sam-station-surmapagenttoolsstation-station_modal).
+Verified on 2026-11-04 (`ginas-bb`): off → first frame → 3 `mattress` detections in 24 s
+including the cold start → stop → off in ~20 s → start → 61 s idle → off; the chat header
+went off → starting → ready (26 s) → stopping → off. `modal app stop` ends the deployment.
+
 `modal deploy` instead keeps an app up; stop it with
 `uvx modal app stop -y <app-id>` (`uvx modal app list` names them). The
 `modal-cloud` skill (`.agents/skills/modal-cloud/SKILL.md`) covers workspace

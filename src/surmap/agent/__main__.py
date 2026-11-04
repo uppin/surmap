@@ -31,11 +31,15 @@ from surmap.agent.server.app import (
     build_agent_description,
     build_demo_workspace,
     build_simulation_rig,
+    build_station,
 )
 from surmap.agent.tools.onboard import ONBOARD_OFF
+from surmap.agent.tools.station import DEFAULT_IDLE_TIMEOUT_S, IdleTicker
 from surmap.detection import DEFAULT_PROFILE, MODEL_PROFILES
 from surmap.env import load_env
 from surmap.rpc.hosts.hypercorn import HypercornHost
+from surmap.survey.endpoint import survey_token
+from surmap.survey.modal_hosting import STATION_APP_NAME
 
 __all__ = ["build_parser", "config_from_args", "main", "serve"]
 
@@ -79,6 +83,28 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--sim-dist", type=Path, default=None, help="a `trunk build` output served at /sim/"
     )
+    parser.add_argument(
+        "--station",
+        choices=("modal", "stub"),
+        default=None,
+        help="run SAM on a station: the deployed Modal app (needs `uv sync --extra modal` and a "
+        "Modal token) or an in-process stub; up on first use, down when idle",
+    )
+    parser.add_argument(
+        "--station-app", default=STATION_APP_NAME, help="the station's deployed Modal app"
+    )
+    parser.add_argument(
+        "--station-env", default=None, help="its Modal environment (default: the profile's)"
+    )
+    parser.add_argument(
+        "--station-idle-s",
+        type=int,
+        default=DEFAULT_IDLE_TIMEOUT_S,
+        help="stop the station after this many seconds without a SAM frame",
+    )
+    parser.add_argument(
+        "--station-prompt", default="object", help="SAM concept a station link starts with"
+    )
     return parser
 
 
@@ -113,24 +139,38 @@ def config_from_args(
         sketchfab_token=env.get(SKETCHFAB_TOKEN_ENV) or None,
         coral_model_dir=coral_model_dir,
         coral_model=args.coral_model,
+        station=args.station,
+        station_app=args.station_app,
+        station_env=args.station_env,
+        station_idle_s=args.station_idle_s,
+        station_prompt=args.station_prompt,
+        survey_token=survey_token(None, env),
     )
 
 
 async def serve(config: AgentServerConfig) -> None:
     """Serve the agent on `config.host:config.port` until cancelled; always stop the host."""
-    workspace = build_demo_workspace(config)
+    station = build_station(config)
+    workspace = build_demo_workspace(config, station)
     description = build_agent_description(
         config,
         workspace=workspace,
         geometry=workspace.geometry,
         simulation=build_simulation_rig(config),
+        station=station,
     )
     host = HypercornHost(description, None, host=config.host, port=config.port)
+    ticker = IdleTicker(station) if station is not None else None
     ports = await host.start()
+    if ticker is not None:
+        ticker.start()
     print(f"survey agent on http://{config.host}:{ports.public}", flush=True)
     try:
         await asyncio.Event().wait()
     finally:
+        if ticker is not None and station is not None:
+            ticker.stop()
+            await asyncio.to_thread(station.stop)
         await host.stop()
 
 

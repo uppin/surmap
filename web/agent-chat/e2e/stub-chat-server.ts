@@ -1,6 +1,6 @@
 /**
  * A scripted stand-in for the agent server (`python -m surmap.agent`) for the Playwright suite:
- * `ChatService` and `AgentJobs` over the Connect protocol, plus `GET /geometry/...` GLBs, with the
+ * `ChatService`, `AgentJobs` and (with `station`) `StationTools` over the Connect protocol, plus `GET /geometry/...` GLBs, with the
  * CORS the browser needs. Each test scripts its own turns and reads back what the page sent.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -15,6 +15,7 @@ import {
 } from "../src/gen/surmap/agent/v1/chat_pb";
 import { JobStatus } from "../src/gen/surmap/agent/v1/execution_pb";
 import { AgentJobs } from "../src/gen/surmap/agent/v1/jobs_pb";
+import { StationState, StationTools } from "../src/gen/surmap/agent/v1/station_tools_pb";
 
 /** The header `AgentJobs` calls name their conversation in. */
 const CONVERSATION_HEADER = "surmap-conversation-id";
@@ -57,6 +58,8 @@ export interface StubChatOptions {
   history?: Record<string, TurnEvent[]>;
   /** GLB bodies by request path, e.g. `/geometry/run-7/obj-3.glb`. */
   glb?: Record<string, Uint8Array>;
+  /** A SAM station in this state; start makes it ready, stop off. Absent: no `StationTools`. */
+  station?: { state: "off" | "ready" };
 }
 
 export interface StubChatServer {
@@ -67,6 +70,8 @@ export interface StubChatServer {
     cancelTurns: string[];
     cancelJobs: { conversationId: string | null; jobId: string }[];
     geometry: string[];
+    /** "start" / "stop", in the order the page asked. */
+    station: string[];
   };
   /** Settles once the page holds a `WatchConversation` stream open for the conversation. */
   watching(conversationId: string): Promise<void>;
@@ -125,6 +130,7 @@ class StubState {
     cancelTurns: [],
     cancelJobs: [],
     geometry: [],
+    station: [],
   };
   private readonly seqs = new Map<string, bigint>();
   private readonly turnCounts = new Map<string, number>();
@@ -267,6 +273,32 @@ function routerFor(state: StubState) {
       return { job: { jobId: request.jobId, tool: "", status: JobStatus.CANCELLED, detail: "" } };
     },
   });
+  if (state.options.station) {
+    let stationState = state.options.station.state === "ready" ? StationState.READY : StationState.OFF;
+    const status = () => ({
+      status: {
+        state: stationState,
+        detail: "",
+        containers: stationState === StationState.READY ? 1 : 0,
+        idleTimeoutS: 300,
+        idleForS: 0,
+        backend: "stub",
+      },
+    });
+    router.service(StationTools, {
+      getStationStatus: status,
+      startStation() {
+        state.received.station.push("start");
+        stationState = StationState.READY;
+        return status();
+      },
+      stopStation() {
+        state.received.station.push("stop");
+        stationState = StationState.OFF;
+        return status();
+      },
+    });
+  }
   return new Map(router.handlers.map((handler) => [handler.requestPath, createFetchHandler(handler)]));
 }
 

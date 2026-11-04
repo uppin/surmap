@@ -21,7 +21,7 @@ is no auth (docs/agent.md).
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -33,7 +33,13 @@ from surmap.agent.contracts import tool_contracts
 from surmap.agent.llm.fireworks import FireworksChatModel
 from surmap.agent.llm.meta import DEFAULT_AGENT_META_MODEL, META_PROVIDER, MetaResponsesChatModel
 from surmap.agent.llm.registry import ChatModelRegistry
-from surmap.agent.proto import jobs_pb2, map_tools_pb2, simulation_tools_pb2, survey_tools_pb2
+from surmap.agent.proto import (
+    jobs_pb2,
+    map_tools_pb2,
+    simulation_tools_pb2,
+    station_tools_pb2,
+    survey_tools_pb2,
+)
 from surmap.agent.runtime.graph import TurnCaps
 from surmap.agent.server.binding import agent_tools
 from surmap.agent.server.chat_service import agent_jobs_handlers, chat_handlers
@@ -46,6 +52,7 @@ from surmap.agent.services import (
     chat_service_module,
     map_tools_module,
     simulation_tools_module,
+    station_tools_module,
     survey_tools_module,
 )
 from surmap.agent.skills import SkillCatalogue, skill_tools
@@ -55,8 +62,17 @@ from surmap.agent.tools.handlers import survey_tool_handlers
 from surmap.agent.tools.map_handlers import MapSceneStore, map_tool_handlers
 from surmap.agent.tools.onboard import ONBOARD_OFF, OnboardModels
 from surmap.agent.tools.simulation_handlers import simulation_tool_handlers
+from surmap.agent.tools.station import DEFAULT_IDLE_TIMEOUT_S, StationControl, StubStationControl
+from surmap.agent.tools.station_handlers import station_tool_handlers
+from surmap.agent.tools.station_modal import (
+    ModalFunction,
+    ModalStationControl,
+    http_health_probe,
+    modal_station_function,
+)
 from surmap.agent.tools.workspace import DemoWorkspace, SurveyWorkspace
 from surmap.demo.datasets import default_cache_dir
+from surmap.demo.remote import RemoteSamDetector
 from surmap.demo.runs import DemoRunHost
 from surmap.demo.server import make_demo_server
 from surmap.detection import DEFAULT_PROFILE
@@ -64,12 +80,14 @@ from surmap.rpc.description import ServerDescription
 from surmap.simulation.asset_sources import AmbientCg, AssetSource, PolyHaven, Sketchfab, http_fetch
 from surmap.simulation.scenario_manifest import load_presets
 from surmap.simulation.scenario_store import ScenarioStore
-from surmap.survey.sam import CentredBoxVideoSamDetector
+from surmap.survey.modal_hosting import STATION_APP_NAME
+from surmap.survey.sam import CentredBoxVideoSamDetector, VideoSamDetector
 from surmap.usage import UsageLedger
 
 _SURVEY_TOOLS = survey_tools_pb2.DESCRIPTOR.services_by_name["SurveyTools"]
 _MAP_TOOLS = map_tools_pb2.DESCRIPTOR.services_by_name["MapTools"]
 _SIMULATION_TOOLS = simulation_tools_pb2.DESCRIPTOR.services_by_name["SimulationTools"]
+_STATION_TOOLS = station_tools_pb2.DESCRIPTOR.services_by_name["StationTools"]
 _AGENT_JOBS = jobs_pb2.DESCRIPTOR.services_by_name["AgentJobs"]
 """The three tool services; their rpcs are the tools a conversation binds."""
 
@@ -187,6 +205,18 @@ class AgentServerConfig:
     """The prepared Coral model dir (`scripts/fetch_coral_model.py`); none: no on-board model."""
     coral_model: str = DEFAULT_PROFILE
     """The on-board model a run that names none uses; `"none"` for no on-board model."""
+    station: str | None = None
+    """The SAM station the agent's SAM runs on: `"modal"`, `"stub"`, or None for none."""
+    station_app: str = STATION_APP_NAME
+    """The deployed Modal app of a `"modal"` station."""
+    station_env: str | None = None
+    """The Modal environment of that app; None: the profile's default."""
+    station_idle_s: int = DEFAULT_IDLE_TIMEOUT_S
+    """Seconds without a SAM frame after which the agent stops the station."""
+    station_prompt: str = "object"
+    """The SAM concept a station link starts with; each run's prompt replaces it."""
+    survey_token: str | None = None
+    """`SURMAP_SURVEY_TOKEN`: the bearer token the station's Connect calls carry."""
 
 
 DEFAULT_SIM_ASSETS = Path("examples/bevy-sitl-poc/assets")
@@ -234,10 +264,51 @@ def default_model_factory(registry: ChatModelRegistry, ledger: UsageLedger) -> M
     return build
 
 
-def build_demo_workspace(config: AgentServerConfig) -> DemoWorkspace:
-    """A `DemoWorkspace` over a non-serving demo run host on the configured cache and history."""
-    if not config.sam_fake:
-        raise ValueError("the agent process runs the fake SAM only for now: pass --sam-fake")
+def build_station(
+    config: AgentServerConfig,
+    *,
+    modal_function: Callable[[str, str | None], ModalFunction] = modal_station_function,
+) -> StationControl | None:
+    """The configured SAM station, or None; `modal_function` looks the deployed app up."""
+    if config.station is None:
+        return None
+    if config.station == "stub":
+        return StubStationControl(idle_timeout_s=config.station_idle_s)
+    if config.station != "modal":
+        raise ValueError(f"unknown station {config.station!r}: use modal or stub")
+    environment = config.station_env
+    return ModalStationControl(
+        modal_function(config.station_app, environment),
+        probe=http_health_probe,
+        connect=_station_link,
+        token=config.survey_token,
+        prompt=config.station_prompt,
+        idle_timeout_s=config.station_idle_s,
+        backend=f"modal:{environment or 'main'}/{config.station_app}",
+    )
+
+
+def _station_link(url: str, token: str | None, prompt: str) -> VideoSamDetector:
+    return RemoteSamDetector(url, prompt=prompt, token=token)
+
+
+def build_demo_workspace(
+    config: AgentServerConfig, station: StationControl | None = None
+) -> DemoWorkspace:
+    """A `DemoWorkspace` over a non-serving demo run host on the configured cache and history.
+
+    Its SAM runs on `station` when there is one, else the fake SAM with `--sam-fake`.
+    """
+    detector: VideoSamDetector
+    if station is not None:
+        detector = station.detector()
+    elif config.sam_fake:
+        detector = CentredBoxVideoSamDetector()
+    else:
+        raise ValueError(
+            "the agent needs a SAM: pass --station modal|stub to run it on a station, "
+            "or --sam-fake for the fake centred-box SAM"
+        )
     cache_dir = config.cache_dir if config.cache_dir is not None else default_cache_dir()
     server = make_demo_server(
         None,
@@ -251,7 +322,7 @@ def build_demo_workspace(config: AgentServerConfig) -> DemoWorkspace:
         raise TypeError("the demo server is not a run host")
     return DemoWorkspace(
         server,
-        detector=CentredBoxVideoSamDetector(),
+        detector=detector,
         geometry=GeometryStore(cache_dir / "agent-geometry"),
         onboard=onboard_models(config),
     )
@@ -273,12 +344,14 @@ def build_agent_description(
     registry: ChatModelRegistry | None = None,
     survey_handlers: Mapping[str, Handler] | None = None,
     simulation: SimulationRig | None = None,
+    station: StationControl | None = None,
 ) -> ServerDescription[None]:
     """The agent server over `workspace`.
 
     `survey_handlers` defaults to `survey_tool_handlers(workspace)`; `registry` to one over the
     process environment, which also lists the models. With `simulation`, the `SimulationTools`
     are mounted, bound as agent tools, and `/sim/` serves the page, scenarios and library.
+    With `station`, the `StationTools` are mounted and bound the same way.
     """
     ledger = UsageLedger()
     models = registry if registry is not None else ChatModelRegistry()
@@ -298,11 +371,20 @@ def build_agent_description(
         if simulation is not None
         else {}
     )
-    rpc_handlers: dict[str, Handler] = {**survey_only, **map_handlers, **sim_handlers}
+    station_handlers: dict[str, Handler] = (
+        dict(station_tool_handlers(station)) if station is not None else {}
+    )
+    rpc_handlers: dict[str, Handler] = {
+        **survey_only,
+        **map_handlers,
+        **sim_handlers,
+        **station_handlers,
+    }
     contracts = (
         *tool_contracts(_SURVEY_TOOLS),
         *tool_contracts(_MAP_TOOLS),
         *(tool_contracts(_SIMULATION_TOOLS) if simulation is not None else ()),
+        *(tool_contracts(_STATION_TOOLS) if station is not None else ()),
         *tool_contracts(_AGENT_JOBS),
     )
     catalogue = SkillCatalogue.shipped(config.skills_dir)
@@ -327,6 +409,11 @@ def build_agent_description(
             *(
                 (simulation_tools_module(_allowing_origins(sim_handlers, origins)),)
                 if simulation is not None
+                else ()
+            ),
+            *(
+                (station_tools_module(_allowing_origins(station_handlers, origins)),)
+                if station is not None
                 else ()
             ),
             agent_jobs_module(_allowing_origins(agent_jobs_handlers(hub), origins)),

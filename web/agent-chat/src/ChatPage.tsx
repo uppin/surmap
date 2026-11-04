@@ -5,8 +5,9 @@ import { DatasetGallery } from "@/components/DatasetGallery";
 import { JobsPanel } from "@/components/JobsPanel";
 import { MapPane } from "@/components/MapPane";
 import { ModelPicker } from "@/components/ModelPicker";
+import { StationIndicator } from "@/components/StationIndicator";
 import { Transcript } from "@/components/Transcript";
-import type { ChatPort, DatasetView, MapSceneView } from "@/ports";
+import type { ChatPort, DatasetView, MapSceneView, StationView } from "@/ports";
 import {
   chatReducer,
   initialChatState,
@@ -40,6 +41,7 @@ export function ChatPage(props: ChatPageProps): ReactNode {
   const [onServer, setOnServer] = useState(false);
   const [mapScene, setMapScene] = useState<MapSceneView | null>(null);
   const [datasets, setDatasets] = useState<DatasetView[]>([]);
+  const [station, setStation] = useState<StationView | null>(null);
   const [screen, setScreen] = useState<"chat" | "gallery">(() =>
     new URLSearchParams(window.location.search).get("screen") === "gallery" ? "gallery" : "chat",
   );
@@ -84,6 +86,33 @@ export function ChatPage(props: ChatPageProps): ReactNode {
       window.clearInterval(timer);
     };
   }, [port]);
+
+  // The SAM station's status reads Modal's counters, never the station, so polling it neither
+  // starts its GPU nor keeps it up.
+  useEffect(() => {
+    let current = true;
+    const poll = () => {
+      port.getStationStatus().then(
+        (status) => {
+          if (current) setStation(status);
+        },
+        () => {},
+      );
+    };
+    poll();
+    const timer = window.setInterval(poll, 5000);
+    return () => {
+      current = false;
+      window.clearInterval(timer);
+    };
+  }, [port]);
+
+  const driveStation = (action: "start" | "stop") => {
+    setStation((prev) => (prev ? { ...prev, state: action === "start" ? "starting" : "stopping", detail: "" } : prev));
+    (action === "start" ? port.startStation() : port.stopStation()).then(setStation, (error: unknown) =>
+      setStation((prev) => (prev ? { ...prev, state: "error", detail: messageOf(error) } : prev)),
+    );
+  };
 
   useEffect(() => {
     let current = true;
@@ -226,6 +255,11 @@ export function ChatPage(props: ChatPageProps): ReactNode {
               Dataset gallery
             </button>
           </nav>
+          <StationIndicator
+            status={station}
+            onStart={() => driveStation("start")}
+            onStop={() => driveStation("stop")}
+          />
           <ModelPicker
             models={state.models}
             value={state.modelId}

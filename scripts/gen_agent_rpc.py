@@ -25,7 +25,15 @@ import grpc_tools
 from grpc_tools import protoc
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PROTOS = ("execution", "survey_tools", "jobs", "chat", "map_tools", "simulation_tools")
+PROTOS = (
+    "execution",
+    "survey_tools",
+    "jobs",
+    "chat",
+    "map_tools",
+    "simulation_tools",
+    "station_tools",
+)
 PROTO_PACKAGE_DIR = "surmap/agent/v1"
 OUT = ROOT / "src/surmap/agent/proto"
 DESCRIPTOR_SET = OUT / "agent_descriptor_set.binpb"
