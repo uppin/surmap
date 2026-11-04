@@ -48,12 +48,8 @@ from surmap.agent.tools.simulation_floor import (
 )
 from surmap.simulation.asset_sources import AssetHit, AssetKind, AssetSource
 from surmap.simulation.licences import check_licence
-from surmap.simulation.map_floor import FloorImage, GeoBBox, OsmTileSource, TileSource, stitch_floor
+from surmap.simulation.map_floor import OsmTileSource, TileSource
 from surmap.simulation.scenario_contents import scene_items, weather_line
-from surmap.simulation.map_floor import (
-    OsmTileSource,
-    TileSource,
-)
 from surmap.simulation.scenario_manifest import (
     add_element,
     add_fire,

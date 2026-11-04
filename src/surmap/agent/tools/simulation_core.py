@@ -51,6 +51,7 @@ class SimulationTooling:
 
 class StaleScenario(Exception):
     """An edit based on a scenario version older than its latest."""
+
     tile_source: TileSource | None = None
 
 

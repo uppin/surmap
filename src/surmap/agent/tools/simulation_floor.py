@@ -46,16 +46,18 @@ async def set_map_floor_tool(
         floor = stitch_floor(tooling.tile_source, bbox)
         texture = tooling.store.store_floor_texture(floor.png, floor.texture_path)
         attribution = getattr(tooling.tile_source, "attribution", None)
-        saved = tooling.store.save(
-            request.scenario_id,
-            set_map_floor(
-                current.manifest,
-                sw=(bbox.sw_lat, bbox.sw_lon),
-                ne=(bbox.ne_lat, bbox.ne_lon),
-                texture=texture,
-                zoom=floor.zoom,
-                attribution=attribution if isinstance(attribution, str) else None,
-            ),
+        saved = tooling.shown(
+            tooling.store.save(
+                request.scenario_id,
+                set_map_floor(
+                    current.manifest,
+                    sw=(bbox.sw_lat, bbox.sw_lon),
+                    ne=(bbox.ne_lat, bbox.ne_lon),
+                    texture=texture,
+                    zoom=floor.zoom,
+                    attribution=attribution if isinstance(attribution, str) else None,
+                ),
+            )
         )
         warnings: list[str] = []
         elements = [e for e in _manifest_elements(current.manifest) if e.get("id") != "ground"]
