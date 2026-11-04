@@ -1,4 +1,4 @@
-import { Code, ConnectError, createClient, type Transport } from "@connectrpc/connect";
+import { Code, ConnectError, createClient, type Interceptor, type Transport } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { ChatService } from "@/gen/surmap/agent/v1/chat_pb";
 import { AgentJobs } from "@/gen/surmap/agent/v1/jobs_pb";
@@ -22,9 +22,9 @@ export const CONVERSATION_HEADER = "surmap-conversation-id";
 /** The agent server's default address. */
 export const DEFAULT_SERVER_URL = "http://127.0.0.1:8780";
 
-/** A Connect transport to the agent server at `baseUrl`. */
-export function createAgentTransport(baseUrl: string): Transport {
-  return createConnectTransport({ baseUrl });
+/** A Connect transport to the agent server at `baseUrl`, adding `interceptors` to each call. */
+export function createAgentTransport(baseUrl: string, interceptors: Interceptor[] = []): Transport {
+  return createConnectTransport({ baseUrl, interceptors });
 }
 
 interface DatasetJson {

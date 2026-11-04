@@ -741,11 +741,22 @@ uv run python -m surmap.agent --sam-fake \
 | `--station-env` | the profile's | its Modal environment |
 | `--station-idle-s` | `300` | stop the station this long after its last SAM frame |
 | `--station-prompt` | `object` | the SAM concept a station link starts with; each run's prompt replaces it |
+| `--web-dist` | none | a built chat page (`cd web/agent-chat && yarn build` → `dist/`) served at `/` |
 | `--coral-model-dir` | `$SURMAP_CORAL_MODEL_DIR` | prepared Coral model dir (`scripts/fetch_coral_model.py`); without one no on-board model is available |
 | `--coral-model` | `efficientdet-lite0` | on-board model a run uses when the agent names none; `none` for no on-board model |
 | `--sim-dir` | `<cache>/simulation` | simulation store: `simulation.sqlite` and the asset `library/` |
 | `--sim-assets` | `examples/bevy-sitl-poc/assets` | the simulation's own assets; simulation tools are off when absent |
 | `--sim-dist` | none | a `trunk build` output served at `/sim/` |
+
+**Access code** (`surmap.agent.server.access`). With `SURMAP_AGENT_ACCESS_CODE` set, the agent is
+behind a shared pass code: `POST /auth/session` with `{"code": …}` answers
+`{"token", "expires_in"}` (12 h) and sets the same token as an HttpOnly, Secure, SameSite=Strict
+`surmap_session` cookie; a wrong code is 401. Every Connect rpc then needs
+`Authorization: Bearer <token>` or the cookie (else `UNAUTHENTICATED`, "sign in: open this page
+with ?code=…"), and every HTTP route but `/health`, `/auth/session` and the page's own files needs
+it (else 401). A token is `<expiry>.<hmac>` keyed from the code: no server state, it survives a
+restart, and changing the code revokes every token. There is no rate limit on sign-in, so use a
+long random code. Unset (local use): nothing is gated.
 
 Environment: `SURMAP_AGENT_CORS_ORIGINS` — comma-separated browser
 origins allowed by CORS (default `http://localhost:5173`, the chat UI's
@@ -813,9 +824,12 @@ cd web/agent-chat && yarn local-install && yarn dev   # http://localhost:5173
   **Stop SAM**. It polls `GetStationStatus` every 5 s, shows `starting` / `stopping` as soon as
   a button is pressed, and is absent when the agent has no station (`StationTools` answers
   `Unimplemented`). Component: `src/components/StationIndicator.tsx`.
-- **Query parameters.** `?server=` names the agent server (default
-  `http://127.0.0.1:8780`; its origin must be in
-  `SURMAP_AGENT_CORS_ORIGINS`). `?conversation=` names the conversation;
+- **Query parameters.** `?server=` names the agent server (default: the page's own origin in a
+  built page the agent serves with `--web-dist`, `http://127.0.0.1:8780` under the Vite dev
+  server; a cross-origin server's origin must be in `SURMAP_AGENT_CORS_ORIGINS`). `?code=` is the
+  agent's access code: the page trades it for a session token once (`src/adapters/session.ts`),
+  drops it from the URL, keeps the token in `sessionStorage` and sends it on every Connect call;
+  images and the 3D preview ride on the cookie. `?conversation=` names the conversation;
   without it each tab keeps one id of its own in `sessionStorage`, so a
   reload keeps the conversation and redraws it from `GetConversation`.
 - **Transcript.** User messages, streamed Markdown replies, and one card

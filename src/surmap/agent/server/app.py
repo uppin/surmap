@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from connectrpc.code import Code
+from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
 from langchain_core.language_models import BaseChatModel
 
@@ -41,6 +43,7 @@ from surmap.agent.proto import (
     survey_tools_pb2,
 )
 from surmap.agent.runtime.graph import TurnCaps
+from surmap.agent.server.access import UNAUTHENTICATED_HINT, AccessGate, session_token
 from surmap.agent.server.binding import agent_tools
 from surmap.agent.server.chat_service import agent_jobs_handlers, chat_handlers
 from surmap.agent.server.hub import ChatHub, ModelFactory
@@ -217,6 +220,10 @@ class AgentServerConfig:
     """The SAM concept a station link starts with; each run's prompt replaces it."""
     survey_token: str | None = None
     """`SURMAP_SURVEY_TOKEN`: the bearer token the station's Connect calls carry."""
+    access_code: str | None = None
+    """`SURMAP_AGENT_ACCESS_CODE`: the pass code every caller signs in with; None: no gate."""
+    web_dist: Path | None = None
+    """A built chat page (`web/agent-chat/dist`) served at `/`."""
 
 
 DEFAULT_SIM_ASSETS = Path("examples/bevy-sitl-poc/assets")
@@ -402,28 +409,51 @@ def build_agent_description(
         subagents=SubagentSetup(system_prompt=SUBAGENT_PROMPT, load_skill=catalogue.load_skill),
     )
     origins = tuple(config.cors_origins)
+    gate = AccessGate(config.access_code) if config.access_code else None
+
+    def guarded(handlers: Mapping[str, Handler]) -> dict[str, Handler]:
+        return _requiring_session(_allowing_origins(handlers, origins), gate)
+
     return ServerDescription(
         services=(
-            survey_tools_module(_allowing_origins(survey_only, origins)),
-            map_tools_module(_allowing_origins(map_handlers, origins)),
-            *(
-                (simulation_tools_module(_allowing_origins(sim_handlers, origins)),)
-                if simulation is not None
-                else ()
-            ),
-            *(
-                (station_tools_module(_allowing_origins(station_handlers, origins)),)
-                if station is not None
-                else ()
-            ),
-            agent_jobs_module(_allowing_origins(agent_jobs_handlers(hub), origins)),
-            chat_service_module(_allowing_origins(chat_handlers(hub), origins)),
+            survey_tools_module(guarded(survey_only)),
+            map_tools_module(guarded(map_handlers)),
+            *((simulation_tools_module(guarded(sim_handlers)),) if simulation is not None else ()),
+            *((station_tools_module(guarded(station_handlers)),) if station is not None else ()),
+            agent_jobs_module(guarded(agent_jobs_handlers(hub))),
+            chat_service_module(guarded(chat_handlers(hub))),
         ),
         http_routes=agent_http_routes(
-            workspace, geometry, cors_origins=origins, datasets=workspace, simulation=simulation
+            workspace,
+            geometry,
+            cors_origins=origins,
+            datasets=workspace,
+            simulation=simulation,
+            gate=gate,
+            web_dist=config.web_dist,
         ),
         closeables=lambda _context: (hub,),
     )
+
+
+def _requiring_session(
+    handlers: Mapping[str, Handler], gate: AccessGate | None
+) -> dict[str, Handler]:
+    """`handlers`, each refusing a call with no valid session token when there is a `gate`."""
+    if gate is None:
+        return dict(handlers)
+    return {name: _with_session(handler, gate) for name, handler in handlers.items()}
+
+
+def _with_session(handler: Handler, gate: AccessGate) -> Handler:
+    def serve(request: object, ctx: RequestContext[Any, Any]) -> Any:
+        headers = {key.lower(): value for key, value in ctx.request_headers.items()}
+        token = session_token(headers)
+        if token is None or not gate.allows(token):
+            raise ConnectError(Code.UNAUTHENTICATED, UNAUTHENTICATED_HINT)
+        return handler(request, ctx)
+
+    return serve
 
 
 def _allowing_origins(

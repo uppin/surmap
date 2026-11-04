@@ -157,6 +157,8 @@ the app files are read with the AST, because CI does not install `modal`.
 | `surmap-cm5-sim` | `src/surmap/survey/modal_cm5_app.py` | `cm5_main --slam-backend streaming --rtabmap-native … --region-points --detector none` on port 8080, no calibration dir: the simulator sends cameras and GPS over RPC | 4 CPU, 8 GiB; image builds RTAB-Map 0.23.1 natively (`scripts/build_rtabmap_native.sh`, about 15 min the first time), then `uv sync --no-dev` from `uv.lock` |
 | `surmap-station` | `src/surmap/survey/modal_station_app.py` | `station_main --detector sam31-torch` on port 8081, prompt `$SURMAP_STATION_LABEL` (default `object`) when a client sends none | L4 GPU, or an A10G when no L4 is free (`SURMAP_MODAL_GPU`, a comma list, names another order), 4 CPU, 16 GiB; checkpoint in Volume `surmap-sam3` with the `huggingface` secret, as `surmap-sam`; `sam3` installed `--no-deps` after the pyproject, so numpy is surmap's pin |
 
+| `surmap-agent` | `src/surmap/agent/modal_agent_app.py` | `python -m surmap.agent --station modal --web-dist … --cache-dir /cache` on port 8780: the agent and its chat page behind the access code ([agent.md](agent.md#running-the-agent)) | 2 CPU, 4 GiB, one container (conversations live in memory), 20 min scaledown; `uv sync --no-dev --extra modal`; the built page (`yarn build` first); demo cache on Volume `surmap-agent-cache`; secrets `surmap-agent` (`MODEL_API_KEY`, `SURMAP_AGENT_ACCESS_CODE`) and `surmap-survey` |
+
 `SURMAP_MODAL_TIMEOUT` (default 86400 s) bounds a container, and so the longest
 survey stream; `SURMAP_MODAL_SCALEDOWN_WINDOW` (default 300 s) how long an
 idle one stays up. These and `SURMAP_STATION_LABEL` are read where the app is
@@ -194,6 +196,22 @@ a container, and the agent stops it `--station-idle-s` (300) after its last fram
 Verified on 2026-11-04 (`ginas-bb`): off → first frame → 3 `mattress` detections in 24 s
 including the cold start → stop → off in ~20 s → start → 61 s idle → off; the chat header
 went off → starting → ready (26 s) → stopping → off. `modal app stop` ends the deployment.
+
+**The agent and its chat page.** Create its secret once, then build the page and deploy:
+
+```bash
+read -rs MODEL_API_KEY; read -rs SURMAP_AGENT_ACCESS_CODE
+uvx modal secret create surmap-agent MODEL_API_KEY="$MODEL_API_KEY" SURMAP_AGENT_ACCESS_CODE="$SURMAP_AGENT_ACCESS_CODE"
+(cd web/agent-chat && yarn build)
+uv run --with modal modal deploy src/surmap/agent/modal_agent_app.py
+# open https://<workspace>--surmap-agent-serve.<region>.modal.run/?code=<the access code>
+```
+
+Inside Modal the SDK needs no token, so `--station modal` finds the deployed station by name.
+Verified on 2026-11-04 (`ginas-bb`): the page and `/health` open; an rpc, a frame and a wrong code
+refused; `?code=` signs in and leaves the URL, the Meta model is listed, and **Start SAM** /
+**Stop SAM** bring the station up (24 s) and down; the CM5 app passed `verify_cm5.py --simulated`
+(scene points, 32/40 GPS anchors, 26 531 region points) on the same day.
 
 `modal deploy` instead keeps an app up; stop it with
 `uvx modal app stop -y <app-id>` (`uvx modal app list` names them). The

@@ -100,5 +100,6 @@ module = [
     "surmap.survey.modal_sam_app",
     "surmap.survey.modal_cm5_app",
     "surmap.survey.modal_station_app",
+    "surmap.agent.modal_agent_app",
 ]
 ignore_errors = true
