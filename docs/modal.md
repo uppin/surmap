@@ -157,7 +157,17 @@ the app files are read with the AST, because CI does not install `modal`.
 | `surmap-cm5-sim` | `src/surmap/survey/modal_cm5_app.py` | `cm5_main --slam-backend streaming --rtabmap-native … --region-points --detector none` on port 8080, no calibration dir: the simulator sends cameras and GPS over RPC | 4 CPU, 8 GiB; image builds RTAB-Map 0.23.1 natively (`scripts/build_rtabmap_native.sh`, about 15 min the first time), then `uv sync --no-dev` from `uv.lock` |
 | `surmap-station` | `src/surmap/survey/modal_station_app.py` | `station_main --detector sam31-torch` on port 8081, prompt `$SURMAP_STATION_LABEL` (default `object`) when a client sends none | L4 GPU, or an A10G when no L4 is free (`SURMAP_MODAL_GPU`, a comma list, names another order), 4 CPU, 16 GiB; checkpoint in Volume `surmap-sam3` with the `huggingface` secret, as `surmap-sam`; `sam3` installed `--no-deps` after the pyproject, so numpy is surmap's pin |
 
-| `surmap-agent` | `src/surmap/agent/modal_agent_app.py` | `python -m surmap.agent --station modal --web-dist … --cache-dir /cache` on port 8780: the agent and its chat page behind the access code ([agent.md](agent.md#running-the-agent)) | 2 CPU, 4 GiB, one container (conversations live in memory), 20 min scaledown; `uv sync --no-dev --extra modal`; the built page (`yarn build` first); demo cache on Volume `surmap-agent-cache`; secrets `surmap-agent` (`MODEL_API_KEY`, `SURMAP_AGENT_ACCESS_CODE`) and `surmap-survey` |
+| `surmap-agent` | `src/surmap/agent/modal_agent_app.py` | `python -m surmap.agent --station modal --web-dist … --cache-dir /cache` on port 8780: the agent and its chat page behind the access code ([agent.md](agent.md#running-the-agent)) | 2 CPU, 4 GiB, one container, 20 min scaledown; `uv sync --no-dev --extra modal`; the built page (`yarn build` first); state on Volume `surmap-agent-cache` (below); secrets `surmap-agent` (`MODEL_API_KEY`, `SURMAP_AGENT_ACCESS_CODE`) and `surmap-survey` |
+
+The agent's state sits under `/cache` on Volume `surmap-agent-cache`, so a container
+restart keeps it (Modal's background commits plus the shutdown commit persist it; the
+single container is SQLite's only writer): `demo-history.db` (demo runs), the dataset
+cache and `agent-geometry/`, `simulation.sqlite` + `library/` (`--sim-dir`), the usage
+log `usage.jsonl` (so spend budgets stop resetting), and `conversations.sqlite`
+(`--conversations-db`: each conversation's message history, model and `GetConversation`
+replay). Running turns and jobs are process state and do not survive. The CM5 and the
+station hold no such state: the CM5's RTAB-Map belongs to a live stream, and the
+station's only file is the SAM checkpoint, already on `surmap-sam3`.
 
 `SURMAP_MODAL_TIMEOUT` (default 86400 s) bounds a container, and so the longest
 survey stream; `SURMAP_MODAL_SCALEDOWN_WINDOW` (default 300 s) how long an

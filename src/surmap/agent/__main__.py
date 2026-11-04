@@ -56,6 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default=DEFAULT_HOST, help="bind address (default loopback)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--history-db", type=Path, default=None, help="demo run history DB")
+    parser.add_argument(
+        "--conversations-db",
+        type=Path,
+        default=None,
+        help="chat conversations DB (history, model, replay); in memory when omitted",
+    )
     parser.add_argument("--cache-dir", type=Path, default=None, help="demo scene cache")
     parser.add_argument(
         "--model", default=DEFAULT_MODEL_ID, help="default model id, e.g. ollama:llama3.2"
@@ -143,6 +149,7 @@ def config_from_args(
         host=args.host,
         port=args.port,
         history_db=args.history_db,
+        conversations_db=args.conversations_db,
         cache_dir=args.cache_dir,
         model_id=args.model,
         sam_fake=args.sam_fake,

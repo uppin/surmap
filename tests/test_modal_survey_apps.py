@@ -16,7 +16,10 @@ from surmap.agent.__main__ import build_parser as agent_parser
 from surmap.survey.cm5_main import build_parser as cm5_parser
 from surmap.survey.modal_hosting import (
     AGENT_CACHE,
+    AGENT_CONVERSATIONS_DB,
+    AGENT_HISTORY_DB,
     AGENT_PORT,
+    AGENT_SIM_DIR,
     AGENT_WEB_DIST,
     CM5_PORT,
     SAM3_PACKAGE,
@@ -256,6 +259,19 @@ def test_the_agent_command_serves_the_chat_page_on_every_interface_with_the_moda
     assert (args.host, args.port) == ("0.0.0.0", AGENT_PORT)
     assert args.station == "modal"
     assert (args.web_dist, args.cache_dir) == (Path(AGENT_WEB_DIST), Path(AGENT_CACHE))
+
+
+def test_the_agent_command_puts_its_sqlite_dbs_and_files_on_the_cache_volume() -> None:
+    # Given the command the agent app runs, parsed by the agent's own CLI
+    args = agent_parser().parse_args(agent_command()[3:])
+
+    # Then every SQLite DB and state dir sits under the cache mount (the Volume), so a
+    # container restart keeps the demo history, the conversations and the simulation store
+    assert args.history_db == Path(AGENT_HISTORY_DB)
+    assert args.conversations_db == Path(AGENT_CONVERSATIONS_DB)
+    assert args.sim_dir == Path(AGENT_SIM_DIR)
+    for state_path in (AGENT_HISTORY_DB, AGENT_CONVERSATIONS_DB, AGENT_SIM_DIR):
+        assert state_path.startswith(f"{AGENT_CACHE}/")
 
 
 def test_the_agent_app_is_one_cpu_web_server_holding_its_secrets() -> None:

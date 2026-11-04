@@ -3,7 +3,10 @@
 Module-level ``app``, ``image`` and ``serve``. Do not import this module from tests; CI does not
 install ``modal``. What it runs is ``surmap.survey.modal_hosting.agent_command``, tested there.
 
-One container (``max_containers=1``): conversations live in the agent's memory. Its SAM runs on
+One container (``max_containers=1``): the agent's SQLite DBs and files — demo history,
+conversations, the simulation store and the usage log — live under ``/cache`` on Volume
+``surmap-agent-cache`` (see ``agent_command``), so they survive a container restart on
+Modal's background commits; running turns and jobs do not. Its SAM runs on
 the deployed ``surmap-station`` app (``--station modal``; inside Modal the SDK needs no token).
 Secrets: ``surmap-agent`` (``MODEL_API_KEY``, ``SURMAP_AGENT_ACCESS_CODE``) and
 ``surmap-survey`` (the station's bearer token). The demo cache is Volume ``surmap-agent-cache``.

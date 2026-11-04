@@ -885,7 +885,9 @@ their conversation in the `surmap-conversation-id` header.
   `src/surmap/docs/todo/2026-11-03-agent-tool-image-parts.md`.
 - **`WatchConversation` before the first turn is `NOT_FOUND`** — open the
   watch after the conversation's first `StreamTurn`.
-- Conversations live in memory for the process lifetime.
+- Conversations live in memory for the process lifetime, unless `--conversations-db`
+  names a SQLite file: then their history, model and replay survive a restart (on Modal,
+  `/cache/conversations.sqlite` on the agent's Volume). Running turns and jobs never do.
 
 ## Server logs (`surmap.agent.event_log`)
 
