@@ -50,11 +50,13 @@ from surmap.agent.skills import SkillCatalogue, skill_tools
 from surmap.agent.tools.geometry import GeometryStore
 from surmap.agent.tools.handlers import survey_tool_handlers
 from surmap.agent.tools.map_handlers import MapSceneStore, map_tool_handlers
+from surmap.agent.tools.onboard import ONBOARD_OFF, OnboardModels
 from surmap.agent.tools.simulation_handlers import simulation_tool_handlers
 from surmap.agent.tools.workspace import DemoWorkspace, SurveyWorkspace
 from surmap.demo.datasets import default_cache_dir
 from surmap.demo.runs import DemoRunHost
 from surmap.demo.server import make_demo_server
+from surmap.detection import DEFAULT_PROFILE
 from surmap.rpc.description import ServerDescription
 from surmap.simulation.asset_sources import AmbientCg, AssetSource, PolyHaven, Sketchfab, http_fetch
 from surmap.simulation.scenario_manifest import load_presets
@@ -69,6 +71,7 @@ _AGENT_JOBS = jobs_pb2.DESCRIPTOR.services_by_name["AgentJobs"]
 """The three tool services; their rpcs are the tools a conversation binds."""
 
 __all__ = [
+    "CORAL_MODEL_DIR_ENV",
     "CORS_ORIGINS_ENV",
     "DEFAULT_CORS_ORIGINS",
     "DEFAULT_HOST",
@@ -80,6 +83,7 @@ __all__ = [
     "build_agent_description",
     "build_demo_workspace",
     "default_model_factory",
+    "onboard_models",
 ]
 
 DEFAULT_HOST = "127.0.0.1"
@@ -92,6 +96,8 @@ DEFAULT_CORS_ORIGINS = ("http://localhost:5173",)
 """The Vite dev server of the chat UI."""
 SKILLS_DIR_ENV = "SURMAP_AGENT_SKILLS_DIR"
 """A directory of extra skills (`<name>/SKILL.md`) overlaid on the shipped ones."""
+CORAL_MODEL_DIR_ENV = "SURMAP_CORAL_MODEL_DIR"
+"""The prepared Coral model dir when `--coral-model-dir` names none, as for `scripts/demo.py`."""
 
 SYSTEM_PROMPT = """\
 You are SurMap's survey assistant. You run the survey demos and inspect their results with \
@@ -100,7 +106,12 @@ frames. You also work from the dataset gallery: list_datasets shows every datase
 provider, licence, grey or colour modality and GPS preview data; prepare_dataset downloads \
 one, run_rtabmap runs RTAB-Map alone on it, run_sam_on_dataset segments it with SAM alone, \
 and run_demo runs both together. Prefer the split tools when the person asks for only \
-RTAB-Map or only SAM, and name the dataset's licence when you report a dataset. You also edit \
+RTAB-Map or only SAM, and name the dataset's licence when you report a dataset. run_demo and \
+run_rtabmap also take an onboard_model: the on-board detector that processes the frames, picked \
+from list_onboard_models, or "none" to run without one; leave it out for the station default. \
+An on-board model recognises only its listed classes (people and vehicles, not debris, buildings \
+or fire); when run_demo says it does not recognise the prompt, only SAM can find it. \
+You also edit \
 the display map: place and move GLB shapes with the map tools, navigate \
 its camera, and draw route paths. Map edits change only what the person sees; routes are drawn \
 paths, never flight plans. You only launch demos and read results; you never command a vehicle.
@@ -149,6 +160,10 @@ class AgentServerConfig:
     """A built simulation page to serve at `/sim/`."""
     sketchfab_token: str | None = None
     """`SKETCHFAB_API_TOKEN`: Sketchfab search works without it, downloads do not."""
+    coral_model_dir: Path | None = None
+    """The prepared Coral model dir (`scripts/fetch_coral_model.py`); none: no on-board model."""
+    coral_model: str = DEFAULT_PROFILE
+    """The on-board model a run that names none uses; `"none"` for no on-board model."""
 
 
 DEFAULT_SIM_ASSETS = Path("examples/bevy-sitl-poc/assets")
@@ -215,7 +230,16 @@ def build_demo_workspace(config: AgentServerConfig) -> DemoWorkspace:
         server,
         detector=CentredBoxVideoSamDetector(),
         geometry=GeometryStore(cache_dir / "agent-geometry"),
+        onboard=onboard_models(config),
     )
+
+
+def onboard_models(config: AgentServerConfig) -> OnboardModels:
+    """The on-board models in the configured Coral dir; the configured default only with a dir."""
+    if config.coral_model_dir is None:
+        return OnboardModels()
+    default = None if config.coral_model == ONBOARD_OFF else config.coral_model
+    return OnboardModels(config.coral_model_dir, default=default)
 
 
 def build_agent_description(

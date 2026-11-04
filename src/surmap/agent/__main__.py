@@ -18,6 +18,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from surmap.agent.server.app import (
+    CORAL_MODEL_DIR_ENV,
     CORS_ORIGINS_ENV,
     DEFAULT_CORS_ORIGINS,
     DEFAULT_HOST,
@@ -31,6 +32,8 @@ from surmap.agent.server.app import (
     build_demo_workspace,
     build_simulation_rig,
 )
+from surmap.agent.tools.onboard import ONBOARD_OFF
+from surmap.detection import DEFAULT_PROFILE, MODEL_PROFILES
 from surmap.env import load_env
 from surmap.rpc.hosts.hypercorn import HypercornHost
 
@@ -48,6 +51,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--model", default=DEFAULT_MODEL_ID, help="default model id, e.g. ollama:llama3.2"
     )
     parser.add_argument("--sam-fake", action="store_true", help="fake centred-box SAM")
+    parser.add_argument(
+        "--coral-model-dir",
+        type=Path,
+        default=None,
+        help="prepared Coral model dir for on-board detection "
+        f"(default: ${CORAL_MODEL_DIR_ENV}; none: no on-board model)",
+    )
+    parser.add_argument(
+        "--coral-model",
+        choices=[*sorted(MODEL_PROFILES), ONBOARD_OFF],
+        default=DEFAULT_PROFILE,
+        help="on-board model a run uses when the agent names none; none for no on-board model",
+    )
     parser.add_argument(
         "--sim-dir",
         type=Path,
@@ -80,6 +96,8 @@ def config_from_args(
         else tuple(origin.strip() for origin in raw_origins.split(",") if origin.strip())
     )
     raw_skills_dir = env.get(SKILLS_DIR_ENV)
+    raw_coral_dir = env.get(CORAL_MODEL_DIR_ENV)
+    coral_model_dir = args.coral_model_dir or (Path(raw_coral_dir) if raw_coral_dir else None)
     return AgentServerConfig(
         host=args.host,
         port=args.port,
@@ -93,6 +111,8 @@ def config_from_args(
         sim_assets=args.sim_assets,
         sim_dist=args.sim_dist,
         sketchfab_token=env.get(SKETCHFAB_TOKEN_ENV) or None,
+        coral_model_dir=coral_model_dir,
+        coral_model=args.coral_model,
     )
 
 

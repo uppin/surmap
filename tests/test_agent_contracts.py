@@ -63,6 +63,7 @@ def test_every_survey_tools_rpc_is_a_tool_named_in_snake_case() -> None:
     # Then each rpc is one tool, named in snake_case, in declaration order
     assert names == (
         "list_demos",
+        "list_onboard_models",
         "run_demo",
         "get_run",
         "prompt_sam",
@@ -123,6 +124,7 @@ def test_each_tool_carries_the_default_execution_its_rpc_declares() -> None:
     # Then long-running tools detach to a job after their timeout; quick reads fail instead
     assert defaults == {
         "list_demos": a_policy(SYNC, 10, FAIL),
+        "list_onboard_models": a_policy(SYNC, 10, FAIL),
         "run_demo": a_policy(SYNC, 30, DETACH),
         "get_run": a_policy(SYNC, 10, FAIL),
         "prompt_sam": a_policy(SYNC, 60, DETACH),

@@ -18,6 +18,7 @@ from typing import Protocol
 import numpy as np
 from numpy.typing import NDArray
 
+from surmap.agent.tools.onboard import OnboardModel
 from surmap.demo.gallery import GalleryEntry
 from surmap.objects3d import UpAxis
 from surmap.survey.sam import SamDetection
@@ -32,6 +33,7 @@ __all__ = [
     "FrameRecord",
     "FrameSource",
     "ObjectBox",
+    "OnboardModel",
     "RunBusy",
     "RunInfo",
     "RunStatus",
@@ -89,6 +91,8 @@ class RunInfo:
     frames: int
     objects: int
     status: RunStatus
+    onboard_model: str = ""
+    """The on-board detector model that processed its frames; empty when it ran none."""
 
 
 @dataclass(frozen=True)
@@ -175,10 +179,22 @@ class SurveyWorkspace(Protocol):
         """Download and prepare `dataset_id`; `KeyError` for an unknown dataset."""
         ...
 
+    def onboard_models(self) -> Sequence[OnboardModel]:
+        """Every on-board detector model, in catalogue order, with this station's availability."""
+        ...
+
     async def run_rtabmap(
-        self, dataset: str, *, max_frames: int | None, fps: float | None
+        self,
+        dataset: str,
+        *,
+        max_frames: int | None,
+        fps: float | None,
+        onboard_model: str | None,
     ) -> RunInfo:
-        """Run RTAB-Map (no SAM) on `dataset` and return the recorded run when it ends."""
+        """Run RTAB-Map (no SAM) on `dataset` and return the recorded run when it ends.
+
+        `onboard_model` is as `run_demo` takes it.
+        """
         ...
 
     async def run_sam_on_dataset(
@@ -198,12 +214,16 @@ class SurveyWorkspace(Protocol):
         *,
         max_frames: int | None,
         fps: float | None,
+        onboard_model: str | None,
     ) -> RunInfo:
         """Run `dataset` headlessly with SAM looking for `prompt` and return when it ends.
 
-        Prepares the scene first when it is not cached. Cancelling the call stops the run.
-        Raises `KeyError` for a scene the station does not offer, `RunBusy` when the previous
-        run does not stop in time, and `ValueError` for a non-positive `fps`.
+        `onboard_model` names the on-board detector model that processes the frames: a profile
+        name, `ONBOARD_OFF` for none, or None for the station default. Prepares the scene first
+        when it is not cached. Cancelling the call stops the run. Raises `KeyError` for a scene
+        the station does not offer, `RunBusy` when the previous run does not stop in time,
+        `ValueError` for a non-positive `fps` or an unknown model, and `OnboardUnavailable` for
+        a model this station cannot run.
         """
         ...
 

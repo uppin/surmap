@@ -5,7 +5,8 @@ test with no model and no server. `survey_tool_handlers(workspace)` binds them b
 connect-python's `(request, ctx)` shape, ready for `surmap.agent.services.survey_tools_module`.
 
 Failures are `ConnectError`s: `NOT_FOUND` for a run, scene, frame or object the workspace does
-not have, `INVALID_ARGUMENT` for a request that contradicts itself (`near` without `radius_m`).
+not have, `INVALID_ARGUMENT` for a request that contradicts itself (`near` without `radius_m`)
+or names no on-board model, `FAILED_PRECONDITION` for an on-board model the station lacks.
 Object coordinates are in the run's map frame (`frame="map"`, up axis `-y`).
 """
 
@@ -34,6 +35,7 @@ from surmap.agent.tools.dataset_handlers import (
     run_sam_on_dataset,
 )
 from surmap.agent.tools.frames import crop_box_for_object, frame_image
+from surmap.agent.tools.onboard import ONBOARD_OFF, OnboardUnavailable
 from surmap.agent.tools.workspace import (
     OBJECT_FRAME,
     OBJECT_UP_AXIS,
@@ -66,6 +68,7 @@ __all__ = [
     "get_run",
     "list_datasets",
     "list_demos",
+    "list_onboard_models",
     "prepare_dataset",
     "run_rtabmap",
     "run_sam_on_dataset",
@@ -109,6 +112,7 @@ def survey_tool_handlers(workspace: SurveyWorkspace) -> Mapping[str, Handler]:
 
     return {
         "ListDemos": bind(list_demos),
+        "ListOnboardModels": bind(list_onboard_models),
         "RunDemo": bind(run_demo),
         "GetRun": bind(get_run),
         "PromptSam": bind(prompt_sam),
@@ -142,6 +146,28 @@ async def list_demos(
     return pb.ListDemosResponse(scenes=scenes)
 
 
+async def list_onboard_models(
+    request: pb.ListOnboardModelsRequest, workspace: SurveyWorkspace
+) -> pb.ListOnboardModelsResponse:
+    """`ListOnboardModels`: every on-board model, whether the station has it, the default."""
+    models = workspace.onboard_models()
+    default = next((model.name for model in models if model.is_default), ONBOARD_OFF)
+    return pb.ListOnboardModelsResponse(
+        models=[
+            pb.OnboardModel(
+                name=model.name,
+                title=model.title,
+                note=model.note,
+                available=model.available,
+                is_default=model.is_default,
+                classes=model.classes,
+            )
+            for model in models
+        ],
+        default_model=default,
+    )
+
+
 async def run_demo(request: pb.RunDemoRequest, workspace: SurveyWorkspace) -> pb.RunDemoResponse:
     """`RunDemo`: run a scene headlessly and answer when it ends; cancelling stops the run."""
     try:
@@ -150,19 +176,27 @@ async def run_demo(request: pb.RunDemoRequest, workspace: SurveyWorkspace) -> pb
             request.prompt if request.HasField("prompt") else None,
             max_frames=request.max_frames if request.HasField("max_frames") else None,
             fps=request.fps if request.HasField("fps") else None,
+            onboard_model=request.onboard_model if request.HasField("onboard_model") else None,
         )
     except KeyError as missing:
         raise _not_found(missing) from missing
     except ValueError as bad:
         raise ConnectError(Code.INVALID_ARGUMENT, str(bad)) from bad
+    except OnboardUnavailable as unavailable:
+        raise ConnectError(Code.FAILED_PRECONDITION, str(unavailable)) from unavailable
     except RunBusy as busy:
         raise ConnectError(Code.UNAVAILABLE, str(busy)) from busy
-    return pb.RunDemoResponse(
+    response = pb.RunDemoResponse(
         run_id=run.run_id,
         frames=run.frames,
         objects=run.objects,
         status=_RUN_STATUS[run.status],
+        onboard_model=run.onboard_model,
     )
+    onboard = next((m for m in workspace.onboard_models() if m.name == run.onboard_model), None)
+    if onboard is not None and run.prompt:
+        response.onboard_recognises_prompt = onboard.recognises(run.prompt)
+    return response
 
 
 async def get_run(request: pb.GetRunRequest, workspace: SurveyWorkspace) -> pb.GetRunResponse:

@@ -1,7 +1,7 @@
 """On-board object detection + tracking (Coral Edge TPU component)."""
 
 from surmap.detection.detector import CoralDetector, DetectorUnavailable
-from surmap.detection.profiles import DEFAULT_PROFILE, MODEL_PROFILES, ModelProfile
+from surmap.detection.profiles import COCO_CLASSES, DEFAULT_PROFILE, MODEL_PROFILES, ModelProfile
 from surmap.detection.source import (
     CoralDetectionSource,
     CoralObjectPointSource,
@@ -10,6 +10,7 @@ from surmap.detection.source import (
 from surmap.detection.tracker import IouTracker, TrackedDetection
 
 __all__ = [
+    "COCO_CLASSES",
     "DEFAULT_PROFILE",
     "MODEL_PROFILES",
     "CoralDetectionSource",

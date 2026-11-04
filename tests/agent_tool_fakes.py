@@ -24,6 +24,7 @@ from numpy.typing import NDArray
 from PIL import Image
 
 from surmap.agent.proto import survey_tools_pb2 as pb
+from surmap.agent.tools.onboard import OnboardModels
 from surmap.agent.tools.workspace import DemoWorkspace, GeometryStore
 from surmap.demo.datasets import DISPLAY_HEIGHT, DISPLAY_WIDTH, PreparedDataset
 from surmap.demo.history import RunHistoryStore
@@ -65,8 +66,11 @@ class ToolRig:
 
 
 @contextmanager
-def a_tool_rig(tmp_path: Path) -> Iterator[ToolRig]:
-    """A `DemoWorkspace` over the tiny scene, built but not serving; closed on exit."""
+def a_tool_rig(tmp_path: Path, *, onboard: OnboardModels | None = None) -> Iterator[ToolRig]:
+    """A `DemoWorkspace` over the tiny scene, built but not serving; closed on exit.
+
+    `onboard` is the station's on-board detector catalogue; none, so no on-board model, when absent.
+    """
     prepared = _prepared_tiny(tmp_path)
     server = make_demo_server(
         prepared,
@@ -82,6 +86,7 @@ def a_tool_rig(tmp_path: Path) -> Iterator[ToolRig]:
         server,
         detector=CentredBoxVideoSamDetector(),
         geometry=GeometryStore(tmp_path / "geometry"),
+        onboard=onboard,
     )
     try:
         yield ToolRig(workspace=workspace, host=server, prepared=prepared)
