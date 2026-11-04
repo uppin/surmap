@@ -17,10 +17,12 @@ use serde::Deserialize;
 mod buildings;
 mod environment;
 mod nature;
+mod people;
 
 pub use buildings::{BuildingFireDef, DistrictDef};
 pub use environment::{Environment, PbrTextureSet};
 pub use nature::{FireDef, Vegetation, Weather, WindDef};
+pub use people::Person;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct SceneManifest {
@@ -205,30 +207,6 @@ fn first_row() -> f32 {
     4.2
 }
 
-/// A survivor at an ENU pose (feet at `position_enu`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct Person {
-    pub id: String,
-    pub position_enu: [f32; 3],
-    pub coat: String,
-    pub skin: String,
-    /// What the person does over time; standing still when absent.
-    #[serde(default)]
-    pub behaviour: Option<crate::behaviour::Tree>,
-    /// How the person holds themself when not walking.
-    #[serde(default)]
-    pub pose: crate::figure_anim::Pose,
-    /// The way a posed person faces, counter-clockwise from east.
-    #[serde(default)]
-    pub yaw_deg: f32,
-    /// Body height (0.9–2.2 m); the rig's own height when absent.
-    #[serde(default)]
-    pub height_m: Option<f32>,
-    /// Overrides the figure's rig for this person.
-    #[serde(default)]
-    pub glb: Option<String>,
-}
-
 /// A vehicle of a class (`vehicle/<class>.vehicle.json`) at its start pose, driven by its tree.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Vehicle {
@@ -384,29 +362,6 @@ impl SceneManifest {
         Ok(())
     }
 
-    /// Each person: `height_m` in 0.9–2.2, a `glb` override that is a relative glTF path.
-    fn validate_people(&self) -> Result<(), ManifestError> {
-        for element in &self.elements {
-            let Element::Person(person) = element else {
-                continue;
-            };
-            if let Some(height) = person.height_m {
-                if !(PERSON_HEIGHT_M.0..=PERSON_HEIGHT_M.1).contains(&height) {
-                    return Err(ManifestError::Invalid(format!(
-                        "person {}: height_m {height} must be {}–{} m",
-                        person.id, PERSON_HEIGHT_M.0, PERSON_HEIGHT_M.1
-                    )));
-                }
-            }
-            if let Some(glb) = &person.glb {
-                if !is_relative_gltf(glb) {
-                    return Err(ManifestError::BadAssetPath(glb.clone()));
-                }
-            }
-        }
-        Ok(())
-    }
-
     /// Each vehicle: `cars` only on a train, a `glb` override that is a relative glTF path, and a
     /// tree valid for a body on the ground.
     fn validate_vehicles(&self) -> Result<(), ManifestError> {
@@ -507,9 +462,6 @@ fn validate_asset_path(path: &str) -> Result<(), ManifestError> {
 pub fn is_relative_gltf(path: &str) -> bool {
     validate_asset_path(path).is_ok() && (path.ends_with(".glb") || path.ends_with(".gltf"))
 }
-
-/// A person's height range, m (the survivors of a survey: a child to a tall adult).
-const PERSON_HEIGHT_M: (f32, f32) = (0.9, 2.2);
 
 impl ModelInstance {
     /// ENU position → Bevy `(x, z, -y)`; yaw is counter-clockwise from
