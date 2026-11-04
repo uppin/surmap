@@ -147,6 +147,41 @@ test("a frame result shows its image and a geometry result shows a 3D preview", 
   expect(server.received.geometry).toEqual(["/geometry/run-7/obj-3.glb"]);
 });
 
+test("a simulation the agent creates shows in a right-side pane inside the chat", async ({ page }) => {
+  const created = JSON.stringify({
+    scenario: {
+      id: "downtown-blaze",
+      name: "Downtown blaze",
+      version: 1,
+      manifest_json: "{}",
+      credits: [],
+      url: "/sim/?scenario=downtown-blaze",
+      updated_at: "2026-11-04T10:00:00Z",
+    },
+  });
+  const server = await stubServer({
+    turn: async function* () {
+      yield* aConversation()
+        .toolStarted("call-1", "create_scenario")
+        .toolSucceeded("call-1", { resultJson: created })
+        .textDelta("Built it.")
+        .turnFinished("stop")
+        .build();
+    },
+  });
+  const chat = new ChatPage(page);
+  await chat.open(server.url);
+
+  await chat.send("Build a downtown blaze");
+
+  await expect(chat.simulation()).toContainText("Downtown blaze");
+  await expect(chat.simulationFrame("Downtown blaze")).toHaveAttribute(
+    "src",
+    `${server.url}/sim/?scenario=downtown-blaze`,
+  );
+  await expect(chat.conversation()).toContainText("Built it.");
+});
+
 test("the model picker lists the server's models and the turn names the chosen one", async ({ page }) => {
   const server = await stubServer({
     models: [

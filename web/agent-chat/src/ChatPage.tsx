@@ -1,10 +1,11 @@
 import { Code, ConnectError } from "@connectrpc/connect";
-import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { Composer } from "@/components/Composer";
 import { DatasetGallery } from "@/components/DatasetGallery";
 import { JobsPanel } from "@/components/JobsPanel";
 import { MapPane } from "@/components/MapPane";
 import { ModelPicker } from "@/components/ModelPicker";
+import { SimulationPane } from "@/components/SimulationPane";
 import { StationIndicator } from "@/components/StationIndicator";
 import { Transcript } from "@/components/Transcript";
 import type { ChatPort, DatasetView, MapSceneView, StationView } from "@/ports";
@@ -14,6 +15,7 @@ import {
   isAwaitingReply,
   isTurnActive,
 } from "@/view-model/chat-reducer";
+import { simulationFromTranscript } from "@/view-model/simulation";
 
 export interface ChatPageProps {
   port: ChatPort;
@@ -55,6 +57,8 @@ export function ChatPage(props: ChatPageProps): ReactNode {
   };
   const [now, setNow] = useState(0);
   const turn = useRef<AbortController | null>(null);
+  // A simulation the agent created in this conversation, shown in the right-side pane.
+  const simulation = useMemo(() => simulationFromTranscript(state.transcript), [state.transcript]);
 
   // Only once models load: before then the model is the URL's unchecked preference.
   const modelInUse = state.models.length > 0 ? state.modelId : null;
@@ -229,7 +233,7 @@ export function ChatPage(props: ChatPageProps): ReactNode {
 
   return (
     <main
-      className={`mx-auto flex min-h-svh w-full flex-col gap-4 p-4 ${screen === "gallery" ? "max-w-7xl" : "max-w-5xl"}`}
+      className={`mx-auto flex min-h-svh w-full flex-col gap-4 p-4 ${screen === "gallery" || simulation !== null ? "max-w-7xl" : "max-w-5xl"}`}
     >
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col">
@@ -269,6 +273,24 @@ export function ChatPage(props: ChatPageProps): ReactNode {
       </header>
       {screen === "gallery" ? (
         <DatasetGallery datasets={datasets} serverUrl={props.serverUrl} onRun={runFromGallery} />
+      ) : simulation !== null ? (
+        <>
+          <MapPane scene={mapScene} />
+          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_28rem]">
+            <div className="flex min-w-0 flex-col gap-4">
+              <Transcript
+                items={state.transcript}
+                serverUrl={props.serverUrl}
+                awaitingReply={isAwaitingReply(state)}
+              />
+              <Composer busy={isTurnActive(state)} onSend={startTurn} onSteer={steer} onStop={stop} />
+            </div>
+            <div className="flex flex-col gap-4">
+              <SimulationPane simulation={simulation} serverUrl={props.serverUrl} />
+              <JobsPanel jobs={state.jobs} now={now} onCancel={cancelJob} />
+            </div>
+          </div>
+        </>
       ) : (
         <>
           <MapPane scene={mapScene} />

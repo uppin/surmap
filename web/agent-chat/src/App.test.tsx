@@ -232,6 +232,59 @@ describe("chat page", () => {
     expect(asked.streamTurn).toEqual([{ conversationId: "conv-9", modelId: "meta:muse-spark", text: "Hello" }]);
   });
 
+  it("shows a simulation the agent creates in a right-side pane inside the chat", async () => {
+    const created = JSON.stringify({
+      scenario: {
+        id: "downtown-blaze",
+        name: "Downtown blaze",
+        version: 1,
+        manifest_json: "{}",
+        credits: [],
+        url: "/sim/?scenario=downtown-blaze",
+        updated_at: "2026-11-04T10:00:00Z",
+      },
+    });
+    const { port } = fakePort({
+      turn: aConversation("conv-9")
+        .userMessage("Build a downtown blaze")
+        .toolStarted("call-1", "create_scenario")
+        .toolSucceeded("call-1", { resultJson: created })
+        .textDelta("Built it.")
+        .turnFinished("stop")
+        .build(),
+    });
+    render(<App port={port} />);
+    const user = userEvent.setup();
+
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "Build a downtown blaze");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    const pane = await screen.findByRole("region", { name: "Simulation" });
+    expect(pane).toHaveTextContent("Downtown blaze");
+    expect(screen.getByTitle("Simulation: Downtown blaze")).toHaveAttribute(
+      "src",
+      "http://127.0.0.1:8780/sim/?scenario=downtown-blaze",
+    );
+    // The chat stays beside the pane: transcript, composer and jobs are all still there.
+    expect(screen.getByRole("log", { name: "Conversation" })).toHaveTextContent("Built it.");
+    expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Jobs" })).toBeInTheDocument();
+  });
+
+  it("shows no simulation pane when the agent created no simulation", async () => {
+    const { port } = fakePort({
+      turn: aConversation("conv-9").userMessage("Hello").textDelta("Hi there.").turnFinished("stop").build(),
+    });
+    render(<App port={port} />);
+    const user = userEvent.setup();
+
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "Hello");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Hi there.")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Simulation" })).not.toBeInTheDocument();
+  });
+
   it("opens the watch stream only once the server knows the conversation", async () => {
     const { port, asked } = fakePort({ history: null, turn: aConversation("conv-9").turnFinished().build() });
     render(<App port={port} />);
