@@ -17,19 +17,28 @@ from __future__ import annotations
 import hashlib
 import io
 import math
+import os
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from PIL import Image
+
+from surmap.agent.tools.map_layers import OSM_TILE_URL_TEMPLATE
 
 METRES_PER_DEGREE_LATITUDE = 111_320.0
 MAX_FLOOR_SIZE_M = 1000.0
 MAX_TILES = 64
 MAX_ZOOM = 18
 TILE_PX = 256
-_OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+MAX_TEXTURE_PX = 4096
+"""The stitched floor texture is at most this wide or tall, in pixels."""
 _USER_AGENT = "SurMap/1.0 (simulation map floor; https://tile.openstreetmap.org)"
+TILE_URL_ENV = "SURMAP_TILE_URL_TEMPLATE"
+"""Environment override for the tile URL template (`{z}/{x}/{y}`); offline mirrors set this."""
+TILE_CACHE_ENV = "SURMAP_TILE_CACHE_DIR"
+"""Environment override for the on-disk tile cache directory."""
 
 
 class MapFloorError(ValueError):
@@ -108,16 +117,34 @@ class TileSource(Protocol):
 
 
 class OsmTileSource:
-    """The native adapter: OpenStreetMap raster tiles over HTTPS."""
+    """The native adapter: OpenStreetMap raster tiles over HTTPS, disk-cached.
+
+    The URL template defaults to the station map's own OSM layer
+    (`OSM_TILE_URL_TEMPLATE`); `SURMAP_TILE_URL_TEMPLATE` points it at another
+    tile server or an offline mirror, and `SURMAP_TILE_CACHE_DIR` moves the
+    cache. A cached tile (`<cache>/<z>/<x>/<y>.png`) is never re-fetched.
+    """
+
+    def __init__(self, *, url_template: str | None = None, cache_dir: Path | None = None) -> None:
+        self._url_template = url_template or os.environ.get(TILE_URL_ENV) or OSM_TILE_URL_TEMPLATE
+        cache = cache_dir or os.environ.get(TILE_CACHE_ENV)
+        self._cache_dir = Path(cache) if cache else None
 
     def fetch_tile(self, zoom: int, x: int, y: int) -> bytes:
-        url = _OSM_TILE_URL.format(z=zoom, x=x, y=y)
+        cached = None if self._cache_dir is None else self._cache_dir / f"{zoom}/{x}/{y}.png"
+        if cached is not None and cached.is_file():
+            return cached.read_bytes()
+        url = self._url_template.format(z=zoom, x=x, y=y)
         request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
-                return bytes(response.read())
+                data = bytes(response.read())
         except OSError as exc:
             raise MapFloorUnavailable(f"could not fetch map tile {url}: {exc}") from exc
+        if cached is not None:
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            cached.write_bytes(data)
+        return data
 
 
 class InMemoryTileSource:
@@ -158,8 +185,10 @@ def _tile_range(bbox: GeoBBox, zoom: int) -> tuple[int, int, int, int, int, int,
 def choose_zoom(bbox: GeoBBox, *, max_tiles: int = MAX_TILES, max_zoom: int = MAX_ZOOM) -> int:
     """The sharpest zoom whose tile mosaic fits `max_tiles`."""
     for zoom in range(max_zoom, -1, -1):
-        tx0, tx1, ty0, ty1, *_ = _tile_range(bbox, zoom)
-        if (tx1 - tx0 + 1) * (ty1 - ty0 + 1) <= max_tiles:
+        tx0, tx1, ty0, ty1, x0, y0, x1, y1 = _tile_range(bbox, zoom)
+        tiles_fit = (tx1 - tx0 + 1) * (ty1 - ty0 + 1) <= max_tiles
+        pixels_fit = (x1 - x0) <= MAX_TEXTURE_PX and (y1 - y0) <= MAX_TEXTURE_PX
+        if tiles_fit and pixels_fit:
             return zoom
     raise MapFloorError("no zoom fits the tile cap for this bbox")
 

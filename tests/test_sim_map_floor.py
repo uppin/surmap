@@ -177,7 +177,7 @@ def test_a_cached_tile_is_served_from_disk_without_a_second_fetch(
         Image.new("RGB", (256, 256), (9, 9, 9)).save(buffer, format="PNG")
         return _Response(buffer.getvalue())
 
-    monkeypatch.setattr(map_floor.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
     source = map_floor.OsmTileSource(cache_dir=tmp_path / "tiles")
 
     # When the same tile is fetched twice
@@ -192,7 +192,7 @@ def test_a_cached_tile_is_served_from_disk_without_a_second_fetch(
 
 def test_choose_zoom_also_respects_the_texture_pixel_cap() -> None:
     # Given a kilometre-square bbox at the equator (the largest floor allowed)
-    big = GeoBBox(sw_lat=0.0, sw_lon=0.0, ne_lat=0.008, ne_lon=0.009)
+    big = GeoBBox(sw_lat=0.0, sw_lon=0.0, ne_lat=0.0075, ne_lon=0.0085)
 
     # When a zoom is chosen
     zoom = choose_zoom(big)

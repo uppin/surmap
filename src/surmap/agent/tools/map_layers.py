@@ -18,6 +18,7 @@ from typing import Protocol
 __all__ = [
     "DEFAULT_OVERTURE_RELEASE",
     "OSM_LAYER_ID",
+    "OSM_TILE_URL_TEMPLATE",
     "InMemoryLayerCatalogue",
     "LayerKind",
     "LayerSpec",
@@ -31,7 +32,8 @@ DEFAULT_OVERTURE_RELEASE = "2026-10-21.0"
 OSM_LAYER_ID = "osm"
 """The default base layer: OpenStreetMap raster tiles."""
 
-_OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+OSM_TILE_URL_TEMPLATE = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+"""The OpenStreetMap raster tile URL template (`{z}/{x}/{y}`), shared with the simulation floor."""
 _OVERTURE_TILES = "https://overturemaps-extras-us-west-2.s3.us-west-2.amazonaws.com/tiles"
 
 
@@ -79,7 +81,7 @@ class OvertureLayerCatalogue:
                 id=OSM_LAYER_ID,
                 name="OpenStreetMap",
                 kind=LayerKind.RASTER,
-                source_url=_OSM_TILES,
+                source_url=OSM_TILE_URL_TEMPLATE,
                 attribution="© OpenStreetMap contributors",
                 is_default=True,
             ),
