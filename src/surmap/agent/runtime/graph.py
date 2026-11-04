@@ -199,6 +199,9 @@ async def _stream_reply(
     whole: AIMessageChunk | None = None
     async for piece in model.astream(messages):
         if not isinstance(piece, AIMessageChunk):
+            # A model that does not stream (Meta Responses) answers whole, in one piece.
+            if piece.text:
+                writer(TextDelta(piece.text))
             return piece
         if piece.text:
             writer(TextDelta(piece.text))
