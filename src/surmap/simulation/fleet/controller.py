@@ -1,5 +1,5 @@
 """The station's side of the fleet link: one `FleetController` per scenario, gatekeeping and
-sending the commands the agent gives, and the `FleetRegistry` that links pages to them.
+sending the commands the agent gives (`FleetRegistry`, in `fleet.registry`, links pages to them).
 
 `FleetController.send(command)` runs in this order:
 
@@ -20,6 +20,7 @@ previous one is answered (or timed out), so the order sent is the order applied.
 from __future__ import annotations
 
 import asyncio
+import math
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -42,22 +43,18 @@ from surmap.simulation.fleet.commands import (
     Waypoint,
 )
 from surmap.simulation.fleet.link import (
-    CLOSE_ALREADY_LINKED,
-    CLOSE_PROTOCOL_ERROR,
     Applied,
     DroneTelemetry,
-    FleetLinkError,
     Phase,
     Refused,
     SimHello,
     SimMessage,
     Telemetry,
-    decode_sim_message,
     encode_command,
 )
 from surmap.simulation.fleet.log_store import FleetLogStore
-from surmap.simulation.fleet_nests import Nest, nests_of
-from surmap.simulation.scenario_store import ScenarioStore, UnknownRecord
+from surmap.simulation.fleet_nests import Nest
+from surmap.simulation.scenario_store import UnknownRecord
 
 __all__ = [
     "ACK_TIMEOUT_S",
@@ -65,7 +62,6 @@ __all__ = [
     "FleetError",
     "FleetInvalid",
     "FleetRefused",
-    "FleetRegistry",
     "FleetTimeout",
     "FleetTiming",
     "FleetUnavailable",
@@ -73,6 +69,13 @@ __all__ = [
     "SimLink",
     "SimSocket",
 ]
+
+# The renderer's fixed integration step, s, and the float slack when it turns a time into a step
+# number: a command takes effect before the first step at or after its `at_s`. These mirror
+# `STEP_S` / `STEP_SLACK` and `due_step` / `steps_until` in
+# `examples/bevy-sitl-poc/src/fleet/autopilot.rs`; change them together.
+STEP_S = 0.05
+STEP_SLACK = 1e-3
 
 # How long a sent command waits for the page's `applied` / `refused`, s.
 ACK_TIMEOUT_S = 5.0
@@ -150,6 +153,16 @@ class SimSocket(SimLink, Protocol):
     async def close(self, code: int) -> None: ...
 
 
+def due_step(at_s: float) -> int:
+    """The step a command stamped `at_s` takes effect before (`autopilot.rs` `due_step`)."""
+    return max(0, math.ceil(at_s / STEP_S - STEP_SLACK))
+
+
+def steps_until(t_s: float) -> int:
+    """How many whole steps lie in `0..=t_s` (`autopilot.rs` `steps_until`)."""
+    return max(0, math.floor(t_s / STEP_S + STEP_SLACK))
+
+
 _NOT_FLYING: frozenset[Phase] = frozenset({"docked", "landing"})
 # What a drone is known to be doing once the page has applied a command, until the page's
 # telemetry catches up (it is up to half a second behind).
@@ -201,21 +214,27 @@ class FleetController:
         log_store: FleetLogStore,
         *,
         timing: FleetTiming | None = None,
+        latest_nests: Callable[[], Sequence[Nest]] | None = None,
     ) -> None:
         self._scenario_id = scenario_id
         self._nests = tuple(nests)
+        self._latest_nests = latest_nests
         self._log_store = log_store
         self._timing = timing if timing is not None else FleetTiming()
         self._link: SimLink | None = None
         self._hello: SimHello | None = None
         self._session_id: int | None = None
         self._telemetry: Telemetry | None = None
+        # Set when the page that sent `_telemetry` has gone: it is kept (the log, `drones()`),
+        # but it no longer says what phase a drone is in.
+        self._page_gone = False
         self._applied: list[Stamped] = []
         # Every command sent and not yet answered, by request: a late answer to a command the
         # station gave up on still belongs in the log, as the page applied it.
         self._sent: dict[int, FleetCommand] = {}
-        # Phases the page's applied commands imply, with the time they applied.
-        self._expected: dict[str, tuple[Phase, float]] = {}
+        # Phases the page's applied commands imply, with the step the page applies them at
+        # (`due_step`): telemetry from before that step may still show the old phase.
+        self._expected: dict[str, tuple[Phase, int]] = {}
         self._pending: _Pending | None = None
         self._next_request = 1
         self._one_at_a_time = asyncio.Lock()
@@ -273,12 +292,23 @@ class FleetController:
     def _known_drones(self) -> frozenset[str]:
         if self._hello is not None and self._link is not None:
             return frozenset(self._hello.drones)
-        return frozenset(drone for nest in self._nests for drone in nest.drone_ids)
+        return frozenset(drone for nest in self._unlinked_nests() for drone in nest.drone_ids)
+
+    def _unlinked_nests(self) -> tuple[Nest, ...]:
+        """The scenario's nests while no page is linked: the latest saved ones (the last known
+        when the scenario cannot be read now), since the scene may have changed since the first
+        use."""
+        if self._latest_nests is not None:
+            try:
+                self._nests = tuple(self._latest_nests())
+            except UnknownRecord:
+                pass
+        return self._nests
 
     def _phase_of(self, drone: str) -> Phase:
         if drone in self._expected:
             return self._expected[drone][0]
-        if self._telemetry is not None:
+        if self._telemetry is not None and not self._page_gone:
             for reported in self._telemetry.drones:
                 if reported.id == drone:
                     return reported.phase
@@ -330,6 +360,13 @@ class FleetController:
         """The drone whose eyes the page shows, per the last telemetry."""
         return self._telemetry.active if self._telemetry is not None else None
 
+    def telemetry_time(self) -> float | None:
+        """The simulation time, s, of the linked page's last telemetry; `None` before its first
+        and once that page has gone."""
+        if self._telemetry is None or self._page_gone:
+            return None
+        return self._telemetry.sim_t_s
+
     def session_log(self) -> tuple[Stamped, ...]:
         """The commands applied in the current (or last) session, in order."""
         return tuple(self._applied)
@@ -340,6 +377,7 @@ class FleetController:
         self._hello = hello
         self._session_id = self._log_store.start_session(self._scenario_id, hello)
         self._telemetry = None
+        self._page_gone = False
         self._applied = []
         self._sent = {}
         self._expected = {}
@@ -356,10 +394,11 @@ class FleetController:
                     self._settle(self._pending, FleetRefused(message.reason))
             case Telemetry(sim_t_s):
                 self._telemetry = message
+                reached = steps_until(sim_t_s)
                 self._expected = {
-                    drone: (phase, at_s)
-                    for drone, (phase, at_s) in self._expected.items()
-                    if at_s > sim_t_s
+                    drone: (phase, due)
+                    for drone, (phase, due) in self._expected.items()
+                    if due > reached
                 }
             case SimHello():
                 pass
@@ -372,7 +411,7 @@ class FleetController:
         self._applied.append(Stamped(seq, at_s, command))
         expected = _AFTER_APPLIED.get(type(command))
         if expected is not None:
-            self._expected[command.drone] = (expected, at_s)
+            self._expected[command.drone] = (expected, due_step(at_s))
         if self._pending is not None and self._pending.request == request:
             self._settle(self._pending, message)
 
@@ -386,77 +425,12 @@ class FleetController:
             pending.answer.set_exception(outcome)
 
     def detach(self) -> None:
-        """Unlinks the page; a waiting request fails with `FleetUnavailable`."""
+        """Unlinks the page; a waiting request fails with `FleetUnavailable`. What the page last
+        reported is kept, but its drones' phases no longer decide which commands pass."""
         self._link = None
         self._hello = None
         self._sent = {}
+        self._expected = {}
+        self._page_gone = True
         if self._pending is not None:
             self._settle(self._pending, self._unavailable())
-
-
-class FleetRegistry:
-    """The server's controllers, one per scenario, built from the scenario's latest manifest on
-    first use, and their sessions' log store in the scenario store's file."""
-
-    def __init__(self, store: ScenarioStore, *, timing: FleetTiming | None = None) -> None:
-        self._store = store
-        self._timing = timing if timing is not None else FleetTiming()
-        self._controllers: dict[str, FleetController] = {}
-        self.log_store = FleetLogStore(store.db_path)
-
-    def controller(self, scenario_id: str) -> FleetController:
-        """The scenario's controller (the same one on every call)."""
-        found = self._controllers.get(scenario_id)
-        if found is None:
-            manifest = self._store.scenario(scenario_id).manifest
-            found = FleetController(
-                scenario_id, nests_of(manifest), self.log_store, timing=self._timing
-            )
-            self._controllers[scenario_id] = found
-        return found
-
-    async def link(self, scenario_id: str, socket: SimSocket) -> None:
-        """Runs one page's link until it closes: the first frame must be a `fleet/v1` `hello`
-        (else close `CLOSE_PROTOCOL_ERROR`); a scenario already linked closes the newcomer with
-        `CLOSE_ALREADY_LINKED`; every later frame goes to the controller (an undecodable one
-        closes `CLOSE_PROTOCOL_ERROR`); the close detaches it."""
-        try:
-            controller = self.controller(scenario_id)
-        except UnknownRecord:
-            await socket.close(CLOSE_PROTOCOL_ERROR)
-            return
-        hello = await self._hello_of(socket)
-        if hello is None:
-            return
-        if controller.linked:
-            await socket.close(CLOSE_ALREADY_LINKED)
-            return
-        controller.attach(socket, hello)
-        try:
-            await self._pump(controller, socket)
-        finally:
-            controller.detach()
-
-    @staticmethod
-    async def _hello_of(socket: SimSocket) -> SimHello | None:
-        first = await socket.receive_text()
-        if first is None:
-            return None
-        try:
-            opening = decode_sim_message(first)
-        except FleetLinkError:
-            opening = None
-        if not isinstance(opening, SimHello):
-            await socket.close(CLOSE_PROTOCOL_ERROR)
-            return None
-        return opening
-
-    @staticmethod
-    async def _pump(controller: FleetController, socket: SimSocket) -> None:
-        while (text := await socket.receive_text()) is not None:
-            try:
-                message = decode_sim_message(text)
-            except FleetLinkError:
-                await socket.close(CLOSE_PROTOCOL_ERROR)
-                return
-            controller.receive(message)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import weakref
 
 from tests.hang_dump import HangWatchdog, hang_report
 
@@ -60,3 +61,21 @@ def test_a_test_that_finishes_in_time_writes_nothing() -> None:
 
     # Then nothing was written
     assert out.getvalue() == ""
+
+
+class Referent:
+    """An object only a weak proxy will point at."""
+
+
+def test_a_dead_weak_proxy_in_memory_does_not_cut_the_report_short() -> None:
+    # Given a weak proxy still held after the object it points at is gone
+    referent = Referent()
+    held: list[object] = [weakref.proxy(referent)]
+    del referent
+
+    # When the hang report is written
+    report = hang_report("tests/test_x.py::test_stuck", elapsed_s=121.0)
+
+    # Then it is written to its end
+    assert report.endswith("===== END HANG DUMP =====\n")
+    assert len(held) == 1

@@ -168,6 +168,23 @@ def test_closing_the_page_finishes_every_drone_session() -> None:
     ]
 
 
+def test_one_drones_backend_failure_leaves_the_other_drones_streaming() -> None:
+    # Given an open page whose second drone's map crashes on its third frame
+    rig = a_perception(crash_on={2: 3}).opened()
+
+    # When the page streams nest-sw-d1, three frames of nest-ne-d1, then nest-sw-d1 again
+    statuses = rig.streams(*blocks((SW_D1, 1), (NE_D1, 3), (SW_D1, 1)))
+
+    # Then nest-ne-d1's third status reports the failure, its counts frozen, and nest-sw-d1 goes on
+    assert [(s.drone_id, s.frames, s.error is not None) for s in statuses] == [
+        (SW_D1, 1, False),
+        (NE_D1, 1, False),
+        (NE_D1, 2, False),
+        (NE_D1, 2, True),
+        (SW_D1, 2, False),
+    ]
+
+
 # ---- the router's other answers ---------------------------------------------------------------
 
 

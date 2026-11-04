@@ -28,6 +28,8 @@ from surmap.simulation.fleet.controller import (
     FleetTiming,
     FleetUnavailable,
     InvalidRule,
+    due_step,
+    steps_until,
 )
 from surmap.simulation.fleet.link import (
     Applied,
@@ -93,6 +95,11 @@ async def answer(controller: FleetController, link: RecordingLink, seq: int, at_
     """The page applies the next frame the controller sent."""
     frame = await link.next_frame()
     controller.receive(Applied(frame["request"], seq, at_s))
+
+
+def commands_sent(link: RecordingLink) -> list[str]:
+    """The type of each command the page received, in order."""
+    return [frame["command"]["type"] for frame in link.sent]
 
 
 # ---- what a command must pass before it is sent -----------------------------------------------
@@ -303,6 +310,38 @@ async def test_a_page_that_unlinks_fails_the_waiting_command_as_no_simulation_co
         await sending
 
 
+async def test_a_page_that_left_in_flight_no_longer_decides_which_commands_pass(
+    tmp_path: Path,
+) -> None:
+    # Given a linked page that last reported nest-sw-d1 cruising
+    controller, _link = a_linked_controller(tmp_path)
+    controller.receive(telemetry_of(a_drone(SW_D1, "cruising")))
+
+    # When the page leaves and a launch is sent
+    controller.detach()
+
+    # Then the launch fails for want of a page, not as a launch of a drone in flight
+    with pytest.raises(FleetUnavailable):
+        await controller.send(a_launch())
+
+
+@pytest.mark.parametrize(
+    ("at_s", "due"), [(0.0, 0), (1.02, 21), (1.05, 21), (1.0502, 22), (1.06, 22), (3.0, 60)]
+)
+def test_a_command_takes_effect_at_the_step_the_renderer_applies_it_at(
+    at_s: float, due: int
+) -> None:
+    # Given the renderer's fixed 0.05 s step, which applies a command before the first step at or
+    # after its moment, give or take float noise (autopilot.rs `due_step` / `steps_until`)
+
+    # When the station works out that step, and the telemetry that has reached it
+    reached = steps_until(due * 0.05)
+    just_before = steps_until(due * 0.05 - 0.01)
+
+    # Then telemetry stamped at the step has reached it, and telemetry a little before has not
+    assert (due_step(at_s), reached, just_before < due or due == 0) == (due, due, True)
+
+
 async def test_a_drone_just_launched_can_be_tasked_before_telemetry_shows_it_flying(
     tmp_path: Path,
 ) -> None:
@@ -337,6 +376,27 @@ async def test_telemetry_taken_after_a_launch_decides_the_drones_phase_again(
     with pytest.raises(FleetInvalid) as refused:
         await controller.send(Detour(SW_D1, ((0.0, 35.0, 18.0),)))
     assert refused.value.rule is InvalidRule.NOT_FLYING
+
+
+async def test_telemetry_from_the_frame_a_launch_lands_in_keeps_the_drone_climbing(
+    tmp_path: Path,
+) -> None:
+    # Given a controller whose page applied a launch at 1.02 s, which takes effect at the
+    # page's next 0.05 s step (1.05 s)
+    controller, link = a_linked_controller(tmp_path)
+    launching = asyncio.create_task(controller.send(a_launch()))
+    await answer(controller, link, seq=1, at_s=1.02)
+    await launching
+
+    # When telemetry stamped 1.02 s, from before that step, still has the drone docked
+    controller.receive(telemetry_of(a_drone(SW_D1, "docked"), at_s=1.02))
+    recalling = asyncio.create_task(controller.send(Recall(SW_D1)))
+    await settle()
+
+    # Then a recall passes the station's check and reaches the page
+    assert commands_sent(link) == ["launch", "recall"]
+    await answer(controller, link, seq=2, at_s=1.1)
+    assert await recalling == Applied(request=2, seq=2, at_s=1.1)
 
 
 async def test_a_command_applied_after_the_station_gave_up_on_it_is_still_logged(

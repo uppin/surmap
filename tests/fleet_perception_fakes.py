@@ -6,8 +6,11 @@ event log, so a test can see what happened to which drone, and in what order.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import struct
+import threading
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -101,13 +104,19 @@ def a_posed_update(frame_id: int) -> OdomUpdate:
     )
 
 
-class FakeBackend:
-    """One drone's map: records its frames, poses every one, one keyframe per frame."""
+class MapCrashed(RuntimeError):
+    """A drone's map failed while processing a frame."""
 
-    def __init__(self, events: list[str]) -> None:
+
+class FakeBackend:
+    """One drone's map: records its frames, poses every one, one keyframe per frame; with
+    `crashes_on`, its `crashes_on`-th frame raises `MapCrashed` instead."""
+
+    def __init__(self, events: list[str], crashes_on: int | None = None) -> None:
         self.frames: list[StereoFramePair] = []
         self.closed = False
         self._events = events
+        self._crashes_on = crashes_on
         self._updates: list[OdomUpdate] = []
 
     @property
@@ -123,6 +132,8 @@ class FakeBackend:
         return [frame.frame_id for frame in self.frames]
 
     def process_frame(self, frame: StereoFramePair) -> None:
+        if len(self.frames) + 1 == self._crashes_on:
+            raise MapCrashed(f"the map crashed on frame {frame.frame_id}")
         self.frames.append(frame)
         self._updates.append(a_posed_update(frame.frame_id))
 
@@ -136,15 +147,17 @@ class FakeBackend:
 
 
 class RecordingBackends:
-    """The backend factory: a new `FakeBackend` per call, remembering the calibration."""
+    """The backend factory: a new `FakeBackend` per call, remembering the calibration;
+    `crash_on` maps the n-th map built (from 1) to the frame of its own it crashes on."""
 
-    def __init__(self, events: list[str]) -> None:
+    def __init__(self, events: list[str], crash_on: Mapping[int, int] | None = None) -> None:
         self.built: list[FakeBackend] = []
         self.calibrations: list[tuple[int, int]] = []
         self._events = events
+        self._crash_on = dict(crash_on or {})
 
     def __call__(self, *, cam0_yaml: str, cam1_yaml: str, width: int, height: int) -> FakeBackend:
-        backend = FakeBackend(self._events)
+        backend = FakeBackend(self._events, self._crash_on.get(len(self.built) + 1))
         self.built.append(backend)
         self.calibrations.append((width, height))
         return backend
@@ -153,6 +166,36 @@ class RecordingBackends:
         """The one map that received `frame_id`."""
         (backend,) = [b for b in self.built if frame_id in b.frame_ids]
         return backend
+
+
+class SlowStartingBackends(RecordingBackends):
+    """The backend factory of maps that are slow to start: each call blocks its thread until
+    `tick` has counted `ticks` ticks of the event loop while it waits, or `at_most_s` passes."""
+
+    def __init__(self, events: list[str], *, ticks: int, at_most_s: float) -> None:
+        super().__init__(events)
+        self.ticks_while_starting = 0
+        self._ticks = ticks
+        self._at_most_s = at_most_s
+        self._starting = threading.Event()
+        self._started = threading.Event()
+
+    def __call__(self, *, cam0_yaml: str, cam1_yaml: str, width: int, height: int) -> FakeBackend:
+        self._starting.set()
+        self._started.wait(self._at_most_s)
+        self._starting.clear()
+        return super().__call__(
+            cam0_yaml=cam0_yaml, cam1_yaml=cam1_yaml, width=width, height=height
+        )
+
+    async def tick(self, every_s: float) -> None:
+        """Ticks on the event loop until cancelled, counting each tick a map spends starting."""
+        while True:
+            await asyncio.sleep(every_s)
+            if self._starting.is_set():
+                self.ticks_while_starting += 1
+                if self.ticks_while_starting >= self._ticks:
+                    self._started.set()
 
 
 class RecordingSink:
@@ -254,10 +297,13 @@ class PerceptionRig:
         return self
 
 
-def a_perception(registry: PerceptionRegistry | None = None) -> PerceptionRig:
-    """A connection with nothing received yet, recording every drone's capture."""
+def a_perception(
+    registry: PerceptionRegistry | None = None, *, crash_on: Mapping[int, int] | None = None
+) -> PerceptionRig:
+    """A connection with nothing received yet, recording every drone's capture (`crash_on`:
+    see `RecordingBackends`)."""
     events: list[str] = []
-    backends = RecordingBackends(events)
+    backends = RecordingBackends(events, crash_on)
     sinks = RecordingSinks(events)
     recorders = RecordingRecorders(events)
     shared = registry if registry is not None else PerceptionRegistry()

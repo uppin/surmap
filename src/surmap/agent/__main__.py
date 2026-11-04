@@ -182,7 +182,9 @@ async def serve(config: AgentServerConfig) -> None:
     ticker = IdleTicker(station) if station is not None else None
     ports = await host.start()
     bridge = (
-        await start_bevy_bridge(config, simulation) if config.bevy_bridge_port is not None else None
+        await start_bevy_bridge(config, simulation, station)
+        if config.bevy_bridge_port is not None
+        else None
     )
     if ticker is not None:
         ticker.start()

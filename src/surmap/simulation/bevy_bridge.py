@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
+import threading
 from collections.abc import Callable
 from typing import Protocol
 
@@ -134,15 +136,31 @@ async def serve_bevy_bridge(
     session_factory: Callable[[], BridgeSession],
 ) -> websockets.asyncio.server.Server:
     """Serves the stereo bridge on `host:port`: one session per connection, each binary
-    message answered with that session's status text, the session closed with the socket."""
+    message answered with that session's status text, the session closed with the socket.
+
+    A session's work (a map starting, PNG encodes, thread joins, `docker rm`) blocks, so it runs
+    on a worker thread and the event loop, shared with the agent's own server, keeps serving.
+    A connection's messages are still handled one at a time and in order, and `close` waits for
+    a `handle` a cancelled handler left running."""
 
     async def handler(socket: websockets.asyncio.server.ServerConnection) -> None:
         session = session_factory()
+        one_at_a_time = threading.Lock()
+
+        def handle(message: bytes) -> BridgeStatus:
+            with one_at_a_time:
+                return session.handle(message)
+
+        def close() -> None:
+            with one_at_a_time:
+                session.close()
+
         try:
             async for message in socket:
                 if isinstance(message, bytes):
-                    await socket.send(encode_status(session.handle(message)))
+                    status = await asyncio.to_thread(handle, message)
+                    await socket.send(encode_status(status))
         finally:
-            session.close()
+            await asyncio.to_thread(close)
 
     return await websockets.asyncio.server.serve(handler, host, port)

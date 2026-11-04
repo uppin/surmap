@@ -24,6 +24,7 @@ from tests.fleet_perception_fakes import (
     SW_D1,
     RecordingBackends,
     RecordingSinks,
+    SlowStartingBackends,
     a_hello,
     blocks,
 )
@@ -54,9 +55,9 @@ class Bridge:
 
 
 @asynccontextmanager
-async def a_bridge() -> AsyncIterator[Bridge]:
+async def a_bridge(backends: RecordingBackends | None = None) -> AsyncIterator[Bridge]:
     events: list[str] = []
-    backends = RecordingBackends(events)
+    backends = backends if backends is not None else RecordingBackends(events)
     registry = PerceptionRegistry()
 
     def a_page_connection() -> BridgeSession:
@@ -105,3 +106,17 @@ async def test_disconnecting_the_page_closes_every_drone_s_map() -> None:
         await eventually(bridge.every_map_is_closed)
         assert len(bridge.backends.built) == 2
         assert bridge.registry.perception(SCENARIO) is None
+
+
+async def test_a_slow_backend_start_does_not_stall_the_event_loop() -> None:
+    # Given the station's bridge, whose drone maps start only once the event loop has ticked
+    # three times meanwhile (or after 0.5 s)
+    backends = SlowStartingBackends([], ticks=3, at_most_s=0.5)
+    async with a_bridge(backends) as bridge:
+        # When a page streams its first pair while a 10 ms ticker runs on the loop
+        ticking = asyncio.create_task(backends.tick(every_s=0.01))
+        await bridge.a_page_streams(a_hello(SCENARIO), *blocks((SW_D1, 1)))
+        ticking.cancel()
+
+    # Then the loop kept ticking while the map started
+    assert backends.ticks_while_starting >= 3
