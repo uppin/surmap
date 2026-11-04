@@ -101,6 +101,29 @@ describe("chat page", () => {
     window.history.replaceState({}, "", "/");
   });
 
+  it("exchanges a ?code= for a session and drops the code from the URL", async () => {
+    window.history.replaceState({}, "", "/?conversation=conv-9&code=correct-horse");
+    const { port } = fakePort();
+    const signedIn: string[] = [];
+
+    render(<App port={port} signIn={async (code) => void signedIn.push(code)} />);
+
+    await screen.findByRole("combobox", { name: "Model" });
+    expect(signedIn).toEqual(["correct-horse"]);
+    expect(new URLSearchParams(window.location.search).has("code")).toBe(false);
+    expect(new URLSearchParams(window.location.search).get("conversation")).toBe("conv-9");
+  });
+
+  it("does not sign in when the URL carries no code", async () => {
+    const { port } = fakePort();
+    const signedIn: string[] = [];
+
+    render(<App port={port} signIn={async (code) => void signedIn.push(code)} />);
+
+    await screen.findByRole("combobox", { name: "Model" });
+    expect(signedIn).toEqual([]);
+  });
+
   it("lists the server's models and starts on the default one", async () => {
     const { port } = fakePort({
       models: [

@@ -12,13 +12,18 @@ from pathlib import Path
 
 import pytest
 
+from surmap.agent.__main__ import build_parser as agent_parser
 from surmap.survey.cm5_main import build_parser as cm5_parser
 from surmap.survey.modal_hosting import (
+    AGENT_CACHE,
+    AGENT_PORT,
+    AGENT_WEB_DIST,
     CM5_PORT,
     SAM3_PACKAGE,
     SAM3_RUNTIME_PACKAGES,
     STATION_PORT,
     StationSettings,
+    agent_command,
     cm5_command,
     station_command,
 )
@@ -238,3 +243,32 @@ def test_the_station_image_installs_sam3_without_its_deps_after_surmaps_pyprojec
     assert sam3 > pyproject
     assert keyword_value(steps[sam3], "extra_options") == "--no-deps"
     assert SAM3_PACKAGE.startswith("sam3 @ git+https://github.com/facebookresearch/sam3.git")
+
+
+AGENT_APP = Path("src/surmap/agent/modal_agent_app.py")
+
+
+def test_the_agent_command_serves_the_chat_page_on_every_interface_with_the_modal_station() -> None:
+    # Given the command the agent app runs
+    args = agent_parser().parse_args(agent_command()[3:])
+
+    # Then it binds all interfaces on the app's port, drives the Modal station, serves the page
+    assert (args.host, args.port) == ("0.0.0.0", AGENT_PORT)
+    assert args.station == "modal"
+    assert (args.web_dist, args.cache_dir) == (Path(AGENT_WEB_DIST), Path(AGENT_CACHE))
+
+
+def test_the_agent_app_is_one_cpu_web_server_holding_its_secrets() -> None:
+    # Given the agent app file, which CI does not import
+    serve = module_function(AGENT_APP, "serve")
+    function = decorator(serve, "function")
+    web_server = decorator(serve, "web_server")
+
+    # Then it is one CPU container (conversations live in its memory) on the agent port,
+    # reading the agent's secret (model key, pass code) and the survey token
+    assert keyword_value(function, "max_containers") == 1
+    assert keyword_value(function, "gpu") is None
+    assert keyword_value(function, "timeout") is not None
+    assert isinstance(web_server.args[0], ast.Name) and web_server.args[0].id == "AGENT_PORT"
+    text = AGENT_APP.read_text(encoding="utf-8")
+    assert "from_name(AGENT_SECRET)" in text and "from_name(SURVEY_SECRET)" in text
