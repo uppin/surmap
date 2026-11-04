@@ -181,6 +181,13 @@ uv run python -m surmap.agent --sam-fake --model ollama:llama3.2
 Flags, routes and the event stream: [docs/agent.md](docs/agent.md)
 § *Running the agent*.
 
+`scripts/dev.sh [--model <id>] [--with-sam]` starts the whole local stack
+— CM5 (`:8080`), station (`:8081`), agent and the chat UI — with each
+service's output prefixed by its name. Ctrl-C, SIGTERM or any one service
+exiting stops all of them. `--with-sam` has the station serve SAM 3.1 on
+the Mac GPU (MPS; `HF_TOKEN` for the gated checkpoint); `--dry-run`
+prints the commands.
+
 ## Hardware and deployment
 
 | Node | Hardware | Role |
