@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::autopilot::{DroneState, Phase};
+use super::autopilot::{DroneState, Phase, MAX_SPEED_M_S, MAX_UP_M, MIN_SPEED_M_S, MIN_UP_M};
 use super::log::{FleetCommand, RefusalReason};
 
 #[cfg(test)]
@@ -61,61 +61,99 @@ pub enum LinkError {
 }
 
 /// The message a station frame carries.
-pub fn decode_station(_text: &str) -> Result<StationMessage, LinkError> {
-    // TODO(pr-3): implement
-    todo!("pr-3: implement")
+pub fn decode_station(text: &str) -> Result<StationMessage, LinkError> {
+    let frame: serde_json::Value = serde_json::from_str(text).map_err(|e| LinkError::Malformed(e.to_string()))?;
+    match frame.get("type").and_then(serde_json::Value::as_str) {
+        Some("command") => serde_json::from_value(frame).map_err(|e| LinkError::Malformed(e.to_string())),
+        Some(other) => Err(LinkError::UnknownType(other.to_owned())),
+        None => Err(LinkError::Malformed("a frame has a string `type`".into())),
+    }
+}
+
+fn frame(message: &LinkMessage) -> String {
+    serde_json::to_string(message).expect("a link message serializes")
 }
 
 /// The page's first frame.
-pub fn encode_hello(_scenario: &str, _sim_t_s: f32, _drones: &[String]) -> String {
-    // TODO(pr-3): implement
-    todo!("pr-3: implement")
+pub fn encode_hello(scenario: &str, sim_t_s: f32, drones: &[String]) -> String {
+    frame(&LinkMessage::Hello { protocol: PROTOCOL.to_owned(), scenario: scenario.to_owned(), sim_t_s, drones: drones.to_vec() })
 }
 
 /// Request `request` became log entry `seq` at simulation time `at_s`.
-pub fn encode_applied(_request: u64, _seq: u64, _at_s: f32) -> String {
-    // TODO(pr-3): implement
-    todo!("pr-3: implement")
+pub fn encode_applied(request: u64, seq: u64, at_s: f32) -> String {
+    frame(&LinkMessage::Applied { request, seq, at_s })
 }
 
 /// Request `request` was refused at `at_s`, for `reason`.
-pub fn encode_refused(_request: u64, _at_s: f32, _reason: &str) -> String {
-    // TODO(pr-3): implement
-    todo!("pr-3: implement")
+pub fn encode_refused(request: u64, at_s: f32, reason: &str) -> String {
+    frame(&LinkMessage::Refused { request, at_s, reason: reason.to_owned() })
 }
 
 /// Every drone at `sim_t_s`, and the one whose eyes are shown.
-pub fn encode_telemetry(_sim_t_s: f32, _active: Option<&str>, _drones: &[DroneTelemetry]) -> String {
-    // TODO(pr-3): implement
-    todo!("pr-3: implement")
+pub fn encode_telemetry(sim_t_s: f32, active: Option<&str>, drones: &[DroneTelemetry]) -> String {
+    frame(&LinkMessage::Telemetry { sim_t_s, active: active.map(str::to_owned), drones: drones.to_vec() })
 }
 
 /// The word telemetry uses for `phase` (`"docked"`, `"climbing"`, …).
-pub fn phase_name(_phase: Phase) -> &'static str {
-    // TODO(pr-3): implement
-    todo!("pr-3: implement")
+pub fn phase_name(phase: Phase) -> &'static str {
+    match phase {
+        Phase::Docked => "docked",
+        Phase::Climbing => "climbing",
+        Phase::Cruising => "cruising",
+        Phase::Detouring => "detouring",
+        Phase::Hovering => "hovering",
+        Phase::Returning => "returning",
+        Phase::Landing => "landing",
+    }
 }
 
 /// Drone `id` in its autopilot `state`, as telemetry reports it.
-pub fn drone_telemetry(_id: &str, _state: &DroneState) -> DroneTelemetry {
-    // TODO(pr-3): implement
-    todo!("pr-3: implement")
+pub fn drone_telemetry(id: &str, state: &DroneState) -> DroneTelemetry {
+    let [vx, vy, vz] = state.velocity_enu;
+    DroneTelemetry {
+        id: id.to_owned(),
+        phase: phase_name(state.phase).to_owned(),
+        enu: state.position_enu,
+        yaw_deg: state.yaw_deg,
+        speed_m_s: (vx * vx + vy * vy + vz * vz).sqrt(),
+        targets_left: usize::from(state.target.is_some()) + state.legs_left,
+    }
+}
+
+/// The command's word in a refusal (`set_route`, `detour`, …).
+fn command_word(command: &FleetCommand) -> &'static str {
+    match command {
+        FleetCommand::Launch { .. } => "launch",
+        FleetCommand::SetRoute { .. } => "set_route",
+        FleetCommand::Detour { .. } => "detour",
+        FleetCommand::Recall { .. } => "recall",
+        FleetCommand::SetActive { .. } => "set_active",
+    }
 }
 
 /// The `refused` frame's reason for `command`, in words the station relays to the agent.
-pub fn refusal_text(_command: &FleetCommand, _reason: &RefusalReason) -> String {
-    // TODO(pr-3): implement
-    todo!("pr-3: implement")
+pub fn refusal_text(command: &FleetCommand, reason: &RefusalReason) -> String {
+    let drone = command.drone();
+    let word = command_word(command);
+    match reason {
+        RefusalReason::UnknownDrone(id) => format!("{id} is not a drone of this scene"),
+        RefusalReason::NotDocked(phase) => format!("{drone} is {}: {word} needs a docked drone", phase_name(*phase)),
+        RefusalReason::NotFlying(phase) => format!("{drone} is {}: {word} needs a drone in flight", phase_name(*phase)),
+        RefusalReason::AlreadyDocked => format!("{drone} is docked: {word} needs a drone that has left its pad"),
+        RefusalReason::NoWaypoints => format!("{drone}: {word} needs at least one waypoint"),
+        RefusalReason::SpeedOutOfRange(speed) => format!("{drone}: speed {speed} m/s is outside {MIN_SPEED_M_S}-{MAX_SPEED_M_S} m/s"),
+        RefusalReason::HeightOutOfRange(up) => format!("{drone}: waypoint height {up} m is outside {MIN_UP_M}-{MAX_UP_M} m"),
+        RefusalReason::OutOfOrder { previous_at_s } => format!("{drone}: the log already holds a command at {previous_at_s} s"),
+    }
 }
 
 /// Whether a page URL's query (`location.search`) asks for the link: `fleet=1`.
-pub fn fleet_enabled(_search: &str) -> bool {
-    // TODO(pr-3): implement
-    todo!("pr-3: implement")
+pub fn fleet_enabled(search: &str) -> bool {
+    search.trim_start_matches('?').split('&').any(|pair| pair == "fleet=1")
 }
 
 /// The link's URL on the page's own origin: `ws://` for an `http:` page, `wss://` for `https:`.
-pub fn fleet_socket_url(_page_protocol: &str, _host: &str, _scenario: &str) -> String {
-    // TODO(pr-3): implement
-    todo!("pr-3: implement")
+pub fn fleet_socket_url(page_protocol: &str, host: &str, scenario: &str) -> String {
+    let scheme = if page_protocol == "https:" { "wss" } else { "ws" };
+    format!("{scheme}://{host}{FLEET_PATH}?scenario={scenario}")
 }

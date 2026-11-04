@@ -107,14 +107,95 @@ class Stamped:
     command: FleetCommand
 
 
+def _waypoints_json(waypoints: tuple[Waypoint, ...]) -> list[list[float]]:
+    return [[float(east), float(north), float(up)] for east, north, up in waypoints]
+
+
+def _route_json(route: Route) -> dict[str, object]:
+    written: dict[str, object] = {"waypoints": _waypoints_json(route.waypoints)}
+    if route.speed_m_s is not None:
+        written["speed_m_s"] = float(route.speed_m_s)
+    if route.on_complete is not None:
+        written["on_complete"] = route.on_complete
+    return written
+
+
 def command_json(command: FleetCommand) -> dict[str, object]:
     """`command` as the renderer's `FleetCommand` JSON object (key order: `type`, `drone`, then
     the command's fields)."""
-    # TODO(pr-3): implement
-    raise NotImplementedError("pr-3: implement")
+    match command:
+        case Launch(drone, route):
+            return {"type": "launch", "drone": drone, "route": _route_json(route)}
+        case SetRoute(drone, route):
+            return {"type": "set_route", "drone": drone, "route": _route_json(route)}
+        case Detour(drone, waypoints):
+            return {"type": "detour", "drone": drone, "waypoints": _waypoints_json(waypoints)}
+        case Recall(drone):
+            return {"type": "recall", "drone": drone}
+        case SetActive(drone):
+            return {"type": "set_active", "drone": drone}
+
+
+def _text(data: Mapping[str, object], key: str, what: str) -> str:
+    value = data.get(key)
+    if not isinstance(value, str):
+        raise ValueError(f"{what}: {key!r} must be a string")
+    return value
+
+
+def _number(value: object, what: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError(f"{what} must be a number")
+    return float(value)
+
+
+def _waypoints(value: object, what: str) -> tuple[Waypoint, ...]:
+    if not isinstance(value, list):
+        raise ValueError(f"{what}: 'waypoints' must be a list")
+    found: list[Waypoint] = []
+    for point in value:
+        if not isinstance(point, list) or len(point) != 3:
+            raise ValueError(f"{what}: a waypoint is [east, north, up]")
+        east, north, up = (_number(axis, f"{what}: a waypoint coordinate") for axis in point)
+        found.append((east, north, up))
+    return tuple(found)
+
+
+def _route(value: object, what: str) -> Route:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{what}: 'route' must be an object")
+    speed = value.get("speed_m_s")
+    on_complete: OnComplete | None
+    match value.get("on_complete"):
+        case None:
+            on_complete = None
+        case "return":
+            on_complete = "return"
+        case "hover":
+            on_complete = "hover"
+        case _:
+            raise ValueError(f"{what}: on_complete must be 'return' or 'hover'")
+    return Route(
+        _waypoints(value.get("waypoints"), what),
+        speed_m_s=None if speed is None else _number(speed, f"{what}: speed_m_s"),
+        on_complete=on_complete,
+    )
 
 
 def parse_command(data: Mapping[str, object]) -> FleetCommand:
     """The command `data` describes; `ValueError` when it is not a fleet command."""
-    # TODO(pr-3): implement
-    raise NotImplementedError("pr-3: implement")
+    kind = data.get("type")
+    what = f"command {kind!r}"
+    match kind:
+        case "launch":
+            return Launch(_text(data, "drone", what), _route(data.get("route"), what))
+        case "set_route":
+            return SetRoute(_text(data, "drone", what), _route(data.get("route"), what))
+        case "detour":
+            return Detour(_text(data, "drone", what), _waypoints(data.get("waypoints"), what))
+        case "recall":
+            return Recall(_text(data, "drone", what))
+        case "set_active":
+            return SetActive(_text(data, "drone", what))
+        case _:
+            raise ValueError(f"unknown fleet command type {kind!r}")
