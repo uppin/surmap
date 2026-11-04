@@ -55,6 +55,8 @@ impl VehicleClass {
             Self::Bus => "bus",
             Self::Truck => "truck",
             Self::Train => "train",
+            Self::Boat => "boat",
+            Self::Ship => "ship",
         }
     }
 }
