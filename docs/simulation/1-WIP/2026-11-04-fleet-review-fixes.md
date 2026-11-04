@@ -14,15 +14,15 @@ planned.
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-04 `/plan-red` Plan — changeset, initial discovery · these files (review of `bd30dc1..53858eb`, findings verified)
+- [wf 1] ✅ 2026-11-04 `/plan-red` Plan — changeset, initial discovery · these files (review of `bd30dc1..53858eb`, findings verified) · commit 1 `a61a8d4`
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation — None: bug fixes; F10 restores a field n4's PRD planned
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — reproduction tests, committed ·
-  - [ ] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
-  - [ ] One reproduction per finding F1–F10, each failing because of the defect (see `## Reproductions`)
-  - [ ] Tests committed with the changeset
+- [wf 2] ✅ 2026-11-04 `/plan-red` Red — reproduction tests, committed · 11 tests (F1 has two), seams in `## Validation Results` · 10 reproductions red @ commit 2
+  - [x] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
+  - [x] One reproduction per finding F1–F10, each failing because of the defect (see `## Reproductions`)
+  - [x] Tests committed with the changeset
 - [wf 3] ⬜ `/green` Green — fix until every reproduction passes ·
   - [ ] F1 bridge SAM: the agent's configured SAM (station detector, else the fake under `--sam-fake`), one detector per drone session, nothing retained per frame
   - [ ] F2 a streamed pair's `drone_id` is the drone whose eyes were read back (captured with `pending_pose` / `pending_t_ns`)
@@ -129,6 +129,58 @@ added only where a pure seam is needed to reach the defect, and it is named in t
 | F8 | `test_a_nest_added_after_the_first_call_has_drones_the_controller_knows` (call `list_drones`, add a nest, `launch_drone` on the new drone while unlinked answers UNAVAILABLE, not NOT_FOUND) | NOT_FOUND, from the frozen nests |
 | F9 | `test_a_dead_weak_proxy_in_memory_does_not_cut_the_report_short` (prepared patch) | `ReferenceError` |
 | F10 | `test_list_drones_reports_the_pages_simulation_time` (telemetry `sim_t_s=41.5`; `list_drones.sim_t_s == 41.5`; unset when unlinked) | no such field |
+
+## Validation Results
+
+### Baseline (`a61a8d4`, before any reproduction)
+
+| Gate | Result |
+|---|---|
+| `uv run mypy` | no issues, 541 source files |
+| `uv run ruff check --no-cache src tests` · `ruff format --check` | clean · 599 files formatted |
+| `uv run pytest -q` | 2438 passed, 38 skipped |
+| `cargo test --locked` (`examples/bevy-sitl-poc`) | 360 passed |
+
+### Reproductions (Red, commit 2)
+
+Each fails for the cause in `## Reproductions`. All pre-existing tests still pass (Python 2438 passed,
+38 skipped, 9 new failing; Rust 360 passed, 2 new failing). mypy, `ruff check`, `ruff format --check`
+are clean. `cargo test --no-run` and `cargo check --locked --target wasm32-unknown-unknown` compile.
+
+| # | Test | Fails with |
+|---|---|---|
+| F1 | `tests/test_agent_server_app.py::test_the_bridge_segments_with_the_agents_configured_sam` | `assert (1, 0) == (1, 1)`: one frame segmented, 0 detections from `InMemorySamDetector` |
+| F1 | `tests/test_agent_server_app.py::test_a_streaming_drone_keeps_no_frames_after_segmenting_them` | `assert 2 == 0`: `InMemorySamDetector.frames` still holds the frames it segmented (1–5 of the 5, depending on how many the 2-frame queue dropped) |
+| F2 | `fleet::stream::tests::a_switch_while_the_eyes_are_read_back_keeps_the_requesting_drones_id` | `left: Some("nest-ne-d1") right: Some("nest-sw-d1")` |
+| F3 | `tests/test_fleet_perception_e2e.py::test_a_slow_backend_start_does_not_stall_the_event_loop` | `assert 0 >= 3`: the ticker never ran while the map started (the loop blocked 0.5 s) |
+| F4 | `tests/test_sim_fleet_controller.py::test_telemetry_from_the_frame_a_launch_lands_in_keeps_the_drone_climbing` | `assert ['launch'] == ['launch', 'recall']`: the recall was refused `already_docked` before it was sent |
+| F5 | `tests/test_fleet_perception.py::test_one_drones_backend_failure_leaves_the_other_drones_streaming` | `MapCrashed: the map crashed on frame 4`, raised out of `FleetPerception.handle` |
+| F6 | `tests/test_sim_fleet_registry.py::test_a_page_whose_hello_names_another_scenario_is_refused` | `assert (None, (FleetSession(…),)) == (4400, ())`: not closed, and a session was started |
+| F7 | `fleet::stream::tests::the_stream_reads_the_eyes_only_after_the_fleet_flew_and_the_eyes_followed` | `left: ["fly_fleet", "follow_drone_rig"] right: []`: the set is unordered against both |
+| F8 | `tests/test_sim_fleet_registry.py::test_a_nest_added_after_the_first_call_has_drones_the_controller_knows` | `FleetInvalid: nest-new-d1 is not a drone of scenario quake-fleet` |
+| F9 | `tests/test_hang_dump.py::test_a_dead_weak_proxy_in_memory_does_not_cut_the_report_short` | `ReferenceError: weakly-referenced object no longer exists` (`tests/hang_dump.py:54`) |
+| F10 | `tests/test_agent_fleet_tools.py::test_list_drones_reports_the_pages_simulation_time` | `assert (None, None) == (41.5, None)`: no `sim_t_s` on the wire |
+
+F7 is V1: the schedule-order check is expressible natively (Bevy's conflicting-systems analysis on
+the built `Update` schedule), so the V3 fallback is not needed.
+
+### Seams added in Red (bodies faithful to `main`)
+
+- **F1** — `surmap.agent.server.app.bridge_segmentation(config) -> SegmentationFactory`: the bridge's
+  per-drone segmentation, extracted from `start_bevy_bridge` (which now uses it). Today it is still
+  one shared `InMemorySamDetector`. Green may add the station as a parameter.
+- **F2** — `fleet::stream::PendingPair` (`requested(active, t_ns, pose_enu)`,
+  `header(active_now, frame_id, width, height)`): what a readback request captures. It replaces
+  `BridgeStream.pending_t_ns` / `pending_pose` in `bridge_wasm.rs`. Today `header` labels the pair with
+  `active_now`. Green labels it with the captured drone and may drop `active_now`; the test's call
+  then loses that argument.
+- **F7** — `fleet::stream::BridgeStreamSet` and `order_bridge_stream(app)`: `stream_bridge` runs in the
+  set, and the plugin calls `order_bridge_stream`. Today it configures the set with no ordering.
+  Green adds `.after(fleet::fly_fleet).after(follow_drone_rig)` there.
+- **Test fakes** — `tests/fleet_perception_fakes.py`: `FakeBackend(crashes_on=)` / `MapCrashed` and
+  `RecordingBackends(crash_on=)` (F5); `SlowStartingBackends` (F3), a factory that blocks at most
+  0.5 s until the loop has ticked. `a_perception(crash_on=)`. `test_fleet_perception_e2e.a_bridge`
+  takes an optional backend factory.
 
 ## Verification
 

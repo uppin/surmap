@@ -95,6 +95,11 @@ async def answer(controller: FleetController, link: RecordingLink, seq: int, at_
     controller.receive(Applied(frame["request"], seq, at_s))
 
 
+def commands_sent(link: RecordingLink) -> list[str]:
+    """The type of each command the page received, in order."""
+    return [frame["command"]["type"] for frame in link.sent]
+
+
 # ---- what a command must pass before it is sent -----------------------------------------------
 
 INVALID: dict[str, tuple[Phase, FleetCommand, InvalidRule]] = {
@@ -337,6 +342,27 @@ async def test_telemetry_taken_after_a_launch_decides_the_drones_phase_again(
     with pytest.raises(FleetInvalid) as refused:
         await controller.send(Detour(SW_D1, ((0.0, 35.0, 18.0),)))
     assert refused.value.rule is InvalidRule.NOT_FLYING
+
+
+async def test_telemetry_from_the_frame_a_launch_lands_in_keeps_the_drone_climbing(
+    tmp_path: Path,
+) -> None:
+    # Given a controller whose page applied a launch at 1.02 s, which takes effect at the
+    # page's next 0.05 s step (1.05 s)
+    controller, link = a_linked_controller(tmp_path)
+    launching = asyncio.create_task(controller.send(a_launch()))
+    await answer(controller, link, seq=1, at_s=1.02)
+    await launching
+
+    # When telemetry stamped 1.02 s, from before that step, still has the drone docked
+    controller.receive(telemetry_of(a_drone(SW_D1, "docked"), at_s=1.02))
+    recalling = asyncio.create_task(controller.send(Recall(SW_D1)))
+    await settle()
+
+    # Then a recall passes the station's check and reaches the page
+    assert commands_sent(link) == ["launch", "recall"]
+    await answer(controller, link, seq=2, at_s=1.1)
+    assert await recalling == Applied(request=2, seq=2, at_s=1.1)
 
 
 async def test_a_command_applied_after_the_station_gave_up_on_it_is_still_logged(

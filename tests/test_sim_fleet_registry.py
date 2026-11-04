@@ -8,8 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from surmap.simulation.fleet.controller import FleetRegistry
+from surmap.simulation.fleet.commands import Launch, Route
+from surmap.simulation.fleet.controller import FleetRegistry, FleetUnavailable
 from surmap.simulation.fleet.link import CLOSE_ALREADY_LINKED, CLOSE_PROTOCOL_ERROR
+from surmap.simulation.manifest_checks import object_list
+from surmap.simulation.scenario_store import ScenarioStore
 from tests.fleet_fakes import (
     QUAKE_FLEET,
     ScriptedSocket,
@@ -21,6 +24,17 @@ from tests.fleet_fakes import (
 
 SCENARIO = QUAKE_FLEET
 NE_D1 = "nest-ne-d1"
+
+
+def with_a_new_nest(store: ScenarioStore, nest_id: str, at: tuple[float, float, float]) -> None:
+    """Saves the scenario's next version with one more one-drone nest, `nest_id`, at `at`."""
+    manifest = store.scenario(SCENARIO).manifest
+    nest: dict[str, object] = {"kind": "drone_nest", "id": nest_id, "position_enu": list(at)}
+    store.save(SCENARIO, {**manifest, "elements": [*object_list(manifest, "elements"), nest]})
+
+
+def a_launch_of(drone: str) -> Launch:
+    return Launch(drone, Route(((-20.0, 0.0, 15.0),)))
 
 
 # ---- the registry links pages -----------------------------------------------------------------
@@ -150,3 +164,34 @@ async def test_an_unknown_frame_after_hello_closes_the_link_as_a_protocol_error(
         CLOSE_PROTOCOL_ERROR,
         False,
     )
+
+
+async def test_a_page_whose_hello_names_another_scenario_is_refused(tmp_path: Path) -> None:
+    # Given a page linking quake-fleet whose hello names another scenario
+    registry = FleetRegistry(a_fleet_store(tmp_path))
+    page = ScriptedSocket()
+    page.say(hello_frame("harbour-fleet"))
+    page.hang_up()
+
+    # When it links
+    await registry.link(SCENARIO, page)
+
+    # Then it is closed as a protocol error, and quake-fleet never started a session for it
+    assert (page.closed_with, registry.log_store.sessions(SCENARIO)) == (CLOSE_PROTOCOL_ERROR, ())
+
+
+async def test_a_nest_added_after_the_first_call_has_drones_the_controller_knows(
+    tmp_path: Path,
+) -> None:
+    # Given a registry whose quake-fleet controller is already in use
+    store = a_fleet_store(tmp_path)
+    registry = FleetRegistry(store)
+    registry.controller(SCENARIO)
+
+    # When the scenario gains a nest, and its new drone is launched with no page linked
+    with_a_new_nest(store, "nest-new", (0.0, -60.0, 0.0))
+    launching = registry.controller(SCENARIO).send(a_launch_of("nest-new-d1"))
+
+    # Then the launch fails for want of a page, not as an unknown drone
+    with pytest.raises(FleetUnavailable):
+        await launching

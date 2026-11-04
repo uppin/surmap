@@ -14,7 +14,9 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::{BinaryType, CloseEvent, ErrorEvent, MessageEvent, WebSocket};
 
-use super::stream::{bridge_url, pair_for, status_line, Pace, StreamPacer};
+use super::stream::{
+    bridge_url, order_bridge_stream, status_line, BridgeStreamSet, Pace, PendingPair, StreamPacer,
+};
 use super::ActiveDrone;
 use crate::calibration::CameraProfile;
 use crate::ui::MapStatusLine;
@@ -44,7 +46,8 @@ impl Plugin for BridgeStreamPlugin {
             Ok(stream) => {
                 app.insert_resource(MapStatusLine::default());
                 app.insert_non_send_resource(stream);
-                app.add_systems(Update, stream_bridge);
+                app.add_systems(Update, stream_bridge.in_set(BridgeStreamSet));
+                order_bridge_stream(app);
             }
             Err(why) => warn!("bridge stream: {why}"),
         }
@@ -72,8 +75,7 @@ struct BridgeStream {
     requested: bool,
     left: Option<Vec<u8>>,
     right: Option<Vec<u8>>,
-    pending_t_ns: u64,
-    pending_pose: [f64; 7],
+    pending: Option<PendingPair>,
     status: Rc<RefCell<String>>,
     _callbacks: (
         Closure<dyn FnMut(MessageEvent)>,
@@ -137,8 +139,7 @@ impl BridgeStream {
             requested: false,
             left: None,
             right: None,
-            pending_t_ns: 0,
-            pending_pose: [0.0; 7],
+            pending: None,
             status,
             _callbacks: (on_message, on_close, on_error),
         })
@@ -232,15 +233,11 @@ fn stream_bridge(
         );
         stream.requested = false;
         stream.frame_id += 1;
+        let Some(pending) = stream.pending.take() else {
+            return;
+        };
         let active_drone = active.as_ref().map(|a| (**a).clone()).unwrap_or_default();
-        let header = pair_for(
-            &active_drone,
-            stream.frame_id,
-            stream.pending_t_ns,
-            rig.width,
-            rig.height,
-            stream.pending_pose,
-        );
+        let header = pending.header(&active_drone, stream.frame_id, rig.width, rig.height);
         stream.send(&encode_pair(&header, &left, &right));
         return;
     }
@@ -265,8 +262,12 @@ fn stream_bridge(
     let Some(body) = body else { return };
     let rig_translation = body.translation + body.rotation * rig.mount_offset();
     let rig_rotation = body.rotation * rig.mount_rotation();
-    stream.pending_t_ns = t_ns;
-    stream.pending_pose = rig_pose_enu(rig_translation, rig_rotation);
+    let requesting = active.as_ref().map(|a| (**a).clone()).unwrap_or_default();
+    stream.pending = Some(PendingPair::requested(
+        &requesting,
+        t_ns,
+        rig_pose_enu(rig_translation, rig_rotation),
+    ));
     stream.left = None;
     stream.right = None;
     for (eye, target) in [

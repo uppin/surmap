@@ -87,7 +87,11 @@ from surmap.detection import DEFAULT_PROFILE
 from surmap.rpc.description import ServerDescription
 from surmap.simulation.asset_sources import AmbientCg, AssetSource, PolyHaven, Sketchfab, http_fetch
 from surmap.simulation.bevy_bridge import StreamingBackend, serve_bevy_bridge
-from surmap.simulation.fleet.perception import FleetPerception, SamSegmentationSink
+from surmap.simulation.fleet.perception import (
+    FleetPerception,
+    SamSegmentationSink,
+    SegmentationFactory,
+)
 from surmap.simulation.scenario_manifest import load_presets
 from surmap.simulation.scenario_store import ScenarioStore
 from surmap.slam.streaming import StreamingRtabmapBackend
@@ -280,7 +284,7 @@ async def start_bevy_bridge(
     in `simulation.perception` so `drone_map_status` finds it. Closing it stops serving."""
     if config.bevy_bridge_port is None:
         raise ValueError("start_bevy_bridge needs config.bevy_bridge_port")
-    detector = InMemorySamDetector()
+    segmentation = bridge_segmentation(config)
 
     def backend_factory(
         *, cam0_yaml: str, cam1_yaml: str, width: int, height: int
@@ -295,7 +299,7 @@ async def start_bevy_bridge(
     def session_factory() -> FleetPerception:
         return FleetPerception(
             backend_factory,
-            lambda _drone_id: SamSegmentationSink(detector),
+            segmentation,
             registry=simulation.perception if simulation is not None else None,
         )
 
@@ -307,6 +311,13 @@ async def start_bevy_bridge(
             await server.wait_closed()
 
     return _Bridge()
+
+
+def bridge_segmentation(config: AgentServerConfig) -> SegmentationFactory:
+    """The stereo bridge's segmentation: a `SamSegmentationSink` per drone session, on the
+    bridge's SAM detector."""
+    detector = InMemorySamDetector()
+    return lambda _drone_id: SamSegmentationSink(detector)
 
 
 def _cache_root(config: AgentServerConfig) -> Path:
