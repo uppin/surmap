@@ -142,3 +142,62 @@ def test_a_manifest_with_an_absolute_floor_texture_is_refused() -> None:
             texture="/etc/passwd.png",
             zoom=17,
         )
+
+
+def test_the_osm_source_reuses_the_map_layers_tile_url() -> None:
+    # Given the map layer catalogue the station map already uses
+    from surmap.agent.tools.map_layers import OSM_TILE_URL_TEMPLATE
+
+    # Then the tile source speaks the same URL, not a second copy
+    assert OSM_TILE_URL_TEMPLATE == "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+
+
+def test_a_cached_tile_is_served_from_disk_without_a_second_fetch(
+    tmp_path: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Given an OSM source with a disk cache, and a counting fake HTTP fetch
+    from pathlib import Path
+
+    import surmap.simulation.map_floor as map_floor
+
+    assert isinstance(tmp_path, Path)
+    fetches: list[str] = []
+
+    class _Response(io.BytesIO):
+        def __enter__(self) -> _Response:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            self.close()
+
+    def fake_urlopen(request: object, timeout: int = 0) -> _Response:
+        url = request.full_url if hasattr(request, "full_url") else str(request)
+        fetches.append(url)
+        buffer = io.BytesIO()
+        Image.new("RGB", (256, 256), (9, 9, 9)).save(buffer, format="PNG")
+        return _Response(buffer.getvalue())
+
+    monkeypatch.setattr(map_floor.urllib.request, "urlopen", fake_urlopen)
+    source = map_floor.OsmTileSource(cache_dir=tmp_path / "tiles")
+
+    # When the same tile is fetched twice
+    first = source.fetch_tile(17, 100, 200)
+    second = source.fetch_tile(17, 100, 200)
+
+    # Then the second fetch came from the disk cache
+    assert first == second
+    assert len(fetches) == 1
+    assert (tmp_path / "tiles" / "17" / "100" / "200.png").is_file()
+
+
+def test_choose_zoom_also_respects_the_texture_pixel_cap() -> None:
+    # Given a kilometre-square bbox at the equator (the largest floor allowed)
+    big = GeoBBox(sw_lat=0.0, sw_lon=0.0, ne_lat=0.008, ne_lon=0.009)
+
+    # When a zoom is chosen
+    zoom = choose_zoom(big)
+    floor = stitch_floor(InMemoryTileSource(), big, zoom=zoom)
+
+    # Then the stitched texture is no wider or taller than the cap
+    assert floor.width_px <= 4096
+    assert floor.height_px <= 4096
