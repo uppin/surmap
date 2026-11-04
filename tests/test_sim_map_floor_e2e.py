@@ -27,6 +27,7 @@ class OsmLikeTiles(InMemoryTileSource):
 
     attribution = "© OpenStreetMap contributors"
 
+
 TARGET_LAT, TARGET_LON = 54.0008, 25.0015
 # What geo_to_enu reports for the target from the Vilnius bbox centre (54.0005, 25.001).
 TARGET_EAST, TARGET_NORTH = 32.71, 33.40
