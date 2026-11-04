@@ -214,3 +214,19 @@ class DroneMapStatusResponse(_message.Message):
     DRONES_FIELD_NUMBER: _ClassVar[int]
     drones: _containers.RepeatedCompositeFieldContainer[DroneMapCounts]
     def __init__(self, drones: _Optional[_Iterable[_Union[DroneMapCounts, _Mapping[str, _Any]]]] = ...) -> None: ...
+
+class SetOnboardModelRequest(_message.Message):
+    __slots__ = ("scenario_id", "onboard_model")
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    ONBOARD_MODEL_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    onboard_model: str
+    def __init__(self, scenario_id: _Optional[str] = ..., onboard_model: _Optional[str] = ...) -> None: ...
+
+class SetOnboardModelResponse(_message.Message):
+    __slots__ = ("onboard_model", "streaming")
+    ONBOARD_MODEL_FIELD_NUMBER: _ClassVar[int]
+    STREAMING_FIELD_NUMBER: _ClassVar[int]
+    onboard_model: str
+    streaming: bool
+    def __init__(self, onboard_model: _Optional[str] = ..., streaming: bool = ...) -> None: ...

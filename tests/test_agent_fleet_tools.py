@@ -18,6 +18,7 @@ import pytest
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from google.protobuf.json_format import MessageToDict
+from google.protobuf.message import Message
 
 from surmap.agent.contracts import (
     ExecutionMode,
@@ -36,7 +37,11 @@ from surmap.agent.tools.fleet_handlers import (
     fleet_error,
     fleet_nest,
     flight_route,
+    set_onboard_model_handler,
 )
+from surmap.agent.tools.onboard import OnboardModels
+from surmap.detection import MODEL_PROFILES
+from surmap.simulation.bevy_wire import BridgeStatus
 from surmap.simulation.fleet.commands import (
     Detour,
     FleetCommand,
@@ -66,7 +71,13 @@ from tests.fleet_fakes import (
     drone_frame,
     eventually,
 )
-from tests.fleet_perception_fakes import PerceptionRig, a_perception, blocks
+from tests.fleet_perception_fakes import (
+    FakeDetections,
+    PerceptionRig,
+    a_pair,
+    a_perception,
+    blocks,
+)
 from tests.fleet_tool_fakes import (
     FIXTURES,
     NE_D1,
@@ -443,7 +454,7 @@ def test_every_fleet_tool_is_a_quick_call_that_fails_on_timeout() -> None:
     # When the fleet tools' contracts are built
     contracts = tool_contracts(FLEET_TOOLS)
 
-    # Then there are nine, each run synchronously for up to 10 s and failed past it
+    # Then there are ten, each run synchronously for up to 10 s and failed past it
     assert [c.name for c in contracts] == [
         "list_nests",
         "list_drones",
@@ -454,6 +465,7 @@ def test_every_fleet_tool_is_a_quick_call_that_fails_on_timeout() -> None:
         "set_active_drone",
         "get_fleet_log",
         "drone_map_status",
+        "set_onboard_model",
     ]
     assert {c.default_execution for c in contracts} == {
         ExecutionPolicy(mode=ExecutionMode.SYNC, timeout_s=10, on_timeout=OnTimeout.FAIL)
@@ -660,15 +672,20 @@ def a_page_streaming_to_the_bridge(station: FleetStation) -> PerceptionRig:
     return a_perception(station.rig.perception).opened(SCENARIO)
 
 
-async def over_the_server(station: FleetStation, request: pb.DroneMapStatusRequest) -> object:
-    """`DroneMapStatus` called on the running server's registered `FleetTools` service."""
+async def over_the_server(
+    station: FleetStation,
+    request: Message,
+    rpc: str = "DroneMapStatus",
+    response_type: type[Message] = pb.DroneMapStatusResponse,
+) -> object:
+    """`rpc` called on the running server's registered `FleetTools` service."""
 
-    def post() -> pb.DroneMapStatusResponse:
+    def post() -> Message:
         connection = http.client.HTTPConnection(station.address, timeout=10)
         try:
             connection.request(
                 "POST",
-                "/surmap.agent.v1.FleetTools/DroneMapStatus",
+                f"/surmap.agent.v1.FleetTools/{rpc}",
                 body=request.SerializeToString(),
                 headers={"content-type": "application/proto"},
             )
@@ -677,7 +694,7 @@ async def over_the_server(station: FleetStation, request: pb.DroneMapStatusReque
         finally:
             connection.close()
         assert response.status == 200, body.decode("utf-8", "replace")
-        return pb.DroneMapStatusResponse.FromString(body)
+        return response_type.FromString(body)
 
     return await asyncio.to_thread(post)
 
@@ -765,6 +782,129 @@ async def test_drone_map_status_for_what_the_scene_lacks_is_not_found(
 
     # Then the tool answers not found, naming it
     assert (raised.value.code, named in raised.value.message) == (Code.NOT_FOUND, True)
+
+
+# ---- the on-board model on a live simulation --------------------------------------------------
+
+SSD = "ssd-mobilenet-v2"
+
+
+def a_station_with_files_for(tmp_path: Path, *models: str) -> OnboardModels:
+    """The station's on-board models with only `models`' files prepared; each builds a fake
+    detector that finds a car on every frame."""
+    model_dir = tmp_path / "coral"
+    model_dir.mkdir()
+    (model_dir / "coco_labels.txt").write_text("car\n")
+    for model in models:
+        (model_dir / MODEL_PROFILES[model].cpu_file).write_bytes(b"tflite")
+    return OnboardModels(model_dir, build=lambda _dir, _model: FakeDetections())
+
+
+def choosing(model: str, scenario: str = SCENARIO) -> pb.SetOnboardModelRequest:
+    return pb.SetOnboardModelRequest(scenario_id=scenario, onboard_model=model)
+
+
+def labels_in(status: object) -> list[str]:
+    assert isinstance(status, BridgeStatus)
+    return [o.label for frame in status.detections for o in frame.objects]
+
+
+async def test_set_onboard_model_runs_the_model_on_the_page_streaming_the_scenario(
+    tmp_path: Path,
+) -> None:
+    # Given a page streaming quake-fleet, on a station with the SSD model's files
+    async with a_fleet_station(tmp_path) as station:
+        page = a_page_streaming_to_the_bridge(station)
+        tool = set_onboard_model_handler(
+            station.rig.store, station.rig.perception, a_station_with_files_for(tmp_path, SSD)
+        )
+
+        # When the agent chooses SSD for the scenario, and the next frame arrives
+        reply = await tool(choosing(SSD), None)
+        (status,) = page.streams(a_pair(5, SW_D1))
+
+    # Then SSD runs on the streaming page, and its frame's reply carries what it found
+    assert (reply.onboard_model, reply.streaming, labels_in(status)) == (SSD, True, ["car"])
+
+
+async def test_set_onboard_model_before_any_page_streams_is_kept_for_the_page(
+    tmp_path: Path,
+) -> None:
+    # Given no page streaming quake-fleet yet
+    async with a_fleet_station(tmp_path) as station:
+        tool = set_onboard_model_handler(
+            station.rig.store, station.rig.perception, a_station_with_files_for(tmp_path, SSD)
+        )
+
+        # When the agent chooses SSD, then a page connects and streams a frame
+        reply = await tool(choosing(SSD), None)
+        page = a_page_streaming_to_the_bridge(station)
+        (status,) = page.streams(a_pair(5, SW_D1))
+
+    # Then the reply says nothing streams yet, and the page runs SSD once it does
+    assert (reply.onboard_model, reply.streaming, labels_in(status)) == (SSD, False, ["car"])
+
+
+async def test_set_onboard_model_none_stops_the_model(tmp_path: Path) -> None:
+    # Given a page streaming quake-fleet with SSD running on it
+    async with a_fleet_station(tmp_path) as station:
+        page = a_page_streaming_to_the_bridge(station)
+        tool = set_onboard_model_handler(
+            station.rig.store, station.rig.perception, a_station_with_files_for(tmp_path, SSD)
+        )
+        await tool(choosing(SSD), None)
+
+        # When the agent chooses "none", and the next frame arrives
+        reply = await tool(choosing("none"), None)
+        (status,) = page.streams(a_pair(5, SW_D1))
+
+    # Then no model runs and the frame's reply carries no detections
+    assert (reply.onboard_model, labels_in(status)) == ("", [])
+
+
+SET_ONBOARD_REFUSED: dict[str, tuple[pb.SetOnboardModelRequest, Code, str]] = {
+    "unknown model": (choosing("yolo-v99"), Code.INVALID_ARGUMENT, "yolo-v99"),
+    "no files on the station": (
+        choosing("ssdlite-mobiledet"),
+        Code.FAILED_PRECONDITION,
+        "ssdlite-mobiledet",
+    ),
+    "unknown scenario": (choosing(SSD, scenario="no-such-scene"), Code.NOT_FOUND, "no-such-scene"),
+}
+
+
+@pytest.mark.parametrize(
+    ("request_", "code", "named"), SET_ONBOARD_REFUSED.values(), ids=SET_ONBOARD_REFUSED.keys()
+)
+async def test_set_onboard_model_refuses_what_the_station_cannot_run(
+    tmp_path: Path, request_: pb.SetOnboardModelRequest, code: Code, named: str
+) -> None:
+    # Given a station with only the SSD model's files
+    async with a_fleet_station(tmp_path) as station:
+        tool = set_onboard_model_handler(
+            station.rig.store, station.rig.perception, a_station_with_files_for(tmp_path, SSD)
+        )
+
+        # When the agent asks for something it cannot run
+        with pytest.raises(ConnectError) as raised:
+            await tool(request_, None)
+
+        # Then the tool answers with its code, naming it, and nothing was chosen
+        assert (raised.value.code, named in raised.value.message) == (code, True)
+        assert station.rig.perception.detector(SCENARIO) is None
+
+
+async def test_set_onboard_model_is_served_by_the_agent_server(tmp_path: Path) -> None:
+    # Given the running agent server for quake-fleet
+    async with a_fleet_station(tmp_path) as station:
+        # When the agent turns the on-board model off over the server's FleetTools
+        reply = await over_the_server(
+            station, choosing("none"), "SetOnboardModel", pb.SetOnboardModelResponse
+        )
+
+    # Then the server answers that no model runs
+    assert isinstance(reply, pb.SetOnboardModelResponse)
+    assert (reply.onboard_model, reply.streaming) == ("", False)
 
 
 def test_a_drone_s_counts_are_reported_field_for_field() -> None:

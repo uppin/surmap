@@ -67,7 +67,11 @@ from surmap.agent.services import (
 )
 from surmap.agent.skills import SkillCatalogue, skill_tools
 from surmap.agent.subagents import SubagentSetup
-from surmap.agent.tools.fleet_handlers import drone_map_status_handler, fleet_tool_handlers
+from surmap.agent.tools.fleet_handlers import (
+    drone_map_status_handler,
+    fleet_tool_handlers,
+    set_onboard_model_handler,
+)
 from surmap.agent.tools.geometry import GeometryStore
 from surmap.agent.tools.handlers import survey_tool_handlers
 from surmap.agent.tools.map_handlers import MapSceneStore, map_tool_handlers
@@ -169,7 +173,9 @@ You also edit \
 the display map: place and move GLB shapes with the map tools, navigate \
 its camera, and draw route paths. Map edits change only what the person sees; routes are drawn \
 paths, never flight plans. Simulated drones in the station's simulation can be tasked with the \
-fleet tools. Real aircraft are never commanded. You otherwise only launch demos and read results.
+fleet tools; set_onboard_model runs an on-board model on the active drone's camera, and \
+the simulation preview draws its detections. Real aircraft are never commanded. You otherwise \
+only launch demos and read results.
 
 Some tools run as jobs. When a tool call returns a job handle instead of a result, say that \
 the job started and name its job id, for example "run_demo started as job j-2". Never say a \
@@ -557,6 +563,9 @@ def build_agent_description(
         {
             **fleet_tool_handlers(simulation.store, simulation.fleet),
             "DroneMapStatus": drone_map_status_handler(simulation.store, simulation.perception),
+            "SetOnboardModel": set_onboard_model_handler(
+                simulation.store, simulation.perception, onboard_models(config)
+            ),
         }
         if simulation is not None
         else {}

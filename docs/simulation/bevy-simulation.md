@@ -1100,6 +1100,16 @@ drone**. Only the active drone's frames are processed; the other drones keep fly
   RTAB-Map's odometry inliers mapped rectified → raw left-camera pixels with the backend's
   `rectification` (`surmap.slam.keypoint_pixels.rectified_to_raw`, shared with the demo page),
   those outside the frame left out (`fleet.perception.frame_keypoints`).
+  When the agent chose an on-board model for the scenario (`set_onboard_model`,
+  [docs/agent.md](../agent.md), *Fleet tools*), a reply also carries `detections` —
+  `[{"frame_id": n, "objects": [{"label", "score", "box": [x0, y0, x1, y1], "track_id"}]}]`,
+  omitted when empty — what that model found on this pair's left frame (raw pixels).
+  `PerceptionRegistry.choose_detector` keeps the choice per scenario and applies it to the
+  scenario's page now and to any page that registers later; `FleetPerception.use_detector` gives
+  every drone session its own fresh source (its own `IouTracker`). The session runs it
+  synchronously on the grey left eye stacked to RGB (the bridge handles pairs off the event
+  loop), so a frame's detections arrive with its own reply; a failing model finds nothing on
+  that frame and leaves the map running.
 
 ### Verified
 
@@ -1145,6 +1155,18 @@ opens the full page.
   (`scripts/build_rtabmap_stream.py`, once per source hash; a failure stops the stack before any
   service starts), runs the agent with `--bevy-bridge-port $SURMAP_DEV_BRIDGE_PORT` (8782) and
   the chat with `VITE_SURMAP_BRIDGE_URL`; the chat also takes `?bridge=`.
+- **On-board detections, labelled, while fresh.** The newest reply's `detections`
+  (`fleet::stream::parse_detections`) follow the keypoints' rule: drawn over the live eye while
+  their frame is at most `FRESH_FRAMES` behind the last frame sent (`fresh_detections`,
+  `FpvDetections`), gone once stale. Each object is outlined in the demo's SAM cyan and gets a
+  label card `<label> #<track> <score>%`: `layout_cards` is the demo page's `layoutCards`
+  (`surmap.demo.view_math`) ported — just above the object when free, else the nearest free
+  spot (below, beside, then a 4 px grid), never overlapping another card, inside the image,
+  smallest objects first — and a leader with a dot at each end joins card and object. Cards
+  are laid out in display pixels (Bevy's default font is monospaced, so a card is sized from
+  its glyph count) and drawn as UI text; boxes and leaders go into the keypoint overlay image
+  (`draw_detections`). `show_overlay` redraws both when the keypoints, the detections or the
+  eye's displayed size change.
 
 ### Verified
 
@@ -1159,6 +1181,14 @@ overview; after take-off, the FPV with RTAB-Map's keypoints on the held frame.
 passed, `cargo check --target wasm32-unknown-unknown` clean, pytest 2631 passed / 38 skipped.
 V3 — the dev profile's flags: `bevy_pbr` `opt-level=1` → `3`, `bevy_sitl_poc` `1` unchanged.
 V4 in the browser (fly, then stop RTAB-Map: the FPV keeps moving) not yet run.
+2026-11-05 (on-board detections): V1 — `tests/test_fleet_perception.py`,
+`tests/test_bevy_wire.py`, `tests/test_agent_fleet_tools.py` (`set_onboard_model` over the
+server rig) and `preview::tests` / `fleet::stream::tests` pass. V4 — Chrome, preview mode, an
+agent with the bridge, the real sidecar and the Coral fixture models: after `set_onboard_model`
+and a launch, the FPV showed the frame with its keypoints, outlines, leaders and
+non-overlapping cards (`ssdlite-mobiledet` found the scene's cars; `ssd-mobilenet-v2` found
+nothing on the same grey frames).
+
 ## The chat's live drone map: the demo's Follow view of what the drone builds
 
 Once a drone of the chat's simulation is in the air, a **Live map** pane appears under the

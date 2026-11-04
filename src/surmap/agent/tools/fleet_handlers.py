@@ -18,11 +18,14 @@ the page's own reason when the simulation refuses it; `UNAVAILABLE` when no page
 `drone_map_status_handler(store, perception)` is `DroneMapStatus`, registered beside them: each
 drone's own map and segmentation on the station's stereo bridge
 (`surmap.simulation.fleet.perception`), `UNAVAILABLE` when no page streams the scenario.
+`set_onboard_model_handler(store, perception, onboard)` is `SetOnboardModel`: the on-board model
+that bridge runs on the scenario's processed frames, whose detections the preview draws.
 """
 
 from __future__ import annotations
 
 import asyncio
+import functools
 from collections.abc import Mapping, Sequence
 
 from connectrpc.code import Code
@@ -31,6 +34,7 @@ from connectrpc.errors import ConnectError
 from surmap.agent.proto import fleet_tools_pb2 as pb
 from surmap.agent.proto import simulation_tools_pb2 as sim_pb
 from surmap.agent.services import Handler
+from surmap.agent.tools.onboard import ONBOARD_OFF, OnboardModels, OnboardUnavailable
 from surmap.agent.tools.simulation_core import blocking
 from surmap.simulation.fleet.commands import (
     Detour,
@@ -54,7 +58,7 @@ from surmap.simulation.fleet.controller import (
 )
 from surmap.simulation.fleet.link import DroneTelemetry, Phase
 from surmap.simulation.fleet.log_store import UnknownSession
-from surmap.simulation.fleet.perception import DroneCounts, PerceptionRegistry
+from surmap.simulation.fleet.perception import DetectorChoice, DroneCounts, PerceptionRegistry
 from surmap.simulation.fleet.registry import FleetRegistry
 from surmap.simulation.fleet_nests import Nest, nests_of
 from surmap.simulation.scenario_store import ScenarioStore
@@ -70,6 +74,7 @@ __all__ = [
     "fleet_nest",
     "fleet_tool_handlers",
     "flight_route",
+    "set_onboard_model_handler",
 ]
 
 CommandRequest = (
@@ -316,6 +321,39 @@ def drone_map_status_handler(store: ScenarioStore, perception: PerceptionRegistr
         )
 
     return drone_map_status
+
+
+def set_onboard_model_handler(
+    store: ScenarioStore, perception: PerceptionRegistry, onboard: OnboardModels
+) -> Handler:
+    """`SetOnboardModel` as a `(request, ctx)` handler: resolves the model with the station's
+    `onboard` models and builds one source of it up front, so a model the station cannot run
+    fails now rather than on the page's first frame; then keeps it as the scenario's choice in
+    `perception`, which every page of the scenario runs. `NOT_FOUND` for a scenario the store
+    does not have, `INVALID_ARGUMENT` for an unknown model, `FAILED_PRECONDITION` for one this
+    station has no files for."""
+
+    async def set_onboard_model(
+        request: pb.SetOnboardModelRequest, _ctx: object
+    ) -> pb.SetOnboardModelResponse:
+        await blocking(lambda: store.scenario(request.scenario_id))
+        try:
+            model = onboard.resolve(request.onboard_model or ONBOARD_OFF)
+            if model is not None:
+                await asyncio.to_thread(onboard.source, model)
+        except ValueError as bad:
+            raise ConnectError(Code.INVALID_ARGUMENT, str(bad)) from bad
+        except OnboardUnavailable as unavailable:
+            raise ConnectError(Code.FAILED_PRECONDITION, str(unavailable)) from unavailable
+        choice = (
+            DetectorChoice(model, functools.partial(onboard.source, model))
+            if model is not None
+            else None
+        )
+        streaming = perception.choose_detector(request.scenario_id, choice)
+        return pb.SetOnboardModelResponse(onboard_model=model or "", streaming=streaming)
+
+    return set_onboard_model
 
 
 def drone_map_counts(counts: DroneCounts) -> pb.DroneMapCounts:

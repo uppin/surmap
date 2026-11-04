@@ -98,6 +98,7 @@ leading comment, and argument descriptions are the field comments.
 | `set_active_drone` | `FleetTools.SetActiveDrone` | SYNC · 10 s · FAIL |
 | `get_fleet_log` | `FleetTools.GetFleetLog` | SYNC · 10 s · FAIL |
 | `drone_map_status` | `FleetTools.DroneMapStatus` | SYNC · 10 s · FAIL |
+| `set_onboard_model` | `FleetTools.SetOnboardModel` | SYNC · 10 s · FAIL |
 | `start_subagent` | — (`surmap.agent.subagents`) | SYNC · 10 s · FAIL |
 | `message_subagent` | — (`surmap.agent.subagents`) | SYNC · 10 s · FAIL |
 | `message_main_agent` | — (a subagent's only) | SYNC · 10 s · FAIL |
@@ -422,6 +423,7 @@ aircraft are never commanded.
 | `set_active_drone` | `scenario_id`, `drone_id` | `FleetCommandResult` |
 | `get_fleet_log` | `scenario_id`, `optional session_id` (latest when absent) | `session_id`, `fleet_log_jsonl` (the `--fleet-log` replay file) |
 | `drone_map_status` | `scenario_id`, `optional drone_id` (one drone; every drone when absent) | `repeated DroneMapCounts { drone_id, frames, posed, lost, keyframes, segmented_frames, detections, processing, last_t_ns, optional string error }` — per-drone map and segmentation counts from the stereo bridge; a drone that never streamed reports zeros, `last_t_ns` 0 before any frame; `error` is set only for a drone whose map failed (its counts stay frozen, the other drones keep streaming) |
+| `set_onboard_model` | `scenario_id`, `onboard_model` (a name from `list_onboard_models`, or `"none"`) | `onboard_model` (empty for none), `streaming` (a page streams the scenario now) — the stereo bridge runs that on-board model on the scenario's processed frames, also for a page that connects later; the simulation preview outlines its detections with label cards ([bevy-simulation.md](simulation/bevy-simulation.md), *The chat preview*) |
 
 Routes are ENU metres on the simulated block: waypoints 5–60 m up within ±500 m, speed
 0.5–8 m/s when given; `on_complete` is `RETURN` (the default) or `HOVER`. Phases are
@@ -445,6 +447,12 @@ that scenario's sessions.
   `NOT_FOUND` for an unknown scenario or a named drone the scene does not have, and
   `UNAVAILABLE` (`no page streams scenario <id>`) when no page streams the scenario to the
   bridge. The bridge itself starts only with `--bevy-bridge-port` (see *Running the agent*).
+- **`set_onboard_model`** (`set_onboard_model_handler(store, perception, onboard)`, registered
+  beside `drone_map_status` with the station's `onboard_models(config)`) resolves the model and
+  builds one source of it up front, so a model the station cannot run fails now: `NOT_FOUND`
+  for an unknown scenario, `INVALID_ARGUMENT` for an unknown model, `FAILED_PRECONDITION` for
+  one the Coral model dir has no files for. The choice is kept in the `PerceptionRegistry` under
+  the scenario.
 
 ## SAM station (`surmap.agent.tools.station`, `station_modal`)
 

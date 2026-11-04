@@ -60,6 +60,25 @@ class FrameKeypoints:
 
 
 @dataclass(frozen=True)
+class DetectedObject:
+    """One object the on-board model found: its class, score, box (x0, y0, x1, y1) in raw
+    left-camera pixels, and its tracker's id."""
+
+    label: str
+    score: float
+    box_xyxy: tuple[float, float, float, float]
+    track_id: int
+
+
+@dataclass(frozen=True)
+class FrameDetections:
+    """What the on-board model found on the pair the page sent as `frame_id`."""
+
+    frame_id: int
+    objects: tuple[DetectedObject, ...]
+
+
+@dataclass(frozen=True)
 class BridgeStatus:
     frames: int
     posed: int
@@ -73,10 +92,13 @@ class BridgeStatus:
     odometry: tuple[FrameKeypoints, ...] = ()
     """The odometry that came back while this pair was handled, oldest first: usually an
     earlier pair's, as RTAB-Map answers asynchronously."""
+    detections: tuple[FrameDetections, ...] = ()
+    """What the on-board model the agent chose found on this pair; empty without one."""
 
 
 def encode_status(status: BridgeStatus) -> str:
-    """The status text message; `drone_id`, `error` and `odometry` appear only when set."""
+    """The status text message; `drone_id`, `error`, `odometry` and `detections` appear only
+    when set."""
     body: dict[str, object] = {
         "type": "status",
         "frames": status.frames,
@@ -93,6 +115,22 @@ def encode_status(status: BridgeStatus) -> str:
         body["odometry"] = [
             {"frame_id": frame.frame_id, "keypoints": [list(k) for k in frame.keypoints]}
             for frame in status.odometry
+        ]
+    if status.detections:
+        body["detections"] = [
+            {
+                "frame_id": frame.frame_id,
+                "objects": [
+                    {
+                        "label": found.label,
+                        "score": found.score,
+                        "box": list(found.box_xyxy),
+                        "track_id": found.track_id,
+                    }
+                    for found in frame.objects
+                ],
+            }
+            for frame in status.detections
         ]
     return json.dumps(body, separators=(",", ":"))
 

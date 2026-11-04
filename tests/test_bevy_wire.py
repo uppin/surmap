@@ -12,6 +12,8 @@ from surmap.simulation.bevy_wire import (
     BevyPair,
     BevyWireError,
     BridgeStatus,
+    DetectedObject,
+    FrameDetections,
     FrameKeypoints,
     decode_bevy_message,
     encode_status,
@@ -247,3 +249,44 @@ def test_a_status_without_odometry_keeps_the_counts_only_shape() -> None:
 
     # Then no odometry field appears
     assert "odometry" not in json.loads(text)
+
+
+# ---- the on-board model's detections on the frame they were found in -------------------------
+
+
+def test_a_status_carries_each_frame_s_detections_after_the_counts() -> None:
+    # Given a reply whose pair the on-board model found a car on
+    status = BridgeStatus(
+        frames=8,
+        posed=7,
+        lost=False,
+        keyframes=3,
+        dropped=0,
+        detections=(
+            FrameDetections(
+                frame_id=8,
+                objects=(DetectedObject("car", 0.82, (10.0, 20.5, 64.0, 48.0), track_id=3),),
+            ),
+        ),
+    )
+
+    # When the bridge encodes it
+    text = encode_status(status)
+
+    # Then the frame's id and each object's label, score, box and track follow the counts
+    assert text == (
+        '{"type":"status","frames":8,"posed":7,"lost":false,"keyframes":3,"dropped":0,'
+        '"detections":[{"frame_id":8,"objects":[{"label":"car","score":0.82,'
+        '"box":[10.0,20.5,64.0,48.0],"track_id":3}]}]}'
+    )
+
+
+def test_a_status_without_detections_has_no_detections_field() -> None:
+    # Given a reply for a pair no on-board model ran on
+    status = BridgeStatus(frames=1, posed=0, lost=False, keyframes=0, dropped=0)
+
+    # When the bridge encodes it
+    text = encode_status(status)
+
+    # Then no detections field appears
+    assert "detections" not in json.loads(text)

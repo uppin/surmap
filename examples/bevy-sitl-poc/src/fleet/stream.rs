@@ -186,6 +186,55 @@ fn keypoint(value: &serde_json::Value) -> Option<[f32; 3]> {
     }
 }
 
+/// One object the on-board model found on a frame: its class, score, box `[x0, y0, x1, y1]` in
+/// raw left-camera pixels, and its tracker's id.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DetectedObject {
+    pub label: String,
+    pub score: f32,
+    pub box_xyxy: [f32; 4],
+    pub track_id: u64,
+}
+
+/// What the on-board model found on the frame the page sent as `frame_id`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FrameDetections {
+    pub frame_id: u64,
+    pub objects: Vec<DetectedObject>,
+}
+
+/// The on-board detections a `status` reply carries (`"detections"`), in order; none when it has
+/// no such field. A malformed entry or object is skipped.
+pub fn parse_detections(reply: &serde_json::Value) -> Vec<FrameDetections> {
+    let Some(entries) = reply.get("detections").and_then(serde_json::Value::as_array) else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter_map(|entry| {
+            let frame_id = entry.get("frame_id")?.as_u64()?;
+            let objects = entry
+                .get("objects")
+                .and_then(serde_json::Value::as_array)
+                .map(|objects| objects.iter().filter_map(detected_object).collect())
+                .unwrap_or_default();
+            Some(FrameDetections { frame_id, objects })
+        })
+        .collect()
+}
+
+/// One `{label, score, box: [x0, y0, x1, y1], track_id}` object; anything else is `None`.
+fn detected_object(value: &serde_json::Value) -> Option<DetectedObject> {
+    let corners = value.get("box")?.as_array()?;
+    let [x0, y0, x1, y1] = corners.as_slice() else { return None };
+    Some(DetectedObject {
+        label: value.get("label")?.as_str()?.to_owned(),
+        score: value.get("score")?.as_f64()? as f32,
+        box_xyxy: [x0.as_f64()? as f32, y0.as_f64()? as f32, x1.as_f64()? as f32, y1.as_f64()? as f32],
+        track_id: value.get("track_id")?.as_u64()?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use bevy::ecs::schedule::{InternedSystemSet, IntoSystemSet, Schedules, SystemKey};
@@ -397,6 +446,62 @@ mod tests {
         assert_eq!(
             parse_odometry(&reply),
             vec![FrameKeypoints { frame_id: 4, keypoints: vec![[2.0, 2.0, 3.0]] }]
+        );
+    }
+
+    #[test]
+    fn a_status_reply_s_detections_name_each_frame_and_its_objects() {
+        let reply = serde_json::json!({
+            "type": "status", "frames": 8,
+            "detections": [
+                {"frame_id": 8, "objects": [
+                    {"label": "car", "score": 0.82, "box": [10.0, 20.5, 64.0, 48.0], "track_id": 3}
+                ]}
+            ]
+        });
+
+        assert_eq!(
+            parse_detections(&reply),
+            vec![FrameDetections {
+                frame_id: 8,
+                objects: vec![DetectedObject {
+                    label: "car".into(),
+                    score: 0.82,
+                    box_xyxy: [10.0, 20.5, 64.0, 48.0],
+                    track_id: 3,
+                }],
+            }]
+        );
+    }
+
+    #[test]
+    fn a_status_reply_without_detections_has_none() {
+        assert_eq!(parse_detections(&serde_json::json!({"type": "status", "frames": 1})), vec![]);
+    }
+
+    #[test]
+    fn a_malformed_detection_entry_or_object_is_skipped() {
+        let reply = serde_json::json!({
+            "detections": [
+                {"objects": []},
+                {"frame_id": 4, "objects": [
+                    {"label": "car", "score": 0.5, "box": [1.0, 2.0], "track_id": 1},
+                    {"label": "bus", "score": 0.9, "box": [1.0, 2.0, 3.0, 4.0], "track_id": 2}
+                ]}
+            ]
+        });
+
+        assert_eq!(
+            parse_detections(&reply),
+            vec![FrameDetections {
+                frame_id: 4,
+                objects: vec![DetectedObject {
+                    label: "bus".into(),
+                    score: 0.9,
+                    box_xyxy: [1.0, 2.0, 3.0, 4.0],
+                    track_id: 2,
+                }],
+            }]
         );
     }
 }
