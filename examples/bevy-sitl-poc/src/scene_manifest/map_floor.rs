@@ -16,6 +16,9 @@ pub struct MapFloor {
     pub ne: [f64; 2],
     pub texture: String,
     pub zoom: u32,
+    /// Who must be credited for the floor tiles, shown in the scene.
+    #[serde(default)]
+    pub attribution: Option<String>,
 }
 
 impl MapFloor {

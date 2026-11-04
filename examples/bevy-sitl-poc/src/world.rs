@@ -36,6 +36,7 @@ use crate::vehicle::scene::{Float, VehicleActor, VehicleClasses};
 use crate::wildfire::Wildfire;
 use crate::wire::GroundTruthObject;
 
+pub mod floor;
 mod models;
 
 use models::on_model_ready;
@@ -136,6 +137,9 @@ pub fn enu(x: f32, y: f32, z: f32) -> Vec3 {
     Vec3::new(x, z, -y)
 }
 
+
+
+
 /// splitmix64: a tiny deterministic generator (no dependency).
 pub struct Seeded(u64);
 
@@ -231,6 +235,16 @@ pub fn build_world(
     commands.insert_resource(RigSource(profile));
     let fog_visibility_m = manifest.weather.as_ref().and_then(|w| w.fog_visibility_m);
     spawn_sun_and_haze(&mut commands, &assets, &mut state.pending, &manifest.environment, fog_visibility_m);
+    if let Some(floor) = &manifest.map_floor {
+        floor::spawn_map_floor(
+            &mut commands,
+            &assets,
+            &mut materials,
+            &mut meshes,
+            &mut state.pending,
+            floor,
+        );
+    }
     commands.insert_resource(Wildfire::new(manifest.weather.as_ref(), &manifest.fires, &assets, &mut meshes, &mut state.pending));
     let gait: Handle<actors::FigureAsset> = assets.load("behaviour/person.figure.json");
     state.pending.push(gait.clone().untyped());
@@ -259,7 +273,9 @@ pub fn build_world(
         nests: Vec::new(),
     };
     for element in &manifest.elements {
-        world.element(element);
+        if !floor::is_hidden_by_floor(element, manifest.map_floor.is_some()) {
+            world.element(element);
+        }
     }
     let nests = world.nests;
     commands.insert_resource(Nests(nests));
@@ -544,6 +560,9 @@ pub fn scene_ready(state: &SceneState, assets: &AssetServer, models: usize) -> b
 #[cfg(test)]
 mod tests {
     use super::*;
+
+
+
 
     #[test]
     fn the_seeded_generator_repeats_for_a_seed() {
