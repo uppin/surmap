@@ -746,7 +746,7 @@ A scenario can hold drone nests: 2.4 m × 2.4 m docking pads, each housing one t
 drones. The agent places them with `add_element` like any other element. The renderer draws each
 one as a landing pad (a dark rim, a deck and an "H" marking) turned by `yaw_deg`, tags it
 `NestPad { id }`, and publishes every nest in the `Nests` resource (id, ENU pad centre, yaw, drone
-ids) for the fleet to dock on. No drone sits on a pad yet.
+ids). The fleet's drones dock on them (*The fleet and its autopilot*).
 
 Nests are the simulation-only exception's scene data ([architecture.md](../architecture.md) §1):
 the agent may task the simulation's own drones on machine 3, and SurMap still has no write path to
@@ -790,6 +790,91 @@ opposite corners, one on a standing building's roof.
 36 passed; `cargo test --locked fleet` 18 passed (the rule tests and the golden). The native
 `earthquake-fleet` still could not be taken in the wrap worktree: its pinned textures and figure
 models were not fetched there (`aerial_asphalt_01_diff_2k.jpg`, `person/wave.glb` missing).
+
+## The fleet and its autopilot
+
+When a scene has nests, each nest's drones spawn docked on its pad (`fleet.rs::spawn_fleet`, one
+body per drone id, tagged `FleetDrone { id }`, kinematic) and the legacy keyboard `Drone` is
+despawned. A kinematic autopilot flies them from a simulation-time-stamped command log. Scenes
+without nests are unchanged: one legacy drone, keyboard flight, and the `survey-loop` for stills
+and recordings.
+
+### The fleet log (`fleet/log.rs`)
+
+One JSON object per line, in `at_s` order (ties broken by `seq`):
+
+```json
+{"seq": 1, "at_s": 2.0, "command": {"type": "launch", "drone": "nest-sw-d1",
+  "route": {"waypoints": [[-10, 20, 12], [10, 60, 15]], "speed_m_s": 5, "on_complete": "return"}}}
+{"seq": 2, "at_s": 9.5, "command": {"type": "detour", "drone": "nest-sw-d1", "waypoints": [[0, 35, 18]]}}
+{"seq": 3, "at_s": 12.0, "command": {"type": "set_active", "drone": "nest-sw-d1"}}
+```
+
+Commands: `launch` (with a route), `set_route`, `detour`, `recall` and `set_active`. A route's
+`on_complete` is `hover` or `return`. `FleetLog::push(at_s, command)` checks each command against
+the drone's phase at `at_s`, replayed from the log so far, and returns the assigned `seq` or a
+`Refusal`. A command is refused for any of these:
+
+- an unknown drone;
+- `launch` when the drone is not `Docked`;
+- `set_route` or `detour` when it is `Docked` or `Landing`;
+- `recall` when it is `Docked`;
+- empty waypoints;
+- a speed outside 0.5–8 m/s;
+- a waypoint `up` outside 5–60 m.
+
+The log keeps refusals (`refused()`) but never applies them. `from_jsonl` keeps the file's `seq`s
+and refuses a line whose `at_s` is out of order.
+
+### The autopilot (`fleet/autopilot.rs`, pure)
+
+The autopilot uses a fixed step, `STEP_S = 0.05` from `t = 0`, so the result does not depend on
+frame rate. A command takes effect at the first step at or after its `at_s`.
+`state_at(home, id, log, t)` is a pure function. The runtime `Autopilot` advances step by step and
+equals `state_at` at every `t` (a test checks this).
+
+| Phase | Motion |
+|---|---|
+| `Docked` | on the pad, facing the nest's `yaw_deg` |
+| `Climbing` | straight up at ≤ 2 m/s to the first target's `up` (at least 5 m above the pad) |
+| `Cruising` | toward the current target. Horizontal speed ramps at ≤ 2.5 m/s² up to the route speed. Vertical speed is ≤ 2 m/s. Heading turns toward the velocity at ≤ 60°/s. A target within 1 m counts as reached |
+| `Detouring` | as `Cruising`, over the detour's waypoints. Afterwards it resumes the target that was current when the detour arrived |
+| `Hovering` | holds position, decelerating within the acceleration limit (`on_complete: hover`) |
+| `Returning` | cruises at its current altitude to the point above the pad (`recall`, or `on_complete: return`) |
+| `Landing` | straight down at ≤ 1 m/s to the pad, then `Docked` |
+
+`set_route` replaces the remaining targets and never resets position or velocity, so the path stays
+continuous. There is no obstacle avoidance and no drone-to-drone separation: routes are flown
+exactly as given, so the agent must plan them around buildings
+([TODO](../../src/surmap/docs/todo/2026-11-04-fleet-obstacle-avoidance.md)).
+
+### The active drone, recording and `--fleet-log`
+
+- `ActiveDrone` starts as the first drone id, and `set_active` entries switch it at their `at_s`.
+  "The viewed drone" is the active fleet drone, or the legacy `Drone` when there is no fleet. The
+  stereo rig, the chase camera and the status line follow it. The status line names the drone, its
+  phase and its leg, and the UI lists the fleet (id · phase). Keyboard flight drives only the legacy
+  drone.
+- Rotors spin whenever a fleet drone is not `Docked`.
+- `record_frames` takes `pose_enu` from `viewed_pose(t)`: the autopilot's pose of the active drone
+  at `t`, or `SurveyLoop` when there is no fleet. With a fleet, each `frames.jsonl` line carries
+  `"drone_id"`, and `CapturedFrame.drone_id` reads it (`None` for older captures).
+- `--fleet-log <path>` replays a log for stills and recordings:
+
+```bash
+BEVY_ASSET_ROOT=$PWD cargo run --release -- --scenario <id> \
+  --fleet-log sorties/survey-sortie.fleet.jsonl --screenshot shots/fleet --at 20
+```
+
+A sample log is `tests/fixtures/fleet/survey-sortie.fleet.jsonl`.
+
+### Verified
+
+2026-11-04 (#117): `cargo test --locked` 334 passed, including the fleet log, the autopilot limits,
+`Autopilot` = `state_at`, and `viewed_pose`. `uv run pytest -q` 2238 passed, 38 skipped. Native
+stills of `earthquake-fleet` replaying `survey-sortie.fleet.jsonl` at `--at 20` and `--at 40`:
+the chase camera shows the active drone airborne over the block, at a different point of its route
+in each still.
 
 ## The stereo rig: one camera profile
 
@@ -836,7 +921,7 @@ BEVY_ASSET_ROOT=$PWD cargo run --release -- --record cap --frames 90 --start 15.
 ```
 
 `--flight survey-loop` flies the deterministic rounded-rectangle loop over the block
-(1.5 m/s, 7 ± 1.5 m up, ≤ 10.7 °/s yaw, 182 m, 121 s); stills and recordings imply it. A
+(1.5 m/s, 7 ± 1.5 m up, ≤ 10.7 °/s yaw, 182 m, 121 s); in a scene without nests, stills and recordings imply it (with nests the fleet flies instead). A
 capture holds `camera.json`, `calibration.json`, `ground_truth.json` (ENU boxes of every
 ground-truth element and model, and every survivor), `frames.jsonl` (each frame's rig pose
 in ENU), grey8 frames (with `--colour` also the left eye in RGB under `frames/left_rgb/`,

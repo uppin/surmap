@@ -39,6 +39,8 @@ pub struct RunMode {
     pub camera: Option<String>,
     /// `--scenario <id>` (native) / `?scenario=<id>` (page): a station scenario instead of `scene.json`.
     pub scenario: Option<String>,
+    /// `--fleet-log <path>`: a `*.fleet.jsonl` the fleet replays in stills and recordings.
+    pub fleet_log: Option<PathBuf>,
 }
 
 /// The manifest a run loads: a station scenario, or the shipped scene.
@@ -116,7 +118,12 @@ impl RunMode {
             Some(Some(id)) => Some(checked_scenario(&id)?),
             Some(None) => return Err("--scenario needs an id".into()),
         };
-        Ok(Self { flight, screenshot, record, camera, scenario })
+        let fleet_log = match value("--fleet-log") {
+            None => None,
+            Some(Some(path)) => Some(PathBuf::from(path)),
+            Some(None) => return Err("--fleet-log needs a path".into()),
+        };
+        Ok(Self { flight, screenshot, record, camera, scenario, fleet_log })
     }
 
     /// No window chrome: stills and recordings run unattended.
@@ -413,7 +420,7 @@ mod tests {
     fn no_flags_fly_manually_without_stills() {
         let mode = RunMode::from_args(&args(&[])).expect("valid");
 
-        assert_eq!(mode, RunMode { flight: FlightMode::Manual, screenshot: None, record: None, camera: None, scenario: None });
+        assert_eq!(mode, RunMode { flight: FlightMode::Manual, screenshot: None, record: None, camera: None, scenario: None, fleet_log: None });
     }
 
     #[test]
@@ -452,6 +459,20 @@ mod tests {
         let mode = RunMode::from_args(&args(&["--scenario", "wreck-on-the-avenue"])).expect("valid");
 
         assert_eq!(mode.scenario.as_deref(), Some("wreck-on-the-avenue"));
+    }
+
+    #[test]
+    fn a_fleet_log_flag_names_the_log_a_recording_replays() {
+        let mode = RunMode::from_args(&args(&["--record", "cap", "--fleet-log", "sorties/survey-sortie.fleet.jsonl"])).expect("valid");
+
+        assert_eq!(mode.fleet_log, Some(PathBuf::from("sorties/survey-sortie.fleet.jsonl")));
+    }
+
+    #[test]
+    fn a_fleet_log_flag_without_a_path_is_refused() {
+        let mode = RunMode::from_args(&args(&["--fleet-log"]));
+
+        assert!(mode.is_err(), "{mode:?}");
     }
 
     #[test]

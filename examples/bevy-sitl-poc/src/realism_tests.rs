@@ -60,7 +60,7 @@ fn colour_conversion_reorders_bgra_into_rgb_and_skips_the_row_padding() {
 fn a_colour_frame_line_names_its_colour_image_beside_the_grey_eyes() {
     let pose = [1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0];
 
-    let line: serde_json::Value = serde_json::from_str(&frame_line(1, 15, "frames/left/15.jpg", "frames/right/15.jpg", Some("frames/left_rgb/15.jpg"), pose)).expect("json");
+    let line: serde_json::Value = serde_json::from_str(&frame_line(1, 15, "frames/left/15.jpg", "frames/right/15.jpg", Some("frames/left_rgb/15.jpg"), pose, None)).expect("json");
 
     assert_eq!(line["left_rgb_ref"], "frames/left_rgb/15.jpg");
     assert_eq!((line["left_ref"].as_str(), line["frame_id"].as_u64()), (Some("frames/left/15.jpg"), Some(1)));
@@ -69,7 +69,7 @@ fn a_colour_frame_line_names_its_colour_image_beside_the_grey_eyes() {
 #[test]
 fn a_grey_frame_line_names_no_colour_image() {
     let line: serde_json::Value =
-        serde_json::from_str(&frame_line(1, 15, "l.png", "r.png", None, [0.0; 7])).expect("json");
+        serde_json::from_str(&frame_line(1, 15, "l.png", "r.png", None, [0.0; 7], None)).expect("json");
 
     assert!(line.get("left_rgb_ref").is_none(), "{line}");
 }

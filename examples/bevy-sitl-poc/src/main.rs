@@ -15,6 +15,7 @@ mod calibration;
 mod close_shots;
 mod figure_anim;
 mod fire;
+mod fleet;
 mod flight;
 mod fx;
 mod fxdef;
@@ -47,6 +48,7 @@ use bevy_feronia::asset::backend::mesh_material_backend::MeshMaterialAssetBacken
 use bevy_feronia::prelude::*;
 use bevy_rapier3d::prelude::*;
 use calibration::CameraProfile;
+use fleet::{viewed_body, ActiveDrone, FleetDrone, FleetRotor};
 use look::{apply_look, photographic, Lens};
 use shots::{fly_scripted, setup_overview, take_shots, FlightMode, RunMode};
 use ui::{setup_button, setup_ui, takeoff_button, update_status};
@@ -160,16 +162,16 @@ fn main() {
                 read_controls,
                 takeoff_button,
                 fly_scripted,
-                follow_drone_rig.after(fly_scripted),
-                chase_camera.after(fly_scripted),
+                follow_drone_rig.after(fly_scripted).after(fleet::fly_fleet),
+                chase_camera.after(fly_scripted).after(fleet::fly_fleet),
                 spin_rotors,
                 scatter_once,
-                update_status,
+                update_status.after(fleet::fly_fleet),
                 take_shots,
                 shots::aim_overview_at_fire,
                 shots::aim_people_cam,
                 shots::aim_at_buildings,
-                record::record_frames.after(fly_scripted).after(actors::tick_behaviours),
+                record::record_frames.after(fly_scripted).after(fleet::fly_fleet).after(actors::tick_behaviours),
                 apply_look,
                 sky::bake_sky,
             ),
@@ -196,6 +198,10 @@ fn main() {
             )
                 .chain()
                 .after(build_world),
+        )
+        .add_systems(
+            Update,
+            (fleet::spawn_fleet, fleet::fly_fleet, fleet::spin_fleet_rotors).chain().after(build_world),
         )
         .add_systems(
             Update,
@@ -235,33 +241,40 @@ fn setup_drone(
             Visibility::default(),
         ))
         .id();
+    attach_drone_parts(&mut commands, &mut meshes, &mut materials, body);
+}
+
+/// The drone's frame and four rotors, as children of `body`; the rotors' entities.
+pub(crate) fn attach_drone_parts(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    body: Entity,
+) -> Vec<Entity> {
     let frame = commands
         .spawn((
             Mesh3d(meshes.add(Cuboid::new(0.36, 0.12, 0.36))),
-            mat(&mut materials, Color::srgb(0.20, 0.22, 0.25)),
+            mat(materials, Color::srgb(0.20, 0.22, 0.25)),
             Transform::from_xyz(0.0, 0.0, 0.0),
         ))
         .id();
     commands.entity(body).add_child(frame);
-    for (i, (x, z)) in [
-        (-0.24, -0.24),
-        (0.24, -0.24),
-        (-0.24, 0.24),
-        (0.24, 0.24),
-    ]
-    .iter()
-    .enumerate()
-    {
-        let rotor = commands
-            .spawn((
-                Rotor(if i % 2 == 0 { 28.0 } else { -28.0 }),
-                Mesh3d(meshes.add(Cylinder::new(0.16, 0.015))),
-                mat(&mut materials, Color::srgb(0.08, 0.08, 0.09)),
-                Transform::from_xyz(*x, 0.09, *z),
-            ))
-            .id();
-        commands.entity(body).add_child(rotor);
-    }
+    [(-0.24, -0.24), (0.24, -0.24), (-0.24, 0.24), (0.24, 0.24)]
+        .iter()
+        .enumerate()
+        .map(|(i, (x, z))| {
+            let rotor = commands
+                .spawn((
+                    Rotor(if i % 2 == 0 { 28.0 } else { -28.0 }),
+                    Mesh3d(meshes.add(Cylinder::new(0.16, 0.015))),
+                    mat(materials, Color::srgb(0.08, 0.08, 0.09)),
+                    Transform::from_xyz(*x, 0.09, *z),
+                ))
+                .id();
+            commands.entity(body).add_child(rotor);
+            rotor
+        })
+        .collect()
 }
 
 fn mat(materials: &mut Assets<StandardMaterial>, color: Color) -> MeshMaterial3d<StandardMaterial> {
@@ -357,13 +370,19 @@ fn apply_thrust(
     }
 }
 
+/// The eyes: not on any drone's body.
+type Eye<T> = (With<T>, Without<Drone>, Without<FleetDrone>);
+
 fn follow_drone_rig(
     drone: Query<&Transform, With<Drone>>,
-    mut left: Query<&mut Transform, (With<LeftEye>, Without<Drone>, Without<RightEye>)>,
-    mut right: Query<&mut Transform, (With<RightEye>, Without<Drone>, Without<LeftEye>)>,
+    fleet: Query<(&FleetDrone, &Transform)>,
+    active: Option<Res<ActiveDrone>>,
+    mut left: Query<&mut Transform, (Eye<LeftEye>, Without<RightEye>)>,
+    mut right: Query<&mut Transform, (Eye<RightEye>, Without<LeftEye>)>,
     rig: Option<Res<CameraProfile>>,
 ) {
-    let (Ok(body), Some(rig)) = (drone.single(), rig) else { return };
+    let viewed = viewed_body(active.as_ref().and_then(|a| a.0.as_deref()), fleet.iter(), drone.single().ok());
+    let (Some(body), Some(rig)) = (viewed, rig) else { return };
     for (eye, right_eye) in [(left.single_mut(), false), (right.single_mut(), true)] {
         let Ok(mut eye) = eye else { return };
         let local = rig.mount_offset() + rig.mount_rotation() * rig.eye_translation_m(right_eye);
@@ -374,11 +393,14 @@ fn follow_drone_rig(
 
 fn chase_camera(
     drone: Query<&Transform, With<Drone>>,
-    mut cam: Query<&mut Transform, (With<ChaseCam>, Without<Drone>)>,
+    fleet: Query<(&FleetDrone, &Transform)>,
+    active: Option<Res<ActiveDrone>>,
+    mut cam: Query<&mut Transform, (With<ChaseCam>, Without<Drone>, Without<FleetDrone>)>,
     time: Res<Time>,
     mode: Res<RunMode>,
 ) {
-    let (Ok(body), Ok(mut eye)) = (drone.single(), cam.single_mut()) else {
+    let viewed = viewed_body(active.as_ref().and_then(|a| a.0.as_deref()), fleet.iter(), drone.single().ok());
+    let (Some(body), Ok(mut eye)) = (viewed, cam.single_mut()) else {
         return;
     };
     let back = body.rotation * Vec3::new(5.0, 2.6, 7.5);
@@ -391,7 +413,7 @@ fn chase_camera(
 fn spin_rotors(
     flight: Res<Flight>,
     time: Res<Time>,
-    mut rotors: Query<(&Rotor, &mut Transform)>,
+    mut rotors: Query<(&Rotor, &mut Transform), Without<FleetRotor>>,
 ) {
     if !flight.engaged {
         return;

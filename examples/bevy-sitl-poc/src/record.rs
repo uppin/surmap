@@ -19,7 +19,7 @@ use crate::vehicle::scene::VehicleActor;
 use crate::building::BuildingBlaze;
 use crate::calibration::CameraProfile;
 use crate::fire;
-use crate::flight::SurveyLoop;
+use crate::fleet::{viewed_pose, Fleet};
 use crate::wildfire::Wildfire;
 use crate::world::{scene_ready, GroundTruth, PendingModel, SceneState};
 use crate::{wire, StereoFeeds};
@@ -137,11 +137,14 @@ fn save_rgb(path: &Path, pixels: Vec<u8>, rig: &CameraProfile, jpeg: bool) {
 }
 
 /// One `frames.jsonl` line: the frame's id, time, eye images (and colour left image, when
-/// recorded) and the rig's ENU pose.
-pub fn frame_line(frame_id: u32, t_ns: u64, left_ref: &str, right_ref: &str, left_rgb_ref: Option<&str>, pose_enu: [f64; 7]) -> String {
+/// recorded), the rig's ENU pose and, with a fleet, the viewed drone's id.
+pub fn frame_line(frame_id: u32, t_ns: u64, left_ref: &str, right_ref: &str, left_rgb_ref: Option<&str>, pose_enu: [f64; 7], drone_id: Option<&str>) -> String {
     let mut line = serde_json::json!({"frame_id": frame_id, "t_ns": t_ns, "left_ref": left_ref, "right_ref": right_ref, "pose_enu": pose_enu});
     if let Some(rgb) = left_rgb_ref {
         line["left_rgb_ref"] = serde_json::Value::from(rgb);
+    }
+    if let Some(drone) = drone_id {
+        line["drone_id"] = serde_json::Value::from(drone);
     }
     line.to_string()
 }
@@ -187,6 +190,7 @@ pub fn record_frames(
     figures: Query<&Figure>,
     vehicles: Query<&VehicleActor>,
     clock: Res<Time<Real>>,
+    fleet: Option<Res<Fleet>>,
     mut exit: MessageWriter<AppExit>,
 ) {
     let (Some(mut rec), Some(scene)) = (recorder, scene) else { return };
@@ -249,9 +253,9 @@ pub fn record_frames(
         save_rgb(&rec.plan.dir.join(&rgb_ref), pixels, &rig, rec.plan.jpeg);
         rgb_ref
     });
-    let pose = SurveyLoop::disaster_block().pose_at(t_s);
-    let pose_enu = wire::rig_pose_enu(pose.position, Quat::from_rotation_y(pose.yaw_rad) * rig.mount_rotation());
-    rec.lines.push(frame_line(frame + 1, t_ns, &left_ref, &right_ref, rgb_ref.as_deref(), pose_enu));
+    let viewed = viewed_pose(fleet.as_deref(), t_s);
+    let pose_enu = wire::rig_pose_enu(viewed.pose.position, Quat::from_rotation_y(viewed.pose.yaw_rad) * rig.mount_rotation());
+    rec.lines.push(frame_line(frame + 1, t_ns, &left_ref, &right_ref, rgb_ref.as_deref(), pose_enu, viewed.drone_id.as_deref()));
     if let Some(fires) = fires.as_ref().filter(|f| f.has_fires()) {
         rec.fire_lines.push(fire::perimeter_line(t_ns, &fires.fronts(t_s)));
     }

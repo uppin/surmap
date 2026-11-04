@@ -1,0 +1,31 @@
+[
+  {
+    "type": "launch",
+    "drone": "nest-sw-d1",
+    "route": {
+      "waypoints": [[-20.0, 0.0, 15.0], [-20.0, 60.0, 18.0]],
+      "speed_m_s": 6.0,
+      "on_complete": "hover"
+    }
+  },
+  {
+    "type": "set_route",
+    "drone": "nest-sw-d1",
+    "route": {
+      "waypoints": [[10.0, 40.0, 20.0]]
+    }
+  },
+  {
+    "type": "detour",
+    "drone": "nest-sw-d1",
+    "waypoints": [[0.0, 35.0, 18.0], [5.0, 45.0, 18.0]]
+  },
+  {
+    "type": "recall",
+    "drone": "nest-sw-d1"
+  },
+  {
+    "type": "set_active",
+    "drone": "nest-ne-d1"
+  }
+]
