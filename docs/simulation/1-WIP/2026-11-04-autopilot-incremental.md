@@ -21,11 +21,11 @@ Discovery: `2026-11-04-autopilot-incremental-initial-discovery.md` · PRD: none 
   - [x] A deterministic step counter the measurement reads (see `## Verification`)
   - [x] Characterisation tests (green before and after; see `## Verification`)
   - [x] V3 before-output recorded in `## Verification`
-- [wf 3] ⬜ `/green` Implement — the recorded command produces the planned after-output, preservation tests still green ·
-  - [ ] `FleetLog` keeps one checker `Autopilot` per drone and answers `check` from it (no `phase_when` replay)
-  - [ ] The recorder keeps one `Autopilot` per drone for `viewed_pose` (no `state_at` replay per frame)
-  - [ ] `state_at` / `phase_when` stay only as the test oracle, or are removed if nothing else uses them
-  - [ ] Gates green; `cargo test --locked`; `cargo check --locked --target wasm32-unknown-unknown`
+- [wf 3] ✅ 2026-11-04 `/green` Implement — the recorded command produces the planned after-output, preservation tests still green · (a) 35 994 000 → 17 996 · (b) 5 005 000 → 10 000 steps; 369 passed, 0 ignored; wasm check and `test_bevy_capture.py` (15) green
+  - [x] `FleetLog` keeps one checker `Autopilot` per drone and answers `check` from it (no `phase_when` replay)
+  - [x] The recorder keeps one `Autopilot` per drone for `viewed_pose` (no `state_at` replay per frame)
+  - [x] `state_at` / `phase_when` stay only as the test oracle, or are removed if nothing else uses them
+  - [x] Gates green; `cargo test --locked`; `cargo check --locked --target wasm32-unknown-unknown`
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/simulation/bevy-simulation.md` — *The fleet and its autopilot*: the recorder and the log advance incrementally
@@ -119,8 +119,15 @@ The step counter is `autopilot::counting_steps`, a `#[cfg(test)]` thread-local i
 row 3 removes the `ignore`s. The characterisation tests run against a seam added in row 2: a
 `ViewedPoses` recorder cache whose State A body still replays.
 
-**After:** (a) at most 12 000 + 2 · 6000 steps (one pass per drone, plus slack); (b) at most
+**Planned after:** (a) at most 12 000 + 2 · 6000 steps (one pass per drone, plus slack); (b) at most
 10 000 + 1000 steps. Exact bounds are set from the code in commit 2 and asserted.
+
+**After** (recorded in row 3; the two bound tests are no longer ignored and pass; 369 passed):
+
+```text
+V3 (a) recording 6000 frames at 10 Hz over 600 s, two drones: 17996 steps   (bound 24000)
+V3 (b) 1000 pushes 0.5 s apart: 10000 steps                                  (bound 11000)
+```
 
 ## Prerequisites
 

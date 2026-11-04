@@ -564,16 +564,14 @@ fn pushing_a_thousand_commands_reports_its_step_count() {
     assert!(steps > 0);
 }
 
-// The after-bounds: row 3 of the changeset removes the `ignore`s, when the replays are gone.
+// The after-bounds: one pass per drone, not a replay per frame or per push.
 
 #[test]
-#[ignore = "row 3 of the autopilot-incremental changeset removes this ignore"]
 fn recording_six_thousand_frames_takes_one_pass_per_drone() {
     assert!(steps_to_record_six_thousand_frames() <= 12_000 + 2 * 6_000);
 }
 
 #[test]
-#[ignore = "row 3 of the autopilot-incremental changeset removes this ignore"]
 fn pushing_a_thousand_commands_takes_one_pass_over_the_log() {
     assert!(steps_to_push_a_thousand_commands() <= 10_000 + 1_000);
 }

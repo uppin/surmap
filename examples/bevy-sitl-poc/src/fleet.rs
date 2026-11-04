@@ -14,6 +14,8 @@ pub mod stream;
 #[cfg(test)]
 mod tests;
 
+use std::collections::HashMap;
+
 use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::{Collider, RigidBody};
@@ -26,7 +28,9 @@ use crate::wildfire::SimClock;
 use crate::world::{enu, Nests};
 use crate::{attach_drone_parts, Drone, Rotor};
 
-use autopilot::{state_at, Autopilot, DroneState, Home, Phase};
+#[cfg(test)]
+use autopilot::state_at;
+use autopilot::{Autopilot, DroneState, Home, Phase};
 use log::{FleetCommand, FleetLog};
 
 /// A docked drone's body centre stands this far over its pad's deck, m: half the frame's height
@@ -138,6 +142,7 @@ fn pose_of(state: &DroneState) -> FlightPose {
 /// The viewed rig pose at `t_s`, purely from time: the active fleet drone's autopilot pose, else
 /// the survey loop's. The drone is replayed from its pad; this is the definition `ViewedPoses`
 /// must equal.
+#[cfg(test)]
 pub fn viewed_pose(fleet: Option<&Fleet>, t_s: f32) -> Viewed {
     viewed_with(fleet, t_s, |home, id, log| state_at(home, id, log, t_s))
 }
@@ -155,14 +160,15 @@ fn viewed_with(fleet: Option<&Fleet>, t_s: f32, state_of: impl FnOnce(Home, &str
     }
 }
 
-/// What a recording asks for, frame after frame: the viewed pose at each frame's moment.
+/// What a recording asks for, frame after frame: one autopilot per drone, advanced to each
+/// frame's moment instead of replayed from `t = 0`. A moment earlier than the last replays.
 #[derive(Debug, Default)]
-pub struct ViewedPoses;
+pub struct ViewedPoses(HashMap<String, Autopilot>);
 
 impl ViewedPoses {
     /// The viewed rig pose at `t_s`.
     pub fn viewed(&mut self, fleet: Option<&Fleet>, t_s: f32) -> Viewed {
-        viewed_with(fleet, t_s, |home, id, log| state_at(home, id, log, t_s))
+        viewed_with(fleet, t_s, |home, id, log| self.0.entry(id.to_owned()).or_insert_with(|| Autopilot::new(id, home)).advance(log, t_s))
     }
 }
 
