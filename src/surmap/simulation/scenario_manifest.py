@@ -49,6 +49,7 @@ from surmap.simulation.building_presets import (
 )
 from surmap.simulation.building_presets import validate_buildings
 from surmap.simulation.building_scenes import district_showcase, downtown_blaze
+from surmap.simulation.fleet_nests import drone_ids_in, earthquake_fleet, validate_nests
 from surmap.simulation.manifest_checks import Manifest as Manifest
 from surmap.simulation.manifest_checks import ScenarioInvalid as ScenarioInvalid
 from surmap.simulation.manifest_checks import is_relative_path
@@ -61,7 +62,15 @@ from surmap.simulation.water import flood_rescue, validate_vessels
 if TYPE_CHECKING:
     from surmap.simulation.scenario_store import StoredAsset
 
-ELEMENT_KINDS = ("box", "collapsed_building", "building", "person", "vegetation", "vehicle")
+ELEMENT_KINDS = (
+    "box",
+    "collapsed_building",
+    "building",
+    "person",
+    "vegetation",
+    "vehicle",
+    "drone_nest",
+)
 COLLIDERS = ("none", "box", "trimesh")
 
 
@@ -218,11 +227,14 @@ def validate_manifest(manifest: Mapping[str, object]) -> None:
         _validate_fire(fire, seen)
     validate_buildings(manifest)
     validate_vessels(manifest)
+    validate_nests(manifest)
 
 
 def element_ids(manifest: Mapping[str, object]) -> list[str]:
-    """Ids a new element, model or fire must not reuse (a fire shares the namespace)."""
+    """Ids a new element, model or fire must not reuse (a fire shares the namespace, and a nest's
+    drones are named in it)."""
     ids = [str(e.get("id")) for e in _list(manifest, "elements")]
+    ids += drone_ids_in(manifest)
     ids += [str(m.get("id")) for m in _list(manifest, "models")]
     ids += [str(f.get("id")) for f in _list(manifest, "fires")]
     return ids + [str(f.get("id")) for f in _list(manifest, "building_fires")]
@@ -275,7 +287,7 @@ def add_model(
 
 def remove_element(manifest: Mapping[str, object], element_id: str) -> Manifest:
     """A new manifest without the element or model called `element_id`."""
-    if element_id not in element_ids(manifest):
+    if element_id not in element_ids(manifest) or element_id in drone_ids_in(manifest):
         raise ScenarioInvalid(f"no element or model {element_id!r}")
     elements = [e for e in _list(manifest, "elements") if e.get("id") != element_id]
     edited = _with(manifest, "elements", elements)
@@ -456,7 +468,8 @@ def load_presets(assets_dir: Path) -> dict[str, Manifest]:
     """`earthquake-block` (the shipped scene), `empty-lot` (its rig, sky and bare ground),
     `wildfire-edge` and `flood-street` built from them, `flood-rescue`: the flood with two boats
     on it, `wildfire-evacuation`: the edge with people and a veering wind, `earthquake-survivors`:
-    the block with five people in their poses, and the building presets `district-showcase` and
+    the block with five people in their poses, `earthquake-fleet`: the block with three drone
+    nests, and the building presets `district-showcase` and
     `downtown-blaze`."""
     block: Manifest = json.loads((Path(assets_dir) / "scene.json").read_text(encoding="utf-8"))
     materials = _materials(block)
@@ -492,4 +505,5 @@ def load_presets(assets_dir: Path) -> dict[str, Manifest]:
         "flood-rescue": flood_rescue(flood_street),
         "street-traffic": street_traffic(block),
         "earthquake-survivors": earthquake_survivors(block),
+        "earthquake-fleet": earthquake_fleet(block),
     }

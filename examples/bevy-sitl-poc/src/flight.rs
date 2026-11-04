@@ -1,6 +1,7 @@
 //! Scripted `survey-loop` flight: a deterministic kinematic loop over the
 //! block, so a capture can be recorded again and give the same frames.
-//! It moves the simulation's own drone; SurMap has no flight control.
+//! It moves the simulation's own drone; SurMap has no flight control of any real aircraft
+//! (docs/architecture.md §1: fleet tasking is simulation-only and never reaches PX4).
 
 #![allow(dead_code)]
 

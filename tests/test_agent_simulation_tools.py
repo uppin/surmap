@@ -16,6 +16,7 @@ from connectrpc.errors import ConnectError
 from surmap.agent.proto import simulation_tools_pb2 as pb
 from surmap.agent.tools.simulation_handlers import simulation_tool_handlers
 from surmap.simulation.asset_sources import AmbientCg, AssetSource, PolyHaven, Sketchfab
+from surmap.simulation.fleet_nests import nests_of
 from surmap.simulation.scenario_manifest import load_presets
 from surmap.simulation.scenario_store import ScenarioStore
 from tests.sim_fakes import POC_ASSETS, RecordingFetch, element_ids
@@ -322,3 +323,82 @@ async def test_a_person_in_an_unknown_pose_is_invalid(tmp_path: Path) -> None:
         )
     assert raised.value.code == Code.INVALID_ARGUMENT
     assert "cartwheeling" in raised.value.message
+
+
+async def a_block_scenario(tools: dict[str, object]) -> str:
+    created = await call(
+        tools, "CreateScenario", pb.CreateScenarioRequest(name="Block", preset="earthquake-block")
+    )
+    assert isinstance(created, pb.ScenarioResponse)
+    return created.scenario.id
+
+
+def a_nest_request(scenario_id: str, nest: pb.DroneNestElement) -> pb.AddElementRequest:
+    return pb.AddElementRequest(scenario_id=scenario_id, drone_nest=nest)
+
+
+SOUTH_WEST_GROUND = pb.EnuPoint(east=-40.0, north=-20.0, up=0.0)
+
+
+async def test_the_agent_places_a_nest_and_the_scenario_keeps_it(tmp_path: Path) -> None:
+    # Given the earthquake block
+    tools = a_toolset(tmp_path)
+    scenario_id = await a_block_scenario(tools)
+
+    # When a two-drone nest is placed on open ground south-west of the block
+    added = await call(
+        tools,
+        "AddElement",
+        a_nest_request(
+            scenario_id,
+            pb.DroneNestElement(id="nest-a", position=SOUTH_WEST_GROUND, yaw_deg=45.0, drones=2),
+        ),
+    )
+
+    # Then the stored scenario holds the nest, and its drones are named after it
+    assert isinstance(added, pb.ScenarioResponse)
+    manifest = json.loads(added.scenario.manifest_json)
+    assert [n.drone_ids for n in nests_of(manifest)] == [("nest-a-d1", "nest-a-d2")]
+
+
+async def test_a_nest_given_no_heading_or_drone_count_is_stored_without_them(
+    tmp_path: Path,
+) -> None:
+    # Given the earthquake block
+    tools = a_toolset(tmp_path)
+    scenario_id = await a_block_scenario(tools)
+
+    # When a nest is placed with only its id and position
+    added = await call(
+        tools,
+        "AddElement",
+        a_nest_request(scenario_id, pb.DroneNestElement(id="nest-a", position=SOUTH_WEST_GROUND)),
+    )
+
+    # Then the element carries only those, leaving the defaults to the manifest
+    assert isinstance(added, pb.ScenarioResponse)
+    manifest = json.loads(added.scenario.manifest_json)
+    assert manifest["elements"][-1] == {
+        "kind": "drone_nest",
+        "id": "nest-a",
+        "position_enu": [-40.0, -20.0, 0.0],
+    }
+
+
+async def test_a_nest_with_five_drones_is_invalid(tmp_path: Path) -> None:
+    # Given the earthquake block
+    tools = a_toolset(tmp_path)
+    scenario_id = await a_block_scenario(tools)
+
+    # Then a nest housing five drones is INVALID_ARGUMENT, naming the nest
+    with pytest.raises(ConnectError) as raised:
+        await call(
+            tools,
+            "AddElement",
+            a_nest_request(
+                scenario_id,
+                pb.DroneNestElement(id="nest-a", position=SOUTH_WEST_GROUND, drones=5),
+            ),
+        )
+    assert raised.value.code == Code.INVALID_ARGUMENT
+    assert "nest-a" in raised.value.message

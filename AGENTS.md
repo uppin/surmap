@@ -133,7 +133,10 @@ uv run pytest -q
 ## Scope guardrail
 
 Passive survey only (see [docs/architecture.md](docs/architecture.md)
-§1): no flight control, navigation, or mission orchestration. Object
+§1): no flight control, navigation, or mission orchestration of any
+real aircraft. The one exception is simulation only: the agent may task
+the simulation's own drones, and that path never reaches PX4 or any
+real flight controller. Object
 points are layered onto RTAB-Map's output, never written back into
 RTAB-Map's internal map, and moving objects are never fused into the
 static scene.

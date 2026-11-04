@@ -333,6 +333,19 @@ message VehicleElement {
   string behaviour_json = 6;
 }
 
+message DroneNestElement {
+  // Letters, digits and '-' only: the nest's drones are "<id>-d1" … "<id>-dN".
+  string id = 1;
+  // The pad's centre at deck level: on open ground (up 0) or a flat roof (up = the roof's top),
+  // within 500 m east and north of the origin, 0–60 m up, off water and at least 6 m from any other
+  // nest. A scenario holds at most 8 nests.
+  EnuPoint position = 2;
+  // The pad's heading, degrees counter-clockwise from east; docked drones face it. 0 when unset.
+  optional double yaw_deg = 3;
+  // Drones the nest houses, 1–4; 1 when unset.
+  optional uint32 drones = 4;
+}
+
 message AddElementRequest {
   string scenario_id = 1;
   oneof element {
@@ -342,6 +355,7 @@ message AddElementRequest {
     PersonElement person = 5;
     VegetationElement vegetation = 6;
     VehicleElement vehicle = 7;
+    DroneNestElement drone_nest = 8;
   }
 }
 

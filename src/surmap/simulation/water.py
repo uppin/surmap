@@ -18,10 +18,11 @@ SHUTTLE_NORTH = [[0.0, 90.0], [0.0, 10.0]]
 SHUTTLE_SOUTH = [[0.0, 10.0], [0.0, 90.0]]
 
 
-class _Surface:
+class Surface:
     """A `water: true` box's footprint and top, as the renderer reads it."""
 
     def __init__(self, box: Mapping[str, object]) -> None:
+        self.id = str(box.get("id"))
         size = _triple(box.get("size_m"))
         position = _triple(box.get("position_enu"))
         self.centre = (position[0], position[1])
@@ -36,6 +37,16 @@ class _Surface:
         local_x = dx * cos + dy * sin
         local_y = -dx * sin + dy * cos
         return abs(local_x) <= self.half[0] and abs(local_y) <= self.half[1]
+
+
+def water_surfaces(manifest: Mapping[str, object]) -> tuple[Surface, ...]:
+    """Every `water: true` box of the scenario, as a surface, in manifest order: what vessels float
+    on and what a drone nest may not stand on."""
+    return tuple(
+        Surface(box)
+        for box in object_list(manifest, "elements")
+        if box.get("kind") == "box" and box.get("water") is True
+    )
 
 
 def _triple(value: object) -> tuple[float, float, float]:
@@ -102,9 +113,7 @@ def validate_vessels(manifest: Mapping[str, object]) -> None:
     for box in boxes:
         if box.get("kind") == "box":
             _check_water_flag(box)
-    surfaces = [
-        _Surface(box) for box in boxes if box.get("kind") == "box" and box.get("water") is True
-    ]
+    surfaces = water_surfaces(manifest)
     for vehicle in object_list(manifest, "elements"):
         if vehicle.get("kind") != "vehicle":
             continue

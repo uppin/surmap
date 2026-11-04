@@ -3,6 +3,7 @@
 use super::*;
 use bevy::math::Vec3;
 
+mod fleet;
 mod nature;
 mod water;
 

@@ -740,6 +740,57 @@ reviewed at wrap (2026-11-04):
 - the truck's cab leads;
 - the train stands on its ballast line at the west edge.
 
+## Drone nests
+
+A scenario can hold drone nests: 2.4 m × 2.4 m docking pads, each housing one to four simulated
+drones. The agent places them with `add_element` like any other element. The renderer draws each
+one as a landing pad (a dark rim, a deck and an "H" marking) turned by `yaw_deg`, tags it
+`NestPad { id }`, and publishes every nest in the `Nests` resource (id, ENU pad centre, yaw, drone
+ids) for the fleet to dock on. No drone sits on a pad yet.
+
+Nests are the simulation-only exception's scene data ([architecture.md](../architecture.md) §1):
+the agent may task the simulation's own drones on machine 3, and SurMap still has no write path to
+any real flight controller.
+
+### In the manifest
+
+```json
+{"kind": "drone_nest", "id": "nest-north", "position_enu": [40, 30, 0], "yaw_deg": 90, "drones": 2}
+```
+
+| Field | Meaning |
+|---|---|
+| `id` | letters, digits and `-`; the drones are `<id>-d1` … `<id>-dN` and join the manifest's one id namespace |
+| `position_enu` | the pad centre at deck level: `0` on open ground, the roof's top on a building |
+| `yaw_deg` | heading, degrees counter-clockwise from east; default 0 |
+| `drones` | 1–4; default 1 |
+
+Placement rules, refused with the nest id and the rule, identically by the station
+(`surmap.simulation.fleet_nests.validate_nests`) and the renderer (`scene_manifest/fleet.rs`):
+
+- the pad lies within ±500 m east/north of the origin and 0–60 m up;
+- it does not overlap a building, collapsed building or solid box footprint unless it stands on
+  that element's top (a rooftop nest);
+- it does not overlap a `water: true` surface (a water box with a collider is still water);
+- nest centres are at least 6 m apart horizontally;
+- a scenario holds at most 8 nests;
+- a drone id never collides with another id, whichever was added first.
+
+The rules are footprint-only (a yawed 2D box), the same way water and vehicles validate, so the two
+languages agree exactly. The shared golden is `tests/fixtures/sim_scenario/fleet-nests.json`.
+
+### Preset
+
+`earthquake-fleet`: the earthquake block with three nests and five drones — two on open ground at
+opposite corners, one on a standing building's roof.
+
+### Verified
+
+2026-11-04 (#116): `uv run pytest -q tests/test_sim_fleet_nests.py tests/test_agent_simulation_tools.py`
+36 passed; `cargo test --locked fleet` 18 passed (the rule tests and the golden). The native
+`earthquake-fleet` still could not be taken in the wrap worktree: its pinned textures and figure
+models were not fetched there (`aerial_asphalt_01_diff_2k.jpg`, `person/wave.glb` missing).
+
 ## The stereo rig: one camera profile
 
 `cameras/elp-stereo-pinhole.camera.json` (the SurMap ELP rig): 640×480, fx = fy = 381.36,

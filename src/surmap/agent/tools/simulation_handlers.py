@@ -214,6 +214,20 @@ def _xyz(point: pb.EnuPoint) -> list[float]:
     return [point.east, point.north, point.up]
 
 
+def _drone_nest(nest: pb.DroneNestElement) -> dict[str, object]:
+    """The `drone_nest` element of a request: `yaw_deg` and `drones` only when given."""
+    element: dict[str, object] = {
+        "kind": "drone_nest",
+        "id": nest.id,
+        "position_enu": _xyz(nest.position),
+    }
+    if nest.HasField("yaw_deg"):
+        element["yaw_deg"] = nest.yaw_deg
+    if nest.HasField("drones"):
+        element["drones"] = nest.drones
+    return element
+
+
 def _element(request: pb.AddElementRequest) -> dict[str, object]:
     """The manifest element of an `AddElement` request (spec: scene_manifest.rs)."""
     which = request.WhichOneof("element")
@@ -300,9 +314,11 @@ def _element(request: pb.AddElementRequest) -> dict[str, object]:
         if vehicle.behaviour_json:
             element["behaviour"] = _tree_json(vehicle.behaviour_json, "vehicle behaviour")
         return element
+    if which == "drone_nest":
+        return _drone_nest(request.drone_nest)
     raise ConnectError(
         Code.INVALID_ARGUMENT,
-        "give one of box, building, collapsed_building, person, vegetation, vehicle",
+        "give one of box, building, collapsed_building, person, vegetation, vehicle, drone_nest",
     )
 
 

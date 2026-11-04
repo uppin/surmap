@@ -17,6 +17,7 @@ use serde::Deserialize;
 
 mod buildings;
 mod environment;
+mod fleet;
 mod nature;
 mod people;
 mod water;
@@ -25,6 +26,7 @@ pub use water::{surface_at, surfaces, Surface};
 
 pub use buildings::{BuildingFireDef, DistrictDef};
 pub use environment::{Environment, PbrTextureSet};
+pub use fleet::{DroneNest, NEST_PAD_M};
 pub use nature::{FireDef, Vegetation, Weather, WindDef};
 pub use people::Person;
 
@@ -61,6 +63,7 @@ pub enum Element {
     Person(Person),
     Vegetation(Vegetation),
     Vehicle(Vehicle),
+    DroneNest(DroneNest),
 }
 
 impl Element {
@@ -72,6 +75,7 @@ impl Element {
             Self::Person(e) => &e.id,
             Self::Vegetation(e) => &e.id,
             Self::Vehicle(e) => &e.id,
+            Self::DroneNest(e) => &e.id,
         }
     }
 
@@ -89,7 +93,7 @@ impl Element {
                 keys
             }
             Self::Person(e) => vec![e.coat.as_str(), e.skin.as_str()],
-            Self::Vegetation(_) | Self::Vehicle(_) => vec![],
+            Self::Vegetation(_) | Self::Vehicle(_) | Self::DroneNest(_) => vec![],
         }
     }
 }
@@ -349,6 +353,7 @@ impl SceneManifest {
         manifest.validate_vehicles()?;
         manifest.validate_people()?;
         manifest.validate_vessels()?;
+        manifest.validate_nests()?;
         Ok(manifest)
     }
 
