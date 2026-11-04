@@ -26,6 +26,20 @@ pub enum VehicleClass {
     Bus,
     Truck,
     Train,
+    /// A small craft on water: rescue boats, dinghies.
+    Boat,
+    /// A large vessel on water.
+    Ship,
+}
+
+/// What a class moves on.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Medium {
+    #[default]
+    Road,
+    Rail,
+    Water,
 }
 
 impl VehicleClass {
@@ -76,6 +90,14 @@ pub struct VehicleDef {
     pub carriage_glb: Option<String>,
     #[serde(default)]
     pub carriage_spacing_m: Option<f32>,
+    /// What the class moves on; vessels float on `water` boxes.
+    #[serde(default)]
+    pub medium: Medium,
+    /// Vessels: how deep the hull sits below the surface, and how strongly it answers waves.
+    #[serde(default)]
+    pub draft_m: Option<f32>,
+    #[serde(default)]
+    pub wave_response: Option<f32>,
 }
 
 fn unit_scale() -> f32 {

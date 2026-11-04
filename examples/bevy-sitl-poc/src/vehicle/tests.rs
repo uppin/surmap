@@ -255,3 +255,23 @@ fn carriages_follow_the_locomotive_along_its_track_through_a_bend() {
         assert!(behind <= 14.0 * (k as f32 + 1.0) + 1e-3, "carriage {k} is {behind} m behind");
     }
 }
+
+#[test]
+fn every_shipped_vessel_class_floats_on_water() {
+    for class in ["boat", "ship"] {
+        let path = format!("{}/assets/vehicle/{class}.vehicle.json", env!("CARGO_MANIFEST_DIR"));
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+
+        let def = VehicleDef::from_json(&text).unwrap_or_else(|e| panic!("{path}: {e}"));
+
+        assert_eq!(def.medium, Medium::Water, "{path}");
+        assert!(def.draft_m.is_some() && def.wave_response.is_some(), "{path}");
+    }
+}
+
+#[test]
+fn a_vessel_class_without_a_wave_response_is_refused() {
+    let raft = A_CAR.replace("\"turn_rate_deg_s\": 45.0}", "\"turn_rate_deg_s\": 45.0, \"medium\": \"water\", \"draft_m\": 0.3}");
+
+    assert!(VehicleDef::from_json(&raft).unwrap_err().contains("wave_response"));
+}

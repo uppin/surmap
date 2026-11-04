@@ -109,6 +109,9 @@ pub struct BoxElement {
     pub scatter: Option<Scatter>,
     /// Ground-truth kind, when a region query may target this box.
     pub ground_truth: Option<String>,
+    /// A water surface: vessels float on its top.
+    #[serde(default)]
+    pub water: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -341,6 +344,7 @@ impl SceneManifest {
         manifest.validate_behaviours()?;
         manifest.validate_vehicles()?;
         manifest.validate_people()?;
+        manifest.validate_vessels()?;
         Ok(manifest)
     }
 
@@ -359,6 +363,14 @@ impl SceneManifest {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Boats and ships start inside a `water: true` box and steer only to points inside one
+    /// (`move_to`, `follow_path`), with no `wander` or `flee_from_fire` in their tree; a road or rail
+    /// class may not start on water.
+    fn validate_vessels(&self) -> Result<(), ManifestError> {
+        // TODO(pr-3): implement
         Ok(())
     }
 

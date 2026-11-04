@@ -12,17 +12,17 @@ PRD: `PRD-2026-11-04-sim-water-vessels.md` · Discovery:
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1)
+- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files @ `948f8e3` (`/plan-pr-stack` pass 1)
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
-  - [ ] Stubs this node owns (`sea.rs`, `VehicleClass::{Boat, Ship}`, `BoxElement.water`, `Medium`, Python water rules)
-  - [ ] Acceptance tests written and failing for the right reason
-  - [ ] Unit/integration tests written and failing
-  - [ ] Tests committed with the changeset
+- [wf 2] ✅ 2026-11-04 `/plan-pr-stack` Red — acceptance and failing lower-tier tests, committed · Rust 13 red (+46 inherited from n1, n2); Python 10 red (2 acceptance, 8 unit) — commit 2
+  - [x] Build and baseline healthy — on n2's red commit: `cargo test --locked` 167 green / 46 red (all n1's and n2's), `uv run mypy` clean; pytest pre-existing local failure `tests/test_survey_cm5_rtabmap_e2e.py` (RTAB-Map sidecar) not this stack's
+  - [x] Stubs this node owns (`sea.rs`, `VehicleClass::{Boat, Ship}`, `Medium`, `VehicleDef.medium`/`draft_m`/`wave_response`, `BoxElement.water`, `validate_vessels`, `surmap.simulation.water`, proto `BoxElement.water`)
+  - [x] Acceptance tests written and failing for the right reason (`tests/test_sim_water_e2e.py`)
+  - [x] Unit/integration tests written and failing
+  - [x] Tests committed with the changeset
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Pin CC0 boat and ship glTF (Kenney *Watercraft Kit*, CC0, or equivalent); `fetch_sim_assets.py` verifies them
   - [ ] Rust `scene_manifest.rs`: `water` on `box`; vessel classes; validation (start on water, every `move_to`/`follow_path` point on water, no `wander`/`flee_from_fire` in a vessel's tree)
@@ -41,7 +41,7 @@ PRD: `PRD-2026-11-04-sim-water-vessels.md` · Discovery:
 
 ## Stack Context
 
-Stack `sim-traffic` (slug `sim-traffic`) — **3 of 3** · PR `#pending`.
+Stack `sim-traffic` (slug `sim-traffic`) — **3 of 3** · PR [#109](https://github.com/uppin/surmap/pull/109).
 **Kind:** Feature · adds — **Workflow:** feature preset; pass-2 route `/plan-red` Steps 7–9.
 Branch `pr-3-sim-traffic`, base `pr-2-sim-traffic`; successor none — top of stack.
 Seam: n1's vehicle classes and spawning, extended by a `Medium::Water` branch and `sea.rs`.
@@ -131,6 +131,19 @@ and a survivor (n2's poses when n2 has landed, a standing person otherwise) wait
 - **Supporting evidence (not a rung)** — native still `--screenshot <dir> --at 20 --scenario
   flood-rescue`, reviewed at wrap.
 
+## Red tests (commit 2)
+
+| Test | Validates |
+|---|---|
+| `tests/test_sim_water_e2e.py` (2) | agent floods the avenue (`box` `water: true`) and launches a shuttling boat → served, valid; preset served = golden `flood-rescue.json` (written at Green from the preset) |
+| `tests/test_sim_water_manifest.py` (8) | shuttling boat valid; refusals naming id + reason (boat ashore, path off water, ship wander, car in water); non-boolean `water`; preset (2 boats with trees, flood-street's weather); preset = golden |
+| `src/sea/tests.rs` (6) | calm → still; wind → more motion; ship ≪ boat; heave ≤ half the wave height; small-water cap; deterministic and phase-dependent |
+| `src/vehicle/tests.rs` (2) | shipped `boat`/`ship` class files on water with draft and response; a water class without `wave_response` refused |
+| `src/scene_manifest/tests.rs` (5) | the four vessel refusals; golden parses with a water box and two boats |
+
+The e2e and preset tests also pass through n1's `vehicle` kind, so they go green only after n1's Green
+row (this node is wave 2). The pure `sea.rs`, class-file and vessel-rule tests are this node's alone.
+
 ## Prerequisites
 
 Deferred-work scan: `2026-11-03-bevy-visual-checkpoints-v3-v5.md` — ℹ unrelated. Nothing blocks.
@@ -142,5 +155,8 @@ Deferred-work scan: `2026-11-03-bevy-visual-checkpoints-v3-v5.md` — ℹ unrela
 - Paths validated against water at load rather than clamped at runtime: a refused scenario with a
   reason beats a boat silently stopping at a kerb; `wander`/`flee_from_fire` are excluded because
   their points are not known at load.
+- `VehicleClass` and `VehicleDef` are n1's types; this node adds the two classes and the
+  `medium`/`draft_m`/`wave_response` fields. When n1's Green lands, any exhaustive `match` on
+  `VehicleClass` it added gains the two arms here (rebase repair, a follow-up commit).
 - Kinematic wave motion, not buoyancy physics: deterministic, cheap, wasm-friendly; enough for a
   survey camera.
