@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
