@@ -143,6 +143,52 @@ def _validate_fire(fire: Mapping[str, object], seen: set[str]) -> None:
         _file(path, f"fire {fire_id} effect {name}", ".fx.json")
 
 
+def _validate_map_floor(manifest: Mapping[str, object]) -> None:
+    floor = manifest.get("map_floor")
+    if floor is None:
+        return
+    if not isinstance(floor, dict):
+        raise ScenarioInvalid("map_floor must be an object")
+    for corner in ("sw", "ne"):
+        point = floor.get(corner)
+        if not isinstance(point, list) or len(point) != 2:
+            raise ScenarioInvalid(f"map_floor {corner} must be [lat, lon]")
+        lat = _number(point[0], f"map_floor {corner} lat")
+        lon = _number(point[1], f"map_floor {corner} lon")
+        if not -85.0 <= lat <= 85.0 or not -180.0 <= lon <= 180.0:
+            raise ScenarioInvalid(f"map_floor {corner} is outside the map's range")
+    sw, ne = floor["sw"], floor["ne"]
+    assert isinstance(sw, list) and isinstance(ne, list)
+    if not (float(sw[0]) < float(ne[0]) and float(sw[1]) < float(ne[1])):
+        raise ScenarioInvalid("map_floor sw must be south and west of ne")
+    texture = _relative(floor.get("texture"), "map_floor texture")
+    if not texture.endswith(".png"):
+        raise ScenarioInvalid(f"map_floor texture {texture!r} must be a .png")
+    zoom = floor.get("zoom")
+    if isinstance(zoom, bool) or not isinstance(zoom, int) or not 0 <= zoom <= 18:
+        raise ScenarioInvalid("map_floor zoom must be an integer in 0..18")
+
+
+def set_map_floor(
+    manifest: Mapping[str, object],
+    *,
+    sw: tuple[float, float],
+    ne: tuple[float, float],
+    texture: str,
+    zoom: int,
+) -> Manifest:
+    """A new manifest whose floor is the map cropped to the `sw`..`ne` GPS bbox."""
+    edited: Manifest = copy.deepcopy(dict(manifest))
+    edited["map_floor"] = {
+        "sw": [sw[0], sw[1]],
+        "ne": [ne[0], ne[1]],
+        "texture": texture,
+        "zoom": zoom,
+    }
+    validate_manifest(edited)
+    return edited
+
+
 def _validate_vegetation(element: Mapping[str, object]) -> None:
     element_id = element.get("id")
     _file(element.get("species"), f"element {element_id}: species", ".species.json")
@@ -209,6 +255,7 @@ def validate_manifest(manifest: Mapping[str, object]) -> None:
             validate_vehicle(element)
     if scatters > 1:
         raise ScenarioInvalid("at most one element may scatter debris")
+    _validate_map_floor(manifest)
     if "weather" in manifest:
         _validate_weather(manifest["weather"])
     for model in _list(manifest, "models"):
