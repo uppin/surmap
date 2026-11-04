@@ -565,6 +565,37 @@ pub fn scene_ready(state: &SceneState, assets: &AssetServer, models: usize) -> b
 mod tests {
     use super::*;
 
+
+    #[test]
+    fn the_floor_collider_spans_the_floor_with_its_top_at_ground_level() {
+        // Given a 130 x 111 m floor
+        // When its collider half-extents are derived
+        let half = floor_collider_half(130.0, 111.0);
+
+        // Then it spans the floor and reaches from under the plane to 0 m
+        assert_eq!(half, [65.0, 0.02, 55.5]);
+    }
+
+    #[test]
+    fn the_preset_ground_is_skipped_only_when_a_floor_replaces_it() {
+        // Given the preset ground box and an ordinary road box
+        let ground = Element::Box(BoxElement {
+            id: "ground".into(), material: "ground".into(), size_m: [200.0, 200.0, 0.2],
+            position_enu: [0.0, 0.0, -0.2], yaw_deg: 0.0, tint: None, uv_scale: None,
+            collider: true, scatter: None, ground_truth: None, water: false,
+        });
+        let road = Element::Box(BoxElement {
+            id: "road-1".into(), material: "ground".into(), size_m: [50.0, 8.0, 0.1],
+            position_enu: [0.0, 0.0, -0.1], yaw_deg: 0.0, tint: None, uv_scale: None,
+            collider: true, scatter: None, ground_truth: None, water: false,
+        });
+
+        // Then only the preset ground is hidden by a floor
+        assert!(is_hidden_by_floor(&ground, true));
+        assert!(!is_hidden_by_floor(&ground, false));
+        assert!(!is_hidden_by_floor(&road, true));
+    }
+
     #[test]
     fn the_seeded_generator_repeats_for_a_seed() {
         let (mut a, mut b) = (Seeded::new(3), Seeded::new(3));
