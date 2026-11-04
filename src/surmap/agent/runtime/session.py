@@ -3,8 +3,8 @@
 A turn compiles the turn graph, seeds it with the stored history and appends what each round
 adds, so a cancelled turn keeps its completed rounds. `steer` during a turn queues the text as a
 pending human message and detaches every blocking tool call; on an idle session it starts a turn.
-Notices of jobs that end while no turn runs come out of `idle_events`, for the chat server to
-start a `job_event` turn.
+Notices — jobs that end, messages from subagents — that arrive while no turn runs come out of
+`idle_events`, for the chat server to start a turn with (`notice_event` is its opening event).
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from surmap.agent.runtime.events import (
     FinishReason,
     JobUpdate,
+    SubagentMessage,
     TurnError,
     TurnEvent,
     TurnFinished,
@@ -30,11 +31,12 @@ from surmap.agent.runtime.graph import (
     NOTICE_KIND,
     STEER_DETACH_REASON,
     STEER_KIND,
+    SUBAGENT_KIND,
     TurnCaps,
     build_turn_graph,
     turn_input,
 )
-from surmap.agent.runtime.jobs import Job, JobNotice, JobRunner, JobState
+from surmap.agent.runtime.jobs import JobNotice, JobRunner, JobState, Notice, SubagentNotice
 from surmap.agent.runtime.tools import BoundTool
 
 __all__ = [
@@ -45,10 +47,18 @@ __all__ = [
     "SteerQueued",
     "TurnStarted",
     "TurnTrigger",
+    "notice_event",
+    "notice_trigger",
 ]
 
-TurnTrigger = Literal["user", "job_event"]
-"""What opened a turn: a person's message, or a job notice that arrived while idle."""
+TurnTrigger = Literal["user", "job_event", "subagent_message"]
+"""What opened a turn: a person's message, or a job's or a subagent's notice that arrived while
+idle."""
+
+_TRIGGER_KINDS: dict[TurnTrigger, str] = {
+    "job_event": NOTICE_KIND,
+    "subagent_message": SUBAGENT_KIND,
+}
 
 
 class ConversationStore(Protocol):
@@ -116,23 +126,30 @@ class AgentSession:
         self.caps = caps if caps is not None else TurnCaps()
         self.system_prompt = system_prompt
         self._pending: list[BaseMessage] = []
-        self._notice_jobs: dict[str, Job] = {}
+        self._notice_events: dict[str, TurnEvent] = {}
+        """The event each drained notice's message reports once it is in the history."""
         self._active = False
         self._task: asyncio.Task[FinishReason] | None = None
+
+    @property
+    def running(self) -> bool:
+        """Whether a turn is running on this session right now."""
+        return self._active
 
     def run_turn(
         self, text: str | None, *, trigger: TurnTrigger = "user"
     ) -> AsyncIterator[TurnEvent]:
         """Run one turn and yield its events; the last is always `TurnFinished`.
 
-        `text` opens the turn — a human message for `"user"`, a system notice for
-        `"job_event"`; `None` opens it with the pending messages alone.
+        `text` opens the turn — a human message for `"user"`, a notice tagged with its kind for
+        `"job_event"` and `"subagent_message"`; `None` opens it with the pending messages alone.
         """
         if self._active:
             raise RuntimeError("a turn is already running on this conversation")
         opening = None
         if text is not None:
-            kwargs = {KIND_KEY: NOTICE_KIND} if trigger == "job_event" else {}
+            kind = _TRIGGER_KINDS.get(trigger)
+            kwargs = {KIND_KEY: kind} if kind is not None else {}
             opening = HumanMessage(content=text, id=uuid.uuid4().hex, additional_kwargs=kwargs)
         events: asyncio.Queue[TurnEvent] = asyncio.Queue()
         self._active = True
@@ -163,8 +180,8 @@ class AgentSession:
         if running:
             await self.runner.wait(running, "all", timeout_s=1.0)
 
-    async def idle_events(self) -> AsyncIterator[JobNotice]:
-        """Notices of jobs that end while no turn is running."""
+    async def idle_events(self) -> AsyncIterator[Notice]:
+        """Notices — of jobs that end, of subagents' messages — that arrive while no turn runs."""
         while True:
             notice = await self.runner.notices.get()
             if self._active:
@@ -216,9 +233,9 @@ class AgentSession:
                 new: list[BaseMessage] = update.get("messages") or []
                 self.store.append(self.conversation_id, new)
                 for message in new:
-                    notice = self._notice_jobs.pop(message.id or "", None)
-                    if notice is not None:
-                        events.put_nowait(JobUpdate(job=notice))
+                    reported = self._notice_events.pop(message.id or "", None)
+                    if reported is not None:
+                        events.put_nowait(reported)
                 if update.get("finish_reason"):
                     reason = update["finish_reason"]
         return reason
@@ -234,11 +251,12 @@ class AgentSession:
         self._pending.clear()
         return drained
 
-    def _notice_message(self, notice: JobNotice) -> HumanMessage:
+    def _notice_message(self, notice: Notice) -> HumanMessage:
+        kind = _TRIGGER_KINDS[notice_trigger(notice)]
         message = HumanMessage(
-            content=notice.text, id=uuid.uuid4().hex, additional_kwargs={KIND_KEY: NOTICE_KIND}
+            content=notice.text, id=uuid.uuid4().hex, additional_kwargs={KIND_KEY: kind}
         )
-        self._notice_jobs[str(message.id)] = notice.job
+        self._notice_events[str(message.id)] = notice_event(notice)
         return message
 
     def _ended(self, task: asyncio.Task[FinishReason], events: asyncio.Queue[TurnEvent]) -> None:
@@ -277,3 +295,15 @@ class AgentSession:
                 for call in unanswered
             ],
         )
+
+
+def notice_trigger(notice: Notice) -> TurnTrigger:
+    """The trigger of the turn `notice` opens while the session idles."""
+    return "subagent_message" if isinstance(notice, SubagentNotice) else "job_event"
+
+
+def notice_event(notice: Notice) -> TurnEvent:
+    """What the turn reports for `notice`: the job's update, or the subagent's message."""
+    if isinstance(notice, JobNotice):
+        return JobUpdate(job=notice.job)
+    return SubagentMessage(subagent_id=notice.subagent_id, name=notice.name, text=notice.message)

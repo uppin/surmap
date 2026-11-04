@@ -9,7 +9,9 @@
   Connect responses included;
 - the hub as a closeable, so stopping the host cancels every turn and ends every watch stream.
 
-Each conversation's tools are `agent_tools` over the `SurveyTools` and `AgentJobs` contracts.
+Each conversation's tools are `agent_tools` over the `SurveyTools` and `AgentJobs` contracts,
+the skill tools, and the subagent tools; a subagent starts from `SUBAGENT_PROMPT` and a shipped
+skill.
 Models come from `config.model_factory`, or else from the registry: a `meta:` or `fireworks:`
 model gets the process's `UsageLedger.check` as its `before_call` (so a spent budget refuses the
 request before it is sent) and the ledger as its `usage_sink`. Binds loopback by default; there
@@ -47,6 +49,7 @@ from surmap.agent.services import (
     survey_tools_module,
 )
 from surmap.agent.skills import SkillCatalogue, skill_tools
+from surmap.agent.subagents import SubagentSetup
 from surmap.agent.tools.geometry import GeometryStore
 from surmap.agent.tools.handlers import survey_tool_handlers
 from surmap.agent.tools.map_handlers import MapSceneStore, map_tool_handlers
@@ -78,6 +81,7 @@ __all__ = [
     "DEFAULT_MODEL_ID",
     "DEFAULT_PORT",
     "SKILLS_DIR_ENV",
+    "SUBAGENT_PROMPT",
     "SYSTEM_PROMPT",
     "AgentServerConfig",
     "build_agent_description",
@@ -126,7 +130,26 @@ the new guidance first, and cancel_job a job they no longer want.
 
 You also have skills: reviewed instructions for kinds of work. Call list_skills to see \
 them, and load_skill to read the one that fits the task before you start it — in \
-particular, load the map skill before placing, moving or drawing anything on the map.
+particular, load the map skill before placing, moving or drawing anything on the map, and the \
+simulation skill before creating or changing a simulation scene.
+
+Work with many steps that the person needs only the outcome of — building a simulation scene is \
+the main case — goes to a subagent: start_subagent hands it a complete brief and it works in a \
+context of its own. Its messages reach you as notices naming the subagent; answer what it asks \
+with message_subagent, and tell the person what it reports when it finishes.
+"""
+
+SUBAGENT_PROMPT = """\
+You are a subagent of SurMap's survey assistant. The main agent gave you one task; you do it \
+alone with your tools, and the person does not see your messages. Your final answer is your \
+report to the main agent: short and complete — what you made, the ids it will need, and anything \
+left unresolved. Never claim a step you did not verify with a tool result.
+
+When you need a decision only the main agent or the person can make, finish with the question as \
+your final answer; the main agent answers with a new message and you continue from where you \
+stopped. Use message_main_agent only for something it must know while you keep working. Guidance \
+from the main agent can arrive while you work; act on it first. Wait for any job you started \
+before you answer. You only build and read; you never command a vehicle.
 """
 
 
@@ -294,6 +317,7 @@ def build_agent_description(
         system_prompt=SYSTEM_PROMPT,
         caps=TurnCaps.from_env(os.environ),
         timeout_scale=config.timeout_scale,
+        subagents=SubagentSetup(system_prompt=SUBAGENT_PROMPT, load_skill=catalogue.load_skill),
     )
     origins = tuple(config.cors_origins)
     return ServerDescription(

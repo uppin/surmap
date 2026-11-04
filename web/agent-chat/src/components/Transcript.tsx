@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { Bot } from "lucide-react";
 import Markdown from "react-markdown";
 import type { TranscriptItem } from "@/view-model/transcript";
 import { ToolStep } from "./ToolStep";
@@ -13,7 +14,7 @@ export interface TranscriptProps {
 
 /**
  * The conversation: user and assistant messages (Markdown), tool steps, steer markers, job notices,
- * errors, and a typing indicator while the agent's reply is awaited.
+ * subagent messages, errors, and a typing indicator while the agent's reply is awaited.
  */
 export function Transcript(props: TranscriptProps): ReactNode {
   const logRef = useRef<HTMLDivElement>(null);
@@ -79,6 +80,22 @@ function TranscriptEntry({ item, serverUrl }: { item: TranscriptItem; serverUrl:
       );
     case "steer":
       return <p className="text-sm italic text-muted-foreground">Steered: {item.text}</p>;
+    case "subagent_message":
+      return (
+        <div
+          role="note"
+          aria-label={`Message from subagent ${item.subagentId}`}
+          className="max-w-[85%] rounded-lg border border-dashed bg-muted/40 px-3 py-2 text-sm"
+        >
+          <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <Bot aria-hidden="true" className="size-3.5" />
+            Subagent {item.subagentId} · {item.name}
+          </p>
+          <div className="leading-relaxed [&_p]:my-1">
+            <Markdown>{item.text}</Markdown>
+          </div>
+        </div>
+      );
     case "error":
       return (
         <p role="alert" className="text-sm text-destructive">

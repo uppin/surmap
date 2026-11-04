@@ -33,7 +33,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from surmap.agent.contracts import ExecutionMode, ExecutionPolicy, OnTimeout, ToolContract
+from surmap.agent.contracts import (
+    ExecutionMode,
+    ExecutionPolicy,
+    OnTimeout,
+    ToolContract,
+    tool_input_schema,
+)
 from surmap.agent.runtime.jobs import JobRunner
 from surmap.agent.runtime.tools import BoundTool, bind_contract_tool
 
@@ -53,8 +59,6 @@ SKILL_FILE_NAME = "SKILL.md"
 
 MAX_SKILL_BYTES = 64 * 1024
 """How much of one skill may reach a model's context; over it, the load is refused."""
-
-_JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
 
 
 class SkillError(ValueError):
@@ -153,7 +157,7 @@ def skill_contracts() -> tuple[ToolContract, ToolContract]:
                 "work, each with a one-line description. Bodies are not included; call "
                 "load_skill with a name to read one before doing the work it describes."
             ),
-            input_schema=_schema({}),
+            input_schema=tool_input_schema({}),
             default_execution=_DEFAULT_EXECUTION,
         ),
         ToolContract(
@@ -165,7 +169,7 @@ def skill_contracts() -> tuple[ToolContract, ToolContract]:
                 "Load the skill that fits the task before starting it; the body returns "
                 "as this call's result."
             ),
-            input_schema=_schema(
+            input_schema=tool_input_schema(
                 {
                     "name": {
                         "type": "string",
@@ -204,36 +208,6 @@ def skill_tools(catalogue: SkillCatalogue, runner: JobRunner) -> tuple[BoundTool
         bind_contract_tool(contracts["list_skills"], list_skills, runner),
         bind_contract_tool(contracts["load_skill"], load_skill, runner),
     )
-
-
-def _schema(
-    properties: Mapping[str, object], *, required: tuple[str, ...] = ()
-) -> dict[str, object]:
-    """A tool argument schema: `properties` plus the optional `execution` argument every
-    tool carries (see `surmap.agent.contracts`)."""
-    all_properties: dict[str, object] = dict(properties)
-    all_properties["execution"] = {
-        "type": "object",
-        "description": (
-            "How this call runs, when it should differ from the tool's default: give any "
-            "of mode, timeout_s and on_timeout, and the others keep their default."
-        ),
-        "properties": {
-            "mode": {"type": "string", "enum": ["SYNC", "ASYNC"]},
-            "timeout_s": {"type": "integer"},
-            "on_timeout": {"type": "string", "enum": ["FAIL", "DETACH"]},
-        },
-        "additionalProperties": False,
-    }
-    schema: dict[str, object] = {
-        "$schema": _JSON_SCHEMA_DIALECT,
-        "type": "object",
-        "properties": all_properties,
-        "additionalProperties": False,
-    }
-    if required:
-        schema["required"] = list(required)
-    return schema
 
 
 def _discover_skills(skills_root: Path) -> tuple[Skill, ...]:

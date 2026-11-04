@@ -13,6 +13,7 @@ __all__ = [
     "FinishReason",
     "JobUpdate",
     "SteerApplied",
+    "SubagentMessage",
     "TextDelta",
     "ToolCallFinished",
     "ToolCallStarted",
@@ -72,6 +73,16 @@ class SteerApplied:
 
 
 @dataclass(frozen=True)
+class SubagentMessage:
+    """A subagent's message reached the conversation; the model reads it as a notice."""
+
+    subagent_id: str
+    name: str
+    text: str
+    """What the subagent wrote."""
+
+
+@dataclass(frozen=True)
 class TurnFinished:
     """The turn ended; always the last event."""
 
@@ -91,6 +102,7 @@ TurnEvent = (
     | ToolCallFinished
     | JobUpdate
     | SteerApplied
+    | SubagentMessage
     | TurnFinished
     | TurnError
 )
