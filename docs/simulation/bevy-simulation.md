@@ -96,6 +96,28 @@ two-finger scroll pans and tilts the view around the drone (tilt clamped between
 horizon and top-down), pinch zooms between 3 m and 40 m (`view_orbit.rs`, fed by
 `MouseWheel` and `PinchGesture`). With no gesture input the view is the original
 chase view, so unattended screenshot and record modes are unchanged.
+### The map as the floor
+
+A scenario may be based on the real map: `set_map_floor` takes a GPS bounding box (south-west
+and north-east corners), the station stitches OpenStreetMap raster tiles cropped to that box
+into one PNG, and the manifest gains `map_floor {sw, ne, texture, zoom}`. Tiles are disk-cached
+(`tile-cache/` in the library; `SURMAP_TILE_URL_TEMPLATE` / `SURMAP_TILE_CACHE_DIR` repoint the
+server or the cache for offline use), and the stitched texture — zoom at most 18, at most 64
+tiles, at most 4 096 px a side — is shared between scenarios under its content hash in
+`library/map-floor/`. © OpenStreetMap contributors is credited in the scenario's credits.
+
+The floor replaces the ground, it does not lie under it: `set_map_floor` removes the preset
+`ground` box (its opaque top at 0 m would hide the floor), `clear_map_floor` restores it, and
+the renderer draws the floor as one untiled plane at the ENU origin sized from the bbox, with
+a fixed collider whose top is at 0 m — the floor is what people, vehicles and nests stand on.
+Its texture gets the mip chain every asset-server image gets, so it does not shimmer from
+altitude. The ENU origin is the bbox centre (111 320 m per degree of latitude, longitude scaled
+by cos(latitude) — the semantic snapshot's rule). The agent never converts GPS itself:
+`geo_to_enu` turns a lat/lon into the ENU the placement tools take (and says whether it lies
+inside the floor), `enu_to_geo` converts back, and `set_map_floor` warns when re-basing moves
+already-placed elements or leaves one outside the floor. A floor is at most 1 000 m a side.
+The floor is flat and printed: it gives the stereo rig no ground depth of its own — the placed
+objects supply the 3D — and it is display geometry only, never a control signal.
 
 ## Weather, wind and fire
 
