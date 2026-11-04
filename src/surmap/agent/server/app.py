@@ -32,6 +32,7 @@ from connectrpc.request import RequestContext
 from langchain_core.language_models import BaseChatModel
 
 from surmap.agent.contracts import tool_contracts
+from surmap.agent.event_log import log_event
 from surmap.agent.llm.fireworks import FireworksChatModel
 from surmap.agent.llm.meta import DEFAULT_AGENT_META_MODEL, META_PROVIDER, MetaResponsesChatModel
 from surmap.agent.llm.registry import ChatModelRegistry
@@ -442,14 +443,15 @@ def _requiring_session(
     """`handlers`, each refusing a call with no valid session token when there is a `gate`."""
     if gate is None:
         return dict(handlers)
-    return {name: _with_session(handler, gate) for name, handler in handlers.items()}
+    return {name: _with_session(name, handler, gate) for name, handler in handlers.items()}
 
 
-def _with_session(handler: Handler, gate: AccessGate) -> Handler:
+def _with_session(name: str, handler: Handler, gate: AccessGate) -> Handler:
     def serve(request: object, ctx: RequestContext[Any, Any]) -> Any:
         headers = {key.lower(): value for key, value in ctx.request_headers.items()}
         token = session_token(headers)
         if token is None or not gate.allows(token):
+            log_event("auth_refused", surface="rpc", target=name)
             raise ConnectError(Code.UNAUTHENTICATED, UNAUTHENTICATED_HINT)
         return handler(request, ctx)
 

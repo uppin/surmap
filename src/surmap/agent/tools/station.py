@@ -20,6 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
+from surmap.agent.event_log import log_event
 from surmap.survey.sam import CentredBoxVideoSamDetector, RawFrame, SamDetection, VideoSamDetector
 
 DEFAULT_IDLE_TIMEOUT_S = 300
@@ -143,20 +144,26 @@ class StubStationControl:
             if not self._ready:
                 self._ready = True
                 self._last_used = self._clock()
+                log_event("station", backend=self.backend, action="start", state="ready")
             return self.status()
 
     def stop(self) -> StationStatus:
-        with self._lock:
-            if self._live is not None:
-                self._live.close()
-                self._live = None
-            self._ready = False
-            return self.status()
+        return self._stop("stop")
 
     def check_idle(self) -> StationStatus:
         with self._lock:
             if self._ready and self._clock() - self._last_used >= self._idle_timeout_s:
-                return self.stop()
+                return self._stop("idle_stop")
+            return self.status()
+
+    def _stop(self, action: str) -> StationStatus:
+        with self._lock:
+            if self._live is not None:
+                self._live.close()
+                self._live = None
+            was_ready, self._ready = self._ready, False
+            if was_ready:
+                log_event("station", backend=self.backend, action=action, state="off")
             return self.status()
 
     def detector(self) -> VideoSamDetector:
