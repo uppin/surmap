@@ -187,7 +187,7 @@ pub(crate) fn update_status(
     }
     let Ok((body, velocity)) = drone.single() else { return };
     text.0 = format!(
-        "{}  alt {:.1} m  speed {:.1} m/s  yaw {:.0} deg\nWASD move | Q/E yaw | R/F up/down | Space {}",
+        "{}  alt {:.1} m  speed {:.1} m/s  yaw {:.0} deg\nWASD move | Q/E yaw | R/F up/down | Space {} | Trackpad scroll pan/tilt, pinch zoom",
         if flight.engaged { "FLYING" } else { "LANDED" },
         body.translation.y,
         velocity.linvel.length(),

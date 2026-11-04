@@ -88,6 +88,15 @@ was made for another prefix, since root-addressed assets 404 under `/sim/` and l
 a black canvas. `SURMAP_DEV_SIM_DIST` and `SURMAP_DEV_SIM_FETCH_CMD` override the
 page location and the fetch command.
 
+## Controls
+
+Keyboard flies the drone (Space take off/land, WASD move, Q/E yaw, R/F up/down).
+The chase view follows the viewed drone, and the trackpad orbits it (PTZ):
+two-finger scroll pans and tilts the view around the drone (tilt clamped between
+horizon and top-down), pinch zooms between 3 m and 40 m (`view_orbit.rs`, fed by
+`MouseWheel` and `PinchGesture`). With no gesture input the view is the original
+chase view, so unattended screenshot and record modes are unchanged.
+
 ## Weather, wind and fire
 
 A scenario may carry weather, stands of pines and grass that sway in its wind, and wildfires
