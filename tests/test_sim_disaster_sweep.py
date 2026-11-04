@@ -106,3 +106,16 @@ def test_a_recorded_blaze_climbs_and_never_unburns() -> None:
         assert not set(burning_now) & set(burnt_now)
         burnt = set(burnt_now)
     assert 3 in frames[-1]["tower-1"][0] + frames[-1]["tower-1"][1]
+
+
+def test_a_district_preset_the_station_cannot_read_leaves_the_floor_to_the_renderer(
+    tmp_path: Path,
+) -> None:
+    # Given the downtown tower, its district preset missing from the assets the station reads
+    tower = a_downtown_tower_without_floors()
+
+    # When a fire is lit on a floor only a guessed floor height would refuse
+    lit = add_building_fire(tower, "blaze-1", building="tower-2", floor=14, assets_dir=tmp_path)
+
+    # Then the station invents no floor count; the renderer checks it against the real preset
+    assert building_fire_ids(lit) == ["blaze-1"]

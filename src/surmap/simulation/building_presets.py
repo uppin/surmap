@@ -299,18 +299,17 @@ def style_building(
     return _edited(manifest, "elements", elements)
 
 
-DEFAULT_FLOOR_M = 3.0
-
-
-def _district_floor_m(district: Mapping[str, object], assets_dir: Path) -> float:
+def _district_floor_m(district: Mapping[str, object], assets_dir: Path) -> float | None:
+    """The district preset's `floor_m`, or None when the station cannot read one (the renderer
+    refuses such a preset at load, so no floor count is guessed here)."""
     name = str(district.get("preset"))
     relative = name if "/" in name else f"building/districts/{name}.district.json"
     try:
         preset = json.loads((assets_dir / relative).read_text())
     except (OSError, ValueError):
-        return DEFAULT_FLOOR_M
+        return None
     value = preset.get("floor_m") if isinstance(preset, dict) else None
-    return float(value) if isinstance(value, int | float) and value > 0 else DEFAULT_FLOOR_M
+    return float(value) if isinstance(value, int | float) and value > 0 else None
 
 
 def _check_district_floors(
@@ -335,9 +334,9 @@ def _check_district_floors(
         ),
         None,
     )
-    if district is None:
+    floor_m = None if district is None else _district_floor_m(district, assets_dir)
+    if floor_m is None:
         return
-    floor_m = _district_floor_m(district, assets_dir)
     floors = max(1, math.floor(float(size[2]) / floor_m + 1e-3))
     if floor >= floors:
         raise ScenarioInvalid(
