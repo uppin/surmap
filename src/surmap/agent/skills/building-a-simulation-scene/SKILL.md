@@ -13,8 +13,10 @@ failing call unchanged.
 
 ## 1. Start from the right scenario
 
-- **A change to an existing scene**: `get_scenario` with the id from the brief, and read its
-  manifest before you edit.
+- **A change to an existing scene**: `describe_scenario` with the id from the brief to learn what
+  it holds (`get_scenario` when you need the raw manifest) before you edit. If an edit is refused
+  as stale (`ABORTED`: the scene was imported or changed since you read it), nothing was saved:
+  describe it again and redo the edit on what it holds now.
 - **A new scene**: `create_scenario` with the brief's name and the closest preset —
   `earthquake-block` (collapsed city block), `empty-lot` (sky and bare ground), `wildfire-edge`
   (pine stands in dry grass, a fire at their upwind edge), `wildfire-evacuation` (the edge with

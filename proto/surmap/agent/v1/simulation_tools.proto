@@ -3,6 +3,7 @@ syntax = "proto3";
 package surmap.agent.v1;
 
 import "surmap/agent/v1/execution.proto";
+import "surmap/agent/v1/simulation_contents.proto";
 
 /*
 The survey agent's simulation tools: find licence-compatible 3D assets, keep them in the
@@ -134,6 +135,13 @@ service SimulationTools {
   // Returns a scenario's latest version: its manifest, credits, and the URL the simulation
   // page opens it at.
   rpc GetScenario(GetScenarioRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Describes what a scenario's latest version contains: every element, model, fire and
+  // district with its kind, position and whether a behaviour drives it, plus the weather. Use it
+  // to learn a scene you did not build, or after an edit was refused as stale.
+  rpc DescribeScenario(DescribeScenarioRequest) returns (DescribeScenarioResponse) {
     option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
   }
 

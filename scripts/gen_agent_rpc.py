@@ -31,6 +31,7 @@ PROTOS = (
     "jobs",
     "chat",
     "map_tools",
+    "simulation_contents",
     "simulation_tools",
     "station_tools",
     "fleet_tools",

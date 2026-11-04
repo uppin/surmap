@@ -15,6 +15,7 @@ import {
   type StationStatusResponse,
 } from "@/gen/surmap/agent/v1/station_tools_pb";
 import type { ChatPort, DatasetView, MapPointView, MapSceneView, StationStateView, StationView } from "@/ports";
+import type { SimulationView } from "@/view-model/simulation";
 
 /** The header `AgentJobs` calls name their conversation in; each conversation has its own jobs. */
 export const CONVERSATION_HEADER = "surmap-conversation-id";
@@ -46,8 +47,15 @@ interface DatasetJson {
   credit: string;
 }
 
-/** The `ChatPort` over the generated `ChatService` and `AgentJobs` clients. */
-export function createConnectChatPort(transport: Transport, baseUrl: string = DEFAULT_SERVER_URL): ChatPort {
+/**
+ * The `ChatPort` over the generated `ChatService` and `AgentJobs` clients; plain HTTP calls (the
+ * gallery, simulation import) go to `baseUrl`, carrying `token()` as a bearer token when there is one.
+ */
+export function createConnectChatPort(
+  transport: Transport,
+  baseUrl: string = DEFAULT_SERVER_URL,
+  token: () => string | null = () => null,
+): ChatPort {
   const chat = createClient(ChatService, transport);
   const jobs = createClient(AgentJobs, transport);
   const map = createClient(MapTools, transport);
@@ -101,6 +109,21 @@ export function createConnectChatPort(transport: Transport, baseUrl: string = DE
       if (!response.ok) throw new Error(`dataset gallery failed: ${response.status}`);
       const body = (await response.json()) as { datasets: DatasetJson[] };
       return body.datasets.map(datasetView);
+    },
+    async importSimulation(bundle, into) {
+      const query = into === null ? "" : `?into=${encodeURIComponent(into)}`;
+      const session = token();
+      const response = await fetch(`${baseUrl.replace(/\/$/, "")}/sim/import${query}`, {
+        method: "POST",
+        headers: { "content-type": "application/zip", ...(session ? { authorization: `Bearer ${session}` } : {}) },
+        body: bundle,
+      });
+      if (!response.ok) {
+        const reason = response.status === 413 ? "the bundle is too large to upload" : await response.text();
+        throw new Error(`import refused (${response.status}): ${reason}`);
+      }
+      const body = (await response.json()) as { scenario: SimulationView };
+      return body.scenario;
     },
     async getStationStatus() {
       try {

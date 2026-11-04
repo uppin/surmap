@@ -19,7 +19,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from surmap.simulation.asset_sources import AssetHit, AssetKind, AssetSource
 from surmap.simulation.licences import check_licence
@@ -215,6 +215,66 @@ class ScenarioStore:
             )
         return self.asset(hit.ref)
 
+    def adopt(self, brought: Sequence[tuple[StoredAsset, Mapping[str, bytes]]]) -> None:
+        """Catalogue assets brought from another station, each with the bytes of its files (by
+        `library/…` path). All are checked before any is written: every licence must pass, every
+        file match its SHA-256 and lie under its asset's `library/<source>/<id>/`."""
+        for asset, files in brought:
+            verdict = check_licence(asset.licence)
+            if not verdict.accepted:
+                raise LicenceRefused(f"{asset.ref}: {verdict.reason}")
+            prefix = f"library/{asset.source}/{asset.asset_id}/"
+            for file in asset.files:
+                self._library_file(file.path)
+                if not file.path.startswith(prefix):
+                    raise ValueError(f"{asset.ref}: {file.path} is outside {prefix}")
+                if hashlib.sha256(files[file.path]).hexdigest() != file.sha256:
+                    raise ValueError(f"{asset.ref}: {file.path} does not match its SHA-256")
+        for asset, files in brought:
+            self._write_adopted(asset, files)
+
+    def _write_adopted(self, asset: StoredAsset, files: Mapping[str, bytes]) -> None:
+        for file in asset.files:
+            target = self._library_file(file.path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(files[file.path])
+        with self._connect() as db:
+            db.execute("DELETE FROM asset_files WHERE ref = ?", (asset.ref,))
+            db.execute(
+                "INSERT OR REPLACE INTO assets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    asset.ref,
+                    asset.source,
+                    asset.asset_id,
+                    asset.kind,
+                    asset.title,
+                    asset.author,
+                    asset.licence,
+                    asset.page_url,
+                    asset.entry,
+                    _now(),
+                ),
+            )
+            db.executemany(
+                "INSERT INTO asset_files VALUES (?, ?, ?, ?, ?)",
+                [(asset.ref, f.path, f.sha256, f.bytes, "bundle") for f in asset.files],
+            )
+
+    def library_file(self, path: str) -> Path | None:
+        """Where the `library/…` file `path` is on disk, when it is there."""
+        try:
+            target = self._library_file(path)
+        except ValueError:
+            return None
+        return target if target.is_file() else None
+
+    def _library_file(self, path: str) -> Path:
+        """`library/…` `path` under the library directory; `ValueError` when it would leave it."""
+        parts = PurePosixPath(path).parts
+        if len(parts) < 2 or parts[0] != "library" or any(p in ("", ".", "..") for p in parts):
+            raise ValueError(f"{path} is not a file of the library")
+        return self._library.joinpath(*parts[1:])
+
     def asset(self, ref: str) -> StoredAsset:
         with self._connect() as db:
             row = db.execute(
@@ -250,6 +310,14 @@ class ScenarioStore:
     def create_scenario(self, name: str, preset: str) -> Scenario:
         if preset not in self._presets:
             raise UnknownRecord(f"no preset {preset!r} (have: {', '.join(self.presets)})")
+        return self._insert_scenario(name, self._presets[preset])
+
+    def import_scenario(self, name: str, manifest: Manifest) -> Scenario:
+        """A new scenario called `name` whose version 1 is `manifest` (validated)."""
+        validate_manifest(manifest)
+        return self._insert_scenario(name, manifest)
+
+    def _insert_scenario(self, name: str, manifest: Manifest) -> Scenario:
         base = _slug(name)
         with self._connect() as db:
             taken = {
@@ -263,7 +331,7 @@ class ScenarioStore:
             db.execute("INSERT INTO scenarios VALUES (?, ?, 1, ?)", (scenario_id, name, now))
             db.execute(
                 "INSERT INTO scenario_versions VALUES (?, 1, ?, ?)",
-                (scenario_id, json.dumps(self._presets[preset]), now),
+                (scenario_id, json.dumps(manifest), now),
             )
         return self.scenario(scenario_id)
 
@@ -324,7 +392,7 @@ class ScenarioStore:
 
     def _credits(self, manifest: Manifest) -> tuple[Credit, ...]:
         """A credit for every attribution-licensed library asset the manifest references."""
-        paths = _referenced_paths(manifest)
+        paths = referenced_paths(manifest)
         credits: list[Credit] = []
         for asset in self.assets():
             if not any(
@@ -339,7 +407,8 @@ class ScenarioStore:
         return tuple(credits)
 
 
-def _referenced_paths(manifest: Manifest) -> Sequence[str]:
+def referenced_paths(manifest: Manifest) -> Sequence[str]:
+    """Every asset path the manifest's models and materials name."""
     paths: list[str] = []
     models = manifest.get("models")
     for model in models if isinstance(models, list) else []:
@@ -365,4 +434,5 @@ __all__ = [
     "StoredAsset",
     "StoredFile",
     "UnknownRecord",
+    "referenced_paths",
 ]

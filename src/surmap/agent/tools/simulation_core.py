@@ -1,5 +1,11 @@
 """What every simulation tool handler shares: the tooling bundle, blocking-call mapping and the
-scenario edit/response helpers."""
+scenario edit/response helpers.
+
+Every edit goes through `edit_scenario`, which refuses (`ABORTED`) to edit a scenario whose latest
+version is not the one the tools last showed the agent — the scene moved on without it, e.g. an
+import from the chat page — so the agent never edits on stale knowledge. A scenario the tools
+never showed is not refused.
+"""
 
 from __future__ import annotations
 
@@ -27,11 +33,22 @@ T = TypeVar("T")
 
 @dataclass
 class SimulationTooling:
-    """What the handlers share: the store, the sources and the hits seen so far."""
+    """What the handlers share: the store, the sources, the hits seen so far, and the version of
+    each scenario the tools last showed the agent."""
 
     store: ScenarioStore
     sources: Mapping[str, AssetSource]
     hits: dict[str, AssetHit] = field(default_factory=dict)
+    seen: dict[str, int] = field(default_factory=dict)
+
+    def shown(self, scenario: Scenario) -> Scenario:
+        """`scenario`, remembered as the version the agent now knows."""
+        self.seen[scenario.id] = scenario.version
+        return scenario
+
+
+class StaleScenario(Exception):
+    """An edit based on a scenario version older than its latest."""
 
 
 async def blocking(call: Callable[[], T]) -> T:
@@ -40,6 +57,8 @@ async def blocking(call: Callable[[], T]) -> T:
         return await asyncio.to_thread(call)
     except UnknownRecord as exc:
         raise ConnectError(Code.NOT_FOUND, str(exc)) from exc
+    except StaleScenario as exc:
+        raise ConnectError(Code.ABORTED, str(exc)) from exc
     except ScenarioInvalid as exc:
         raise ConnectError(Code.INVALID_ARGUMENT, str(exc)) from exc
     except (LicenceRefused, AssetSourceError) as exc:
@@ -68,6 +87,14 @@ async def edit_scenario(
 ) -> pb.ScenarioResponse:
     def apply() -> Scenario:
         current = tooling.store.scenario(scenario_id)
-        return tooling.store.save(scenario_id, edit(current))
+        seen = tooling.seen.get(scenario_id)
+        if seen is not None and seen != current.version:
+            raise StaleScenario(
+                f"scenario {scenario_id!r} is at v{current.version} but you last saw "
+                f"v{seen}: it changed outside your edits (e.g. imported from the chat page). "
+                "Nothing was saved; call describe_scenario or get_scenario, then redo the edit "
+                "on what it holds now"
+            )
+        return tooling.shown(tooling.store.save(scenario_id, edit(current)))
 
     return pb.ScenarioResponse(scenario=scenario_info(await blocking(apply)))

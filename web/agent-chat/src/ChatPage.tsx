@@ -15,7 +15,7 @@ import {
   isAwaitingReply,
   isTurnActive,
 } from "@/view-model/chat-reducer";
-import { simulationFromTranscript } from "@/view-model/simulation";
+import { simulationFromTranscript, type SimulationView } from "@/view-model/simulation";
 
 export interface ChatPageProps {
   port: ChatPort;
@@ -57,8 +57,29 @@ export function ChatPage(props: ChatPageProps): ReactNode {
   };
   const [now, setNow] = useState(0);
   const turn = useRef<AbortController | null>(null);
-  // A simulation the agent created in this conversation, shown in the right-side pane.
-  const simulation = useMemo(() => simulationFromTranscript(state.transcript), [state.transcript]);
+  // A simulation the agent created in this conversation, shown in the right-side pane — or the
+  // version an import from the pane made of it, until the transcript reports a newer one.
+  const created = useMemo(() => simulationFromTranscript(state.transcript), [state.transcript]);
+  const [imported, setImported] = useState<SimulationView | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const simulation = newerOf(created, imported);
+
+  const importSimulation = (bundle: File) => {
+    if (simulation === null) return;
+    setImporting(true);
+    setImportError(null);
+    port.importSimulation(bundle, simulation.id).then(
+      (scenario) => {
+        setImported(scenario);
+        setImporting(false);
+      },
+      (error: unknown) => {
+        setImportError(messageOf(error));
+        setImporting(false);
+      },
+    );
+  };
 
   // Only once models load: before then the model is the URL's unchecked preference.
   const modelInUse = state.models.length > 0 ? state.modelId : null;
@@ -286,7 +307,13 @@ export function ChatPage(props: ChatPageProps): ReactNode {
               <Composer busy={isTurnActive(state)} onSend={startTurn} onSteer={steer} onStop={stop} />
             </div>
             <div className="flex flex-col gap-4">
-              <SimulationPane simulation={simulation} serverUrl={props.serverUrl} />
+              <SimulationPane
+                simulation={simulation}
+                serverUrl={props.serverUrl}
+                onImport={importSimulation}
+                importing={importing}
+                importError={importError}
+              />
               <JobsPanel jobs={state.jobs} now={now} onCancel={cancelJob} />
             </div>
           </div>
@@ -307,6 +334,12 @@ export function ChatPage(props: ChatPageProps): ReactNode {
       )}
     </main>
   );
+}
+
+/** The imported version when it is of the created simulation and newer than the transcript's. */
+function newerOf(created: SimulationView | null, imported: SimulationView | null): SimulationView | null {
+  if (created === null || imported === null || imported.id !== created.id) return created;
+  return (created.version ?? 0) < (imported.version ?? 0) ? imported : created;
 }
 
 function messageOf(error: unknown): string {

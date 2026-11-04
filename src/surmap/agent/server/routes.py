@@ -6,9 +6,11 @@
   recorded. `?crop=x0,y0,x1,y1` (pixels of the frame) crops it and `?max_side=<px>` downscales
   it. A malformed `crop` or `max_side` is 400.
 - `OPTIONS` on any path — the CORS preflight.
+- With `simulation`, `GET /sim/…` and `POST /sim/import` (`surmap.agent.server.sim_routes`).
 - With `web_dist`, `GET /` and `GET /assets/…` — the built chat page.
 - With `gate`, `POST /auth/session` trades the pass code for a session token
-  (`surmap.agent.server.access`), and every `GET` but `/health` and the page needs one (401).
+  (`surmap.agent.server.access`), and every `GET` but `/health` and the page, and every other
+  `POST` route here, needs one (401).
 
 An unknown run, object or frame is 404. A request whose `Origin` is one of `cors_origins` gets
 `Access-Control-Allow-Origin` with that origin; any other origin gets no CORS headers.
@@ -16,6 +18,7 @@ An unknown run, object or frame is 404. A request whose `Origin` is one of `cors
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 from collections.abc import Mapping, Sequence
@@ -31,7 +34,13 @@ from surmap.agent.server.access import (
     session_cookie,
     session_token,
 )
-from surmap.agent.server.sim_routes import SimulationRig, serve_simulation, static_file
+from surmap.agent.server.sim_routes import (
+    IMPORT_PATH,
+    SimulationRig,
+    import_simulation,
+    serve_simulation,
+    static_file,
+)
 from surmap.agent.tools.frames import frame_image
 from surmap.agent.tools.workspace import BoxXYXY, FrameImage
 from surmap.demo.gallery import GalleryEntry
@@ -154,8 +163,25 @@ def agent_http_routes(
         }
         return HttpResponse(status=200, body=body, headers=headers)
 
+    async def import_scene(request: HttpRequest) -> HttpResponse:
+        assert simulation is not None
+        if gate is not None and not _signed_in(gate, request):
+            log_event("auth_refused", surface="http", target=request.path)
+            return HttpResponse(status=401, body=UNAUTHENTICATED_HINT.encode(), headers=_PLAIN)
+        response = await asyncio.to_thread(import_simulation, simulation, request)
+        return HttpResponse(
+            status=response.status,
+            body=response.body,
+            headers={**response.headers, **_cors(request, origins)},
+        )
+
     return (
         HttpRoute("GET", HEALTH_PATH, lambda _context: health),
+        *(
+            (HttpRoute("POST", IMPORT_PATH, lambda _context: import_scene),)
+            if simulation is not None
+            else ()
+        ),
         HttpRoute("GET", _ANY_PATH, lambda _context: serve),
         HttpRoute("OPTIONS", _ANY_PATH, lambda _context: preflight),
         *((HttpRoute("POST", SESSION_PATH, lambda _context: sign_in),) if gate is not None else ()),

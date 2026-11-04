@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package surmap.agent.v1;
+
+/*
+What a simulation scenario contains, for the `describe_scenario` tool of SimulationTools: one
+item per element, model, fire, building fire and district of its latest manifest, so the agent
+can learn a scene it did not build (e.g. one imported from the chat page) without reading the
+raw manifest.
+*/
+
+message DescribeScenarioRequest {
+  string scenario_id = 1;
+}
+
+// One thing placed in the scene.
+message SceneItem {
+  string id = 1;
+  // The element kind ("box", "building", "collapsed_building", "person", "vegetation",
+  // "vehicle", "drone_nest"), or "model", "fire", "building_fire", "district".
+  string kind = 2;
+  // A short description, e.g. "lying", "boat", "on tower-1, floor 3, from 5 s".
+  string detail = 3;
+  // Where it stands, ENU metres (east, north, up); empty when it has no position of its own.
+  repeated double position_enu = 4;
+  // Whether a behaviour tree drives it (get_behaviour reads it).
+  bool has_behaviour = 5;
+}
+
+message DescribeScenarioResponse {
+  string id = 1;
+  string name = 2;
+  // The version described; edits made after reading it apply to this version.
+  int32 version = 3;
+  // Where the simulation page opens it, on the station.
+  string url = 4;
+  // The weather in one line, e.g. "rain 8 mm/h, fog to 250 m, wind from 250° at 2 m/s".
+  string weather = 5;
+  repeated SceneItem items = 6;
+  // "<title> by <author> (<licence>), <page>" for every CC BY asset it uses.
+  repeated string credits = 7;
+}

@@ -20,6 +20,7 @@ from typing import Any, TypeVar
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
+from surmap.agent.proto import simulation_contents_pb2 as contents_pb
 from surmap.agent.proto import simulation_tools_pb2 as pb
 from surmap.agent.services import Handler
 from surmap.agent.tools.simulation_building_tools import (
@@ -37,9 +38,11 @@ from surmap.agent.tools.simulation_core import (
     blocking,
     edit_scenario,
     scenario_info,
+    scenario_url,
 )
 from surmap.simulation.asset_sources import AssetHit, AssetKind, AssetSource
 from surmap.simulation.licences import check_licence
+from surmap.simulation.scenario_contents import scene_items, weather_line
 from surmap.simulation.scenario_manifest import (
     add_element,
     add_fire,
@@ -105,6 +108,7 @@ def simulation_tool_handlers(
         "AddBuildingFire": bind(add_building_fire_tool),
         "RemoveBuildingFire": bind(remove_building_fire_tool),
         "GetScenario": bind(get_scenario),
+        "DescribeScenario": bind(describe_scenario),
         "ListScenarios": bind(list_scenarios),
     }
 
@@ -181,7 +185,7 @@ async def create_scenario(
     request: pb.CreateScenarioRequest, tooling: SimulationTooling
 ) -> pb.ScenarioResponse:
     scenario = await blocking(lambda: tooling.store.create_scenario(request.name, request.preset))
-    return pb.ScenarioResponse(scenario=scenario_info(scenario))
+    return pb.ScenarioResponse(scenario=scenario_info(tooling.shown(scenario)))
 
 
 async def add_model_tool(
@@ -436,8 +440,33 @@ async def get_behaviour(
 async def get_scenario(
     request: pb.GetScenarioRequest, tooling: SimulationTooling
 ) -> pb.ScenarioResponse:
-    scenario = await blocking(lambda: tooling.store.scenario(request.scenario_id))
+    scenario = await blocking(lambda: tooling.shown(tooling.store.scenario(request.scenario_id)))
     return pb.ScenarioResponse(scenario=scenario_info(scenario))
+
+
+async def describe_scenario(
+    request: contents_pb.DescribeScenarioRequest, tooling: SimulationTooling
+) -> contents_pb.DescribeScenarioResponse:
+    """`DescribeScenario`: what the latest version holds, item by item."""
+    scenario = await blocking(lambda: tooling.shown(tooling.store.scenario(request.scenario_id)))
+    return contents_pb.DescribeScenarioResponse(
+        id=scenario.id,
+        name=scenario.name,
+        version=scenario.version,
+        url=scenario_url(scenario.id),
+        weather=weather_line(scenario.manifest),
+        items=[
+            contents_pb.SceneItem(
+                id=item.id,
+                kind=item.kind,
+                detail=item.detail,
+                position_enu=list(item.position_enu or ()),
+                has_behaviour=item.has_behaviour,
+            )
+            for item in scene_items(scenario.manifest)
+        ],
+        credits=[c.line() for c in scenario.credits],
+    )
 
 
 async def list_scenarios(

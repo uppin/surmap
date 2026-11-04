@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { SERVER_URL } from "@/test-support/view-items";
 import type { SimulationView } from "@/view-model/simulation";
@@ -63,5 +64,46 @@ describe("SimulationPane", () => {
       "src",
       "http://station.test/sim/?scenario=downtown-blaze",
     );
+  });
+
+  it("exports the scenario as a bundle download from the agent server", () => {
+    render(<SimulationPane simulation={SIMULATION} serverUrl={SERVER_URL} />);
+
+    const exportLink = screen.getByRole("link", { name: "Export" });
+    expect(exportLink).toHaveAttribute("href", "http://127.0.0.1:8780/sim/export/downtown-blaze.zip");
+    expect(exportLink).toHaveAttribute("download", "downtown-blaze.surmap-sim.zip");
+  });
+
+  it("hands a picked bundle to onImport", async () => {
+    const picked: string[] = [];
+    render(
+      <SimulationPane simulation={SIMULATION} serverUrl={SERVER_URL} onImport={(file) => picked.push(file.name)} />,
+    );
+
+    await userEvent.upload(
+      screen.getByLabelText("Import simulation"),
+      new File(["PK"], "flooded.surmap-sim.zip", { type: "application/zip" }),
+    );
+
+    expect(picked).toEqual(["flooded.surmap-sim.zip"]);
+  });
+
+  it("disables importing while an import runs", () => {
+    render(<SimulationPane simulation={SIMULATION} serverUrl={SERVER_URL} onImport={() => {}} importing />);
+
+    expect(screen.getByLabelText("Import simulation")).toBeDisabled();
+  });
+
+  it("shows why the last import was refused", () => {
+    render(
+      <SimulationPane
+        simulation={SIMULATION}
+        serverUrl={SERVER_URL}
+        onImport={() => {}}
+        importError="not a SurMap scenario bundle"
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("not a SurMap scenario bundle");
   });
 });

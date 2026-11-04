@@ -5,7 +5,10 @@ Everything the page fetches comes from one origin, so it needs no CORS:
 - `/sim/` and `/sim/<file>` — the built page (`trunk build` output), when configured;
 - `/sim/assets/scenarios/<id>.json` — a scenario's latest version, from the SQLite store;
 - `/sim/assets/library/<source>/<id>/<file>` — downloaded assets, as fetched (SHA-256 recorded);
-- `/sim/assets/<path>` — the PoC's own assets (shipped scene, camera profiles, pinned textures).
+- `/sim/assets/<path>` — the PoC's own assets (shipped scene, camera profiles, pinned textures);
+- `/sim/export/<id>.zip` — a scenario's bundle (`surmap.simulation.scenario_bundle`), as a download;
+- `POST /sim/import[?into=<id>]` — a bundle stored as `into`'s next version, or as a new scenario
+  (`import_simulation`): 200 with the scenario, 400 for a bad bundle, 404 for an unknown `into`.
 
 A path that would leave its root answers 404.
 """
@@ -16,15 +19,19 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
+from urllib.parse import parse_qs
 
+from surmap.agent.tools.simulation_core import scenario_url
 from surmap.agent.tools.simulation_handlers import SimulationTooling
-from surmap.rpc.http import HttpResponse
+from surmap.rpc.http import HttpRequest, HttpResponse
 from surmap.simulation.asset_sources import AssetSource
 from surmap.simulation.fleet.controller import FleetRegistry, FleetTiming
 from surmap.simulation.fleet.perception import PerceptionRegistry
-from surmap.simulation.scenario_store import ScenarioStore, UnknownRecord
+from surmap.simulation.scenario_bundle import SUFFIX, BundleInvalid, export_bundle, import_bundle
+from surmap.simulation.scenario_store import Scenario, ScenarioStore, UnknownRecord
 
 SIM_PREFIX = "/sim/"
+IMPORT_PATH = "/sim/import"
 _TYPES: Mapping[str, str] = {
     ".html": "text/html; charset=utf-8",
     ".js": "text/javascript",
@@ -112,6 +119,8 @@ def serve_simulation(rig: SimulationRig, raw_path: str) -> HttpResponse | None:
             body=json.dumps(manifest).encode(),
             headers={"content-type": "application/json", "cache-control": "no-store"},
         )
+    if parts[:1] == ["export"] and len(parts) == 2 and parts[1].endswith(".zip"):
+        return _export(rig.store, parts[1][: -len(".zip")])
     if parts[:2] == ["assets", "library"]:
         return _file(_inside(rig.store.library_dir, parts[2:]))
     if parts[:1] == ["assets"]:
@@ -119,3 +128,49 @@ def serve_simulation(rig: SimulationRig, raw_path: str) -> HttpResponse | None:
     if rig.page_dist is None:
         return _not_found()
     return _file(_inside(rig.page_dist, parts or ["index.html"]))
+
+
+def import_simulation(rig: SimulationRig, request: HttpRequest) -> HttpResponse:
+    """`POST /sim/import`: the bundle in the body stored as `?into=`'s next version, or as a new
+    scenario; answered with the scenario as the chat pane shows it."""
+    into = parse_qs(request.query).get("into", [""])[-1] or None
+    try:
+        scenario = import_bundle(rig.store, request.body, into=into)
+    except UnknownRecord as exc:
+        return _plain(404, str(exc))
+    except BundleInvalid as exc:
+        return _plain(400, str(exc))
+    body = json.dumps({"scenario": _scenario_json(scenario)}).encode()
+    return HttpResponse(status=200, body=body, headers={"content-type": "application/json"})
+
+
+def _export(store: ScenarioStore, scenario_id: str) -> HttpResponse:
+    try:
+        bundle = export_bundle(store, scenario_id)
+    except UnknownRecord:
+        return _not_found()
+    return HttpResponse(
+        status=200,
+        body=bundle,
+        headers={
+            "content-type": "application/zip",
+            "content-disposition": f'attachment; filename="{scenario_id}{SUFFIX}"',
+            "cache-control": "no-store",
+        },
+    )
+
+
+def _scenario_json(scenario: Scenario) -> dict[str, object]:
+    return {
+        "id": scenario.id,
+        "name": scenario.name,
+        "version": scenario.version,
+        "url": scenario_url(scenario.id),
+        "credits": [credit.line() for credit in scenario.credits],
+    }
+
+
+def _plain(status: int, text: str) -> HttpResponse:
+    return HttpResponse(
+        status=status, body=text.encode(), headers={"content-type": "text/plain; charset=utf-8"}
+    )

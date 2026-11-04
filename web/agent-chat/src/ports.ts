@@ -1,4 +1,5 @@
 import type { TurnEvent } from "@/gen/surmap/agent/v1/chat_pb";
+import type { SimulationView } from "@/view-model/simulation";
 
 /** What a turn is started with. */
 export interface StreamTurnInput {
@@ -157,4 +158,10 @@ export interface ChatPort {
   startStation(): Promise<StationView>;
   /** Stops the SAM station's GPU now. */
   stopStation(): Promise<StationView>;
+  /**
+   * Stores an exported simulation bundle on the station: as the next version of `into`, or as a
+   * new scenario when `null`. Resolves with the scenario it became; rejects with the reason the
+   * station refused it.
+   */
+  importSimulation(bundle: File, into: string | null): Promise<SimulationView>;
 }
