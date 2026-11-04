@@ -21,6 +21,7 @@ from surmap.agent.__main__ import config_from_args
 from surmap.agent.llm.registry import ChatModelRegistry
 from surmap.agent.proto import chat_pb2
 from surmap.agent.proto import survey_tools_pb2 as pb
+from surmap.agent.runtime.outputs import DEFAULT_MAX_INLINE_BYTES
 from surmap.agent.server.app import (
     SYSTEM_PROMPT,
     AgentServerConfig,
@@ -29,6 +30,7 @@ from surmap.agent.server.app import (
     build_demo_workspace,
     build_station,
     default_model_factory,
+    tool_outputs,
 )
 from surmap.agent.services import Handler
 from surmap.agent.tools.station import StationState, StubStationControl
@@ -245,6 +247,53 @@ def test_cors_origins_come_from_the_environment_without_blank_entries() -> None:
 
     # Then both origins are allowed, and nothing else
     assert config.cors_origins == ("http://localhost:5173", "http://127.0.0.1:5173")
+
+
+def test_the_read_roots_come_from_the_environment_split_on_the_path_separator(
+    tmp_path: Path,
+) -> None:
+    # Given two allowed folders, path-separated with a blank entry
+    logs, maps = tmp_path / "logs", tmp_path / "maps"
+    environ = {"SURMAP_AGENT_READ_ROOTS": f"{logs}{os.pathsep}{os.pathsep}{maps}"}
+
+    # When the command line is read
+    config = config_from_args([], environ=environ)
+
+    # Then the agent may read both, and nothing else
+    assert config.read_roots == (logs, maps)
+
+
+def test_the_inline_output_limit_comes_from_the_environment() -> None:
+    # Given an inline limit of 4 KiB
+    environ = {"SURMAP_AGENT_MAX_INLINE_OUTPUT_BYTES": "4096"}
+
+    # When the command line is read
+    config = config_from_args([], environ=environ)
+
+    # Then results over 4 KiB are saved to a file
+    assert config.max_inline_output_bytes == 4096
+
+
+def test_an_inline_output_limit_that_is_not_a_positive_number_refuses_to_start() -> None:
+    # Given an inline limit that is not a number
+    environ = {"SURMAP_AGENT_MAX_INLINE_OUTPUT_BYTES": "lots"}
+
+    # When the command line is read
+    # Then it is refused, naming the variable
+    with pytest.raises(ValueError, match="SURMAP_AGENT_MAX_INLINE_OUTPUT_BYTES"):
+        config_from_args([], environ=environ)
+
+
+def test_tool_outputs_are_saved_under_the_cache_unless_a_folder_is_given(tmp_path: Path) -> None:
+    # Given a config with only a cache dir
+    config = AgentServerConfig(cache_dir=tmp_path)
+
+    # When the outputs root is chosen
+    root = tool_outputs(config)
+
+    # Then results are saved under the cache, with the default limit
+    assert root.directory == tmp_path / "agent-tool-outputs"
+    assert root.max_inline_bytes == DEFAULT_MAX_INLINE_BYTES
 
 
 def test_ctrl_c_stops_the_agent_with_a_line_and_no_traceback(
@@ -501,12 +550,14 @@ async def test_the_agent_s_model_is_offered_every_survey_map_and_job_tool() -> N
     # When the user writes
     await one_turn(server, "hi")
 
-    # Then the model was bound to all of them, plus the skill and subagent tools
+    # Then the model was bound to all of them, plus the skill, file and subagent tools
     assert sorted(model.bound_tool_names[0]) == sorted(
         [
             *(contract.name for contract in (*SURVEY_CONTRACTS, *MAP_CONTRACTS, *JOB_CONTRACTS)),
             "list_skills",
             "load_skill",
+            "read_file",
+            "grep_files",
             "start_subagent",
             "message_subagent",
         ]

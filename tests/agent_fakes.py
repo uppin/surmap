@@ -41,6 +41,7 @@ from surmap.agent.runtime.events import (
 )
 from surmap.agent.runtime.graph import TurnCaps
 from surmap.agent.runtime.jobs import JobRunner, ToolHandler, ToolOutcome
+from surmap.agent.runtime.outputs import ToolOutputs
 from surmap.agent.runtime.session import AgentSession, InMemoryConversationStore
 from surmap.agent.runtime.tools import bind_contract_tool, job_tools
 
@@ -377,9 +378,11 @@ def a_session(
     model: ScriptedChatModel,
     *tools: tuple[ToolContract, ToolHandler],
     caps: TurnCaps | None = None,
+    outputs: ToolOutputs | None = None,
 ) -> SessionRig:
-    """A session whose model can call `tools` plus the four job tools."""
-    runner = JobRunner(timeout_scale=TIMEOUT_SCALE)
+    """A session whose model can call `tools` plus the four job tools; results stay inline
+    unless `outputs` gives the runner a directory to save them in."""
+    runner = JobRunner(timeout_scale=TIMEOUT_SCALE, outputs=outputs or ToolOutputs())
     store = InMemoryConversationStore()
     bound = [
         bind_contract_tool(contract, handler, runner, resolve=resolve_locally)

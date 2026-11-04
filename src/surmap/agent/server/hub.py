@@ -29,6 +29,7 @@ from surmap.agent.proto import chat_pb2
 from surmap.agent.runtime.events import TurnEvent as RuntimeEvent
 from surmap.agent.runtime.graph import TurnCaps
 from surmap.agent.runtime.jobs import JobRunner
+from surmap.agent.runtime.outputs import ToolOutputs
 from surmap.agent.runtime.session import (
     AgentSession,
     InMemoryConversationStore,
@@ -88,11 +89,14 @@ class ChatHub:
         timeout_scale: float = 1.0,
         subagents: SubagentSetup | None = None,
         store: PersistentConversationStore | None = None,
+        outputs: ToolOutputs | None = None,
     ) -> None:
         """`timeout_scale` is each conversation's `JobRunner(timeout_scale=…)`; `subagents`
         binds the subagent tools in every conversation, none without it. With `store`,
         conversations are restored from it after a restart and every event is recorded
-        into it; without one they live in memory and end with the process."""
+        into it; without one they live in memory and end with the process. `outputs` is the
+        root each conversation saves large or requested tool results under, in a folder of its
+        own; without one results stay inline."""
         self.model_factory = model_factory
         self.tools = tools
         self.list_models = models
@@ -102,6 +106,7 @@ class ChatHub:
         self.timeout_scale = timeout_scale
         self.subagents = subagents
         self._store = store
+        self.outputs = outputs if outputs is not None else ToolOutputs()
         self._conversations: dict[str, Conversation] = {}
 
     def get(self, conversation_id: str) -> Conversation | None:
@@ -226,7 +231,9 @@ class ChatHub:
         self, conversation_id: str, model_id: str, events: list[chat_pb2.TurnEvent]
     ) -> Conversation:
         """A conversation on `model_id` with `events` as its replay, registered on this hub."""
-        runner = JobRunner(timeout_scale=self.timeout_scale)
+        runner = JobRunner(
+            timeout_scale=self.timeout_scale, outputs=self.outputs.child(conversation_id)
+        )
         model = self.model_factory(model_id)
         tools = list(self.tools(runner))
         if self.subagents is not None:

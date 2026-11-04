@@ -2,8 +2,8 @@
 
 Every tool rpc (`SurveyTools`, `AgentJobs`) becomes one `ToolContract`: its snake_case name,
 its leading proto comment as the description, the JSON Schema (2020-12) of its request message
-with an optional `execution` argument added, and the `default_execution` its method option
-declares. The rpc and field comments come from the checked-in descriptor set
+with optional `execution` and `output` arguments added, and the `default_execution` its method
+option declares. The rpc and field comments come from the checked-in descriptor set
 (`surmap/agent/proto/agent_descriptor_set.binpb`), compiled with source info.
 """
 
@@ -34,6 +34,7 @@ __all__ = [
     "OnTimeout",
     "ToolContract",
     "resolve_execution",
+    "resolve_output",
     "tool_contracts",
     "tool_input_schema",
 ]
@@ -47,6 +48,23 @@ _EXECUTION_DESCRIPTION = (
     "timeout_s and on_timeout, and the others keep their default."
 )
 _OVERRIDABLE = ("mode", "timeout_s", "on_timeout")
+_OUTPUT_SCHEMA: Mapping[str, object] = {
+    "type": "object",
+    "description": (
+        "Where this call's result goes. Leave it out for the result inline; a result too big "
+        "for the conversation is saved to a file anyway, and you get its path instead."
+    ),
+    "properties": {
+        "to_file": {
+            "type": "boolean",
+            "description": (
+                "Save the result to a file and return only its path, size and a preview; read "
+                "or search it with read_file and grep_files."
+            ),
+        }
+    },
+    "additionalProperties": False,
+}
 _UINT32_MAX = 2**32 - 1
 _INTEGER_TYPES = frozenset(
     {
@@ -146,6 +164,25 @@ def resolve_execution(contract: ToolContract, arguments: Mapping[str, object]) -
     return ExecutionPolicy(mode=mode, timeout_s=timeout_s, on_timeout=on_timeout)
 
 
+def resolve_output(arguments: Mapping[str, object]) -> bool:
+    """Whether the call's `output` argument asks for its result as a file.
+
+    Raises `ValueError` for an `output` value the schema does not allow.
+    """
+    if "output" not in arguments:
+        return False
+    output = arguments["output"]
+    if not isinstance(output, Mapping):
+        raise ValueError(f"output must be an object, not {output!r}")
+    unknown = [str(name) for name in output if name != "to_file"]
+    if unknown:
+        raise ValueError(f"output has no field {', '.join(unknown)}")
+    to_file = output.get("to_file", False)
+    if not isinstance(to_file, bool):
+        raise ValueError(f"output.to_file {to_file!r} is not true or false")
+    return to_file
+
+
 def _contract(service: ServiceDescriptor, method: MethodDescriptor) -> ToolContract:
     description = _leading_comment(method.full_name)
     if not description:
@@ -197,10 +234,12 @@ def _timeout(value: object) -> int:
 def tool_input_schema(
     properties: Mapping[str, object], *, required: Sequence[str] = ()
 ) -> dict[str, object]:
-    """A tool's argument schema: `properties` plus the optional `execution` argument every tool
-    carries, as `tool_contracts` builds it — for tools no proto declares (skills, subagents)."""
+    """A tool's argument schema: `properties` plus the optional `execution` and `output`
+    arguments every tool carries, as `tool_contracts` builds it — for tools no proto declares
+    (skills, subagents, files)."""
     all_properties = dict(properties)
     all_properties["execution"] = _execution_schema()
+    all_properties["output"] = dict(_OUTPUT_SCHEMA)
     return {"$schema": _JSON_SCHEMA_DIALECT, **_object_schema(all_properties, list(required))}
 
 

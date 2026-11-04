@@ -129,7 +129,11 @@ class SubagentPool:
         if skill is not None:
             prompt = f"{prompt}\n\n# Your skill: {skill}\n\n{self.setup.load_skill(skill)}"
         subagent_id = f"sa-{len(self._subagents) + 1}"
-        runner = JobRunner(timeout_scale=self.runner.timeout_scale, clock=self.runner.clock)
+        runner = JobRunner(
+            timeout_scale=self.runner.timeout_scale,
+            clock=self.runner.clock,
+            outputs=self.runner.outputs.child(subagent_id),
+        )
         tools = [tool for tool in self.tools(runner) if tool.name not in SUBAGENT_TOOL_NAMES]
         tools.append(self._message_main_agent(subagent_id, name, runner))
         session = AgentSession(

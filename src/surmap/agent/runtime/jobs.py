@@ -6,13 +6,14 @@ returns a job handle and leaves the job running. An ASYNC call returns a handle 
 detaches every waiting SYNC call (`detach_blocking`); a SYNC call whose caller is cancelled while
 it waits is cancelled with it. When a detached or async job ends, a `JobNotice` is queued on
 `notices` for the conversation to read; a subagent's message to the conversation (a
-`SubagentNotice`) is queued there too, so both reach the model the same way.
+`SubagentNotice`) is queued there too, so both reach the model the same way. A succeeded job's
+result reaches its notice through the runner's `ToolOutputs`, so a large one is a saved file's
+reference there too.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ from enum import Enum
 from typing import Literal
 
 from surmap.agent.contracts import ExecutionMode, ExecutionPolicy, OnTimeout, ToolContract
+from surmap.agent.runtime.outputs import ToolOutputs
 
 __all__ = [
     "Completed",
@@ -142,10 +144,16 @@ class JobWait:
 class _Entry:
     """The runner's mutable record of one job; `Job` is its frozen snapshot."""
 
-    def __init__(self, job_id: str, tool: str, started_at: float) -> None:
+    def __init__(
+        self, job_id: str, tool: str, started_at: float, *, to_file: bool, auto_save: bool
+    ) -> None:
         self.job_id = job_id
         self.tool = tool
         self.started_at = started_at
+        self.to_file = to_file
+        """Whether the call asked for its result as a saved file."""
+        self.auto_save = auto_save
+        """Whether a result over the inline limit is saved without being asked."""
         self.state = JobState.RUNNING
         self.finished_at: float | None = None
         self.result: Mapping[str, object] | None = None
@@ -180,10 +188,13 @@ class JobRunner:
         *,
         timeout_scale: float = 1.0,
         clock: Callable[[], float] = time.monotonic,
+        outputs: ToolOutputs | None = None,
     ) -> None:
-        """`timeout_scale` is the seconds one policy `timeout_s` unit lasts (tests shrink it)."""
+        """`timeout_scale` is the seconds one policy `timeout_s` unit lasts (tests shrink it);
+        `outputs` is where large or requested results are saved (none: they stay inline)."""
         self.timeout_scale = timeout_scale
         self.clock = clock
+        self.outputs = outputs if outputs is not None else ToolOutputs()
         self.notices: asyncio.Queue[Notice] = asyncio.Queue()
         self._entries: dict[str, _Entry] = {}
 
@@ -194,9 +205,21 @@ class JobRunner:
         handler: ToolHandler,
         *,
         policy: ExecutionPolicy,
+        to_file: bool = False,
+        auto_save: bool = True,
     ) -> ToolOutcome:
-        """Start `handler(arguments)` as a new job and wait for it as `policy` says."""
-        entry = _Entry(f"j-{len(self._entries) + 1}", contract.name, self.clock())
+        """Start `handler(arguments)` as a new job and wait for it as `policy` says.
+
+        `to_file` and `auto_save` are how the job's notice renders its result, should it end
+        detached (`ToolOutputs.render`).
+        """
+        entry = _Entry(
+            f"j-{len(self._entries) + 1}",
+            contract.name,
+            self.clock(),
+            to_file=to_file,
+            auto_save=auto_save,
+        )
         self._entries[entry.job_id] = entry
         task = asyncio.ensure_future(handler(arguments))
         entry.task = task
@@ -314,11 +337,13 @@ class JobRunner:
         entry.done.set()
         if entry.detached and entry.state is not JobState.CANCELLED:
             job = entry.snapshot()
-            self.notices.put_nowait(JobNotice(job=job, text=_notice_text(job)))
+            self.notices.put_nowait(JobNotice(job=job, text=self._notice_text(entry, job)))
 
-
-def _notice_text(job: Job) -> str:
-    head = f"Job {job.job_id} {job.tool} {job.state.name.lower()}"
-    if job.state is JobState.SUCCEEDED:
-        return f"{head}: {json.dumps(job.result, default=str)}"
-    return f"{head}: {job.error}"
+    def _notice_text(self, entry: _Entry, job: Job) -> str:
+        head = f"Job {job.job_id} {job.tool} {job.state.name.lower()}"
+        if job.state is JobState.SUCCEEDED and job.result is not None:
+            rendered = self.outputs.render(
+                job.job_id, job.tool, job.result, to_file=entry.to_file, auto=entry.auto_save
+            )
+            return f"{head}: {rendered}"
+        return f"{head}: {job.error}"
