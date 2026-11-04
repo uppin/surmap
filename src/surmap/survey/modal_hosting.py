@@ -28,6 +28,12 @@ AGENT_PORT = 8780
 AGENT_SECRET = "surmap-agent"
 AGENT_WEB_DIST = "/opt/surmap/web"
 AGENT_CACHE = "/cache"
+# The agent's persisted state, all under the cache mount (Volume `surmap-agent-cache`), so a
+# container restart keeps it: the demo run history, the chat conversations, the simulation
+# store (`simulation.sqlite` + `library/`). The usage log joins them via `--cache-dir`.
+AGENT_HISTORY_DB = f"{AGENT_CACHE}/demo-history.db"
+AGENT_CONVERSATIONS_DB = f"{AGENT_CACHE}/conversations.sqlite"
+AGENT_SIM_DIR = f"{AGENT_CACHE}/simulation"
 
 # Where the CM5 image builds RTAB-Map and its stream tool (scripts/build_rtabmap_native.sh).
 RTABMAP_WORK = "/opt/surmap-rtabmap"
@@ -133,6 +139,12 @@ def agent_command() -> list[str]:
         AGENT_WEB_DIST,
         "--cache-dir",
         AGENT_CACHE,
+        "--history-db",
+        AGENT_HISTORY_DB,
+        "--conversations-db",
+        AGENT_CONVERSATIONS_DB,
+        "--sim-dir",
+        AGENT_SIM_DIR,
     ]
 
 

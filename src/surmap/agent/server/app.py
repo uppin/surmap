@@ -45,6 +45,7 @@ from surmap.agent.proto import (
     survey_tools_pb2,
 )
 from surmap.agent.runtime.graph import TurnCaps
+from surmap.agent.runtime.session import SqliteConversationStore
 from surmap.agent.server.access import UNAUTHENTICATED_HINT, AccessGate, session_token
 from surmap.agent.server.binding import agent_tools
 from surmap.agent.server.chat_service import agent_jobs_handlers, chat_handlers
@@ -97,7 +98,7 @@ from surmap.simulation.scenario_store import ScenarioStore
 from surmap.slam.streaming import StreamingRtabmapBackend
 from surmap.survey.modal_hosting import STATION_APP_NAME
 from surmap.survey.sam import CentredBoxVideoSamDetector, VideoAsFrameSamDetector, VideoSamDetector
-from surmap.usage import UsageLedger
+from surmap.usage import UsageLedger, default_usage_log_path
 
 _SURVEY_TOOLS = survey_tools_pb2.DESCRIPTOR.services_by_name["SurveyTools"]
 _MAP_TOOLS = map_tools_pb2.DESCRIPTOR.services_by_name["MapTools"]
@@ -120,8 +121,10 @@ __all__ = [
     "AgentServerConfig",
     "build_agent_description",
     "build_demo_workspace",
+    "conversation_store",
     "default_model_factory",
     "onboard_models",
+    "usage_log_path",
 ]
 
 DEFAULT_HOST = "127.0.0.1"
@@ -197,6 +200,8 @@ class AgentServerConfig:
     port: int = DEFAULT_PORT
     history_db: Path | None = None
     """The demo run history; `<cache_dir>/demo-history.db` when None."""
+    conversations_db: Path | None = None
+    """The chat conversations (history, model, replay) in SQLite; in memory when None."""
     cache_dir: Path | None = None
     """The demo scene cache; `$SURMAP_DEMO_CACHE_DIR` or `~/.cache/surmap/demo-datasets`."""
     model_id: str = DEFAULT_MODEL_ID
@@ -349,6 +354,25 @@ def _cache_root(config: AgentServerConfig) -> Path:
     return Path(os.environ.get("SURMAP_DEMO_CACHE_DIR", Path.home() / ".cache" / "surmap"))
 
 
+def conversation_store(config: AgentServerConfig) -> SqliteConversationStore | None:
+    """The SQLite conversation store for `config.conversations_db`, or None to keep
+    conversations in memory (the local default)."""
+    if config.conversations_db is None:
+        return None
+    return SqliteConversationStore(config.conversations_db)
+
+
+def usage_log_path(config: AgentServerConfig) -> Path:
+    """Where the server's usage ledger writes: `$SURMAP_USAGE_LOG` when set, else
+    `<cache_dir>/usage.jsonl` when a cache dir is configured (on Modal that is the
+    Volume, so budgets survive a restart), else the home default."""
+    if os.environ.get("SURMAP_USAGE_LOG", "").strip():
+        return default_usage_log_path()
+    if config.cache_dir is not None:
+        return config.cache_dir / "usage.jsonl"
+    return default_usage_log_path()
+
+
 def default_model_factory(registry: ChatModelRegistry, ledger: UsageLedger) -> ModelFactory:
     """Models from `registry`; a `meta:` or `fireworks:` model checks `ledger` before every
     request and records its usage there."""
@@ -443,7 +467,7 @@ def build_agent_description(
     and library, and `/sim/fleet` links a running page to the station's fleet controllers.
     With `station`, the `StationTools` are mounted and bound the same way.
     """
-    ledger = UsageLedger()
+    ledger = UsageLedger(usage_log_path(config))
     models = registry if registry is not None else ChatModelRegistry()
     model_factory = (
         config.model_factory
@@ -500,6 +524,7 @@ def build_agent_description(
         caps=TurnCaps.from_env(os.environ),
         timeout_scale=config.timeout_scale,
         subagents=SubagentSetup(system_prompt=SUBAGENT_PROMPT, load_skill=catalogue.load_skill),
+        store=conversation_store(config),
     )
     origins = tuple(config.cors_origins)
     gate = AccessGate(config.access_code) if config.access_code else None

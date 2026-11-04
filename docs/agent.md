@@ -814,6 +814,7 @@ uv run python -m surmap.agent --sam-fake \
 | `--port` | `8780` | `0` picks a free port; the bound one is printed as `survey agent on http://…` |
 | `--model` | `meta:<DEFAULT_AGENT_META_MODEL>` | default model id (`ListModels` lists the rest) |
 | `--history-db` | demo default | demo run history DB |
+| `--conversations-db` | in memory | chat conversations (history, model, replay) in SQLite; survives a restart |
 | `--cache-dir` | demo default | demo scene cache; object GLBs go to `<cache-dir>/agent-geometry` |
 | `--sam-fake` | off | fake centred-box SAM; one of it or `--station` is required |
 | `--station` | none | `modal` (the deployed station app; needs `uv sync --extra modal` and a Modal token) or `stub`: SAM runs on the station, which is up on first use and down when idle |
@@ -885,7 +886,9 @@ their conversation in the `surmap-conversation-id` header.
   `src/surmap/docs/todo/2026-11-03-agent-tool-image-parts.md`.
 - **`WatchConversation` before the first turn is `NOT_FOUND`** — open the
   watch after the conversation's first `StreamTurn`.
-- Conversations live in memory for the process lifetime.
+- Conversations live in memory for the process lifetime, unless `--conversations-db`
+  names a SQLite file: then their history, model and replay survive a restart (on Modal,
+  `/cache/conversations.sqlite` on the agent's Volume). Running turns and jobs never do.
 
 ## Server logs (`surmap.agent.event_log`)
 

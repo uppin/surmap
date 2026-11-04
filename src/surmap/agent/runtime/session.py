@@ -10,13 +10,25 @@ Notices — jobs that end, messages from subagents — that arrive while no turn
 from __future__ import annotations
 
 import asyncio
+import json
+import sqlite3
+import threading
 import uuid
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, Protocol, cast
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+    message_to_dict,
+    messages_from_dict,
+)
 
 from surmap.agent.runtime.events import (
     FinishReason,
@@ -43,6 +55,8 @@ __all__ = [
     "AgentSession",
     "ConversationStore",
     "InMemoryConversationStore",
+    "PersistentConversationStore",
+    "SqliteConversationStore",
     "SteerOutcome",
     "SteerQueued",
     "TurnStarted",
@@ -84,6 +98,141 @@ class InMemoryConversationStore:
 
     def append(self, conversation_id: str, messages: Sequence[BaseMessage]) -> None:
         self._conversations.setdefault(conversation_id, []).extend(messages)
+
+
+class PersistentConversationStore(ConversationStore, Protocol):
+    """A `ConversationStore` that also keeps what the chat hub replays after a restart:
+    each conversation's model and its recorded events."""
+
+    def remember_model(self, conversation_id: str, model_id: str) -> None:
+        """Record the model the conversation runs on."""
+        ...
+
+    def model_id(self, conversation_id: str) -> str | None:
+        """The recorded model, or None for a conversation the store has never seen."""
+        ...
+
+    def record_event(self, conversation_id: str, payload: bytes) -> None:
+        """Add one serialized replay event to the end of the conversation."""
+        ...
+
+    def events(self, conversation_id: str) -> list[bytes]:
+        """Every recorded event payload, in the order they were recorded."""
+        ...
+
+    def close(self) -> None:
+        """Release the store's resources."""
+        ...
+
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS conversations (
+    conversation_id TEXT PRIMARY KEY,
+    model_id TEXT
+);
+CREATE TABLE IF NOT EXISTS messages (
+    conversation_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    payload TEXT NOT NULL,
+    PRIMARY KEY (conversation_id, seq)
+);
+CREATE TABLE IF NOT EXISTS events (
+    conversation_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    payload BLOB NOT NULL,
+    PRIMARY KEY (conversation_id, seq)
+);
+"""
+
+
+class SqliteConversationStore:
+    """A `PersistentConversationStore` in one SQLite file, so conversations survive a
+    process (or container) restart.
+
+    Messages are stored as langchain's serialized dicts (`message_to_dict`), events as the
+    opaque serialized bytes the caller records. One connection behind one lock, one
+    transaction per append — the deployed agent is a single container, so there is a
+    single writer. The caller owns durability of the file itself (on Modal, the Volume's
+    background commits).
+    """
+
+    def __init__(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._path = path
+        self._lock = threading.Lock()
+        self._db = sqlite3.connect(path, check_same_thread=False)
+        with self._lock, self._db:
+            self._db.executescript(_SCHEMA)
+
+    @property
+    def path(self) -> Path:
+        return self._path
+
+    def history(self, conversation_id: str) -> list[BaseMessage]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT payload FROM messages WHERE conversation_id = ? ORDER BY seq",
+                (conversation_id,),
+            ).fetchall()
+        return messages_from_dict([json.loads(row[0]) for row in rows])
+
+    def append(self, conversation_id: str, messages: Sequence[BaseMessage]) -> None:
+        if not messages:
+            return
+        with self._lock, self._db:
+            seq = self._next_seq("messages", conversation_id)
+            self._db.executemany(
+                "INSERT INTO messages (conversation_id, seq, payload) VALUES (?, ?, ?)",
+                [
+                    (conversation_id, seq + offset, json.dumps(message_to_dict(message)))
+                    for offset, message in enumerate(messages)
+                ],
+            )
+
+    def remember_model(self, conversation_id: str, model_id: str) -> None:
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO conversations (conversation_id, model_id) VALUES (?, ?) "
+                "ON CONFLICT (conversation_id) DO UPDATE SET model_id = excluded.model_id",
+                (conversation_id, model_id),
+            )
+
+    def model_id(self, conversation_id: str) -> str | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT model_id FROM conversations WHERE conversation_id = ?",
+                (conversation_id,),
+            ).fetchone()
+        return None if row is None else row[0]
+
+    def record_event(self, conversation_id: str, payload: bytes) -> None:
+        with self._lock, self._db:
+            seq = self._next_seq("events", conversation_id)
+            self._db.execute(
+                "INSERT INTO events (conversation_id, seq, payload) VALUES (?, ?, ?)",
+                (conversation_id, seq, payload),
+            )
+
+    def events(self, conversation_id: str) -> list[bytes]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT payload FROM events WHERE conversation_id = ? ORDER BY seq",
+                (conversation_id,),
+            ).fetchall()
+        return [bytes(row[0]) for row in rows]
+
+    def close(self) -> None:
+        with self._lock:
+            self._db.close()
+
+    def _next_seq(self, table: str, conversation_id: str) -> int:
+        """The next `seq` for `table` (`messages` or `events`) in this conversation.
+        Call with the lock held, inside the write transaction."""
+        row = self._db.execute(
+            f"SELECT COALESCE(MAX(seq), 0) + 1 FROM {table} WHERE conversation_id = ?",
+            (conversation_id,),
+        ).fetchone()
+        return int(row[0])
 
 
 @dataclass(frozen=True)
