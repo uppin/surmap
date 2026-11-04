@@ -973,7 +973,8 @@ uv run python scripts/fleet_link_smoke.py --sim-dist examples/bevy-sitl-poc/dist
   in `fleet/link`.
 - The smoke script flew the whole sortie against a scripted fake page: 6 applied, both drones
   docked, a 6-line export.
-- The Chrome run of the smoke script is not recorded yet.
+- Chrome run after merge —
+  [`src/surmap/docs/todo/2026-11-04-fleet-browser-verification.md`](../../src/surmap/docs/todo/2026-11-04-fleet-browser-verification.md).
 
 ## The stereo rig: one camera profile
 

@@ -29,3 +29,7 @@
 - Wrap: `tests/test_sim_fleet_controller.py` (618 lines, created here) was split by subject into
   the controller (390), registry (152) and log-store (96) suites, with their shared builders in
   `tests/fleet_fakes.py`. No stack-shared file this PR touched reaches 500 lines.
+- Verification: V1 (74 fleet pytest tests, `cargo test --locked link` 18) and V3 (the wasm check)
+  passed. The developer deferred V4, the Chrome run, until after the stack merges ("please wrap
+  n3. I'll do browser testing after the stack is merged", 2026-11-04):
+  `src/surmap/docs/todo/2026-11-04-fleet-browser-verification.md`.
