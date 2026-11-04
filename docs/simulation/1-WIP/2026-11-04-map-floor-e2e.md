@@ -1,4 +1,4 @@
-# Changeset: Simulation map floor — map-floor-e2e
+# Changeset: Simulation map floor — agent end-to-end
 
 **Date**: 2026-11-04
 **Status**: 🚧 In Progress
@@ -8,57 +8,46 @@
 
 ## Summary
 
-End-to-end: agent bases a scenario on a bbox, places a building/person by lat/lon→ENU; docs and changelog.
-
-## Initial Discovery
-
-[2026-11-04-map-floor-e2e-initial-discovery.md](2026-11-04-map-floor-e2e-initial-discovery.md)
+The feature becomes discoverable and proven end to end: the scene-building subagent's
+skill teaches the map-floor flow (base first, place by GPS through `geo_to_enu`, heed the
+warnings, credit OSM), the stack PRD lives with this node, and a real agent turn on a
+real socket — scripted model, real store, fake tiles — bases a scenario on a bbox,
+converts a GPS target through the tool, places a building, and the station serves the
+manifest and the floor PNG.
 
 ## Stack Context
 
-**Stack**: simulation map floor · slug **`#map-floor`** — this PR is **5/5**
-**Branch**: `pr-5-map-floor-e2e` · **Base**: predecessor in the `#map-floor` stack (or `origin/main` for the bottom PR)
-**Kind**: Feature · behaviour-adds
-**Workflow**: preset `feature` · planned by `/plan-pr-stack` · pass-2 = failing tests
+**Stack**: `#map-floor` — **5 of 5** · **Branch**: `pr-5-map-floor-e2e` · **Base**: `pr-4-map-floor-wasm`
+**Kind**: Feature · behaviour-adds · **Workflow**: preset `feature`
 
 ### Green wave
 
-**Wave:** 3 of 3
-**Node:** n5
-**Blocks:** the nodes above it in the `#map-floor` line
+**Wave:** 3 of 3 · **Node:** n5 · **Blocks:** nothing
 
 ### Greenable independently?
 
-**no — needs n3+n4**
+**no — needs #129 + #130**: the e2e drives the real tools the agent will call.
 
 ## Inherited Dependencies — do not implement here
 
 | Symbol / module | Owned by | State during this PR's green | What this PR does |
 |---|---|---|---|
-| (see Summary) | n3 tool + n4 renderer | stub / fixture | calls it; does not implement it |
+| All floor tools and rendering | #127–#130 | implemented below | exercises them; implements none |
 
 ## Verification
 
-**Method:** V1 — agent-flow test; docs updated
-- [ ] Verification executed — result recorded
-
-## Workflow
-
-- [wf 1] ✅ 2026-11-04 `/plan-red` Plan — changeset, initial discovery · this file
-- [wf 2] ✅ 2026-11-04 `/plan-red` Red — failing tests, committed ·
-- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes ·
-- [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
-  - [ ] Verification executed — result recorded
+V1 executed: `tests/test_sim_map_floor_e2e.py` (agent turn, served manifest + PNG, OSM
+credit) plus the full Python suite and gates at the stack tip. Screenshot check remains
+outstanding in #130, recorded there.
 
 ## Prerequisites
 
-Step 2b cross-check (`src/surmap/docs/todo/`, `src/surmap/docs/code-issues/`):
+As #127. **Outcome:** none blocking.
 
-| Record | Verdict |
-|---|---|
-| `src/surmap/docs/todo/2026-11-04-texture-uv-scale-measured.md` | — unrelated: facade/roof `uv_scale`; the floor texture is untiled |
-| `src/surmap/docs/todo/2026-11-04-cmu-and-pvc-textures.md` | — unrelated: facade texture sourcing |
-| `src/surmap/docs/todo/2026-11-03-bevy-visual-checkpoints-v3-v5.md` | ℹ answered: native-still inspection is this stack's V1 visual check precedent; V3–V5 themselves stay open |
-| `src/surmap/docs/code-issues/oversized-file-demo-server.md` | — unrelated: demo server file size |
+## Workflow
 
-**Outcome:** none blocking, no restructure prerequisite.
+- [wf 1] ✅ 2026-11-04 `/plan-red` Plan — changeset, discovery and the stack PRD · this file
+- [wf 2] ✅ 2026-11-04 `/plan-red` Red — failing agent e2e · red commit
+- [wf 3] ✅ 2026-11-04 `/green` Green — skill, e2e, docs, changelog · green commit `9c8a8e0`
+- [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
+  - [ ] Verification executed — result recorded
