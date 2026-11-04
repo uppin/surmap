@@ -11,8 +11,15 @@ conversation if you made them yourself. Hand the build to a subagent instead: it
 context of its own, and this conversation keeps only the brief, its questions and its report.
 
 Load this skill whenever the person asks for a new simulation scene or a change to one. Small
-reads — `list_scenarios`, `get_scenario` to answer a question about a scene — you may make
-yourself; any edit goes to the subagent.
+reads — `list_scenarios`, `describe_scenario` (what a scene contains, item by item), or
+`get_scenario` (its raw manifest) to answer a question about a scene — you may make yourself; any
+edit goes to the subagent.
+
+**A scene can change without you.** The person can import a bundle into the simulation from the
+chat page, which saves it as the scenario's next version. An edit made on the version you last
+saw is then refused (`ABORTED`, "… is at vN but you last saw vM …") and nothing is saved:
+`describe_scenario` the scene to learn what it holds now, then brief (or message) the subagent
+with that, never with what you remembered.
 
 ## 1. Write the brief
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChatPage } from "./ChatPage";
 import { createAgentTransport, createConnectChatPort } from "./adapters/connect-chat";
-import { defaultServerUrl, sessionInterceptor, signIn as signInWithCode } from "./adapters/session";
+import { defaultServerUrl, sessionInterceptor, signIn as signInWithCode, storedToken } from "./adapters/session";
 import type { ChatPort } from "./ports";
 
 export interface AppProps {
@@ -39,7 +39,7 @@ export default function App(props: AppProps): ReactNode {
   const port = useMemo(
     () =>
       props.port ??
-      createConnectChatPort(createAgentTransport(serverUrl, [sessionInterceptor()]), serverUrl),
+      createConnectChatPort(createAgentTransport(serverUrl, [sessionInterceptor()]), serverUrl, storedToken),
     [props.port, serverUrl],
   );
   if (!signedIn) return null;

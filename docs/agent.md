@@ -960,6 +960,19 @@ cd web/agent-chat && yarn local-install && yarn dev   # http://localhost:5173
   the Jobs panel moves below it. Later edits to that scenario bump the
   version and reload the iframe. No creation, no pane. Derivation:
   `src/view-model/simulation.ts`; component: `src/components/SimulationPane.tsx`.
+- **Export / Import.** The pane's **Export** downloads the scenario as
+  `<id>.surmap-sim.zip` from `GET /sim/export/<id>.zip`: its latest manifest plus every
+  library asset it references (files, SHA-256s, licence records —
+  `surmap.simulation.scenario_bundle`). **Import** posts a picked bundle to
+  `POST /sim/import?into=<id>`, which stores it as that scenario's next version (without
+  `into`, as a new scenario); the pane shows the version it became and the iframe reloads, and
+  a refusal (bad zip, hash mismatch, path outside the library, refused licence, a `library/…`
+  file neither the bundle nor the station holds) shows in the pane. Request bodies are capped
+  at 4 MB (`surmap.rpc.http_limits`), so a larger bundle is refused with 413. The agent is not
+  told: its simulation tools remember the version they last showed it, and an edit on an older
+  version is `ABORTED` until it reads the scene again with `describe_scenario` (every element,
+  model, fire, building fire and district with kind, detail, position and behaviour flag, plus
+  the weather) or `get_scenario`.
 - **Subagent messages.** A `subagent_message` is a dashed card headed
   `Subagent sa-1 · scene-builder` with the message as Markdown, mid-turn or opening a turn.
 - **Previews.** A tool image is drawn inline from its bytes; an object

@@ -17,6 +17,8 @@ interface FakePortOptions {
   datasets?: import("@/ports").DatasetView[];
   /** The SAM station's status, or `null` when the server has none (the default). */
   station?: StationView | null;
+  /** What importing a simulation bundle answers; rejects with this message when a string. */
+  imported?: import("@/view-model/simulation").SimulationView | string;
 }
 
 /** A stream with no events that ends when `signal` aborts, as a watch stream does with no job ending. */
@@ -31,6 +33,22 @@ function openUntilAborted(signal: AbortSignal): AsyncIterable<TurnEvent> {
   };
 }
 
+/** A turn in which the agent creates the scenario `id` at version 1. */
+function aSimulationCreated(id: string, name: string): TurnEvent[] {
+  const created = JSON.stringify({ scenario: { id, name, version: 1, credits: [], url: `/sim/?scenario=${id}` } });
+  return aConversation("conv-9")
+    .userMessage("Build it")
+    .toolStarted("call-1", "create_scenario")
+    .toolSucceeded("call-1", { resultJson: created })
+    .textDelta("Built it.")
+    .turnFinished("stop")
+    .build();
+}
+
+function aBundle(name: string): File {
+  return new File([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], name, { type: "application/zip" });
+}
+
 /** A ChatPort that records what the page asked of it. */
 function fakePort(options: FakePortOptions = {}) {
   const asked = {
@@ -38,6 +56,7 @@ function fakePort(options: FakePortOptions = {}) {
     watch: [] as string[],
     getConversation: [] as string[],
     station: [] as string[],
+    importSimulation: [] as { name: string; into: string | null }[],
   };
   let station = options.station ?? null;
   const port: ChatPort = {
@@ -77,6 +96,12 @@ function fakePort(options: FakePortOptions = {}) {
       asked.station.push("stop");
       station = aStation({ state: "off" });
       return station;
+    },
+    async importSimulation(bundle, into) {
+      asked.importSimulation.push({ name: bundle.name, into });
+      if (typeof options.imported === "string") throw new Error(options.imported);
+      if (options.imported === undefined) throw new Error("no import expected");
+      return options.imported;
     },
     async getMapScene() {
       return {
@@ -269,6 +294,40 @@ describe("chat page", () => {
     expect(screen.getByRole("log", { name: "Conversation" })).toHaveTextContent("Built it.");
     expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Jobs" })).toBeInTheDocument();
+  });
+
+  it("imports a bundle into the pane's simulation and shows the version it became", async () => {
+    const { port, asked } = fakePort({
+      turn: aSimulationCreated("downtown-blaze", "Downtown blaze"),
+      imported: { id: "downtown-blaze", name: "Downtown blaze", version: 2, url: "/sim/?scenario=downtown-blaze", credits: [] },
+    });
+    render(<App port={port} />);
+    const user = userEvent.setup();
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "Build a downtown blaze");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    const pane = await screen.findByRole("region", { name: "Simulation" });
+
+    await user.upload(screen.getByLabelText("Import simulation"), aBundle("flooded.surmap-sim.zip"));
+
+    await waitFor(() => expect(pane).toHaveTextContent("v2"));
+    expect(asked.importSimulation).toEqual([{ name: "flooded.surmap-sim.zip", into: "downtown-blaze" }]);
+  });
+
+  it("says why an import was refused and keeps the simulation it had", async () => {
+    const { port } = fakePort({
+      turn: aSimulationCreated("downtown-blaze", "Downtown blaze"),
+      imported: "not a SurMap scenario bundle",
+    });
+    render(<App port={port} />);
+    const user = userEvent.setup();
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "Build a downtown blaze");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    const pane = await screen.findByRole("region", { name: "Simulation" });
+
+    await user.upload(screen.getByLabelText("Import simulation"), aBundle("notes.txt"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("not a SurMap scenario bundle");
+    expect(pane).toHaveTextContent("v1");
   });
 
   it("shows no simulation pane when the agent created no simulation", async () => {
