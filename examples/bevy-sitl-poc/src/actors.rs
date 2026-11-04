@@ -9,26 +9,18 @@ use std::f32::consts::{PI, TAU};
 use bevy::asset::io::Reader;
 use bevy::asset::{Asset, AssetLoader, LoadContext};
 use bevy::math::{Quat, Vec2, Vec3};
-use bevy::animation::graph::{AnimationGraph, AnimationGraphHandle, AnimationNodeIndex};
-use bevy::animation::{AnimationClip, AnimationPlayer};
-use bevy::gltf::GltfAssetLabel;
 use bevy::prelude::{
-    AssetServer, Assets, Children, Color, Commands, Component, Cuboid, Entity, Handle, Mesh, Mesh3d, MeshMaterial3d,
-    Name, On, Query, Res, ResMut, Resource, StandardMaterial, Transform, With, Without,
+    Assets, Color, Commands, Component, Cuboid, Entity, Handle, Mesh, Mesh3d, MeshMaterial3d, Name, Query, Res,
+    ResMut, Resource, StandardMaterial, Transform, With, Without,
 };
-use bevy::scene::{SceneInstanceReady, SceneRoot};
 use bevy::reflect::TypePath;
 use serde::Deserialize;
 
 use crate::behaviour::{Runner, Tree, World, TICK_HZ};
-use crate::building::BuildingClock;
-use crate::building_fire::BuildingFires;
-use crate::fire::FireSpec;
-use crate::scene_manifest::Weather;
-use crate::wildfire::{SimClock, Wildfire};
+use crate::wildfire::SimClock;
 use crate::wind::WindModel;
 use crate::wire::GroundTruthObject;
-use crate::world::{enu, GroundTruth};
+use crate::world::enu;
 
 /// Seconds of simulation time per tick.
 const DT: f32 = 1.0 / TICK_HZ;
@@ -44,6 +36,12 @@ const CALM: WindModel = WindModel {
     speed_m_s: 0.0,
     gust_m_s: 0.0,
 };
+
+mod model;
+mod tick;
+
+pub use model::{attach_bodies, pose_figures, FallbackBody, FigureCoat};
+pub use tick::{tick_behaviours, wind_runner, Behaviour};
 
 /// The figure's gait and turn (`assets/behaviour/person.figure.json`).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -155,6 +153,12 @@ pub fn bevy_yaw(heading: Vec2) -> f32 {
     (-heading.x).atan2(heading.y)
 }
 
+/// The ENU heading (degrees counter-clockwise from east) of a Bevy yaw about +Y: the inverse of
+/// `bevy_yaw`.
+pub fn enu_yaw_deg(bevy: f32) -> f32 {
+    bevy.cos().atan2(-bevy.sin()).to_degrees()
+}
+
 /// The vertical bob of a figure at `now_s`: one bob per step, `bob_m` high at the top of each.
 /// Steps per second scale with speed against the reference speed; standing still never bobs.
 pub fn bob(def: &FigureDef, speed_m_s: f32, phase: f32, now_s: f32) -> f32 {
@@ -201,6 +205,10 @@ pub struct Body {
     pub id: String,
     pub enu: Vec3,
     pub action: Option<String>,
+    /// What the body is: `person`, or a vehicle's class (`car`, `bus`, …).
+    pub kind: String,
+    /// The way it faces, ENU degrees counter-clockwise from east.
+    pub yaw_deg: f32,
 }
 
 /// One `object_tracks.jsonl` line (bevy-simulation.md § *Presets, ground truth and stills*): the
@@ -215,6 +223,8 @@ pub fn track_line(t_ns: u64, wind: Vec2, bodies: &[Body]) -> String {
                 "id": body.id,
                 "enu": [body.enu.x, body.enu.y, body.enu.z],
                 "action": body.action,
+                "kind": body.kind,
+                "yaw_deg": body.yaw_deg,
             })
         })
         .collect();
@@ -304,32 +314,10 @@ impl Figure {
             id: self.id.clone(),
             enu: Vec3::new(runner.position.x, runner.position.y, self.ground_z),
             action: runner.action().map(str::to_owned),
+            kind: "person".to_owned(),
+            yaw_deg: enu_yaw_deg(self.turn.to),
         })
     }
-}
-
-/// The scenario's wind tree and the tick count: tick `n` runs at `n / TICK_HZ` seconds.
-#[derive(Resource, Default)]
-pub struct Behaviour {
-    wind: Option<Runner>,
-    ticks: u64,
-}
-
-impl Behaviour {
-    pub fn new(wind: Option<Runner>) -> Self {
-        Self { wind, ticks: 0 }
-    }
-}
-
-/// The scenario's wind tree, when its weather has one; it starts from the weather's wind.
-pub fn wind_runner(weather: Option<&Weather>) -> Option<Runner> {
-    let weather = weather?;
-    let tree = weather.wind.behaviour.clone()?;
-    Some(Runner::new(
-        tree,
-        Vec2::ZERO,
-        WindModel::from(&weather.wind),
-    ))
 }
 
 /// The figure's gait and turn, loaded from `behaviour/person.figure.json`.
@@ -363,221 +351,6 @@ impl AssetLoader for FigureLoader {
 
     fn extensions(&self) -> &[&str] {
         &["figure.json"]
-    }
-}
-
-fn tick_time(ticks: u64) -> f32 {
-    ticks as f32 * DT
-}
-
-/// Ticks every tree up to the simulation's moment, in order, then moves the figures. It runs
-/// before the wind is read, so the vegetation, the fire and the particles see this tick's wind.
-pub fn tick_behaviours(
-    clock: SimClock,
-    look: Option<Res<FigureLook>>,
-    looks: Res<Assets<FigureAsset>>,
-    scene: Option<ResMut<Wildfire>>,
-    buildings: BuildingClock,
-    mut behaviour: ResMut<Behaviour>,
-    mut figures: Query<&mut Figure>,
-) {
-    let (Some(look), Some(mut scene)) = (look, scene) else {
-        return;
-    };
-    // The ticks of buildings still being raised would run without their fire: wait for them.
-    if buildings.raising.is_some() {
-        return;
-    }
-    let Some(FigureAsset(gait)) = looks.get(&look.0) else {
-        return;
-    };
-    let now = clock.now();
-    let mut fires = buildings.blaze.map(|blaze| blaze.map_unchanged(|b| &mut b.fires));
-    while tick_time(behaviour.ticks) <= now + CLOCK_SLACK_S {
-        let t_s = tick_time(behaviour.ticks);
-        tick_once(
-            t_s,
-            &mut behaviour,
-            &mut scene,
-            fires.as_deref_mut(),
-            &mut figures,
-            gait.yaw_ease_s,
-        );
-        behaviour.ticks += 1;
-    }
-}
-
-fn tick_once(
-    t_s: f32,
-    behaviour: &mut Behaviour,
-    scene: &mut Wildfire,
-    buildings: Option<&mut BuildingFires>,
-    figures: &mut Query<&mut Figure>,
-    yaw_ease_s: f32,
-) {
-    let fires: Vec<FireSpec> = scene.fire_specs();
-    if let Some(wind) = behaviour.wind.as_mut() {
-        let current = wind.wind;
-        wind.tick(
-            &World {
-                t_s,
-                fires: &fires,
-                burning_areas: &[],
-                wind: &current,
-                objects: &[],
-            },
-            DT,
-        );
-        scene.wind = wind.wind;
-    }
-    let wind = scene.wind;
-    // Buildings alight at this tick, for people to flee from.
-    let burning_areas: Vec<Vec<Vec2>> = buildings.map_or_else(Vec::new, |buildings| {
-        buildings.step(t_s, DT, wind.velocity_enu(t_s), &fires);
-        buildings.burning_footprints()
-    });
-    let objects: Vec<(String, Vec2)> = figures
-        .iter()
-        .map(|figure| (figure.id.clone(), figure.position()))
-        .collect();
-    let world = World {
-        t_s,
-        fires: &fires,
-        burning_areas: &burning_areas,
-        wind: &wind,
-        objects: &objects,
-    };
-    for mut figure in figures.iter_mut() {
-        figure.step(&world, yaw_ease_s);
-    }
-}
-
-/// The capsule body and head a figure is built with; dropped once it wears a model.
-#[derive(Component)]
-pub struct FallbackBody;
-
-/// The person's coat material, for a model that wears it (`coat_tint`).
-#[derive(Component)]
-pub struct FigureCoat(pub Handle<StandardMaterial>);
-
-/// A figure whose body (model or capsule) and ground-truth box are settled.
-#[derive(Component)]
-pub struct Bodied;
-
-/// A figure's model child: the figure it belongs to and the glTF it came from.
-#[derive(Component)]
-pub struct FigureBody {
-    figure: Entity,
-    glb: String,
-    coat_tint: bool,
-}
-
-/// A figure whose model has spawned: the player posing it, its clip node and the clip.
-#[derive(Component)]
-pub struct FigureRig {
-    player: Entity,
-    node: AnimationNodeIndex,
-    clip: Handle<AnimationClip>,
-}
-
-/// Once the figure look has loaded: every survivor's `person` ground-truth box, and the
-/// humanoid model (if the look declares one) in place of the capsule.
-pub fn attach_bodies(
-    mut commands: Commands,
-    look: Option<Res<FigureLook>>,
-    looks: Res<Assets<FigureAsset>>,
-    assets: Res<AssetServer>,
-    mut truth: ResMut<GroundTruth>,
-    figures: Query<(Entity, &Figure, &Children), Without<Bodied>>,
-    fallback: Query<(), With<FallbackBody>>,
-) {
-    let Some(FigureAsset(def)) = look.and_then(|look| looks.get(&look.0)) else {
-        return;
-    };
-    for (entity, figure, children) in &figures {
-        commands.entity(entity).insert(Bodied);
-        truth.0.push(person_truth(&figure.id, figure.feet_enu(), def.body_m));
-        let Some(model) = &def.model else {
-            continue;
-        };
-        for child in children.iter().copied().filter(|child| fallback.contains(*child)) {
-            commands.entity(child).despawn();
-        }
-        let scene = assets.load(GltfAssetLabel::Scene(0).from_asset(model.glb.clone()));
-        let turned = Transform::from_rotation(Quat::from_rotation_y(model.yaw_deg.to_radians()))
-            .with_scale(Vec3::splat(model.scale));
-        let body = commands
-            .spawn((Name::new("Body"), SceneRoot(scene), turned, FigureBody { figure: entity, glb: model.glb.clone(), coat_tint: model.coat_tint }))
-            .observe(on_figure_model_ready)
-            .id();
-        commands.entity(entity).add_child(body);
-    }
-}
-
-/// A figure model's scene has spawned: give its animation player the model's first clip.
-fn on_figure_model_ready(
-    ready: On<SceneInstanceReady>,
-    mut commands: Commands,
-    bodies: Query<&FigureBody>,
-    children: Query<&Children>,
-    players: Query<(), With<AnimationPlayer>>,
-    coats: Query<&FigureCoat>,
-    mut looks: Query<&mut MeshMaterial3d<StandardMaterial>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    assets: Res<AssetServer>,
-    mut graphs: ResMut<Assets<AnimationGraph>>,
-) {
-    let Ok(body) = bodies.get(ready.entity) else {
-        return;
-    };
-    let coat = coats.get(body.figure).ok().and_then(|coat| materials.get(&coat.0)).map(|coat| coat.base_color);
-    if let (true, Some(coat)) = (body.coat_tint, coat) {
-        for part in children.iter_descendants(ready.entity) {
-            let Ok(mut look) = looks.get_mut(part) else { continue };
-            let Some(mut worn) = materials.get(&look.0).cloned() else { continue };
-            let (have, tint) = (worn.base_color.to_linear(), coat.to_linear());
-            worn.base_color = Color::linear_rgba(have.red * tint.red, have.green * tint.green, have.blue * tint.blue, have.alpha);
-            look.0 = materials.add(worn);
-        }
-    }
-    let Some(player) = children.iter_descendants(ready.entity).find(|e| players.contains(*e)) else {
-        return;
-    };
-    let clip: Handle<AnimationClip> = assets.load(GltfAssetLabel::Animation(0).from_asset(body.glb.clone()));
-    let (graph, node) = AnimationGraph::from_clip(clip.clone());
-    commands.entity(player).insert(AnimationGraphHandle(graphs.add(graph)));
-    commands.entity(body.figure).insert(FigureRig { player, node, clip });
-}
-
-/// Each model's pose at the simulation's moment: its clip held at the rest moment standing,
-/// played in step walking. Seeking on the sim clock keeps a recording repeatable.
-pub fn pose_figures(
-    clock: SimClock,
-    look: Option<Res<FigureLook>>,
-    looks: Res<Assets<FigureAsset>>,
-    clips: Res<Assets<AnimationClip>>,
-    figures: Query<(&Figure, &FigureRig)>,
-    mut players: Query<&mut AnimationPlayer>,
-) {
-    let Some(FigureAsset(def)) = look.and_then(|look| looks.get(&look.0)) else {
-        return;
-    };
-    let Some(model) = &def.model else {
-        return;
-    };
-    let now = clock.now();
-    for (figure, rig) in &figures {
-        let Ok(mut player) = players.get_mut(rig.player) else {
-            continue;
-        };
-        let duration = clips.get(&rig.clip).map_or(0.0, AnimationClip::duration);
-        let at = clip_time(model, figure.speed_m_s, def.reference_speed_m_s, figure.phase, now, duration);
-        if player.animation(rig.node).is_none() {
-            player.play(rig.node).pause();
-        }
-        if let Some(active) = player.animation_mut(rig.node) {
-            active.seek_to(at);
-        }
     }
 }
 

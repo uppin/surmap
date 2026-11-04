@@ -2,6 +2,7 @@
 
 import math
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -59,6 +60,20 @@ def a_car_ahead(metres: float = 10.0, obj_id: str = "car-1") -> GroundTruthBox:
 
 def a_person_ahead(metres: float = 8.0, east: float = 0.0) -> GroundTruthBox:
     return a_box("person", east, metres, (0.6, 0.4, 1.8), "survivor-1")
+
+
+class Drive(NamedTuple):
+    """One track-only vehicle (it has no ground-truth box): where, what and which way."""
+
+    tracks: dict[str, Vec3]
+    kinds: dict[str, str]
+    yaw_deg: dict[str, float]
+
+
+def a_drive(kind: str, east: float, north: float, heading_deg: float) -> Drive:
+    return Drive(
+        {f"{kind}-1": Vec3(east, north, 0.0)}, {f"{kind}-1": kind}, {f"{kind}-1": heading_deg}
+    )
 
 
 def a_detection(label: str, box: tuple[float, float, float, float], frame_id: int = 1) -> Detection:
@@ -257,3 +272,120 @@ def test_finding_a_person_too_small_to_be_expected_is_not_a_false_positive() -> 
 
     # Then that is neither a hit nor a false positive
     assert (score.hit_ids, score.false_positives) == (frozenset(), ())
+
+
+def expected_vehicle(kind: str, heading_deg: float, metres: float = 15.0) -> ExpectedObject:
+    drive = a_drive(kind, 0.0, metres, heading_deg)
+    (found,) = visible_objects(
+        (),
+        a_north_facing_rig(),
+        a_calibration(),
+        tracks=drive.tracks,
+        kinds=drive.kinds,
+        yaw_deg=drive.yaw_deg,
+    )
+    return found
+
+
+def test_a_bus_that_only_has_a_track_is_expected_where_the_track_puts_it() -> None:
+    bus = expected_vehicle("bus", heading_deg=90.0)
+
+    x0, _, x1, _ = bus.box_xyxy
+    assert (bus.id, bus.kind) == ("bus-1", "bus")
+    assert x0 < 320.0 < x1
+
+
+def test_a_vehicle_driving_across_the_view_shows_its_side_wider_than_driving_away() -> None:
+    away = expected_vehicle("bus", heading_deg=90.0)
+    across = expected_vehicle("bus", heading_deg=0.0)
+
+    def width(obj: ExpectedObject) -> float:
+        return obj.box_xyxy[2] - obj.box_xyxy[0]
+
+    assert width(across) > 2.0 * width(away)
+
+
+def test_a_track_of_a_kind_with_no_footprint_is_not_expected() -> None:
+    assert (
+        visible_objects(
+            (),
+            a_north_facing_rig(),
+            a_calibration(),
+            tracks={"x": Vec3(0.0, 12.0, 0.0)},
+            kinds={"x": "balloon"},
+            yaw_deg={"x": 0.0},
+        )
+        == ()
+    )
+
+
+def test_a_bus_is_found_only_by_a_bus_label_but_a_car_by_any_vehicle_label() -> None:
+    bus, car = expected_vehicle("bus", 90.0), expected(a_car_ahead())
+
+    as_truck = score_frame((bus,), (a_detection("truck", bus.box_xyxy),))
+    as_bus = score_frame((bus,), (a_detection("bus", bus.box_xyxy),))
+    car_as_bus = score_frame((car,), (a_detection("bus", car.box_xyxy),))
+
+    assert (as_truck.hit_ids, as_bus.hit_ids, car_as_bus.hit_ids) == (
+        frozenset(),
+        frozenset({"bus-1"}),
+        frozenset({"car-1"}),
+    )
+
+
+def test_a_train_is_found_only_by_a_train_label() -> None:
+    train = expected_vehicle("train", 90.0, metres=30.0)
+
+    as_truck = score_frame((train,), (a_detection("truck", train.box_xyxy),))
+    as_train = score_frame((train,), (a_detection("train", train.box_xyxy),))
+
+    assert (as_truck.hit_ids, as_train.hit_ids) == (frozenset(), frozenset({"train-1"}))
+
+
+def test_a_vehicle_called_another_vehicle_is_a_confusion_not_a_false_positive() -> None:
+    bus = expected_vehicle("bus", 90.0)
+
+    score = score_frame((bus,), (a_detection("truck", bus.box_xyxy),))
+
+    assert (score.hit_ids, score.false_positives, score.as_another_vehicle) == (
+        frozenset(),
+        (),
+        frozenset({"bus-1"}),
+    )
+
+
+def test_a_person_label_on_a_bus_is_a_false_positive_not_a_confusion() -> None:
+    bus = expected_vehicle("bus", 90.0)
+
+    score = score_frame((bus,), (a_detection("person", bus.box_xyxy),))
+
+    assert (score.as_another_vehicle, len(score.false_positives)) == (frozenset(), 1)
+
+
+def test_a_capture_scores_track_only_vehicles_per_kind_with_their_confusions() -> None:
+    # Given a bus and a train that only the tracks place, in two frames
+    drive_bus, drive_train = a_drive("bus", 0.0, 15.0, 90.0), a_drive("train", 6.0, 40.0, 90.0)
+    tracks = {**drive_bus.tracks, **drive_train.tracks}
+    kinds = {**drive_bus.kinds, **drive_train.kinds}
+    yaw = {**drive_bus.yaw_deg, **drive_train.yaw_deg}
+    frames = (a_frame(1, a_north_facing_rig()), a_frame(2, a_north_facing_rig()))
+    capture = BevyCapture(
+        calibration=a_calibration(),
+        objects=(),
+        frames=frames,
+        object_tracks={f.pair.t_ns: tracks for f in frames},
+        object_kinds=kinds,
+        object_yaw_deg={f.pair.t_ns: yaw for f in frames},
+    )
+    bus = expected_vehicle("bus", 90.0)
+    detections = {
+        1: (a_detection("bus", bus.box_xyxy, frame_id=1),),
+        2: (a_detection("truck", bus.box_xyxy, frame_id=2),),
+    }
+
+    report = score_capture(capture, detections)
+
+    assert (report.kinds["bus"].visible, report.kinds["bus"].found) == (2, 1)
+    assert report.kinds["bus"].as_another_vehicle == 1
+    assert report.kinds["train"].visible == 2
+    assert report.kinds["car"].as_another_vehicle == 0

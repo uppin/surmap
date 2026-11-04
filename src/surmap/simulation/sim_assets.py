@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import urllib.parse
 import urllib.request
 import zipfile
 from collections.abc import Callable
@@ -76,9 +77,17 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+# Hosts that refuse a download unless it names the site that serves the file as its referer.
+REFERERS = {"static.poly.pizza": "https://poly.pizza/"}
+
+
 def _default_opener(url: str) -> bytes:
     # ambientCG refuses urllib's default user agent.
-    request = urllib.request.Request(url, headers={"User-Agent": "surmap-sim/1"})
+    headers = {"User-Agent": "surmap-sim/1"}
+    referer = REFERERS.get(urllib.parse.urlsplit(url).hostname or "")
+    if referer is not None:
+        headers["Referer"] = referer
+    request = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(request) as response:  # pinned in the lock file
         data: bytes = response.read()
         return data

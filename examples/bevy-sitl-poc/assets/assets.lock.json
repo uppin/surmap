@@ -709,6 +709,42 @@
       "license": "CC-BY-4.0",
       "source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/8f492390ddc7a2ae221a1369ef560589cf8c70fb/Models/CesiumMan",
       "attribution": "Cesium Man by Cesium (2017), CC-BY-4.0, via the Khronos glTF-Sample-Assets; the Cesium logo is a Cesium mark"
+    },
+    {
+      "path": "models/quaternius/car.glb",
+      "url": "https://static.poly.pizza/59a67a6c-490e-472e-bae6-5a4d2541f1c7.glb",
+      "sha256": "bf00f2f0386a25aa310abc0424d22586e46a59ee6c737e6b375c97c9f01bd462",
+      "license": "CC0-1.0",
+      "source": "https://poly.pizza/m/Cz6yDaUcM9"
+    },
+    {
+      "path": "models/quaternius/truck.glb",
+      "url": "https://static.poly.pizza/f4b28921-b45e-4653-b54c-c3976e4ea0fe.glb",
+      "sha256": "a5d107b5b06f8ca2d8d7e66ae6309f2e1a25cac577c5db8ebb661b3f0ca5ed8f",
+      "license": "CC0-1.0",
+      "source": "https://poly.pizza/m/cXw6oiFtZ8"
+    },
+    {
+      "path": "models/quaternius/locomotive.glb",
+      "url": "https://static.poly.pizza/83605753-0012-4887-a821-b2988c0c45a4.glb",
+      "sha256": "4304988a85b45978bca630298eef8d1098b92fc4fc865d3880d46b9f92177d52",
+      "license": "CC0-1.0",
+      "source": "https://poly.pizza/m/WY84FHug9s"
+    },
+    {
+      "path": "models/quaternius/wagon.glb",
+      "url": "https://static.poly.pizza/8d7a23a6-f4b6-4828-9b3a-39ed98511a66.glb",
+      "sha256": "21d78205f63d7dbaf95dd9f5f84e9455cc46ea695e590e77e1888d7c8b91caa3",
+      "license": "CC0-1.0",
+      "source": "https://poly.pizza/m/JCwr52pnuO"
+    },
+    {
+      "path": "models/poly-pizza/bus.glb",
+      "url": "https://static.poly.pizza/635a02b7-4260-42a5-bd52-987511d6e3e0.glb",
+      "sha256": "594f1e515bd1882467f50bbc3588df5009338e2ec8bbc31eee36c85774207a76",
+      "license": "CC-BY-3.0",
+      "source": "https://poly.pizza/m/4CPpvEmrMoF",
+      "attribution": "\"Bus\" by Poly by Google (https://poly.pizza/m/4CPpvEmrMoF), CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)"
     }
   ]
 }

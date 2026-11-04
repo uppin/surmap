@@ -113,7 +113,7 @@ fn the_figure_numbers_come_from_json_and_nonsense_is_refused_by_name() {
 }
 
 #[test]
-fn the_track_line_carries_the_frame_time_the_wind_and_each_moving_body_by_id() {
+fn the_track_line_carries_the_frame_time_the_wind_and_each_moving_body_by_id_with_its_kind_and_heading() {
     let line = track_line(
         1_000_000_000,
         Vec2::new(6.0, 0.5),
@@ -122,11 +122,15 @@ fn the_track_line_carries_the_frame_time_the_wind_and_each_moving_body_by_id() {
                 id: "evacuee-2".to_owned(),
                 enu: Vec3::new(12.0, 61.0, 0.0),
                 action: Some("flee_from_fire".to_owned()),
+                kind: "person".to_owned(),
+                yaw_deg: 90.0,
             },
             Body {
                 id: "evacuee-1".to_owned(),
                 enu: Vec3::new(1.0, 2.0, 0.0),
                 action: None,
+                kind: "bus".to_owned(),
+                yaw_deg: -45.0,
             },
         ],
     );
@@ -138,8 +142,8 @@ fn the_track_line_carries_the_frame_time_the_wind_and_each_moving_body_by_id() {
             "t_ns": 1_000_000_000u64,
             "wind_enu": [6.0, 0.5],
             "objects": [
-                {"id": "evacuee-1", "enu": [1.0, 2.0, 0.0], "action": null},
-                {"id": "evacuee-2", "enu": [12.0, 61.0, 0.0], "action": "flee_from_fire"}
+                {"id": "evacuee-1", "enu": [1.0, 2.0, 0.0], "action": null, "kind": "bus", "yaw_deg": -45.0},
+                {"id": "evacuee-2", "enu": [12.0, 61.0, 0.0], "action": "flee_from_fire", "kind": "person", "yaw_deg": 90.0}
             ]
         })
     );
@@ -169,4 +173,17 @@ fn a_figure_turns_to_face_the_way_it_walks() {
         "{:?}",
         figure.turn
     );
+}
+
+#[test]
+fn a_walking_figure_is_tracked_as_a_person_facing_the_way_it_walks() {
+    let north: Tree = serde_json::from_str(r#"{"node": "move_to", "enu": [0, 10], "speed_m_s": 2}"#).expect("tree");
+    let mut figure = Figure::new("evacuee-1", [0.0, 0.0, 0.0], Some(north));
+    let calm = WindModel { from_deg: 0.0, speed_m_s: 0.0, gust_m_s: 0.0 };
+    let world = World { t_s: 0.0, fires: &[], burning_areas: &[], wind: &calm, objects: &[] };
+
+    figure.step(&world, 0.3);
+
+    let body = figure.body().expect("a moving body");
+    assert_eq!((body.kind.as_str(), body.yaw_deg.round()), ("person", 90.0));
 }

@@ -17,17 +17,18 @@ use bevy_rapier3d::prelude::*;
 
 use std::collections::BTreeMap;
 
-use crate::actors::{self, Figure};
+use crate::actors::{self, bevy_yaw, Figure};
 use crate::building;
 use crate::scene_manifest::{
     BoxElement, Building, CollapsedBuilding, DistrictDef, Element, Environment, ManifestError, ModelInstance,
-    PbrTextureSet, Person, SceneManifest,
+    PbrTextureSet, Person, SceneManifest, Vehicle,
 };
 use crate::rig::{ProfileAsset, RigSource};
 use crate::shots::RunMode;
 use crate::sky::SkySource;
 use crate::textures::{load_texture_set, tiled_material, RoughnessPacking, TextureSetHandles};
 use crate::vegetation::{plan_stand, PendingStands};
+use crate::vehicle::scene::{VehicleActor, VehicleClasses};
 use crate::wildfire::Wildfire;
 use crate::wire::GroundTruthObject;
 
@@ -91,7 +92,9 @@ pub struct PendingModel {
 
 pub fn start_loading(mut commands: Commands, assets: Res<AssetServer>, mode: Res<RunMode>) {
     let path = crate::shots::manifest_path(mode.scenario.as_deref());
-    commands.insert_resource(SceneState { manifest: assets.load(path), built: false, failed: None, pending: Vec::new(), buildings_ready: true });
+    let classes = VehicleClasses::load(&assets);
+    commands.insert_resource(SceneState { manifest: assets.load(path), built: false, failed: None, pending: classes.handles().collect(), buildings_ready: true });
+    commands.insert_resource(classes);
     commands.init_resource::<GroundTruth>();
 }
 
@@ -265,6 +268,7 @@ impl Builder<'_, '_, '_> {
             Element::Building(_) => {}
             Element::Person(e) => self.person(e),
             Element::Vegetation(_) => {}
+            Element::Vehicle(e) => self.vehicle(e),
         }
     }
 
@@ -374,6 +378,14 @@ impl Builder<'_, '_, '_> {
 
     /// A survivor: a figure whose root stands on the ground, carrying its behaviour tree (if any),
     /// with the capsule body and the head as its children.
+    /// A vehicle's root at its start pose; its class glTF is attached once its class file loads.
+    fn vehicle(&mut self, e: &Vehicle) {
+        let [x, y, z] = e.position_enu;
+        let turn = Quat::from_rotation_y(bevy_yaw(Vec2::from_angle(e.yaw_deg.to_radians())));
+        self.commands
+            .spawn((VehicleActor::new(e), Visibility::default(), Transform::from_translation(enu(x, y, z)).with_rotation(turn)));
+    }
+
     fn person(&mut self, e: &Person) {
         let coat = self.materials.add(self.library.material(&e.coat, Vec2::ONE, None, None));
         let skin = self.materials.add(self.library.material(&e.skin, Vec2::ONE, None, None));

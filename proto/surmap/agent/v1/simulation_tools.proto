@@ -310,6 +310,20 @@ message VegetationElement {
   int64 seed = 7;
 }
 
+message VehicleElement {
+  string id = 1;
+  // "car", "bus", "truck" or "train": picks the class's glTF, size and driving limits.
+  string vehicle_class = 2;
+  // Where it starts, on the ground.
+  EnuPoint position = 3;
+  // The way it faces at the start, degrees counter-clockwise from east.
+  optional double yaw_deg = 4;
+  // Trains only: carriages behind the locomotive.
+  uint32 cars = 5;
+  // Where it drives, as a behaviour tree (JSON, the person trees' nodes); parked when empty.
+  string behaviour_json = 6;
+}
+
 message AddElementRequest {
   string scenario_id = 1;
   oneof element {
@@ -318,6 +332,7 @@ message AddElementRequest {
     CollapsedBuildingElement collapsed_building = 4;
     PersonElement person = 5;
     VegetationElement vegetation = 6;
+    VehicleElement vehicle = 7;
   }
 }
 

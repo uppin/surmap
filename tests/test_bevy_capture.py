@@ -223,3 +223,40 @@ def test_a_grey_only_capture_has_no_colour_images(tmp_path: Path) -> None:
     capture = load_bevy_capture(tmp_path)
 
     assert capture.frames[0].left_rgb_ref is None
+
+
+def test_a_capture_carries_what_each_tracked_body_is_and_its_heading_per_frame(
+    tmp_path: Path,
+) -> None:
+    # Given a capture whose tracks hold a person and a bus
+    recorder = CaptureRecorder(tmp_path, a_calibration(), objects=(a_car(),))
+    recorder.record_pair(a_pair(1, 1_000_000_000, 0.0))
+    recorder.finish()
+    line = {
+        "t_ns": 1_000_000_000,
+        "wind_enu": [0.0, 0.0],
+        "objects": [
+            {
+                "id": "bus-1",
+                "enu": [-2.5, 10.0, 0.0],
+                "action": "follow_path",
+                "kind": "bus",
+                "yaw_deg": 90.0,
+            },
+            {
+                "id": "evacuee-1",
+                "enu": [1.0, 2.0, 0.0],
+                "action": None,
+                "kind": "person",
+                "yaw_deg": -30.0,
+            },
+        ],
+    }
+    (tmp_path / "object_tracks.jsonl").write_text(json.dumps(line) + "\n", encoding="utf-8")
+
+    # When it is loaded
+    capture = load_bevy_capture(tmp_path)
+
+    # Then each body's kind and each frame's headings come back by id
+    assert capture.object_kinds == {"bus-1": "bus", "evacuee-1": "person"}
+    assert capture.object_yaw_deg[1_000_000_000] == {"bus-1": 90.0, "evacuee-1": -30.0}

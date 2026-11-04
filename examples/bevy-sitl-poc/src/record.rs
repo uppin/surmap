@@ -15,6 +15,7 @@ use bevy::render::gpu_readback::{Readback, ReadbackComplete};
 use image::{codecs::jpeg::JpegEncoder, GrayImage, RgbImage};
 
 use crate::actors::{self, Figure};
+use crate::vehicle::scene::VehicleActor;
 use crate::building::BuildingBlaze;
 use crate::calibration::CameraProfile;
 use crate::fire;
@@ -184,6 +185,7 @@ pub fn record_frames(
     fires: Option<Res<Wildfire>>,
     blaze: Option<Res<BuildingBlaze>>,
     figures: Query<&Figure>,
+    vehicles: Query<&VehicleActor>,
     clock: Res<Time<Real>>,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -257,7 +259,8 @@ pub fn record_frames(
         rec.building_lines.push(blaze.record_line(t_ns));
     }
     let wind = fires.as_ref().map_or(Vec2::ZERO, |scene| scene.wind.velocity_enu(t_s));
-    let bodies: Vec<actors::Body> = figures.iter().filter_map(Figure::body).collect();
+    let mut bodies: Vec<actors::Body> = figures.iter().filter_map(Figure::body).collect();
+    bodies.extend(vehicles.iter().filter_map(VehicleActor::body));
     rec.track_lines.push(actors::track_line(t_ns, wind, &bodies));
     rec.frame += 1;
     rec.last_frame_at = now;
