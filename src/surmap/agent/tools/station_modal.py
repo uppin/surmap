@@ -26,6 +26,7 @@ import urllib.request
 from collections.abc import Callable
 from typing import Protocol
 
+from surmap.agent.event_log import log_event
 from surmap.agent.tools.station import (
     DEFAULT_IDLE_TIMEOUT_S,
     StationSamDetector,
@@ -137,22 +138,29 @@ class ModalStationControl:
             self._stopping = False
             self._function.autoscaler.update(scaledown_window=self._idle_timeout_s)
             url = self._health_url()
-            deadline = self._clock() + self._start_timeout_s
+            began = self._clock()
+            deadline = began + self._start_timeout_s
             while True:
                 answer = self._probe(url)
                 if answer == 200:
                     self._healthy = True
                     self._last_used = self._clock()
-                    return self.status()
+                    status = self.status()
+                    self._log("start", status, began)
+                    return status
                 if self._clock() >= deadline:
                     self._error = (
                         f"the station did not pass its health check in "
                         f"{self._start_timeout_s} s (last answer: {answer})"
                     )
+                    self._log("start", self.status(), began, error=self._error)
                     raise StationUnavailable(self._error)
                 self._sleep(self._poll_s)
 
     def stop(self) -> StationStatus:
+        return self._stop("stop")
+
+    def _stop(self, action: str) -> StationStatus:
         with self._lock:
             if self._live is not None:
                 self._live.close()
@@ -162,13 +170,15 @@ class ModalStationControl:
             self._healthy = False
             self._stopping = True
             self._function.autoscaler.update(min_containers=0, scaledown_window=STOP_SCALEDOWN_S)
-            return self.status()
+            status = self.status()
+            self._log(action, status, self._clock())
+            return status
 
     def check_idle(self) -> StationStatus:
         with self._lock:
             idle_for = self._clock() - self._last_used
             if self._healthy and idle_for >= self._idle_timeout_s:
-                return self.stop()
+                return self._stop("idle_stop")
             return self.status()
 
     def detector(self) -> VideoSamDetector:
@@ -185,6 +195,17 @@ class ModalStationControl:
 
     def _mark_used(self) -> None:
         self._last_used = self._clock()
+
+    def _log(self, action: str, status: StationStatus, began: float, error: str = "") -> None:
+        extra = {"error": error} if error else {}
+        log_event(
+            "station",
+            backend=self.backend,
+            action=action,
+            state=status.state.value,
+            duration_ms=int((self._clock() - began) * 1000),
+            **extra,
+        )
 
     def _web_url(self) -> str:
         url = self._function.get_web_url()

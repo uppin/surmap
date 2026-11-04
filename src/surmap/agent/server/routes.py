@@ -23,6 +23,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 from urllib.parse import parse_qs
 
+from surmap.agent.event_log import log_event
 from surmap.agent.server.access import (
     SESSION_PATH,
     UNAUTHENTICATED_HINT,
@@ -103,6 +104,7 @@ def agent_http_routes(
                 return HttpResponse(status=404)
             return static_file(web_dist, list(PurePosixPath(request.path).parts[1:]))
         if gate is not None and not _signed_in(gate, request):
+            log_event("auth_refused", surface="http", target=request.path)
             return HttpResponse(status=401, body=UNAUTHENTICATED_HINT.encode(), headers=_PLAIN)
         if simulation is not None:
             served = serve_simulation(simulation, request.path)
@@ -141,7 +143,9 @@ def agent_http_routes(
             code = ""
         token = gate.issue(code) if isinstance(code, str) else None
         if token is None:
+            log_event("auth_signin", result="refused")
             return HttpResponse(status=401, body=b"wrong access code", headers=_PLAIN)
+        log_event("auth_signin", result="ok")
         body = json.dumps({"token": token, "expires_in": gate.ttl_s}).encode()
         headers = {
             "content-type": "application/json",

@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 
 from langchain_core.language_models import BaseChatModel
 
+from surmap.agent.event_log import TurnLog
 from surmap.agent.llm.registry import ModelInfo
 from surmap.agent.proto import chat_pb2
 from surmap.agent.runtime.events import TurnEvent as RuntimeEvent
@@ -61,6 +62,12 @@ class Conversation:
     """The `WatchConversation` streams subscribed; `None` is queued when the hub closes."""
     idle: asyncio.Task[None] | None = None
     """The loop that starts a turn for each notice that arrives while idle."""
+    log: TurnLog | None = None
+    """Logs each turn's start, tool calls and end (`surmap.agent.event_log`)."""
+
+    def __post_init__(self) -> None:
+        if self.log is None:
+            self.log = TurnLog(self.conversation_id, self.model_id)
 
 
 class ChatHub:
@@ -234,6 +241,8 @@ def _turn_running(session: AgentSession) -> bool:
 
 def _record(conversation: Conversation, turn_id: str, event: RuntimeEvent) -> chat_pb2.TurnEvent:
     """The runtime event as the conversation's next `TurnEvent`, kept for replay."""
+    if conversation.log is not None:
+        conversation.log.observe(turn_id, event)
     proto = turn_event_to_proto(
         event,
         conversation_id=conversation.conversation_id,
@@ -246,6 +255,8 @@ def _record(conversation: Conversation, turn_id: str, event: RuntimeEvent) -> ch
 
 def _record_user_message(conversation: Conversation, turn_id: str, text: str) -> chat_pb2.TurnEvent:
     """The user's message as the conversation's next `TurnEvent`, kept for replay."""
+    if conversation.log is not None:
+        conversation.log.user_message(turn_id)
     proto = chat_pb2.TurnEvent(
         conversation_id=conversation.conversation_id,
         turn_id=turn_id,

@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import os
+import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -182,11 +184,22 @@ async def serve(config: AgentServerConfig) -> None:
         await host.stop()
 
 
+def configure_logging() -> None:
+    """INFO and above to stderr, `<time> <level> <logger> <line>`: the event log
+    (`surmap.agent.event_log`) is what `modal app logs surmap-agent | grep event=…` reads."""
+    logging.basicConfig(
+        level=logging.INFO,
+        stream=sys.stderr,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     """Parse the command line and serve until signalled; Ctrl-C stops it cleanly — `serve`
     has already stopped the host when `asyncio.run` re-raises the interrupt. The project `.env`
     fills environment gaps first (keys only; a shell export wins)."""
     load_env()
+    configure_logging()
     config = config_from_args(argv)
     try:
         asyncio.run(serve(config))
