@@ -22,6 +22,13 @@ service SurveyTools {
     option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
   }
 
+  // Lists the on-board detector models (Coral Edge TPU networks) a run can process its frames
+  // with, whether this station has each one's files, and which is the station default. Pick one
+  // by name as run_demo's or run_rtabmap's onboard_model, or pass "none" for no on-board model.
+  rpc ListOnboardModels(ListOnboardModelsRequest) returns (ListOnboardModelsResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
   // Runs a demo scene with a SAM prompt and returns when the run ends. Runs take minutes: by
   // default it detaches to a job after 30 s; follow it with wait_for_jobs.
   rpc RunDemo(RunDemoRequest) returns (RunDemoResponse) {
@@ -147,6 +154,29 @@ message ListDemosResponse {
   repeated DemoScene scenes = 1;
 }
 
+message ListOnboardModelsRequest {}
+
+// One on-board detector model a run can process its frames with.
+message OnboardModel {
+  // The name run_demo and run_rtabmap take as onboard_model, e.g. "efficientdet-lite0".
+  string name = 1;
+  // Human-readable title.
+  string title = 2;
+  // What sets it apart from the others, e.g. its speed or hit rate.
+  string note = 3;
+  // Whether this station has the model's files; a run with an unavailable model is refused.
+  bool available = 4;
+  // Whether a run with no onboard_model uses this model.
+  bool is_default = 5;
+}
+
+message ListOnboardModelsResponse {
+  // Every on-board model, in catalogue order.
+  repeated OnboardModel models = 1;
+  // The model a run with no onboard_model uses; "none" when such a run has no on-board model.
+  string default_model = 2;
+}
+
 message RunDemoRequest {
   // The scene to run: a DemoScene id from list_demos.
   string dataset = 1;
@@ -156,6 +186,9 @@ message RunDemoRequest {
   optional uint32 max_frames = 3;
   // Playback rate in frames per second; the scene's native rate when absent.
   optional double fps = 4;
+  // The on-board detector model that processes the frames: an OnboardModel name from
+  // list_onboard_models, or "none" for no on-board model; the station default when absent.
+  optional string onboard_model = 5;
 }
 
 // Where a demo run is in its life.
@@ -185,6 +218,8 @@ message RunInfo {
   uint32 objects = 5;
   // The run's state.
   Status status = 6;
+  // The on-board detector model that processed its frames; empty when it ran none.
+  string onboard_model = 7;
 }
 
 message RunDemoResponse {
@@ -196,6 +231,8 @@ message RunDemoResponse {
   uint32 objects = 3;
   // How the run ended.
   RunInfo.Status status = 4;
+  // The on-board detector model that processed its frames; empty when it ran none.
+  string onboard_model = 5;
 }
 
 message GetRunRequest {
@@ -516,6 +553,9 @@ message RunRtabmapRequest {
   optional uint32 max_frames = 2;
   // Playback rate in frames per second; the dataset's native rate when absent.
   optional double fps = 3;
+  // The on-board detector model that processes the frames: an OnboardModel name from
+  // list_onboard_models, or "none" for no on-board model; the station default when absent.
+  optional string onboard_model = 4;
 }
 
 message RunRtabmapResponse {

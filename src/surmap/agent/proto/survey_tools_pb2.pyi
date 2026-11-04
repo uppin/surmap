@@ -104,20 +104,48 @@ class ListDemosResponse(_message.Message):
     scenes: _containers.RepeatedCompositeFieldContainer[DemoScene]
     def __init__(self, scenes: _Optional[_Iterable[_Union[DemoScene, _Mapping[str, _Any]]]] = ...) -> None: ...
 
+class ListOnboardModelsRequest(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class OnboardModel(_message.Message):
+    __slots__ = ("name", "title", "note", "available", "is_default")
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    TITLE_FIELD_NUMBER: _ClassVar[int]
+    NOTE_FIELD_NUMBER: _ClassVar[int]
+    AVAILABLE_FIELD_NUMBER: _ClassVar[int]
+    IS_DEFAULT_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    title: str
+    note: str
+    available: bool
+    is_default: bool
+    def __init__(self, name: _Optional[str] = ..., title: _Optional[str] = ..., note: _Optional[str] = ..., available: bool = ..., is_default: bool = ...) -> None: ...
+
+class ListOnboardModelsResponse(_message.Message):
+    __slots__ = ("models", "default_model")
+    MODELS_FIELD_NUMBER: _ClassVar[int]
+    DEFAULT_MODEL_FIELD_NUMBER: _ClassVar[int]
+    models: _containers.RepeatedCompositeFieldContainer[OnboardModel]
+    default_model: str
+    def __init__(self, models: _Optional[_Iterable[_Union[OnboardModel, _Mapping[str, _Any]]]] = ..., default_model: _Optional[str] = ...) -> None: ...
+
 class RunDemoRequest(_message.Message):
-    __slots__ = ("dataset", "prompt", "max_frames", "fps")
+    __slots__ = ("dataset", "prompt", "max_frames", "fps", "onboard_model")
     DATASET_FIELD_NUMBER: _ClassVar[int]
     PROMPT_FIELD_NUMBER: _ClassVar[int]
     MAX_FRAMES_FIELD_NUMBER: _ClassVar[int]
     FPS_FIELD_NUMBER: _ClassVar[int]
+    ONBOARD_MODEL_FIELD_NUMBER: _ClassVar[int]
     dataset: str
     prompt: str
     max_frames: int
     fps: float
-    def __init__(self, dataset: _Optional[str] = ..., prompt: _Optional[str] = ..., max_frames: _Optional[int] = ..., fps: _Optional[float] = ...) -> None: ...
+    onboard_model: str
+    def __init__(self, dataset: _Optional[str] = ..., prompt: _Optional[str] = ..., max_frames: _Optional[int] = ..., fps: _Optional[float] = ..., onboard_model: _Optional[str] = ...) -> None: ...
 
 class RunInfo(_message.Message):
-    __slots__ = ("run_id", "dataset", "prompt", "frames", "objects", "status")
+    __slots__ = ("run_id", "dataset", "prompt", "frames", "objects", "status", "onboard_model")
     class Status(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
         __slots__ = ()
         STATUS_UNSPECIFIED: _ClassVar[RunInfo.Status]
@@ -136,25 +164,29 @@ class RunInfo(_message.Message):
     FRAMES_FIELD_NUMBER: _ClassVar[int]
     OBJECTS_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
+    ONBOARD_MODEL_FIELD_NUMBER: _ClassVar[int]
     run_id: str
     dataset: str
     prompt: str
     frames: int
     objects: int
     status: RunInfo.Status
-    def __init__(self, run_id: _Optional[str] = ..., dataset: _Optional[str] = ..., prompt: _Optional[str] = ..., frames: _Optional[int] = ..., objects: _Optional[int] = ..., status: _Optional[_Union[RunInfo.Status, str]] = ...) -> None: ...
+    onboard_model: str
+    def __init__(self, run_id: _Optional[str] = ..., dataset: _Optional[str] = ..., prompt: _Optional[str] = ..., frames: _Optional[int] = ..., objects: _Optional[int] = ..., status: _Optional[_Union[RunInfo.Status, str]] = ..., onboard_model: _Optional[str] = ...) -> None: ...
 
 class RunDemoResponse(_message.Message):
-    __slots__ = ("run_id", "frames", "objects", "status")
+    __slots__ = ("run_id", "frames", "objects", "status", "onboard_model")
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
     FRAMES_FIELD_NUMBER: _ClassVar[int]
     OBJECTS_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
+    ONBOARD_MODEL_FIELD_NUMBER: _ClassVar[int]
     run_id: str
     frames: int
     objects: int
     status: RunInfo.Status
-    def __init__(self, run_id: _Optional[str] = ..., frames: _Optional[int] = ..., objects: _Optional[int] = ..., status: _Optional[_Union[RunInfo.Status, str]] = ...) -> None: ...
+    onboard_model: str
+    def __init__(self, run_id: _Optional[str] = ..., frames: _Optional[int] = ..., objects: _Optional[int] = ..., status: _Optional[_Union[RunInfo.Status, str]] = ..., onboard_model: _Optional[str] = ...) -> None: ...
 
 class GetRunRequest(_message.Message):
     __slots__ = ("run_id",)
@@ -437,14 +469,16 @@ class DatasetResponse(_message.Message):
     def __init__(self, dataset: _Optional[_Union[DatasetEntry, _Mapping[str, _Any]]] = ...) -> None: ...
 
 class RunRtabmapRequest(_message.Message):
-    __slots__ = ("dataset", "max_frames", "fps")
+    __slots__ = ("dataset", "max_frames", "fps", "onboard_model")
     DATASET_FIELD_NUMBER: _ClassVar[int]
     MAX_FRAMES_FIELD_NUMBER: _ClassVar[int]
     FPS_FIELD_NUMBER: _ClassVar[int]
+    ONBOARD_MODEL_FIELD_NUMBER: _ClassVar[int]
     dataset: str
     max_frames: int
     fps: float
-    def __init__(self, dataset: _Optional[str] = ..., max_frames: _Optional[int] = ..., fps: _Optional[float] = ...) -> None: ...
+    onboard_model: str
+    def __init__(self, dataset: _Optional[str] = ..., max_frames: _Optional[int] = ..., fps: _Optional[float] = ..., onboard_model: _Optional[str] = ...) -> None: ...
 
 class RunRtabmapResponse(_message.Message):
     __slots__ = ("run",)

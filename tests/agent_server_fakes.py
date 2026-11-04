@@ -33,6 +33,7 @@ from surmap.agent.tools.workspace import (
     FrameImage,
     FrameRecord,
     ObjectBox,
+    OnboardModel,
     RunInfo,
     SceneInfo,
     StoredObject,
@@ -277,9 +278,18 @@ class EmptyWorkspace:
         return ()
 
     async def run_demo(
-        self, dataset: str, prompt: str | None, *, max_frames: int | None, fps: float | None
+        self,
+        dataset: str,
+        prompt: str | None,
+        *,
+        max_frames: int | None,
+        fps: float | None,
+        onboard_model: str | None,
     ) -> RunInfo:
         raise KeyError(dataset)
+
+    def onboard_models(self) -> Sequence[OnboardModel]:
+        return ()
 
     def run(self, run_id: str) -> RunInfo | None:
         return None
@@ -317,7 +327,12 @@ class EmptyWorkspace:
         return None
 
     async def run_rtabmap(
-        self, dataset: str, *, max_frames: int | None, fps: float | None
+        self,
+        dataset: str,
+        *,
+        max_frames: int | None,
+        fps: float | None,
+        onboard_model: str | None,
     ) -> RunInfo:
         raise KeyError(dataset)
 

@@ -23,6 +23,7 @@ from surmap.agent.server.app import (
     SYSTEM_PROMPT,
     AgentServerConfig,
     build_agent_description,
+    build_demo_workspace,
     default_model_factory,
 )
 from surmap.agent.services import Handler
@@ -485,3 +486,72 @@ async def test_the_wired_server_answers_health() -> None:
 
     # Then it is up
     assert response.status == 200
+
+
+# --- on-board detector model ----------------------------------------------------------------
+
+
+def test_coral_flags_set_the_onboard_model_dir_and_station_default() -> None:
+    # Given a prepared Coral model dir and SSD MobileNet V2 as the station default
+    argv = ["--coral-model-dir=/models/coral", "--coral-model=ssd-mobilenet-v2"]
+
+    # When the command line is read
+    config = config_from_args(argv, environ={})
+
+    # Then the config carries both
+    assert (config.coral_model_dir, config.coral_model) == (
+        Path("/models/coral"),
+        "ssd-mobilenet-v2",
+    )
+
+
+def test_the_coral_model_dir_comes_from_the_environment_when_no_flag_names_it() -> None:
+    # Given the model dir only in the environment
+    environ = {"SURMAP_CORAL_MODEL_DIR": "/models/coral"}
+
+    # When the command line is read
+    config = config_from_args([], environ=environ)
+
+    # Then the dir is the environment's, and EfficientDet-Lite0 is the default
+    assert (config.coral_model_dir, config.coral_model) == (
+        Path("/models/coral"),
+        "efficientdet-lite0",
+    )
+
+
+def test_the_agent_s_workspace_defaults_runs_to_the_configured_onboard_model(
+    tmp_path: Path,
+) -> None:
+    # Given an agent configured with a Coral model dir and SSD MobileNet V2
+    config = AgentServerConfig(
+        cache_dir=tmp_path,
+        sam_fake=True,
+        coral_model_dir=tmp_path / "coral",
+        coral_model="ssd-mobilenet-v2",
+    )
+
+    # When its workspace is built
+    workspace = build_demo_workspace(config)
+
+    # Then a run that names no on-board model uses SSD MobileNet V2
+    defaults = [model.name for model in workspace.onboard_models() if model.is_default]
+    assert defaults == ["ssd-mobilenet-v2"]
+
+
+def test_an_agent_told_coral_model_none_runs_no_onboard_model_by_default(tmp_path: Path) -> None:
+    # Given an agent with a Coral model dir but `--coral-model none`
+    config = config_from_args(
+        [
+            f"--cache-dir={tmp_path}",
+            "--sam-fake",
+            f"--coral-model-dir={tmp_path}",
+            "--coral-model=none",
+        ],
+        environ={},
+    )
+
+    # When its workspace is built
+    workspace = build_demo_workspace(config)
+
+    # Then no model is the default, so a run with no choice runs none
+    assert not any(model.is_default for model in workspace.onboard_models())

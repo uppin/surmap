@@ -25,6 +25,7 @@ from numpy.typing import NDArray
 from PIL import Image
 
 from surmap.agent.tools.geometry import GeometryStore
+from surmap.agent.tools.onboard import OnboardModel, OnboardModels
 from surmap.agent.tools.port import (
     OBJECT_FRAME,
     OBJECT_UP_AXIS,
@@ -61,6 +62,7 @@ __all__ = [
     "FrameSource",
     "GeometryStore",
     "ObjectBox",
+    "OnboardModel",
     "RunBusy",
     "RunInfo",
     "RunStatus",
@@ -71,6 +73,10 @@ __all__ = [
 
 _SAM_TITLE = " · SAM: "
 """What the demo's run title puts between the scene title and the SAM concept it ran with."""
+
+_ONBOARD_TITLE = " · On-board: "
+"""What the run title puts before the on-board model it ran, ahead of any SAM part."""
+_ONBOARD_MODEL = re.compile(re.escape(_ONBOARD_TITLE) + r"([\w.-]+)")
 
 _OBJECT_ID = re.compile(r"obj_(\d+)")
 
@@ -101,12 +107,21 @@ def _prompt_of(title: str) -> str:
     return prompt if separator else ""
 
 
+def _onboard_model_of(title: str) -> str:
+    """The on-board model a run processed its frames with, from its title; empty for none."""
+    head, _, _ = title.partition(_SAM_TITLE)
+    found = _ONBOARD_MODEL.search(head)
+    return found.group(1) if found else ""
+
+
 class DemoWorkspace:
     """`SurveyWorkspace` over the demo's run host, its history and its scene cache.
 
     Runs started here are ordinary demo runs in the host's history database, so the console
     lists them; a headless run takes over a running console run exactly as a new viewer would.
-    `detector` answers `detect` on recorded frames. An object's id is `obj_<surface_id>` of the
+    `detector` answers `detect` on recorded frames. `onboard` is the on-board detector models
+    a run can process its frames with (none when absent); each run builds its own source and
+    replaces the host's for that run only. An object's id is `obj_<surface_id>` of the
     history's surface, and its points are every point the run assigned to that surface.
     """
 
@@ -116,11 +131,16 @@ class DemoWorkspace:
         *,
         detector: VideoSamDetector,
         geometry: GeometryStore,
+        onboard: OnboardModels | None = None,
     ) -> None:
         self._host = host
         self._detector = detector
         self._detector_lock = threading.Lock()
         self.geometry = geometry
+        self._onboard = onboard if onboard is not None else OnboardModels()
+
+    def onboard_models(self) -> Sequence[OnboardModel]:
+        return self._onboard.models()
 
     def datasets(self) -> Sequence[GalleryEntry]:
         prepared = {
@@ -151,11 +171,17 @@ class DemoWorkspace:
         return entry
 
     async def run_rtabmap(
-        self, dataset: str, *, max_frames: int | None, fps: float | None
+        self,
+        dataset: str,
+        *,
+        max_frames: int | None,
+        fps: float | None,
+        onboard_model: str | None,
     ) -> RunInfo:
         """RTAB-Map only: SAM sources disabled, the RTAB-Map backend forced on."""
         if fps is not None and fps <= 0:
             raise ValueError("fps must be positive")
+        model = self._onboard.resolve(onboard_model)
         spec = self._host.catalog[dataset]
         prepared = await asyncio.to_thread(self._prepared, spec)
         return await self._run_recorded(
@@ -163,6 +189,7 @@ class DemoWorkspace:
             None,
             max_frames=max_frames,
             fps=fps,
+            onboard_model=model,
             overrides={"with_rtabmap": True, "sam_source": None, "sam_streamer": None},
             title_suffix=" · RTAB-Map",
         )
@@ -227,13 +254,17 @@ class DemoWorkspace:
         *,
         max_frames: int | None,
         fps: float | None,
+        onboard_model: str | None,
     ) -> RunInfo:
         if fps is not None and fps <= 0:
             raise ValueError("fps must be positive")
+        model = self._onboard.resolve(onboard_model)
         spec = self._host.catalog[dataset]
         prepared = await asyncio.to_thread(self._prepared, spec)
         sam_prompt = self._host.sam_prompt(dataset, prompt)
-        return await self._run_recorded(prepared, sam_prompt, max_frames=max_frames, fps=fps)
+        return await self._run_recorded(
+            prepared, sam_prompt, max_frames=max_frames, fps=fps, onboard_model=model
+        )
 
     async def _run_recorded(
         self,
@@ -242,12 +273,22 @@ class DemoWorkspace:
         *,
         max_frames: int | None,
         fps: float | None,
+        onboard_model: str | None,
         overrides: dict[str, Any] | None = None,
         title_suffix: str = "",
     ) -> RunInfo:
+        # Built before the run starts, so a model the station cannot run records no run.
+        source = self._onboard.source(onboard_model) if onboard_model is not None else None
+        run_overrides = {**(overrides or {}), "detection_source": source}
+        title = (
+            prepared.spec.title
+            + (f"{_ONBOARD_TITLE}{onboard_model}" if onboard_model is not None else "")
+            + (f"{_SAM_TITLE}{sam_prompt}" if sam_prompt else "")
+            + title_suffix
+        )
         starting = asyncio.ensure_future(
             asyncio.to_thread(
-                self._start, prepared, sam_prompt, max_frames, fps, overrides or {}, title_suffix
+                self._start, prepared, sam_prompt, max_frames, fps, run_overrides, title
             )
         )
         try:
@@ -281,6 +322,7 @@ class DemoWorkspace:
             frames=int(str(row["frame_count"])),
             objects=len(self.objects(run_id)),
             status=_status_of(str(row["status"])),
+            onboard_model=_onboard_model_of(str(row["title"])),
         )
 
     def timeline(self, run_id: str) -> Sequence[FrameRecord]:
@@ -395,8 +437,8 @@ class DemoWorkspace:
         sam_prompt: str | None,
         max_frames: int | None,
         fps: float | None,
-        overrides: dict[str, Any] | None = None,
-        title_suffix: str = "",
+        overrides: dict[str, Any],
+        title: str,
     ) -> _RunEngine | None:
         # The host's player options are one untyped bag; this call's rate, frame cap
         # and per-mode overrides replace the host-wide ones for this run only.
@@ -404,11 +446,8 @@ class DemoWorkspace:
             **self._host.player_options,
             "fps": fps,
             "max_frames": max_frames or 0,
-            **(overrides or {}),
+            **overrides,
         }
-        title = (
-            prepared.spec.title + (f"{_SAM_TITLE}{sam_prompt}" if sam_prompt else "") + title_suffix
-        )
 
         def play(controls: PlaybackControls) -> Iterator[DemoEvent]:
             player = DemoPlayer(prepared, controls=controls, sam_prompt=sam_prompt, **options)

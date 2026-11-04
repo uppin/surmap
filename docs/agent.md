@@ -26,6 +26,7 @@ leading comment, and argument descriptions are the field comments.
 | Tool | RPC | Default execution |
 |---|---|---|
 | `list_demos` | `SurveyTools.ListDemos` | SYNC · 10 s · FAIL |
+| `list_onboard_models` | `SurveyTools.ListOnboardModels` | SYNC · 10 s · FAIL |
 | `run_demo` | `SurveyTools.RunDemo` | SYNC · 30 s · DETACH |
 | `get_run` | `SurveyTools.GetRun` | SYNC · 10 s · FAIL |
 | `prompt_sam` | `SurveyTools.PromptSam` | SYNC · 60 s · DETACH |
@@ -113,8 +114,9 @@ in the console) and publishes GLB through a `GeometryStore` (`tools/geometry.py`
 | Tool | Arguments | Result | Default execution |
 |---|---|---|---|
 | `list_demos` | — | every scene: `id`, `title`, `default_prompt`, `prepared`, `cached_run_id` | SYNC · 10 s · FAIL |
-| `run_demo` | `dataset`; `prompt` (scene default); `max_frames` (whole scene); `fps` (native, > 0) | the ended run: `run_id`, frames, objects, `status` | SYNC · 30 s · DETACH |
-| `get_run` | `run_id` | `RunInfo`: dataset, prompt, frames, objects, status | SYNC · 10 s · FAIL |
+| `list_onboard_models` | — | every on-board (Coral) model: `name`, `title`, `note`, `available` on this station, `is_default`; and `default_model` (`"none"` when runs default to no model) | SYNC · 10 s · FAIL |
+| `run_demo` | `dataset`; `prompt` (scene default); `max_frames` (whole scene); `fps` (native, > 0); `onboard_model` (station default; `"none"` for no on-board model) | the ended run: `run_id`, frames, objects, `status`, `onboard_model` | SYNC · 30 s · DETACH |
+| `get_run` | `run_id` | `RunInfo`: dataset, prompt, frames, objects, status, `onboard_model` (empty for none) | SYNC · 10 s · FAIL |
 | `prompt_sam` | `run_id`, `concept`; `frame_ids` or `max_frames` (≤ 8) | per frame: `frame_id`, `t_ns`, detections with ids, label, score, box, mask polygon | SYNC · 60 s · DETACH |
 | `find_objects` | `run_id`; `label`, `near` + `radius_m`, `moving`, `limit` | object summaries, nearest first with `near`, else largest first; no neighbours | SYNC · 15 s · FAIL |
 | `get_object` | `run_id`, `object_id` | one summary with its nearest neighbours (5 m, 5 nearest) | SYNC · 10 s · FAIL |
@@ -123,7 +125,15 @@ in the console) and publishes GLB through a `GeometryStore` (`tools/geometry.py`
 | `list_datasets` | — | every gallery dataset: provider, licence, `GREY`/`COLOR` modality, prepared, frame count, thumbnail flag, location, GPS centre + downsampled track | SYNC · 10 s · FAIL |
 | `get_dataset` | `dataset_id` | one `DatasetEntry` | SYNC · 10 s · FAIL |
 | `prepare_dataset` | `dataset_id` | the prepared `DatasetEntry` | SYNC · 30 s · DETACH |
-| `run_rtabmap` | `dataset`; `max_frames`; `fps` | the recorded RTAB-Map-only run (`RunInfo`) | SYNC · 30 s · DETACH |
+| `run_rtabmap` | `dataset`; `max_frames`; `fps`; `onboard_model` (as `run_demo`) | the recorded RTAB-Map-only run (`RunInfo`) | SYNC · 30 s · DETACH |
+
+**On-board model choice** (`tools/onboard.py`). `OnboardModels` is the station's Coral profiles
+(`surmap.detection.profiles`) in its prepared model dir; a profile is `available` when the dir holds
+its CPU twin and `coco_labels.txt`. Each run resolves `onboard_model` — a profile name, `"none"`, or
+absent for the station default — and builds its own detection source (fresh tracker state), which
+replaces the host's `detection_source` for that run only. A name no profile has is
+`INVALID_ARGUMENT`; a profile the station lacks is `FAILED_PRECONDITION` and records no run. The run
+title carries ` · On-board: <model>` ahead of the SAM part, and `RunInfo.onboard_model` reads it back.
 | `run_sam_on_dataset` | `dataset`; `concept` (dataset default); `max_frames` (≤ 8) | per-frame SAM detections on the dataset itself, no run | SYNC · 60 s · DETACH |
 
 ## Dataset gallery
@@ -613,6 +623,8 @@ uv run python -m surmap.agent --sam-fake \
 | `--history-db` | demo default | demo run history DB |
 | `--cache-dir` | demo default | demo scene cache; object GLBs go to `<cache-dir>/agent-geometry` |
 | `--sam-fake` | off | fake centred-box SAM — **required for now** |
+| `--coral-model-dir` | `$SURMAP_CORAL_MODEL_DIR` | prepared Coral model dir (`scripts/fetch_coral_model.py`); without one no on-board model is available |
+| `--coral-model` | `efficientdet-lite0` | on-board model a run uses when the agent names none; `none` for no on-board model |
 | `--sim-dir` | `<cache>/simulation` | simulation store: `simulation.sqlite` and the asset `library/` |
 | `--sim-assets` | `examples/bevy-sitl-poc/assets` | the simulation's own assets; simulation tools are off when absent |
 | `--sim-dist` | none | a `trunk build` output served at `/sim/` |

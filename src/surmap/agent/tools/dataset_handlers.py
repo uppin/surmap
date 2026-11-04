@@ -10,6 +10,7 @@ from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
 from surmap.agent.proto import survey_tools_pb2 as pb
+from surmap.agent.tools.onboard import OnboardUnavailable
 from surmap.agent.tools.workspace import (
     FrameDetections,
     RunBusy,
@@ -124,11 +125,14 @@ async def run_rtabmap(
             request.dataset,
             max_frames=request.max_frames if request.HasField("max_frames") else None,
             fps=request.fps if request.HasField("fps") else None,
+            onboard_model=request.onboard_model if request.HasField("onboard_model") else None,
         )
     except KeyError as missing:
         raise _not_found(missing) from missing
     except ValueError as bad:
         raise ConnectError(Code.INVALID_ARGUMENT, str(bad)) from bad
+    except OnboardUnavailable as unavailable:
+        raise ConnectError(Code.FAILED_PRECONDITION, str(unavailable)) from unavailable
     except RunBusy as busy:
         raise ConnectError(Code.UNAVAILABLE, str(busy)) from busy
     return pb.RunRtabmapResponse(run=_run_message(run))
@@ -168,6 +172,7 @@ def _run_message(run: RunInfo) -> pb.RunInfo:
         frames=run.frames,
         objects=run.objects,
         status=_RUN_STATUS[run.status],
+        onboard_model=run.onboard_model,
     )
 
 
