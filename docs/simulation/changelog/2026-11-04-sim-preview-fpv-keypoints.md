@@ -4,7 +4,8 @@
   panel, HUD or Take off button. Overview (chase + PTZ) while the viewed drone is docked / not
   engaged; FPV (left camera, letterboxed) once airborne. With `?bridge=` the FPV is the held
   frame RTAB-Map answered for, with its keypoints as depth-coloured dots (`HeldFrames`,
-  `FpvFrame`, `fleet::stream::parse_odometry`); without, the live eye.
+  `FpvFrame`, `fleet::stream::parse_odometry`); without, the live eye. `?bridge=` may be
+  percent-encoded (the chat's `URLSearchParams` writes `ws%3A%2F%2F…`); `bridge_url` decodes it.
 - Wire: the bridge `status` reply gains `odometry: [{frame_id, keypoints: [[u, v, depth]]}]`
   (omitted when empty; goldens unchanged). `DroneSession` fills it from the odometry it polls,
   mapped to raw pixels through the backend's `rectification` (now part of the
