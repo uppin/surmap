@@ -302,18 +302,41 @@ its yaw eased, and bobs while it walks; standing (`idle`, a finished tree) it do
 | Field | Meaning (shipped) |
 |---|---|
 | `yaw_ease_s` | seconds a turn takes to ease to the new heading, the short way round (0.3) |
-| `bob_m` | height of a step's bob (0.03) |
+| `bob_m` | height of a step's bob (0.03); applied to the capsule figure only, since a rig's clips carry the gait |
 | `steps_per_s` | steps per second at `reference_speed_m_s`; faster walking steps faster in proportion (2) |
 | `reference_speed_m_s` | the speed `steps_per_s` is quoted at (1.4) |
-| `visor` | optional `{"size_m", "offset_m", "colour"}`: a box on the figure (`size_m` x, y, z in the figure's frame; `offset_m` from its feet, −z its front; solid sRGB `colour`) — shipped 0.18 × 0.05 × 0.06 m, 1.63 m up and 0.12 m forward, near-black; drawn on the capsule figure only |
-| `model` | optional `{"glb", "scale", "yaw_deg", "clip_s", "coat_tint"}`: a rigged humanoid glTF worn instead of the capsule, scaled and turned to stand on the feet facing −z, posed from its first clip — held at `clip_s` standing, played at `speed / reference_speed_m_s` from the figure's phase walking, seeked on the sim clock so a recording repeats; `coat_tint` multiplies its colours by the person's `coat` — shipped `models/cesium_man/CesiumMan.glb`, 1.16 (1.75 m), 180°, 0.25 s, tinted |
+| `visor` | optional `{"size_m", "offset_m", "colour"}`: a box on the figure (`size_m` x, y, z in the figure's frame; `offset_m` from its feet, −z its front; solid sRGB `colour`). Shipped 0.18 × 0.05 × 0.06 m, 1.63 m up and 0.12 m forward, near-black; drawn on the capsule figure only |
+| `model` | optional `{"glb", "scale", "yaw_deg", "clip_s", "coat_tint", "rig"}`: a humanoid glTF worn instead of the capsule, scaled and turned to stand on the feet facing −z. Without a `rig` it is posed from its first clip (held at `clip_s` standing, played in step walking); with one, its named clips play (below). `coat_tint` multiplies its colours by the person's `coat`. Shipped `models/person/wave.glb` (Quaternius, CC0), scale 1, 180°, rigged |
+| `model.rig` | `clips` (`idle`, `walk`, `run` required; `wave`, `sit`, `lie` the poses this file carries) → the glTF's animation names; `walk_ground_m_s` / `run_ground_m_s`, the ground each clip covers per second at rate 1 (no foot slide); `run_above_m_s`, where walking crosses to running; `blend_s`, the crossfade; `standing_height_m`, the rig's height at scale 1; `coat_slots` / `skin_slots`, the glTF material names that take the person's `coat` / `skin`. Shipped: idle, walk, run, wave, and `Death` as `lie`; 1.1 / 2.5 m/s, run above 1.8 m/s, 0.3 s, 1.8 m, coat on the shirt (`White`) |
+| `pose_models` | optional `{pose: model}`: a pose drawn on its own rigged model, because no single CC0 file carries every clip. Never `standing`, which the figure's `model` carries. Shipped `sitting` → `models/person/sit.glb` (Quaternius, CC0, `SitIdle`), scale 0.346, coat-tinted |
 | `body_m` | the `person` ground-truth box (east, north, up) over the feet, holding the body whatever way it faces (0.6 × 0.6 × 1.8 m) |
 
+`FigureDef::from_json` refuses a figure where some pose has no clip in `model` or in its
+`pose_models` entry, and `the_shipped_figure_has_a_clip_for_every_pose_in_a_pinned_file` checks
+the shipped clip names against the `animations` that `assets/assets.lock.json` records for each
+pinned file. CI does not fetch models, so it checks the same names.
+
+**Poses and clips (`figure_anim.rs`, pure).** A person's `pose` is `standing` (the default),
+`sitting`, `waving` or `lying`. `locomotion(rig, speed, pose)` gives weighted clips with their
+rates. Standing still plays `idle`, walking plays `walk` at `speed / walk_ground_m_s`, and the walk
+crossfades to `run` around `run_above_m_s`. A posed person who stands still plays the pose clip:
+`wave` loops, while `sit` and `lie` are held at their last frame. A posed person with a tree walks
+while it moves. `clip_time(now, phase, rate, duration)` uses the per-id phase (`phase_of`), so a
+crowd is not in step. The app builds one `AnimationGraph` per rig file (`actors/rig.rs`) and seeks
+every `AnimationPlayer` to its clip time from `SimClock` each frame. Players never free-run, so a
+still at `--at t` and a recording replay exactly. A person's `height_m` (0.9–2.2) scales the rig
+and its ground speeds (`RigDef::at_height`), their `glb` replaces the model file, and their `yaw_deg`
+faces a posed person.
+
 Each figure's bob has its own phase, derived from its id. Without a `model` the figure is the
-capsule and sphere every `person` is built with, plus the visor on the front of its head
+capsule and sphere every `person` is built with (`FallbackBody`), plus the visor on the front of its head
 (`actors::attach_visors`), so the way it faces and turns reads ([sweep](changelog/2026-11-04-sim-disaster-2-sweep.md)).
 With one (`actors::attach_bodies`, once the look has loaded) the capsule is dropped for the
-humanoid; either way every survivor enters `ground_truth.json` as a `person` box.
+humanoid. A missing model file (assets not fetched) keeps the capsule, so a checkout without
+assets still renders people. Either way, every survivor enters `ground_truth.json` as a `person`
+box. A posed person is tracked in `object_tracks.jsonl` even without a tree, with its `pose`, and a
+lying person's truth box is horizontal: `body_m`'s height laid along its `yaw_deg`, 0.3 m thick
+(`posed_person_truth`) ([changelog](changelog/2026-11-04-sim-rigged-people.md)).
 
 ### Presets, ground truth and stills
 
@@ -324,10 +347,18 @@ running the tree above — wander 6 m at 0.8 m/s; when the front comes within 20
 tree `sequence[idle 20 s, set_wind 300° 10 m/s gust 3 over 30 s]`: the 6 m/s westerly holds,
 then veers and builds.
 
+The preset `earthquake-survivors` is the earthquake block with its seven standing survivors
+replaced by five people in the poses a survey looks for: `survivor-lying` on open ground south of
+`collapsed-0`, `survivor-sitting` on the rubble of `collapsed-2`, `survivor-waving` facing the
+route by `collapsed-3` (yellow coats, 1.7–1.75 m), and `rescuer-1`/`rescuer-2` in orange walking
+a `follow_path` between them. The station writes it as the golden
+`tests/fixtures/sim_scenario/earthquake-survivors.json`, which Rust parses
+([decision](deferred-answers/2026-11-04-earthquake-survivors-cast.md)).
+
 Every capture adds `object_tracks.jsonl`, one line per frame:
 `{"t_ns": n, "wind_enu": [ve, vn], "objects": [{"id": "evacuee-1", "enu": [e, n, u], "action": "flee_from_fire", "kind": "person", "yaw_deg": 92.0}]}`
 — the wind's velocity and every person with a tree and every tracked vehicle (*Vehicles*),
-sorted by id. `action` is `null` once its tree has finished, `kind` is `person` or the
+sorted by id, plus every posed person with or without a tree, which also carries `"pose"`. `action` is `null` once its tree has finished, `kind` is `person` or the
 vehicle's class, and `yaw_deg` is the way it faces (ENU, counter-clockwise from east). `load_bevy_capture(dir).object_tracks` (`t_ns` → id → `Vec3`) and `.wind`
 (`t_ns` → `(ve, vn)`) read it; both are empty without the file.
 
@@ -865,7 +896,7 @@ open ground (the scene does not test occlusion, so a hidden person still counts 
 (3) the waving survivor faces the route. Waving and lying stay unfound: the loop sees them from
 above at 15-40 px, a raised arm and a body lying on tarmac are not what COCO's person class was
 trained on, and a lying person's truth box is now horizontal (`posed_person_truth`).
-Recorded in `examples/bevy-sitl-poc/docs/todo/2026-11-04-waving-and-lying-people-undetected.md`.
+Recorded in `src/surmap/docs/todo/2026-11-04-waving-and-lying-people-undetected.md`.
 
 ### Road and rail vehicles (`street-traffic`)
 

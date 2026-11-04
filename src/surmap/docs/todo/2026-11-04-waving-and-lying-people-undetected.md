@@ -1,7 +1,7 @@
 # 2026-11-04 — Waving and lying people are not found by any on-board detector
 
 **Category:** Deferred scope
-**Source:** `docs/simulation/1-WIP/2026-11-04-sim-rigged-people.md` (PR #107, stack `#sim-traffic` node 2/3)
+**Source:** the rigged-people changeset, wrapped into `docs/simulation/changelog/2026-11-04-sim-rigged-people.md` (PR #107, stack `#sim-traffic` node 2/3)
 **Packages:** bevy-sitl-poc, surmap
 **Consent:** none asked — a `#yolo` run; the orchestrator's decision 3 says a bar still missed after three iterations is recorded here with its numbers
 **Status:** Open

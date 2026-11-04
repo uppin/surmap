@@ -1,7 +1,7 @@
 # 2026-11-04 — The shipped people are two CC0 models; Cesium Man's pin and credit are dropped
 
 **Kind:** Technical
-**Source:** `docs/simulation/1-WIP/2026-11-04-sim-rigged-people.md` (PR #107, stack `#sim-traffic` node 2/3)
+**Source:** the rigged-people changeset, wrapped into `docs/simulation/changelog/2026-11-04-sim-rigged-people.md` (PR #107, stack `#sim-traffic` node 2/3)
 **Asked by:** orchestrator (`/yolo-pr-stack`), relayed to `[G]` n2 — Sonnet 5.5, under `#yolo`
 **Packages:** bevy-sitl-poc
 **Status:** Awaiting review

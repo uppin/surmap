@@ -223,9 +223,11 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
   `wildfire-evacuation` (the edge with three people who wander and flee the fire, and a wind that
   veers), `flood-street` (the block in rain and fog), `district-showcase` (the four building
   districts side by side, no fire) and `downtown-blaze` (a downtown block whose glass tower
-  burns on floor 3 from t = 5 s in a 5 m/s westerly, a neighbour 5 m downwind) and
+  burns on floor 3 from t = 5 s in a 5 m/s westerly, a neighbour 5 m downwind),
   `street-traffic` (the block with cars on the avenue, a bus and a truck on the cross street, a
-  parked car and a six-carriage freight train on a rail line along the west edge).
+  parked car and a six-carriage freight train on a rail line along the west edge) and
+  `earthquake-survivors` (the block with a survivor lying, one sitting on rubble and one waving,
+  and two rescuers walking between them).
 - **Weather and fire**: `set_weather` sets rain (mm/h), fog visibility and the one wind (where it
   blows from, speed, gusts) that sways the vegetation and drives the fire and its smoke;
   `add_fire` lights a fire (ignition, start, spread rate, maximum radius, smoke) and `remove_fire`
@@ -241,7 +243,11 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
   is not a JSON object is `INVALID_ARGUMENT` with the reason; every edit is a new scenario
   version. The edits are pure functions (`scenario_manifest.set_behaviour`,
   `update_behaviour_node`; the rules in `surmap.simulation.behaviour_tree`). `add_element`'s
-  `person` takes a `skin` material (`skin` when empty). Node kinds, the tick and the recorded tracks:
+  `person` (`PersonElement`) takes a `skin` material (`skin` when empty), a `pose` (`standing`
+  when empty, `lying`, `sitting` or `waving`), a `height_m` (0.9–2.2 m, the figure's own when
+  unset) and a `yaw_deg` that faces a posed person. An unknown pose or a height out of range is
+  `INVALID_ARGUMENT` with the reason. The rigged figure and its clips:
+  [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *The figure*. Node kinds, the tick and the recorded tracks:
   [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *Behaviour trees*.
 - **Vehicles**: `add_element` takes a `vehicle` (`VehicleElement`): `id`, `vehicle_class`
   (`car`, `bus`, `truck` or `train`), a start `position`, `yaw_deg`, `cars` (trains only) and an

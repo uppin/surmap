@@ -1,7 +1,7 @@
 # 2026-11-04 — How a rig is scaled to a height and how its clips crossfade
 
 **Kind:** Technical
-**Source:** `docs/simulation/1-WIP/2026-11-04-sim-rigged-people.md` (PR #107, stack `#sim-traffic` node 2/3)
+**Source:** the rigged-people changeset, wrapped into `docs/simulation/changelog/2026-11-04-sim-rigged-people.md` (PR #107, stack `#sim-traffic` node 2/3)
 **Asked by:** `/green` row 3 — `[G]` n2, Haiku 5.5 (under `#yolo`, no supervisor relay)
 **Packages:** bevy-sitl-poc
 **Status:** Awaiting review
