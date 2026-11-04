@@ -1,0 +1,2 @@
+{"seq": 1, "at_s": 2.0, "command": {"type": "launch", "drone": "nest-sw-d1", "route": {"waypoints": [[-20.0, 0.0, 15.0], [-20.0, 60.0, 18.0]], "speed_m_s": 6.0, "on_complete": "hover"}}}
+{"seq": 3, "at_s": 12.5, "command": {"type": "set_active", "drone": "nest-sw-d1"}}

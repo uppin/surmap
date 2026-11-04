@@ -876,6 +876,106 @@ stills of `earthquake-fleet` replaying `survey-sortie.fleet.jsonl` at `--at 20` 
 the chase camera shows the active drone airborne over the block, at a different point of its route
 in each still.
 
+## The fleet link
+
+The station commands a running page's drones over one WebSocket, `/sim/fleet?scenario=<id>` on
+the agent server's own origin. A page opens it only with `?fleet=1`. Without that, and in native
+builds, nothing is sent: native runs take their commands from `--fleet-log`.
+
+### `fleet/v1` messages (JSON text frames)
+
+| Direction | Message |
+|---|---|
+| sim → station | `{"type":"hello","protocol":"fleet/v1","scenario":"…","sim_t_s":0.0,"drones":["nest-sw-d1",…]}` |
+| station → sim | `{"type":"command","request":7,"command":{…a fleet-log command…}}` |
+| sim → station | `{"type":"applied","request":7,"seq":3,"at_s":41.25}` |
+| sim → station | `{"type":"refused","request":7,"at_s":41.25,"reason":"nest-sw-d1 is docked: detour needs a drone in flight"}` |
+| sim → station | `{"type":"telemetry","sim_t_s":41.5,"active":"nest-sw-d1","drones":[{"id":"…","phase":"cruising","enu":[x,y,z],"yaw_deg":…,"speed_m_s":…,"targets_left":2}]}` every 0.5 s |
+
+- Frames are compact JSON with the keys in this order. The goldens are
+  `tests/fixtures/fleet_link/{hello,command,applied,refused,telemetry}.json`. Both codecs (Python
+  `surmap.simulation.fleet.link`, Rust `fleet/link.rs`) re-encode them byte for byte.
+- Phase words: `docked climbing cruising detouring hovering returning landing`.
+- The route accepts the upgrade and then closes on a fault. These close with 4400: a missing
+  `?scenario=`, an unknown scenario, a first frame that is not a `fleet/v1` hello, and an unknown
+  `type`. A second page for a scenario that already has one closes with 4409, and the first page
+  stays linked.
+
+### The station (`surmap.simulation.fleet`)
+
+- **`FleetRegistry`** is `SimulationRig.fleet`, one per server. `controller(id)` builds a
+  `FleetController` from the scenario's latest manifest (its nests) on first use and caches it.
+  `link(id, socket)` runs one page: hello first, then every frame goes to the controller until
+  the page closes, which detaches the link.
+- **`FleetController.send(command)`** validates, sends and waits, in that order:
+  1. **Validate.** The drone must be known: one of the scenario's nests' drones, or one in the
+     linked page's `hello` list. The route must be non-empty. Every waypoint must be within
+     ±500 m east and north and 5–60 m up, and the speed 0.5–8 m/s. The drone's phase must allow
+     the command, by the fleet log's rules. A failure raises `FleetInvalid(rule)` and nothing is
+     sent.
+  2. **No link** raises `FleetUnavailable("no simulation connected for scenario <id>")`.
+  3. **Send and wait** up to 5 s for `applied` or `refused` with the same request id. `applied`
+     is logged and returned as `Applied(request, seq, at_s)`. `refused` raises
+     `FleetRefused(reason)` with the page's text. Silence raises `FleetTimeout`. An `applied`
+     that arrives after the timeout is still logged, because the page did apply it.
+
+  Requests are numbered from 1 and serialised per scenario, so the order sent is the order
+  applied. The phase comes from the last telemetry, and before any telemetry every drone is
+  `docked`. A drone the page just launched counts as flying until telemetry stamped at or after
+  the launch arrives. The page still refuses on its own phase, because telemetry can be up to
+  0.5 s old.
+- **`FleetLogStore`** keeps two tables in the scenario store's SQLite file. `fleet_sessions` has
+  one row per linked page (`session_id`, `scenario_id`, `started_at`, `hello`). `fleet_log` has
+  the session's applied commands (`seq`, `at_s`, `command_json`). The simulation stamps the time,
+  and the station keeps the stamped copy. `export_jsonl(session)` writes the session as a
+  `--fleet-log` file, so a browser sortie replays natively. A refused request leaves a gap in the
+  `seq`s, which `FleetLog::from_jsonl` accepts.
+
+### The page (`fleet/link_wasm.rs`, wasm only)
+
+- `FleetLinkPlugin` opens `ws[s]://<location.host>/sim/fleet?scenario=<id>` and sends `hello`
+  once the scene is built.
+- Incoming commands are queued. A Bevy system drains the queue each frame and calls
+  `FleetLog::push(SimClock::now(), command)`. It answers `applied` with the log's `seq`, or
+  `refused` with the refusal's text.
+- A timer system sends telemetry every 0.5 s.
+- The pure parts (`fleet_enabled`, `fleet_socket_url`, the codec, `refusal_text`,
+  `drone_telemetry`) live in `fleet/link.rs` and are unit-tested natively.
+- The page's `web-sys` features gain `WebSocket`, `MessageEvent`, `CloseEvent` and `ErrorEvent`.
+  The page banner and `Cargo.toml` say that frames stay in the page and that the optional
+  `?fleet=1` link exchanges fleet commands and telemetry.
+
+### Trying it in a browser
+
+`scripts/fleet_link_smoke.py` is a station for one tab, with a scripted sortie:
+
+1. It creates an earthquake-fleet scenario, prints the page URL and waits for the `hello`.
+2. It launches `nest-sw-d1` and sends it a detour 15 s later.
+3. It launches `nest-ne-d1` and makes it the active drone.
+4. It recalls both.
+
+It prints each `applied` and the drones' phases, and exports the session as a `--fleet-log` file.
+
+```bash
+cd examples/bevy-sitl-poc && trunk build index.html --release && cd ../..
+uv run python scripts/fleet_link_smoke.py --sim-dist examples/bevy-sitl-poc/dist --preset earthquake-fleet
+# open the printed /sim/?scenario=<id>&fleet=1 in Chrome (WebGPU)
+```
+
+### Verified
+
+2026-11-04 (#119):
+
+- The fleet suites (`tests/test_sim_fleet_{link,controller,registry,log_store,link_e2e}.py`) 74
+  passed. The end-to-end suite runs a real `HypercornHost` and a fake page.
+- `cargo test --locked link` 18 passed, including `the_station_export_is_a_valid_fleet_log`.
+- `cargo check --locked --target wasm32-unknown-unknown` compiles `link_wasm.rs`, with no warning
+  in `fleet/link`.
+- The smoke script flew the whole sortie against a scripted fake page: 6 applied, both drones
+  docked, a 6-line export.
+- Chrome run after merge —
+  [`src/surmap/docs/todo/2026-11-04-fleet-browser-verification.md`](../../src/surmap/docs/todo/2026-11-04-fleet-browser-verification.md).
+
 ## The stereo rig: one camera profile
 
 `cameras/elp-stereo-pinhole.camera.json` (the SurMap ELP rig): 640×480, fx = fy = 381.36,

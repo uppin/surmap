@@ -14,12 +14,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from surmap.agent.tools.simulation_handlers import SimulationTooling
 from surmap.rpc.http import HttpResponse
 from surmap.simulation.asset_sources import AssetSource
+from surmap.simulation.fleet.controller import FleetRegistry, FleetTiming
 from surmap.simulation.scenario_store import ScenarioStore, UnknownRecord
 
 SIM_PREFIX = "/sim/"
@@ -51,6 +52,13 @@ class SimulationRig:
     """The PoC's `assets/` (scene, camera profiles, fetched pinned textures)."""
     page_dist: Path | None = None
     """A `trunk build` output to serve as the page; `/sim/` answers 404 without it."""
+    fleet_timing: FleetTiming = field(default_factory=FleetTiming)
+    """How long a fleet command waits for the linked page's answer."""
+    fleet: FleetRegistry = field(init=False)
+    """The scenarios' fleet controllers and the `/sim/fleet` links to them."""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "fleet", FleetRegistry(self.store, timing=self.fleet_timing))
 
     def tooling(self) -> SimulationTooling:
         return SimulationTooling(store=self.store, sources=self.sources)

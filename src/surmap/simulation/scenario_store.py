@@ -140,6 +140,11 @@ class ScenarioStore:
         return self._assets_dir
 
     @property
+    def db_path(self) -> Path:
+        """The SQLite file the scenarios live in (the fleet log store shares it)."""
+        return self._db_path
+
+    @property
     def library_dir(self) -> Path:
         return self._library
 

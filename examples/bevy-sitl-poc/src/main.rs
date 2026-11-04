@@ -89,7 +89,10 @@ fn main() {
     let look_at = shots::LookAt::from_args(&args);
     let sim_time = record::SimTime(mode.screenshot.as_ref().map(|plan| plan.at_s));
     let mut recorder = mode.record.clone().map(record::Recorder::new);
-    let exit = App::new()
+    #[cfg(target_arch = "wasm32")]
+    let linked_scenario = mode.scenario.clone();
+    let mut app = App::new();
+    app
         .add_plugins(
             DefaultPlugins
                 .set(WindowPlugin {
@@ -207,8 +210,13 @@ fn main() {
             Update,
             (prewarm::prewarm_effects.before(take_shots), close_shots::aim_flame_close, close_shots::aim_person_close),
         )
-        .add_systems(FixedUpdate, apply_thrust)
-        .run();
+        .add_systems(FixedUpdate, apply_thrust);
+    // The station link, only on a page opened with `?fleet=1` for a scenario.
+    #[cfg(target_arch = "wasm32")]
+    if let (true, Some(scenario)) = (fleet::link_wasm::page_fleet_enabled(), linked_scenario) {
+        app.add_plugins(fleet::link_wasm::FleetLinkPlugin { scenario });
+    }
+    let exit = app.run();
     if exit.is_error() {
         std::process::exit(1);
     }

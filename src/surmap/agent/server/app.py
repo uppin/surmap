@@ -47,6 +47,7 @@ from surmap.agent.runtime.graph import TurnCaps
 from surmap.agent.server.access import UNAUTHENTICATED_HINT, AccessGate, session_token
 from surmap.agent.server.binding import agent_tools
 from surmap.agent.server.chat_service import agent_jobs_handlers, chat_handlers
+from surmap.agent.server.fleet_routes import fleet_websocket_route
 from surmap.agent.server.hub import ChatHub, ModelFactory
 from surmap.agent.server.routes import GlbReader, agent_http_routes
 from surmap.agent.server.sim_routes import SimulationRig
@@ -358,7 +359,8 @@ def build_agent_description(
 
     `survey_handlers` defaults to `survey_tool_handlers(workspace)`; `registry` to one over the
     process environment, which also lists the models. With `simulation`, the `SimulationTools`
-    are mounted, bound as agent tools, and `/sim/` serves the page, scenarios and library.
+    are mounted, bound as agent tools, `/sim/` serves the page, scenarios and library, and
+    `/sim/fleet` links a running page to the station's fleet controllers.
     With `station`, the `StationTools` are mounted and bound the same way.
     """
     ledger = UsageLedger()
@@ -433,6 +435,7 @@ def build_agent_description(
             gate=gate,
             web_dist=config.web_dist,
         ),
+        websocket_routes=(fleet_websocket_route(simulation),) if simulation is not None else (),
         closeables=lambda _context: (hub,),
     )
 

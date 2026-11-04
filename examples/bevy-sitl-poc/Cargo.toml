@@ -2,7 +2,7 @@
 name = "bevy-sitl-poc"
 version = "0.1.0"
 edition = "2021"
-description = "Browser-only Bevy disaster-flight simulation PoC (WASM). Frames stay in the page; nothing is sent to a backend."
+description = "Browser-only Bevy disaster-flight simulation PoC (WASM). Frames stay in the page; the optional ?fleet=1 link exchanges fleet commands and telemetry with the station."
 license = "MIT OR Apache-2.0"
 
 [dependencies]
@@ -25,8 +25,9 @@ wasm-bindgen = "0.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.3", features = ["wasm_js"] }
-# ?scenario=<id> from the page URL (already in Bevy's dependency tree).
-web-sys = { version = "0.3", features = ["Window", "Location"] }
+# ?scenario=<id> from the page URL, and the ?fleet=1 WebSocket to the station (already in Bevy's
+# dependency tree).
+web-sys = { version = "0.3", features = ["Window", "Location", "WebSocket", "MessageEvent", "CloseEvent", "ErrorEvent"] }
 
 [profile.dev]
 opt-level = 1

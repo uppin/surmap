@@ -1,0 +1,1 @@
+{"type":"command","request":7,"command":{"type":"launch","drone":"nest-sw-d1","route":{"waypoints":[[-20.0,0.0,15.0],[-20.0,60.0,18.0]],"speed_m_s":6.0,"on_complete":"hover"}}}
