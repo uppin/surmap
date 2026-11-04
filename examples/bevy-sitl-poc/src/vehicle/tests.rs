@@ -67,6 +67,21 @@ fn a_class_file_declares_its_look_and_limits() {
 }
 
 #[test]
+fn a_class_file_scales_its_model_to_metres_and_defaults_to_one() {
+    let scaled = A_CAR.replace("\"length_m\": 4.2", "\"model_scale\": 0.07, \"length_m\": 4.2");
+
+    assert_eq!(a_car().model_scale, 1.0);
+    assert_eq!(VehicleDef::from_json(&scaled).expect("a valid scaled car").model_scale, 0.07);
+}
+
+#[test]
+fn a_model_scale_that_is_not_positive_is_refused() {
+    let flipped = A_CAR.replace("\"length_m\": 4.2", "\"model_scale\": 0.0, \"length_m\": 4.2");
+
+    assert!(VehicleDef::from_json(&flipped).unwrap_err().contains("model_scale"));
+}
+
+#[test]
 fn a_class_that_cannot_accelerate_is_refused() {
     let stuck = A_CAR.replace("\"accel_m_s2\": 3.0", "\"accel_m_s2\": 0.0");
 

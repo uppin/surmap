@@ -17,7 +17,7 @@ fetches, at runtime, from `examples/bevy-sitl-poc/assets/`:
 | `fx/<name>.fx.json` | one particle effect (flames, embers, smoke, rain) — see *Weather, wind and fire* |
 | `species/<name>.species.json` | one vegetation species (pine, dry grass) — see *Weather, wind and fire* |
 | `building/{facades,roofs,districts}/<name>.*.json`, `building/look.json`, `building/fire.json` | wall, roof and district presets, the buildings' look and the building fire's tuning — see *Buildings: presets, districts and building fires* |
-| `assets.lock.json` | every fetched file: URL, SHA-256, licence (CC0-1.0), source page |
+| `assets.lock.json` | every fetched file: URL, SHA-256, licence (CC0-1.0, or CC-BY with its `attribution`), source page |
 
 Element kinds the engine knows (positions are ENU metres at the element's base, yaw in
 degrees): `box` (ground, roads, water, pads; optional `scatter` of debris and a
@@ -41,6 +41,13 @@ pins carry their credit (`attribution` in `assets.lock.json`; a test refuses a C
 without one): **Car Concept** by Eric Chadwick, Darmstadt Graphics Group GmbH (the scene's
 cars) and **Cesium Man** by Cesium (every survivor). Poly Haven has no uncovered car and no
 human, and a Sketchfab download needs a token and gives a signed URL no lock can pin.
+
+From Poly Pizza, one CC-BY-3.0 model, by a developer decision of 2026-11-04 (no CC0 bus can be
+pinned): the bus (`models/poly-pizza/bus.glb`, the `bus` vehicle class), credited as *"Bus" by
+Poly by Google, https://poly.pizza/m/4CPpvEmrMoF, CC BY 3.0
+(https://creativecommons.org/licenses/by/3.0/)* in its lock entry. The model is
+authored at 157 × 50 × 49 units, not metres, so its class file scales it by `model_scale` 0.07 to
+11.0 × 3.5 × 3.4 m.
 
 ## Look
 

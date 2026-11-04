@@ -239,6 +239,25 @@ def test_every_attribution_licensed_pin_of_the_simulation_credits_its_author() -
     assert uncredited == []
 
 
+def test_every_gltf_a_vehicle_class_names_is_pinned() -> None:
+    # Given every vehicle class file of the shipped simulation and its lock file
+    lock = POC / "assets" / "assets.lock.json"
+    pinned = {pin.path for pin in load_asset_pins(lock)}
+
+    # When the glTFs the class files name are collected
+    named: set[str] = set()
+    for path in sorted((POC / "assets" / "vehicle").glob("*.vehicle.json")):
+        raw: object = json.loads(path.read_text(encoding="utf-8"))
+        assert isinstance(raw, dict)
+        for key in ("glb", "carriage_glb"):
+            value = raw.get(key)
+            if isinstance(value, str):
+                named.add(value)
+
+    # Then a vehicle never names a model the fetcher would not fetch
+    assert named <= pinned
+
+
 def rust_assets_embedded_outside_tests() -> tuple[str, ...]:
     offenders: list[str] = []
     for source in sorted((POC / "src").glob("*.rs")):

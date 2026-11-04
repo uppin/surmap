@@ -67,6 +67,10 @@ pub struct VehicleDef {
     /// renderer): 180 for a glTF whose nose is +Z.
     #[serde(default)]
     pub model_yaw_deg: f32,
+    /// Scales the class glTF uniformly, for a model authored off real metres (a bus from a
+    /// pack whose units are not metres). 1 for a model already in metres.
+    #[serde(default = "unit_scale")]
+    pub model_scale: f32,
     /// Trains: the carriage glTF and the distance between consecutive carriages' centres.
     #[serde(default)]
     pub carriage_glb: Option<String>,
@@ -74,12 +78,17 @@ pub struct VehicleDef {
     pub carriage_spacing_m: Option<f32>,
 }
 
+fn unit_scale() -> f32 {
+    1.0
+}
+
 impl VehicleDef {
-    /// Parse and validate: every size and limit > 0, a wheel radius when wheels are named, a
-    /// carriage spacing > 0 when a carriage glTF is named.
+    /// Parse and validate: every size, scale and limit > 0, a wheel radius when wheels are named,
+    /// a carriage spacing > 0 when a carriage glTF is named.
     pub fn from_json(text: &str) -> Result<Self, String> {
         let def: Self = serde_json::from_str(text).map_err(|e| e.to_string())?;
         let positive = [
+            ("model_scale", def.model_scale),
             ("length_m", def.length_m),
             ("width_m", def.width_m),
             ("height_m", def.height_m),

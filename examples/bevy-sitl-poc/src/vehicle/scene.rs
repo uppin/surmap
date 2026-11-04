@@ -166,12 +166,14 @@ pub fn attach_vehicles(
         let Some(def) = classes.def(actor.class, &defs) else { continue };
         actor.attached = true;
         let turn = Quat::from_rotation_y(def.model_yaw_deg.to_radians());
+        // The class's model, and its carriages, are authored at the same scale.
+        let pose = Transform::from_rotation(turn).with_scale(Vec3::splat(def.model_scale));
         let glb = actor.glb.clone().unwrap_or_else(|| def.glb.clone());
         let model: Handle<Scene> = assets.load(GltfAssetLabel::Scene(0).from_asset(glb));
         if let Some(state) = state.as_mut() {
             state.pending.push(model.clone().untyped());
         }
-        commands.entity(root).with_child((SceneRoot(model), Transform::from_rotation(turn)));
+        commands.entity(root).with_child((SceneRoot(model), pose));
         let (Some(carriage_glb), Some(_)) = (def.carriage_glb.clone(), def.carriage_spacing_m) else { continue };
         for index in 1..=actor.cars {
             let scene: Handle<Scene> = assets.load(GltfAssetLabel::Scene(0).from_asset(carriage_glb.clone()));
@@ -180,7 +182,7 @@ pub fn attach_vehicles(
             }
             commands
                 .spawn((Carriage { vehicle: root, index }, Transform::default(), Visibility::default()))
-                .with_child((SceneRoot(scene), Transform::from_rotation(turn)));
+                .with_child((SceneRoot(scene), pose));
         }
     }
 }

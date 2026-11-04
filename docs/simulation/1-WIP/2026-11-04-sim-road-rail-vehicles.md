@@ -24,8 +24,8 @@ PRD: `PRD-2026-11-04-sim-road-rail-vehicles.md` · Discovery:
   - [x] Acceptance tests written and failing for the right reason (`tests/test_sim_vehicle_e2e.py`)
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⛔ `/green` Green — implement until every red test passes · every red test passes (Rust `cargo test --locked` 193/193; Python vehicle, tool and capture tests 32/32; `pytest -q` 2049 passed, 36 skipped); halted on the *Assets* criterion: no pinnable CC0 bus (see *Halt at wf 3* below)
-  - [ ] Pin CC0 glTF packs in `assets/assets.lock.json` (criteria in *Assets*), `uv run python scripts/fetch_sim_assets.py` verifies them — ⛔ car, truck, locomotive and carriage pinned (Quaternius, CC0-1.0, via poly.pizza; 101/101 verified); **bus not pinned**
+- [wf 3] ⏳ `/green` Green — implement until every red test passes · paused by the orchestrator for a rebase onto main (not closed); on this WIP every red test passes (Rust `cargo test --locked` 195/195; `pytest -q` 2054 passed, 36 skipped); the bus is pinned as one named CC BY 3.0 exception (developer decision, 2026-11-04; see *Decisions*)
+  - [x] Pin glTF packs in `examples/bevy-sitl-poc/assets/assets.lock.json` (criteria in *Assets*), `uv run python scripts/fetch_sim_assets.py` verifies them — car, truck, locomotive and carriage pinned (Quaternius, CC0-1.0, via poly.pizza); the bus pinned as CC BY 3.0 with its attribution (Poly by Google, poly.pizza/m/4CPpvEmrMoF); 102/102 verified
   - [x] Rust `scene_manifest.rs`: `vehicle` element, validated (known class, `cars` only on `train`, tree validated as `Target::Object`)
   - [x] Rust `vehicle.rs` (pure): `VehicleDef` loader, `Drive` kinematics, carriage placement along the travelled path, wheel angle
   - [x] Rust runtime: spawn the class glTF (or `glb` override) under a moving root, tick with the people at 10 Hz, spin wheel nodes, carriages trail — compiles for native and `wasm32`; not yet seen on screen (the native still is a Wrap check)
@@ -34,11 +34,10 @@ PRD: `PRD-2026-11-04-sim-road-rail-vehicles.md` · Discovery:
   - [x] Proto `VehicleElement` in `AddElementRequest`; regenerated code; handler (no test-checked docs table — `docs/agent.md` is prose, its vehicle line is Wrap's)
   - [x] Gates green: `ruff format`, `ruff check --no-cache`, `mypy`, `pytest -q`, `cargo test --locked`, `cargo check --target wasm32-unknown-unknown` (the wasm warning is pre-existing, `calibration.rs`)
 
-**Halt at wf 3 (*Assets*: no pinnable CC0 bus).** Candidates checked, none accepted:
-- Kenney *Car Kit* / *Train Kit* (CC0): kenney.nl serves the zip only through a signed, expiring link (`/download-link/<id>` → `?expires=`); the bare URL returns 404, so it cannot be pinned.
-- Poly Pizza searches `bus`, `coach`, `minibus`, `city bus`, `double-decker`, `school bus`, `transit` (24 results each; the `page` parameter returns the same page): every bus is CC-BY 3.0. Non-bus CC0 hits (`Locomotive Passenger Carriage`, `Taxi`) do not fit the class.
-- Decision for the developer: (a) accept a named CC-BY 3.0 bus, with attribution in the lock's `source`; (b) find a CC0 bus elsewhere; or (c) drop the bus from `street-traffic`, which changes the golden test, so it needs consent.
-- Hazard, unresolved: `assets/vehicle/bus.vehicle.json` names `models/quaternius/bus.glb`, which is not pinned. The scene waits on every glTF it spawns (`scene_ready`), so a scenario with a bus will not start recording until a bus is pinned. The class file parses, so the Rust test passes.
+**Resolved at wf 3 (*Assets*: the bus).** The halt asked for a decision: (a) a named CC BY 3.0 bus,
+(b) a CC0 bus elsewhere, or (c) dropping the bus from `street-traffic`. The developer chose (a) on
+2026-11-04. The bus is Poly Pizza's *Bus* by Poly by Google (`4CPpvEmrMoF`), the closest to a coach
+of the six CC BY 3.0 buses measured (see *Decisions*).
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (tests + native still of `street-traffic` reviewed)
   - [ ] `docs/simulation/bevy-simulation.md` — *Vehicles* section; `docs/agent.md` — `add_element` vehicle
@@ -114,7 +113,8 @@ their node's `speed_m_s` — no acceleration or turn limits. `object_tracks.json
 
 ### Class files (`assets/vehicle/<class>.vehicle.json`, data, no rebuild)
 
-`glb`, `length_m`/`width_m`/`height_m` (collider and truth extent), `wheel_nodes` (glTF node-name
+`glb`, `model_scale` (uniform scale of the class glTF and its carriages, default 1 — added at wf 3
+for the bus, whose pack is authored off metres), `length_m`/`width_m`/`height_m` (collider and truth extent), `wheel_nodes` (glTF node-name
 prefixes spun about their axle), `wheel_radius_m`, `max_speed_m_s`, `accel_m_s2`, `brake_m_s2`,
 `turn_rate_deg_s`, and for `train`: `carriage_glb`, `carriage_spacing_m`. Shipped values (planned):
 car 15 m/s · 3 m/s² · 6 m/s² · 45°/s; bus 12 · 1.2 · 3 · 20; truck 12 · 1.0 · 3 · 18; train
@@ -149,12 +149,14 @@ the block's west edge with a 6-carriage train.
 
 ### Assets
 
-Pinned in `assets.lock.json` (`member` from a zip where needed), licence **CC0-1.0** only, source
-page recorded. Criteria: glTF/GLB, separable wheel nodes for road classes, real-world scale or a
-documented scale in the class file. Candidates: Kenney *Car Kit* (sedan, taxi, police, van, truck,
-ambulance, firetruck, garbage truck) and *Train Kit* (locomotive, wagons) — kenney.nl, CC0; a bus
-from Quaternius (Poly Pizza, CC0) if the Car Kit lacks one. If no pinnable CC0 file meets the
-criteria for a class, the Green row halts ⛔ with the candidates found — no non-CC0 substitute.
+Pinned in `assets.lock.json` (`member` from a zip where needed), licence **CC0-1.0** by default,
+source page recorded. The one exception, by the developer's decision of 2026-11-04: a named CC BY
+3.0 bus, whose pin carries an `attribution` (author and model page); a non-CC0 pin without one is
+refused by the loader, and a test names the bus as the only one. Criteria: glTF/GLB, separable
+wheel nodes for road classes (an empty `wheel_nodes` list when the model has none), and real-world
+scale, or a documented `model_scale` in the class file. Kenney's *Car Kit* and *Train Kit* could
+not be pinned (signed, expiring download links); the Quaternius CC0 packs cover car, truck,
+locomotive and carriage.
 
 ## Verification
 
@@ -203,6 +205,10 @@ Deferred-work scan (`src/surmap/docs/todo/`, `src/surmap/docs/code-issues/`):
 - The existing exact-JSON track-line test was updated to the extended contract in commit 2, so it is
   red until Green emits `kind` and `yaw_deg`.
 - Trains follow their path, not a rail graph: no switching or collision; out of scope.
+- **Developer decision, 2026-11-04 (answer to the wf 3 halt, option a):** the CC0-only rule is relaxed
+  for one named bus — *"Bus" by Poly by Google* (https://poly.pizza/m/4CPpvEmrMoF), CC BY 3.0 —
+  credited in the lock's `attribution` and in `docs/simulation/bevy-simulation.md`. No other
+  non-CC0 asset is allowed; `test_the_only_pin_off_cc0_is_the_named_cc_by_bus` holds that line.
 
 **Green decisions made without review (wf 3):**
 - The approach speed is capped at `BEARING_SHARE` (½) of turn rate × distance, where the bearing is misaligned, and at a creep cap on stopping goals. The first draft overshot a stopping goal by about 1 m (braking-distance caps lag at low speed), so a stopping goal now creeps. A drive-through point counts as reached when the drive passes it: the runner is placed on the point, so the tree advances (a slow turner cannot hit a path corner).
@@ -210,3 +216,21 @@ Deferred-work scan (`src/surmap/docs/todo/`, `src/surmap/docs/code-issues/`):
 - Models are Quaternius CC0 (poly.pizza), not Kenney: Kenney's links are signed and expire. Car, truck and locomotive units are real metres or a 100× node scale that glTF applies. The fetch opener sends a `Referer` for `static.poly.pizza`, which refuses hot links otherwise (`REFERERS`, one host).
 - `resolve_target` accepts a `vehicle` (the e2e test reads its drive with `behaviour_of`); a vehicle's tree is validated as an object's.
 - Trains are not in a rail graph; carriages are separate roots placed on the locomotive's travelled path.
+- The bus, chosen among the bus-titled CC BY 3.0 models on Poly Pizza: six were measured from their
+  glTF (authored size, origin, poster); the seventh (`2_1dZHNPJqJ`, 25,046 triangles) was not
+  downloaded. Length/width ratios were 1.0–2.6 for five of them (a bus is about 4.7), and one sits
+  1.7 km or more from its origin. The Google *Bus* (`4CPpvEmrMoF`, 2,226 triangles, one coach mesh,
+  length/width 3.1) is the closest to a coach.
+- The bus's scale: the model is authored at 157.5 × 50.1 × 48.8 units, not metres. The new class
+  field `model_scale` 0.07 gives 11.0 × 3.5 × 3.4 m. The length keeps the planned 11 m; the width
+  and height are the model's own proportions at that length (wider than a real 2.5 m bus).
+  `model_scale` is a new class-file field (default 1, must be > 0), applied to the class glTF and
+  its carriages; this extends the class format and is recorded here for review.
+- The bus's forward: `model_yaw_deg` 180 (nose at +Z). The poster's camera (θ 0.87 rad) shows the
+  windscreen end on the left, which is +Z in that view; the +Z end is also the wider one (mirror
+  arms: half-width 25.0 against 22.6 at the other end). Verify on the native still at wrap.
+- The bus has no separable wheel meshes (one coach mesh), so `wheel_nodes` is `[]`: its wheels do
+  not spin. The developer's answer allows an empty list; a separable pack would be another pin.
+- Checks: `scripts/fetch_sim_assets.py` verifies 102 pins (the bus's sha256 `594f1e51…`); the GLB is
+  a valid glTF 2.0 file; my GLB inspector agrees with the fetched Quaternius car (1.81 × 1.18 ×
+  4.22 m against its class 1.8 × 1.2 × 4.2) and truck. The bus is not yet seen on screen (Wrap).

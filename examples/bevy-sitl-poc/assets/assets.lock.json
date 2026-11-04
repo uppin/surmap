@@ -737,6 +737,14 @@
       "sha256": "21d78205f63d7dbaf95dd9f5f84e9455cc46ea695e590e77e1888d7c8b91caa3",
       "license": "CC0-1.0",
       "source": "https://poly.pizza/m/JCwr52pnuO"
+    },
+    {
+      "path": "models/poly-pizza/bus.glb",
+      "url": "https://static.poly.pizza/635a02b7-4260-42a5-bd52-987511d6e3e0.glb",
+      "sha256": "594f1e515bd1882467f50bbc3588df5009338e2ec8bbc31eee36c85774207a76",
+      "license": "CC-BY-3.0",
+      "source": "https://poly.pizza/m/4CPpvEmrMoF",
+      "attribution": "\"Bus\" by Poly by Google (https://poly.pizza/m/4CPpvEmrMoF), CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)"
     }
   ]
 }
