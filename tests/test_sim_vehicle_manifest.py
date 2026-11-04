@@ -90,3 +90,20 @@ def test_the_street_traffic_preset_is_the_golden_the_renderer_parses() -> None:
     traffic = load_presets(POC_ASSETS)["street-traffic"]
 
     assert traffic == json.loads(GOLDEN.read_text(encoding="utf-8"))
+
+
+def test_the_street_traffic_bus_is_painted_not_the_models_white() -> None:
+    traffic = load_presets(POC_ASSETS)["street-traffic"]
+
+    (bus,) = [v for v in vehicles_of(traffic) if v["class"] == "bus"]
+
+    assert bus["tint"] == [1.0, 0.78, 0.1]
+
+
+def test_the_street_traffic_truck_drives_the_cross_street_side_on_to_the_survey_loop() -> None:
+    traffic = load_presets(POC_ASSETS)["street-traffic"]
+
+    (truck,) = [v for v in vehicles_of(traffic) if v["class"] == "truck"]
+
+    # The cross street runs east-west, 10 m wide, centred on north 60 m
+    assert (truck["yaw_deg"], truck["position_enu"]) == (0.0, [-45.0, 57.5, 0.0])

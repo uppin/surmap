@@ -1,6 +1,8 @@
 """Scoring on-board detections against a simulation capture's ground truth.
 
-Each ground-truth box whose kind a COCO detector can name (`car`, `person`) is projected onto the
+Each ground-truth box whose kind a COCO detector can name (`car`, `person`) — and each vehicle
+(`car`, `bus`, `truck`, `train`) that only `object_tracks.jsonl` places, given its class's
+footprint and recorded heading — is projected onto the
 left image of every frame (`bevy_ground_truth.project_box`). It is *expected* in that frame when
 most of its projected box lies inside the image and the box is big enough to resolve. A
 detection *finds* an expected object when its label is one the kind answers to and its box
@@ -13,6 +15,7 @@ detector can name them, so they are never expected (SAM labels them, docs/meta-s
 
 from __future__ import annotations
 
+import math
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -23,7 +26,7 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image
 
-from surmap.simulation.bevy_capture import BevyCapture
+from surmap.simulation.bevy_capture import BevyCapture, CapturedFrame
 from surmap.simulation.bevy_ground_truth import project_box
 from surmap.simulation.bevy_wire import GroundTruthBox
 from surmap.simulation.calibration import StereoCalibrationSpec
@@ -34,7 +37,22 @@ Box = tuple[float, float, float, float]
 # The COCO labels each ground-truth kind answers to.
 COCO_LABELS: Mapping[str, frozenset[str]] = {
     "car": frozenset({"car", "truck", "bus"}),
+    "bus": frozenset({"bus"}),
+    "truck": frozenset({"truck"}),
+    "train": frozenset({"train"}),
     "person": frozenset({"person"}),
+}
+# The kinds that are vehicles: a detection with one of these labels on a missed vehicle is a
+# confusion (`as_another_vehicle`), not a false positive.
+VEHICLE_KINDS = ("car", "bus", "truck", "train")
+VEHICLE_LABELS = frozenset({"car", "bus", "truck", "train"})
+# (length, width, height) in metres of each vehicle class, as `assets/vehicle/<class>.vehicle.json`
+# of the renderer declares them. A train is its locomotive; carriages are not tracked.
+VEHICLE_FOOTPRINT_M: Mapping[str, tuple[float, float, float]] = {
+    "car": (4.2, 1.8, 1.2),
+    "bus": (11.0, 3.5, 3.4),
+    "truck": (6.6, 3.4, 3.6),
+    "train": (8.1, 2.9, 6.1),
 }
 # An expected box is at least this many pixels on its shorter side, inside the image.
 MIN_SIDE_PX = 12.0
@@ -61,6 +79,7 @@ class ExpectedObject:
 class FrameScore:
     hit_ids: frozenset[str]
     false_positives: tuple[Detection, ...]
+    as_another_vehicle: frozenset[str] = frozenset()
 
 
 @dataclass
@@ -69,6 +88,8 @@ class KindScore:
 
     visible: int = 0
     found: int = 0
+    # Vehicles not found, but covered by a detection with another vehicle's label.
+    as_another_vehicle: int = 0
 
     @property
     def hit_rate(self) -> float:
@@ -105,22 +126,54 @@ def _moved(box: GroundTruthBox, to: Vec3) -> GroundTruthBox:
     )
 
 
+def _vehicle_box(obj_id: str, kind: str, at: Vec3, heading_deg: float) -> GroundTruthBox:
+    """The axis-aligned box around a vehicle's yawed footprint, its base at `at`."""
+    length, width, height = VEHICLE_FOOTPRINT_M[kind]
+    cos, sin = abs(math.cos(math.radians(heading_deg))), abs(math.sin(math.radians(heading_deg)))
+    half_x, half_y = (length * cos + width * sin) / 2.0, (length * sin + width * cos) / 2.0
+    return GroundTruthBox(
+        id=obj_id,
+        kind=kind,
+        min_enu=Vec3(at.x - half_x, at.y - half_y, at.z),
+        max_enu=Vec3(at.x + half_x, at.y + half_y, at.z + height),
+    )
+
+
+def _with_tracked_vehicles(
+    objects: Sequence[GroundTruthBox],
+    tracks: Mapping[str, Vec3] | None,
+    kinds: Mapping[str, str] | None,
+    yaw_deg: Mapping[str, float] | None,
+) -> list[GroundTruthBox]:
+    """`objects` plus a box for every tracked vehicle the ground truth does not list."""
+    boxes = list(objects)
+    listed = {obj.id for obj in objects}
+    for obj_id, at in (tracks or {}).items():
+        kind = (kinds or {}).get(obj_id)
+        if obj_id not in listed and kind is not None and kind in VEHICLE_FOOTPRINT_M:
+            boxes.append(_vehicle_box(obj_id, kind, at, (yaw_deg or {}).get(obj_id, 0.0)))
+    return boxes
+
+
 def visible_objects(
     objects: Sequence[GroundTruthBox],
     rig: Pose,
     calibration: StereoCalibrationSpec,
     *,
     tracks: Mapping[str, Vec3] | None = None,
+    kinds: Mapping[str, str] | None = None,
+    yaw_deg: Mapping[str, float] | None = None,
     min_side_px: float = MIN_SIDE_PX,
     min_inside: float = MIN_INSIDE,
 ) -> tuple[ExpectedObject, ...]:
     """The objects a COCO detector should find in the frame seen from `rig`.
 
-    A tracked object (a walking person) is moved to its frame position first. With the
+    A tracked object (a walking person) is moved to its frame position first; a tracked
+    vehicle the ground truth does not list (`kinds`, `yaw_deg` by id) is placed there. With the
     thresholds at zero it lists every object present in the image, resolvable or not.
     """
     expected: list[ExpectedObject] = []
-    for obj in objects:
+    for obj in _with_tracked_vehicles(objects, tracks, kinds, yaw_deg):
         if obj.kind not in COCO_LABELS:
             continue
         placed = _moved(obj, tracks[obj.id]) if tracks and obj.id in tracks else obj
@@ -155,6 +208,21 @@ def _best(
     return best[1] if best is not None and best[0] >= MIN_IOU else None
 
 
+def _covered_vehicle(
+    detection: Detection, objects: Sequence[ExpectedObject], hits: set[str]
+) -> ExpectedObject | None:
+    """The missed vehicle a vehicle-labelled detection sits on (called something else)."""
+    if detection.label not in VEHICLE_LABELS:
+        return None
+    candidates = [
+        (_iou(detection.box_xyxy, obj.box_xyxy), obj)
+        for obj in objects
+        if obj.kind in VEHICLE_KINDS and obj.id not in hits
+    ]
+    best = max(candidates, key=lambda c: c[0], default=None)
+    return best[1] if best is not None and best[0] >= MIN_IOU else None
+
+
 def score_frame(
     expected: Sequence[ExpectedObject],
     detections: Sequence[Detection],
@@ -167,14 +235,37 @@ def score_frame(
     (`unresolved`) is neither a hit nor a false positive.
     """
     hits: set[str] = set()
-    false_positives: list[Detection] = []
+    unmatched: list[Detection] = []
     for detection in sorted(detections, key=lambda d: -d.score):
         found = _best(detection, expected, hits)
         if found is not None:
             hits.add(found.id)
+        else:
+            unmatched.append(detection)
+    confused: set[str] = set()
+    false_positives: list[Detection] = []
+    for detection in unmatched:
+        vehicle = _covered_vehicle(detection, expected, hits)
+        if vehicle is not None:
+            confused.add(vehicle.id)
         elif _best(detection, unresolved, set()) is None:
             false_positives.append(detection)
-    return FrameScore(frozenset(hits), tuple(false_positives))
+    return FrameScore(frozenset(hits), tuple(false_positives), frozenset(confused))
+
+
+def _seen_in(
+    capture: BevyCapture, frame: CapturedFrame, *, min_side_px: float, min_inside: float
+) -> tuple[ExpectedObject, ...]:
+    return visible_objects(
+        capture.objects,
+        frame.pose_enu,
+        capture.calibration,
+        tracks=capture.object_tracks.get(frame.pair.t_ns),
+        kinds=capture.object_kinds,
+        yaw_deg=capture.object_yaw_deg.get(frame.pair.t_ns),
+        min_side_px=min_side_px,
+        min_inside=min_inside,
+    )
 
 
 def score_capture(
@@ -186,19 +277,9 @@ def score_capture(
     found: Counter[str] = Counter()
     false_positives: Counter[str] = Counter()
     for frame in capture.frames:
-        tracks = capture.object_tracks.get(frame.pair.t_ns)
-        expected = visible_objects(
-            capture.objects, frame.pose_enu, capture.calibration, tracks=tracks
-        )
+        expected = _seen_in(capture, frame, min_side_px=MIN_SIDE_PX, min_inside=MIN_INSIDE)
         expected_ids = {obj.id for obj in expected}
-        present = visible_objects(
-            capture.objects,
-            frame.pose_enu,
-            capture.calibration,
-            tracks=tracks,
-            min_side_px=0.0,
-            min_inside=0.0,
-        )
+        present = _seen_in(capture, frame, min_side_px=0.0, min_inside=0.0)
         unresolved = tuple(obj for obj in present if obj.id not in expected_ids)
         score = score_frame(
             expected, detections.get(frame.pair.frame_id, ()), unresolved=unresolved
@@ -209,6 +290,8 @@ def score_capture(
             if obj.id in score.hit_ids:
                 found[obj.id] += 1
                 report.kinds[obj.kind].found += 1
+            elif obj.id in score.as_another_vehicle:
+                report.kinds[obj.kind].as_another_vehicle += 1
         false_positives.update(d.label for d in score.false_positives)
         report.frames += 1
     report.objects = {obj_id: (seen[obj_id], found[obj_id]) for obj_id in sorted(seen)}

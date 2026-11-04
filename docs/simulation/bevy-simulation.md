@@ -648,7 +648,8 @@ COCO profiles (`surmap.detection.profiles`) see colour on board; `--colour` reco
 left image of each frame (`bevy_ground_truth.project_box`). An object is **in view** when at
 least half its projected box is inside the image and its shorter side is ≥ 12 px; a detection
 **finds** it when its label is one the kind answers to (`car`: car, truck, bus; `person`:
-person) at IoU ≥ 0.3. A detection of an object present but too small or too clipped to be in
+person; a `bus`, `truck` or `train` only its own label — see *Road and rail vehicles* below) at
+IoU ≥ 0.3. A detection of an object present but too small or too clipped to be in
 view is neither; every other detection is a false positive. Occlusion is not tested (no depth
 is recorded). `building`, `collapsed_building`, `debris`, `box` and `fire` are not COCO
 classes: no on-board detector can name them, so they are never expected — SAM labels them
@@ -703,6 +704,61 @@ What moved it, and what did not:
   ssdlite).
 - **False positives** did not go down: the profiles still fire on rubble slabs, water and sky
   (`tv`, `airplane`, `bird`, `bench`, `book`); ssdlite-mobiledet is the noisiest.
+
+### Road and rail vehicles (`street-traffic`)
+
+The vehicles of `street-traffic` are not in `ground_truth.json`: only `object_tracks.jsonl` places
+them (`kind`, `yaw_deg`, position per frame). `detection_eval` gives each tracked vehicle the
+footprint of its class (`VEHICLE_FOOTPRINT_M`, from `assets/vehicle/<class>.vehicle.json`; a train
+is its locomotive) at its recorded position, the axis-aligned box around its yawed rectangle. A
+`car` answers to car, truck or bus; a `bus`, `truck` or `train` only to its own label. A vehicle
+that is not found but is covered (IoU ≥ 0.3) by a detection with another vehicle's label counts as
+**found as another vehicle** (`+n` in the score script's table); that detection is not a false
+positive.
+
+```bash
+uv run python scripts/fetch_coral_model.py
+cd examples/bevy-sitl-poc
+BEVY_ASSET_ROOT=$PWD cargo run --release -- --record <dir> --scenario street-traffic --colour --jpeg --rate-hz 1 --start 0 --frames 128
+cd ../.. && uv run python scripts/score_sim_detections.py <dir>
+```
+
+`--scenario street-traffic` loads `assets/scenarios/street-traffic.json` (copy
+`tests/fixtures/sim_scenario/street-traffic.json` there, the folder is not tracked); 128 frames at
+1 Hz are one lap of the survey loop (127 s): the loop passes the avenue, the cross street (bus and
+truck) and the rail line (train, in view for six frames). Frames are not committed. Object-frames
+found / in view, score 0.3, colour (the bar: the best profile finds each kind in ≥ 20 % of its
+object-frames, and no kind is 0 across all profiles):
+
+| Pass | Profile | Cars | Bus | Truck | Train | False positives |
+|---|---|---|---|---|---|---|
+| before (white bus, truck on the avenue, scale 1) | efficientdet-lite0 | 12/90 | 1/16 +1 | 1/13 +1 | 0/6 | 84 |
+| | ssd-mobilenet-v2 | 3/90 | 0/16 | 0/13 | 0/6 | 35 |
+| | ssdlite-mobiledet | 33/90 | 0/16 +5 | 2/13 | 0/6 | 355 |
+| **after (the preset)** | efficientdet-lite0 | 12/90 | **5/16** | **8/14** | 0/6 | 85 |
+| | ssd-mobilenet-v2 | 2/90 | 0/16 +2 | 1/14 | 0/6 | 32 |
+| | ssdlite-mobiledet | **34/90** | 1/16 +6 | **10/14** | 0/6 | 344 |
+
+What moved it, and what did not (three iterations at most per class, each a full re-record):
+
+- **Bus** 1/16 → 5/16: the model is white, and a red tint scored 0/16 on the same pass; school-bus
+  yellow (`tint [1.0, 0.78, 0.1]`) is read as a bus by efficientdet-lite0. ssdlite-mobiledet calls
+  it another vehicle (car or truck) in 6 more frames.
+- **Truck** 1/13 → 10/14: the Quaternius truck reads as a van at 8 m up, and on the avenue it was
+  seen end-on, far off and behind rubble slabs (occlusion is not tested). It now drives the cross
+  street (5 m south of the bus's lane), side-on and close to the loop's passes, and its class is
+  scaled 1.25 (6.6 × 3.4 × 3.6 m) so it is not smaller than the bus beside it. (On the same pass a
+  scale-only change, with the avenue unchanged, left it 1/13.)
+- **Cars** are unchanged by this PR (12/90, 34/90 here; 9/46, 15/46 on #111's fixture window).
+- **Train** stays at 0/6 on every profile, **under the bar**. Tried: the rail 36 m closer to the
+  loop (x −30, then −26; the locomotive is then clipped by the top of the image — box 0–45 px tall
+  — and ssdlite calls the tender's figure a person), and 22 m closer with the train slowed to
+  8 m/s (the same six frames, 51–56 s). A tint cannot lighten the locomotive: its glTF colours are
+  linear 0.02–0.04, near black. Recorded as
+  `src/surmap/docs/todo/2026-11-04-train-detectors-blind.md`.
+- A recording's light can differ from run to run: one capture of the same scenario was 25 %
+  darker and scored lower on every class; it was discarded and re-recorded. Re-record before
+  comparing a pass with another.
 
 `tests/test_sim_detector_realism_e2e.py` (in CI's `coral-e2e` job, `SURMAP_REQUIRE_CORAL_E2E=1`)
 holds floors under these numbers: efficientdet-lite0 finds cars in ≥ 10 % of their frames,

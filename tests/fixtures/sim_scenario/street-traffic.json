@@ -938,14 +938,14 @@
     },
     {
       "kind": "vehicle",
-      "id": "truck-south-1",
+      "id": "truck-cross-1",
       "class": "truck",
       "position_enu": [
-        -2.5,
-        120.0,
+        -45.0,
+        57.5,
         0.0
       ],
-      "yaw_deg": -90.0,
+      "yaw_deg": 0.0,
       "behaviour": {
         "node": "repeat",
         "child": {
@@ -955,8 +955,8 @@
               "node": "follow_path",
               "enu": [
                 [
-                  -2.5,
-                  -40.0
+                  45.0,
+                  57.5
                 ]
               ],
               "speed_m_s": 9.0
@@ -969,8 +969,8 @@
               "node": "follow_path",
               "enu": [
                 [
-                  -2.5,
-                  120.0
+                  -45.0,
+                  57.5
                 ]
               ],
               "speed_m_s": 9.0
@@ -989,6 +989,11 @@
         0.0
       ],
       "yaw_deg": 0.0,
+      "tint": [
+        1.0,
+        0.78,
+        0.1
+      ],
       "behaviour": {
         "node": "repeat",
         "child": {

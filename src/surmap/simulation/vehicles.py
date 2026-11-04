@@ -16,6 +16,9 @@ from surmap.simulation.manifest_checks import (
 
 VEHICLE_CLASSES = ("car", "bus", "truck", "train")
 GLTF_SUFFIXES = (".glb", ".gltf")
+# The bus model is white; a school bus is yellow, which the on-board detectors read as a bus far
+# more often than white or red (docs/simulation/bevy-simulation.md § On-board detectors).
+SCHOOL_BUS_YELLOW = [1.0, 0.78, 0.1]
 BALLAST: dict[str, object] = {
     "color": [0.45, 0.42, 0.38],
     "perceptual_roughness": 0.95,
@@ -113,7 +116,7 @@ def _vehicle(
 
 
 def street_traffic(block: Manifest) -> Manifest:
-    """The disaster block with traffic: cars and a truck on the avenue, a bus on the cross street,
+    """The disaster block with traffic: cars on the avenue, a bus and a truck on the cross street,
     a parked car, and a six-carriage train on a rail line along the block's west edge."""
     edited: Manifest = copy.deepcopy(block)
     materials = copy.deepcopy(block.get("materials"))
@@ -144,17 +147,18 @@ def street_traffic(block: Manifest) -> Manifest:
             behaviour=_shuttle([2.5, 130.0], [2.5, 20.0], 12.0),
         ),
         _vehicle(
-            "truck-south-1",
+            "truck-cross-1",
             "truck",
-            [-2.5, 120.0],
-            -90.0,
-            behaviour=_shuttle([-2.5, -40.0], [-2.5, 120.0], 9.0),
+            [-45.0, 57.5],
+            0.0,
+            behaviour=_shuttle([45.0, 57.5], [-45.0, 57.5], 9.0),
         ),
         _vehicle(
             "bus-cross-1",
             "bus",
             [-45.0, 62.5],
             0.0,
+            tint=SCHOOL_BUS_YELLOW,
             behaviour=_shuttle([45.0, 62.5], [-45.0, 62.5], 8.0),
         ),
         _vehicle("car-parked-1", "car", [7.0, 30.0], 90.0),

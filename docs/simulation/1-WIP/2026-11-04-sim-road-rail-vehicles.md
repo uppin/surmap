@@ -24,7 +24,7 @@ PRD: `PRD-2026-11-04-sim-road-rail-vehicles.md` · Discovery:
   - [x] Acceptance tests written and failing for the right reason (`tests/test_sim_vehicle_e2e.py`)
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⏳ `/green` Green — implement until every red test passes · paused by the orchestrator for a rebase onto main (not closed); on this WIP every red test passes (Rust `cargo test --locked` 195/195; `pytest -q` 2054 passed, 36 skipped); the bus is pinned as one named CC BY 3.0 exception (developer decision, 2026-11-04; see *Decisions*)
+- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes · every red test passes (Rust 195/195 before the detector work; Python incl. the new detector tests); the bus is pinned as one named CC BY 3.0 exception (developer decision, 2026-11-04; see *Decisions*); detector cross-check: car, bus and truck clear the 20 % bar, the train does not (0/6, TODO `src/surmap/docs/todo/2026-11-04-train-detectors-blind.md`)
   - [x] Pin glTF packs in `examples/bevy-sitl-poc/assets/assets.lock.json` (criteria in *Assets*), `uv run python scripts/fetch_sim_assets.py` verifies them — car, truck, locomotive and carriage pinned (Quaternius, CC0-1.0, via poly.pizza); the bus pinned as CC BY 3.0 with its attribution (Poly by Google, poly.pizza/m/4CPpvEmrMoF); 102/102 verified
   - [x] Rust `scene_manifest.rs`: `vehicle` element, validated (known class, `cars` only on `train`, tree validated as `Target::Object`)
   - [x] Rust `vehicle.rs` (pure): `VehicleDef` loader, `Drive` kinematics, carriage placement along the travelled path, wheel angle
@@ -33,6 +33,10 @@ PRD: `PRD-2026-11-04-sim-road-rail-vehicles.md` · Discovery:
   - [x] Python `scenario_manifest`: `vehicle` in `ELEMENT_KINDS` with the same rules; preset `street-traffic`; golden `tests/fixtures/sim_scenario/street-traffic.json` parsed by Rust
   - [x] Proto `VehicleElement` in `AddElementRequest`; regenerated code; handler (no test-checked docs table — `docs/agent.md` is prose, its vehicle line is Wrap's)
   - [x] Gates green: `ruff format`, `ruff check --no-cache`, `mypy`, `pytest -q`, `cargo test --locked`, `cargo check --target wasm32-unknown-unknown` (the wasm warning is pre-existing, `calibration.rs`)
+  - [x] Detector label map (red first): `detection_eval.COCO_LABELS` gains `bus`, `truck`, `train`; tracked vehicles are projected at their per-frame position and heading; "found as another vehicle" is counted per kind; the score script's columns follow the kinds present
+  - [x] Record `street-traffic` natively (`--colour --jpeg --rate-hz 1`) into the scratchpad (frames are not committed) and score it with `scripts/score_sim_detections.py` at 0.3 — *before* numbers (128 frames, one lap)
+  - [x] Bar: for car, bus, truck and train the best profile finds it in at least 20 % of its object-frames in view, and no class is 0 across all profiles; where it misses, improve realism and re-measure (at most 3 iterations per class) — bus 5/16, truck 10/14, car 34/90 clear it; the train is 0/6 after three iterations
+  - [x] Record the before/after table in `docs/simulation/bevy-simulation.md` § *On-board detectors (measured)* and in *Verification* (V3); a class still under the bar gets a TODO under `src/surmap/docs/todo/`
 
 **Resolved at wf 3 (*Assets*: the bus).** The halt asked for a decision: (a) a named CC BY 3.0 bus,
 (b) a CC0 bus elsewhere, or (c) dropping the bus from `street-traffic`. The developer chose (a) on
@@ -143,8 +147,8 @@ dict[int, dict[str, float]]`.
 
 `scenario_manifest.py`: `vehicle` kind with the renderer's rules; `add_element` takes
 `VehicleElement {id, class, position, yaw_deg, cars, behaviour_json}` (the tree is validated by
-`behaviour_tree`); preset `street-traffic` = the disaster block with two cars and a truck on the
-avenue, a bus on the cross street, a parked car, and a rail line (`box`, material `ballast`) along
+`behaviour_tree`); preset `street-traffic` = the disaster block with two cars on the avenue, a
+yellow bus and a truck on the cross street, a parked car, and a rail line (`box`, material `ballast`) along
 the block's west edge with a 6-carriage train.
 
 ### Assets
@@ -167,6 +171,24 @@ locomotive and carriage.
   Python (`uv run pytest -q`): `vehicle` validation mirrors Rust; preset; `add_element` vehicle via
   the tool; `load_bevy_capture` reads kinds and yaw; an acceptance test over a recorded
   `street-traffic` capture fixture (tracks present, none in `ground_truth.json`).
+- **V3 — detector cross-check (a deterministic recorded command).** From `examples/bevy-sitl-poc`,
+  with `tests/fixtures/sim_scenario/street-traffic.json` copied to `assets/scenarios/` and
+  `uv run python scripts/fetch_coral_model.py` run: `BEVY_ASSET_ROOT=$PWD cargo run -- --record <dir>
+  --scenario street-traffic --colour --jpeg --rate-hz 1 --start 0 --frames 128`, then
+  `uv run python scripts/score_sim_detections.py <dir>`. Bar: for car, bus, truck and train the best
+  of the three profiles finds it in ≥ 20 % of its object-frames in view, and no class is 0 on all.
+  Recorded, 2026-11-04 (object-frames found / in view, score 0.3; before → after):
+
+  | Profile | Car | Bus | Truck | Train | FP |
+  |---|---|---|---|---|---|
+  | efficientdet-lite0 | 12/90 → 12/90 | 1/16 → **5/16** | 1/13 → **8/14** | 0/6 → 0/6 | 84 → 85 |
+  | ssd-mobilenet-v2 | 3/90 → 2/90 | 0/16 → 0/16 | 0/13 → 1/14 | 0/6 → 0/6 | 35 → 32 |
+  | ssdlite-mobiledet | 33/90 → **34/90** | 0/16 → 1/16 | 2/13 → **10/14** | 0/6 → 0/6 | 355 → 344 |
+
+  Result: car 38 %, bus 31 %, truck 71 % clear the bar; the train does not (0/6 on all profiles after
+  three iterations) — TODO `src/surmap/docs/todo/2026-11-04-train-detectors-blind.md`. Same table in
+  `docs/simulation/bevy-simulation.md` § *Road and rail vehicles*. Unit tests:
+  `tests/test_sim_detection_eval.py` (label map, tracked-vehicle footprints, confusions).
 - **Supporting evidence (not a rung)** — native still `--screenshot <dir> --at 20 --scenario
   street-traffic`, reviewed at wrap: vehicles on the roads, train on its track, wheels not floating.
 
@@ -234,3 +256,18 @@ Deferred-work scan (`src/surmap/docs/todo/`, `src/surmap/docs/code-issues/`):
 - Checks: `scripts/fetch_sim_assets.py` verifies 102 pins (the bus's sha256 `594f1e51…`); the GLB is
   a valid glTF 2.0 file; my GLB inspector agrees with the fetched Quaternius car (1.81 × 1.18 ×
   4.22 m against its class 1.8 × 1.2 × 4.2) and truck. The bus is not yet seen on screen (Wrap).
+- **Detector cross-check, decided without review (wf 3, 2026-11-04):** (1) `bus`, `truck`, `train`
+  answer only to their own COCO label; `car` keeps {car, truck, bus}, so main's car/person numbers
+  do not move. (2) A tracked vehicle the ground truth does not list gets its class footprint
+  (copied into `detection_eval.VEHICLE_FOOTPRINT_M`, since the renderer's class files are not a
+  Python dependency) and the axis-aligned box of its yawed rectangle, so a diagonal vehicle's
+  expected box is slightly larger than the vehicle. A train is its locomotive; carriages are not
+  tracked. (3) "Found as another vehicle" counts a missed vehicle covered by a car/bus/truck/train
+  detection and removes that detection from the false positives. (4) Realism levers kept: bus tint
+  school-bus yellow (red scored 0/16, white 1/16); truck moved to the cross street and class scaled
+  1.25 (`truck.vehicle.json`: 6.6 × 3.4 × 3.6 m, wheel radius 0.55); `street-traffic` golden
+  regenerated. Reverted: train rail and speed changes (no gain). (5) Recording the bar needs one lap
+  (128 frames) so the train, in view for six frames, is in it. (6) A capture's lighting varied run to
+  run once (25 % darker); that run was discarded and re-recorded. The pinned assets were fetched
+  (`fetch_sim_assets.py`) and `assets/scenarios/street-traffic.json` copied in locally, neither is
+  committed.
