@@ -12,17 +12,17 @@ PRD: `PRD-2026-11-04-fleet-nests.md` · Discovery: `2026-11-04-fleet-nests-initi
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1)
+- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1) · commit 1 `4a6025b`
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
-  - [ ] Stubs this node owns (`DroneNest`, `Element::DroneNest`, `scene_manifest/fleet.rs`, `simulation/fleet_nests.py`, proto `DroneNestElement`)
-  - [ ] Acceptance tests written and failing for the right reason
-  - [ ] Unit/integration tests written and failing
-  - [ ] Tests committed with the changeset
+- [wf 2] ✅ 2026-11-04 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 45 failing (24 acceptance + 21 unit/Rust) — commit 2
+  - [x] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
+  - [x] Stubs this node owns (`DroneNest`, `Element::DroneNest`, `scene_manifest/fleet.rs`, `simulation/fleet_nests.py`, proto `DroneNestElement`)
+  - [x] Acceptance tests written and failing for the right reason
+  - [x] Unit/integration tests written and failing
+  - [x] Tests committed with the changeset
 - [wf 3] ⬜ `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) ·
   - [ ] Rust `scene_manifest.rs`: `Element::DroneNest(DroneNest)`, arms in `id()` / `materials()`; `scene_manifest/fleet.rs` `validate_nests()` called from `from_json`; `DroneNest::drone_ids()`
   - [ ] Rust `world.rs`: `Builder::nest` spawns the pad (rim, deck, "H"), a `NestPad { id }` component, and the `Nests` resource (id, ENU pad centre, yaw, drone ids)
@@ -52,7 +52,7 @@ State A below is distilled from that file. Do not duplicate grep traces or file 
 ## Stack Context
 
 **Stack**: drone nests and an agent-tasked simulated fleet · slug **`#drone-fleet`** — this PR is
-**1 of 5** · `#pending`
+**1 of 5** · [#116](https://github.com/uppin/surmap/pull/116)
 **Branch**: `pr-1-drone-fleet` · **Base**: `origin/main`
 **Successor**: `pr-2-drone-fleet`
 **Kind**: Feature · behaviour-adds
@@ -231,6 +231,43 @@ preset output.
 
 Supporting evidence (not a rung): native still `--screenshot <dir> --at 5 --scenario
 earthquake-fleet` (`overview.png`) shows three pads, one on a roof. It is reviewed at wrap.
+
+## Validation Results
+
+**Baseline (untouched tree, `4a6025b`):** `uv run mypy` clean, `ruff check` / `ruff format --check`
+clean, `uv run pytest -q` 2154 passed, 38 skipped; `cargo test --locked` 267 passed, 0 failed.
+
+**Red tree (commit 2):** `uv run pytest -q` 2154 passed, 27 failed, 38 skipped — the 27 are all
+new; `cargo test --locked` 267 passed, 18 failed — the 18 are all new
+(`scene_manifest::tests::fleet`). `mypy`, `ruff check --no-cache`, `ruff format --no-cache --check`
+clean; `cargo build --locked` and `cargo check --locked --target wasm32-unknown-unknown` compile
+(new warnings: only `Nest`, `Nests`, `NestPad` never constructed — the `[G]` row builds them).
+
+Why each fails: Python — `NotImplementedError("pr-1: implement")` from `fleet_nests.validate_nests`
+(18), `fleet_nests.nests_of` (1), `water.water_surfaces` (2) and the handler's `_drone_nest` (3);
+`KeyError: 'earthquake-fleet'` (3, the preset is not in `load_presets` yet). Rust — `todo!` in
+`SceneManifest::validate_nests` (17) and `DroneNest::drone_ids` (1).
+
+Red-step notes for `[G]`:
+
+- The stubbed validators return early on a scene with no nests (`validate_nests` in both
+  languages), so every existing manifest, preset and golden still validates. Replace the whole
+  body, guard included.
+- The tests pin these message fragments (Rust `ManifestError::Invalid`, Python `ScenarioInvalid`):
+  the nest id first, then the rule — the overlapped element's id (`tower-1`), `water`, `500`,
+  `60`, both nest ids then `6` for spacing, `drones` and `4`, the id rule naming `id`, and
+  `at most 8 nests`. A taken drone id is `DuplicateId("nest-a-d1")` / `duplicate id 'nest-a-d1'`,
+  in both directions (a nest added after the element, and an element added after the nest — the
+  latter needs `element_ids` to include drone ids).
+- `fleet-nests.json` is a small hand-written manifest (ground, a water pond, `building-6`, nests
+  `nest-sw` 2, `nest-ne` 2, `nest-roof` 1 on `building-6`'s 16.5 m roof). It is not the
+  `earthquake-fleet` preset output; the preset is pinned by
+  `test_the_earthquake_fleet_preset_is_the_block_with_its_nests_added` and the two preset tests.
+- `every_element_kind_is_declared_in_json` is left unchanged (it is passing and would go red);
+  `a_drone_nest_is_declared_in_json_with_one_drone_facing_east_by_default` covers the new kind.
+- `water.py`'s `_Surface` is now the public `Surface` (the return type of `water_surfaces`).
+- A collapsed building's top, for the rooftop exception, is not pinned by a test; take
+  `z + slabs × slab_thickness_m`.
 
 ## Acceptance Tests
 

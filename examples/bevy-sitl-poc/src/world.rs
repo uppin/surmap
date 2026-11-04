@@ -21,7 +21,7 @@ use crate::actors::{self, bevy_yaw, Figure};
 use crate::figure_anim::Pose;
 use crate::building;
 use crate::scene_manifest::{
-    BoxElement, Building, CollapsedBuilding, DistrictDef, Element, Environment, ManifestError, ModelInstance,
+    BoxElement, Building, CollapsedBuilding, DistrictDef, DroneNest, Element, Environment, ManifestError, ModelInstance,
     PbrTextureSet, Person, SceneManifest, Vehicle,
 };
 use crate::rig::{ProfileAsset, RigSource};
@@ -86,6 +86,26 @@ pub struct SceneState {
 /// Ground-truth boxes (ENU) of the objects a region query may target.
 #[derive(Resource, Default)]
 pub struct GroundTruth(pub Vec<GroundTruthObject>);
+
+/// A drone nest's pad as built: its id, the pad's ENU centre at deck level, its heading and the
+/// drones it houses (`DroneNest::drone_ids`). The drones dock from here.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Nest {
+    pub id: String,
+    pub pad_enu: [f32; 3],
+    pub yaw_deg: f32,
+    pub drone_ids: Vec<String>,
+}
+
+/// Every nest of the scene, in manifest order.
+#[derive(Resource, Debug, Default, Clone, PartialEq)]
+pub struct Nests(pub Vec<Nest>);
+
+/// The pad entity of the nest `id`.
+#[derive(Component, Debug, Clone, PartialEq)]
+pub struct NestPad {
+    pub id: String,
+}
 
 /// A spawned model whose collider and ground-truth box need its meshes.
 #[derive(Component)]
@@ -286,6 +306,7 @@ impl Builder<'_, '_, '_> {
             Element::Person(e) => self.person(e),
             Element::Vegetation(_) => {}
             Element::Vehicle(e) => self.vehicle(e),
+            Element::DroneNest(e) => self.nest(e),
         }
     }
 
@@ -406,6 +427,13 @@ impl Builder<'_, '_, '_> {
         });
         self.commands
             .spawn((VehicleActor::new(e, float), Visibility::default(), Transform::from_translation(enu(x, y, z)).with_rotation(turn)));
+    }
+
+    /// A landing pad at the nest's centre, turned by its yaw: a `NEST_PAD_M` deck, a dark rim and
+    /// an "H", tagged `NestPad`, with the nest added to `Nests`.
+    fn nest(&mut self, _e: &DroneNest) {
+        // TODO(pr-1): implement
+        todo!("pr-1: implement")
     }
 
     fn person(&mut self, e: &Person) {

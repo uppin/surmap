@@ -49,6 +49,7 @@ from surmap.simulation.building_presets import (
 )
 from surmap.simulation.building_presets import validate_buildings
 from surmap.simulation.building_scenes import district_showcase, downtown_blaze
+from surmap.simulation.fleet_nests import validate_nests
 from surmap.simulation.manifest_checks import Manifest as Manifest
 from surmap.simulation.manifest_checks import ScenarioInvalid as ScenarioInvalid
 from surmap.simulation.manifest_checks import is_relative_path
@@ -61,7 +62,15 @@ from surmap.simulation.water import flood_rescue, validate_vessels
 if TYPE_CHECKING:
     from surmap.simulation.scenario_store import StoredAsset
 
-ELEMENT_KINDS = ("box", "collapsed_building", "building", "person", "vegetation", "vehicle")
+ELEMENT_KINDS = (
+    "box",
+    "collapsed_building",
+    "building",
+    "person",
+    "vegetation",
+    "vehicle",
+    "drone_nest",
+)
 COLLIDERS = ("none", "box", "trimesh")
 
 
@@ -218,6 +227,7 @@ def validate_manifest(manifest: Mapping[str, object]) -> None:
         _validate_fire(fire, seen)
     validate_buildings(manifest)
     validate_vessels(manifest)
+    validate_nests(manifest)
 
 
 def element_ids(manifest: Mapping[str, object]) -> list[str]:

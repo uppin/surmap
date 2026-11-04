@@ -14,6 +14,7 @@ from surmap.simulation.scenario_manifest import (
     load_presets,
     validate_manifest,
 )
+from surmap.simulation.water import water_surfaces
 from tests.sim_fakes import POC_ASSETS, vehicles_of
 
 GOLDEN = Path(__file__).parent / "fixtures" / "sim_scenario" / "flood-rescue.json"
@@ -95,3 +96,25 @@ def test_the_flood_rescue_preset_is_the_golden_the_renderer_parses() -> None:
     rescue = load_presets(POC_ASSETS)["flood-rescue"]
 
     assert rescue == json.loads(GOLDEN.read_text(encoding="utf-8"))
+
+
+def test_the_water_boxes_of_a_scene_are_its_water_surfaces() -> None:
+    # Given the flood street with floodwater over the avenue
+    street = add_element(load_presets(POC_ASSETS)["flood-street"], FLOODWATER)
+
+    # When its water surfaces are listed
+    surfaces = water_surfaces(street)
+
+    # Then the floodwater is the one surface, its top 0.6 m up
+    assert [surface.top for surface in surfaces] == [0.6]
+
+
+def test_a_turned_water_surface_covers_the_footprint_it_is_turned_to() -> None:
+    # Given floodwater 10 m wide and 100 m long, turned 90° so it runs east-west
+    manifest = {"elements": [{**FLOODWATER, "yaw_deg": 90.0}]}
+
+    # When its surface is read
+    (surface,) = water_surfaces(manifest)
+
+    # Then it covers 30 m east of its centre and not 30 m north
+    assert (surface.contains((30.0, 50.0)), surface.contains((0.0, 80.0))) == (True, False)

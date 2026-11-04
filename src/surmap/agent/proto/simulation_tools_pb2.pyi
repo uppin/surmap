@@ -256,8 +256,20 @@ class VehicleElement(_message.Message):
     behaviour_json: str
     def __init__(self, id: _Optional[str] = ..., vehicle_class: _Optional[str] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., yaw_deg: _Optional[float] = ..., cars: _Optional[int] = ..., behaviour_json: _Optional[str] = ...) -> None: ...
 
+class DroneNestElement(_message.Message):
+    __slots__ = ("id", "position", "yaw_deg", "drones")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    POSITION_FIELD_NUMBER: _ClassVar[int]
+    YAW_DEG_FIELD_NUMBER: _ClassVar[int]
+    DRONES_FIELD_NUMBER: _ClassVar[int]
+    id: str
+    position: EnuPoint
+    yaw_deg: float
+    drones: int
+    def __init__(self, id: _Optional[str] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., yaw_deg: _Optional[float] = ..., drones: _Optional[int] = ...) -> None: ...
+
 class AddElementRequest(_message.Message):
-    __slots__ = ("scenario_id", "box", "building", "collapsed_building", "person", "vegetation", "vehicle")
+    __slots__ = ("scenario_id", "box", "building", "collapsed_building", "person", "vegetation", "vehicle", "drone_nest")
     SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
     BOX_FIELD_NUMBER: _ClassVar[int]
     BUILDING_FIELD_NUMBER: _ClassVar[int]
@@ -265,6 +277,7 @@ class AddElementRequest(_message.Message):
     PERSON_FIELD_NUMBER: _ClassVar[int]
     VEGETATION_FIELD_NUMBER: _ClassVar[int]
     VEHICLE_FIELD_NUMBER: _ClassVar[int]
+    DRONE_NEST_FIELD_NUMBER: _ClassVar[int]
     scenario_id: str
     box: BoxElement
     building: BuildingElement
@@ -272,7 +285,8 @@ class AddElementRequest(_message.Message):
     person: PersonElement
     vegetation: VegetationElement
     vehicle: VehicleElement
-    def __init__(self, scenario_id: _Optional[str] = ..., box: _Optional[_Union[BoxElement, _Mapping[str, _Any]]] = ..., building: _Optional[_Union[BuildingElement, _Mapping[str, _Any]]] = ..., collapsed_building: _Optional[_Union[CollapsedBuildingElement, _Mapping[str, _Any]]] = ..., person: _Optional[_Union[PersonElement, _Mapping[str, _Any]]] = ..., vegetation: _Optional[_Union[VegetationElement, _Mapping[str, _Any]]] = ..., vehicle: _Optional[_Union[VehicleElement, _Mapping[str, _Any]]] = ...) -> None: ...
+    drone_nest: DroneNestElement
+    def __init__(self, scenario_id: _Optional[str] = ..., box: _Optional[_Union[BoxElement, _Mapping[str, _Any]]] = ..., building: _Optional[_Union[BuildingElement, _Mapping[str, _Any]]] = ..., collapsed_building: _Optional[_Union[CollapsedBuildingElement, _Mapping[str, _Any]]] = ..., person: _Optional[_Union[PersonElement, _Mapping[str, _Any]]] = ..., vegetation: _Optional[_Union[VegetationElement, _Mapping[str, _Any]]] = ..., vehicle: _Optional[_Union[VehicleElement, _Mapping[str, _Any]]] = ..., drone_nest: _Optional[_Union[DroneNestElement, _Mapping[str, _Any]]] = ...) -> None: ...
 
 class RemoveElementRequest(_message.Message):
     __slots__ = ("scenario_id", "element_id")
