@@ -7,6 +7,7 @@ import io
 import pytest
 from PIL import Image
 
+from surmap.simulation.floor_edits import set_map_floor
 from surmap.simulation.map_floor import (
     GeoBBox,
     InMemoryTileSource,
@@ -21,7 +22,6 @@ from surmap.simulation.map_floor import (
 from surmap.simulation.scenario_manifest import (
     ScenarioInvalid,
     load_presets,
-    set_map_floor,
     validate_manifest,
 )
 from tests.sim_fakes import POC_ASSETS
