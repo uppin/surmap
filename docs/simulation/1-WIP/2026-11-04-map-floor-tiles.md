@@ -1,4 +1,4 @@
-# Changeset: Simulation map floor — map-floor-tiles
+# Changeset: Simulation map floor — tile stitching
 
 **Date**: 2026-11-04
 **Status**: 🚧 In Progress
@@ -8,57 +8,46 @@
 
 ## Summary
 
-Tile stitching: `TileSource` port, OSM native adapter, in-memory fake; bbox → cropped PNG, content-hashed path; geodesy inverse of the snapshot's.
-
-## Initial Discovery
-
-[2026-11-04-map-floor-tiles-initial-discovery.md](2026-11-04-map-floor-tiles-initial-discovery.md)
+`surmap.simulation.map_floor`: a GPS bbox becomes a floor texture. A `TileSource` port
+(hexagon shape, as `surmap.slam`) with an OSM native adapter and an in-memory test adapter;
+slippy-tile stitching cropped to the bbox; geodesy that inverts the semantic snapshot's
+ENU rule. Tiles are disk-cached (`<z>/<x>/<y>.png`), the URL template is the station map's
+own OSM layer (configurable via `SURMAP_TILE_URL_TEMPLATE` / `SURMAP_TILE_CACHE_DIR`), and
+`choose_zoom` picks the sharpest zoom inside all three caps: zoom ≤ 18, ≤ 64 tiles,
+≤ 4 096 px a side. The PNG is named by its content hash, so scenarios share one texture.
 
 ## Stack Context
 
-**Stack**: simulation map floor · slug **`#map-floor`** — this PR is **2/5**
-**Branch**: `pr-2-map-floor-tiles` · **Base**: predecessor in the `#map-floor` stack (or `origin/main` for the bottom PR)
-**Kind**: Feature · behaviour-adds
-**Workflow**: preset `feature` · planned by `/plan-pr-stack` · pass-2 = failing tests
+**Stack**: `#map-floor` — **2 of 5** · **Branch**: `pr-2-map-floor-tiles` · **Base**: `pr-1-map-floor-manifest`
+**Kind**: Feature · behaviour-adds · **Workflow**: preset `feature`
 
 ### Green wave
 
-**Wave:** 1 of 3
-**Node:** n1
-**Blocks:** the nodes above it in the `#map-floor` line
+**Wave:** 1 of 3 · **Node:** n1 · **Blocks:** n3 (the tool stitches through this port)
 
 ### Greenable independently?
 
-**yes**
+**yes** — stitching and geodesy are pure over the fake adapter.
 
 ## Inherited Dependencies — do not implement here
 
 | Symbol / module | Owned by | State during this PR's green | What this PR does |
 |---|---|---|---|
-| (see Summary) | none | stub / fixture | calls it; does not implement it |
+| `map_floor` manifest shape | #127 | implemented below | produces the texture path it records; does not edit manifests |
 
 ## Verification
 
-**Method:** V1 — stitch/geodesy tests on fake tiles, no network
-- [ ] Verification executed — result recorded
-
-## Workflow
-
-- [wf 1] ✅ 2026-11-04 `/plan-red` Plan — changeset, initial discovery · this file
-- [wf 2] ✅ 2026-11-04 `/plan-red` Red — failing tests, committed ·
-- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes ·
-- [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
-  - [ ] Verification executed — result recorded
+V1 executed: geodesy round-trip, bbox refusals, deterministic stitch, disk cache serves
+the second fetch without HTTP, pixel cap. All green, no network in any test.
 
 ## Prerequisites
 
-Step 2b cross-check (`src/surmap/docs/todo/`, `src/surmap/docs/code-issues/`):
+As #127. **Outcome:** none blocking.
 
-| Record | Verdict |
-|---|---|
-| `src/surmap/docs/todo/2026-11-04-texture-uv-scale-measured.md` | — unrelated: facade/roof `uv_scale`; the floor texture is untiled |
-| `src/surmap/docs/todo/2026-11-04-cmu-and-pvc-textures.md` | — unrelated: facade texture sourcing |
-| `src/surmap/docs/todo/2026-11-03-bevy-visual-checkpoints-v3-v5.md` | ℹ answered: native-still inspection is this stack's V1 visual check precedent; V3–V5 themselves stay open |
-| `src/surmap/docs/code-issues/oversized-file-demo-server.md` | — unrelated: demo server file size |
+## Workflow
 
-**Outcome:** none blocking, no restructure prerequisite.
+- [wf 1] ✅ 2026-11-04 `/plan-red` Plan — changeset and discovery · this file
+- [wf 2] ✅ 2026-11-04 `/plan-red` Red — failing tests · red commits
+- [wf 3] ✅ 2026-11-04 `/green` Green — stitch, cache, shared URL, pixel cap · green commits
+- [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
+  - [ ] Verification executed — result recorded
