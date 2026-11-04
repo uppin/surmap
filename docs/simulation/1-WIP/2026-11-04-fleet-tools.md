@@ -12,23 +12,23 @@ PRD: `PRD-2026-11-04-fleet-tools.md` · Discovery: `2026-11-04-fleet-tools-initi
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1) · commit 1 `0959e1d`
+- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1) · commit 1 `f0a54f5`
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ✅ 2026-11-04 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 46 failing (14 acceptance + 32 unit) — commit 2
+- [wf 2] ✅ 2026-11-04 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 46 failing (14 acceptance + 32 unit) — commit 2 `626960a`
   - [x] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
   - [x] Stubs this node owns (`fleet_tools.proto` + generated code, `agent/tools/fleet_handlers.py`, `services.fleet_module`)
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) ·
-  - [ ] `proto/surmap/agent/v1/fleet_tools.proto`: `FleetTools` with `ListNests`, `ListDrones`, `LaunchDrone`, `SetRoute`, `AddDetour`, `RecallDrone`, `SetActiveDrone`, `GetFleetLog` (each SYNC · 10 s · FAIL, leading comments, field comments); `PROTOS += "fleet_tools"`; regenerated `_pb2`/`.pyi`/descriptor set
-  - [ ] `agent/tools/fleet_handlers.py`: `fleet_tool_handlers(store, registry)` and its pure helpers (`fleet_error`, `flight_route`, `fleet_command`, `drone_phase`, `fleet_nest`, `drone_statuses` — see `## Validation Results`); error mapping (unknown scenario/drone → `NOT_FOUND`, `FleetInvalid` → `INVALID_ARGUMENT`, `FleetRefused` → `FAILED_PRECONDITION`, `FleetUnavailable` → `UNAVAILABLE`, `FleetTimeout` → `DEADLINE_EXCEEDED`)
-  - [ ] Registration: `services.fleet_module`, `app.build_agent_description` (handlers, contracts, module — only with a `SimulationRig`), `binding._HANDLER_SERVICES`
-  - [ ] Skill `agent/skills/flying-the-fleet/SKILL.md`; `using-the-map/SKILL.md` and the SYSTEM_PROMPT name the simulation-only exception
-  - [ ] Gates green
+- [wf 3] ⏳ `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) ·
+  - [x] `proto/surmap/agent/v1/fleet_tools.proto`: `FleetTools` with `ListNests`, `ListDrones`, `LaunchDrone`, `SetRoute`, `AddDetour`, `RecallDrone`, `SetActiveDrone`, `GetFleetLog` (each SYNC · 10 s · FAIL, leading comments, field comments); `PROTOS += "fleet_tools"`; regenerated `_pb2`/`.pyi`/descriptor set
+  - [x] `agent/tools/fleet_handlers.py`: `fleet_tool_handlers(store, registry)` and its pure helpers (`fleet_error`, `flight_route`, `fleet_command`, `drone_phase`, `fleet_nest`, `drone_statuses` — see `## Validation Results`); error mapping (unknown scenario/drone → `NOT_FOUND`, `FleetInvalid` → `INVALID_ARGUMENT`, `FleetRefused` → `FAILED_PRECONDITION`, `FleetUnavailable` → `UNAVAILABLE`, `FleetTimeout` → `DEADLINE_EXCEEDED`)
+  - [x] Registration: `services.fleet_module`, `app.build_agent_description` (handlers, contracts, module — only with a `SimulationRig`), `binding._HANDLER_SERVICES`
+  - [x] Skill `agent/skills/flying-the-fleet/SKILL.md`; `using-the-map/SKILL.md` and the SYSTEM_PROMPT name the simulation-only exception
+  - [x] Gates green
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/agent.md` — `FleetTools` rows in the tool catalogue, a *Fleet tools* section (fields, errors, the simulation-only rule); the passive statements at 112, 181–182, 290 amended
@@ -115,6 +115,8 @@ data:** none. **Production data:** none.
 | `fleet_nests.nests_of` | n1 | (green by then) | `list_nests` and `list_drones` read it from the scenario's latest manifest (`ScenarioStore.scenario`) — the controller keeps its nests private |
 
 **Greenable independently?** no — needs n3 green first.
+
+**Outcome (Green):** n3 was green at `820cbd2` when this branch rebased onto it (`pr-stack-rebase`, 0b gate passed): every inherited symbol is real. Nothing here implemented or changed an n1/n2/n3-owned symbol.
 
 ## Background
 

@@ -18,18 +18,40 @@ the page's own reason when the simulation refuses it; `UNAVAILABLE` when no page
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping, Sequence
-from typing import Any
 
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
 from surmap.agent.proto import fleet_tools_pb2 as pb
+from surmap.agent.proto import simulation_tools_pb2 as sim_pb
 from surmap.agent.services import Handler
-from surmap.simulation.fleet.commands import FleetCommand, Route
-from surmap.simulation.fleet.controller import FleetError, FleetRegistry
+from surmap.agent.tools.simulation_core import blocking
+from surmap.simulation.fleet.commands import (
+    Detour,
+    FleetCommand,
+    Launch,
+    OnComplete,
+    Recall,
+    Route,
+    SetActive,
+    SetRoute,
+    Waypoint,
+)
+from surmap.simulation.fleet.controller import (
+    FleetController,
+    FleetError,
+    FleetInvalid,
+    FleetRefused,
+    FleetRegistry,
+    FleetTimeout,
+    FleetUnavailable,
+    InvalidRule,
+)
 from surmap.simulation.fleet.link import DroneTelemetry, Phase
-from surmap.simulation.fleet_nests import Nest
+from surmap.simulation.fleet.log_store import UnknownSession
+from surmap.simulation.fleet_nests import Nest, nests_of
 from surmap.simulation.scenario_store import ScenarioStore
 
 __all__ = [
@@ -52,26 +74,91 @@ CommandRequest = (
 )
 """A request that becomes one fleet command."""
 
-_RPCS = (
-    "ListNests",
-    "ListDrones",
-    "LaunchDrone",
-    "SetRoute",
-    "AddDetour",
-    "RecallDrone",
-    "SetActiveDrone",
-    "GetFleetLog",
-)
+_PHASES: Mapping[Phase, pb.DronePhase] = {
+    "docked": pb.DRONE_PHASE_DOCKED,
+    "climbing": pb.DRONE_PHASE_CLIMBING,
+    "cruising": pb.DRONE_PHASE_CRUISING,
+    "detouring": pb.DRONE_PHASE_DETOURING,
+    "hovering": pb.DRONE_PHASE_HOVERING,
+    "returning": pb.DRONE_PHASE_RETURNING,
+    "landing": pb.DRONE_PHASE_LANDING,
+}
+_ROUTE_ENDS: Mapping[pb.RouteEnd, OnComplete | None] = {
+    pb.ROUTE_END_UNSPECIFIED: None,
+    pb.ROUTE_END_RETURN: "return",
+    pb.ROUTE_END_HOVER: "hover",
+}
 
 
 def fleet_tool_handlers(store: ScenarioStore, registry: FleetRegistry) -> Mapping[str, Handler]:
-    """Every `FleetTools` rpc, by rpc name, as a `(request, ctx)` handler."""
+    """Every `FleetTools` rpc, by rpc name, as a `(request, ctx)` handler.
 
-    async def unimplemented(_request: object, _ctx: object) -> Any:
-        # TODO(pr-4): implement
-        raise ConnectError(Code.UNIMPLEMENTED, "pr-4: implement")
+    Each resolves the scenario through `store` first, so an unknown one is `NOT_FOUND` before
+    the registry is touched.
+    """
 
-    return {name: unimplemented for name in _RPCS}
+    async def nests(scenario_id: str) -> tuple[Nest, ...]:
+        return await blocking(lambda: nests_of(store.scenario(scenario_id).manifest))
+
+    async def controller(scenario_id: str) -> FleetController:
+        await nests(scenario_id)
+        return registry.controller(scenario_id)
+
+    async def list_nests(request: pb.ListNestsRequest, _ctx: object) -> pb.ListNestsResponse:
+        found = await nests(request.scenario_id)
+        return pb.ListNestsResponse(nests=[fleet_nest(nest) for nest in found])
+
+    async def list_drones(request: pb.ListDronesRequest, _ctx: object) -> pb.ListDronesResponse:
+        found = await nests(request.scenario_id)
+        fleet = await controller(request.scenario_id)
+        if not fleet.linked:
+            return pb.ListDronesResponse(linked=False, drones=drone_statuses(found, ()))
+        return pb.ListDronesResponse(
+            linked=True,
+            active=fleet.active() or "",
+            drones=drone_statuses(found, fleet.drones()),
+        )
+
+    async def command(request: CommandRequest, _ctx: object) -> pb.FleetCommandResult:
+        fleet = await controller(request.scenario_id)
+        try:
+            applied = await fleet.send(fleet_command(request))
+        except FleetError as error:
+            raise fleet_error(error) from error
+        return pb.FleetCommandResult(seq=applied.seq, at_s=applied.at_s)
+
+    async def get_fleet_log(request: pb.GetFleetLogRequest, _ctx: object) -> pb.GetFleetLogResponse:
+        await nests(request.scenario_id)
+        sessions = await asyncio.to_thread(registry.log_store.sessions, request.scenario_id)
+        if not sessions:
+            raise ConnectError(
+                Code.NOT_FOUND, f"no fleet session of scenario {request.scenario_id} yet"
+            )
+        session_id = (
+            request.session_id if request.HasField("session_id") else sessions[-1].session_id
+        )
+        if session_id not in {session.session_id for session in sessions}:
+            raise ConnectError(
+                Code.NOT_FOUND,
+                f"no fleet session {session_id} of scenario {request.scenario_id}",
+            )
+        try:
+            log = await asyncio.to_thread(registry.log_store.export_jsonl, session_id)
+        except UnknownSession as error:
+            raise ConnectError(Code.NOT_FOUND, str(error)) from error
+        return pb.GetFleetLogResponse(session_id=session_id, fleet_log_jsonl=log)
+
+    handlers: dict[str, Handler] = {
+        "ListNests": list_nests,
+        "ListDrones": list_drones,
+        "LaunchDrone": command,
+        "SetRoute": command,
+        "AddDetour": command,
+        "RecallDrone": command,
+        "SetActiveDrone": command,
+        "GetFleetLog": get_fleet_log,
+    }
+    return handlers
 
 
 def fleet_error(error: FleetError) -> ConnectError:
@@ -79,33 +166,67 @@ def fleet_error(error: FleetError) -> ConnectError:
     `INVALID_ARGUMENT` (`"<rule>: <message>"`) for any other `FleetInvalid`,
     `FAILED_PRECONDITION` with a `FleetRefused`'s reason, `UNAVAILABLE` for `FleetUnavailable`,
     `DEADLINE_EXCEEDED` for `FleetTimeout`."""
-    # TODO(pr-4): implement
-    raise NotImplementedError("pr-4: implement")
+    match error:
+        case FleetInvalid(rule=InvalidRule.UNKNOWN_DRONE):
+            return ConnectError(Code.NOT_FOUND, str(error))
+        case FleetInvalid(rule=rule):
+            return ConnectError(Code.INVALID_ARGUMENT, f"{rule.value}: {error}")
+        case FleetRefused(reason=reason):
+            return ConnectError(Code.FAILED_PRECONDITION, reason)
+        case FleetUnavailable():
+            return ConnectError(Code.UNAVAILABLE, str(error))
+        case FleetTimeout():
+            return ConnectError(Code.DEADLINE_EXCEEDED, str(error))
+        case _:
+            return ConnectError(Code.INTERNAL, str(error))
+
+
+def _waypoints(points: Sequence[sim_pb.EnuPoint]) -> tuple[Waypoint, ...]:
+    return tuple((point.east, point.north, point.up) for point in points)
 
 
 def flight_route(route: pb.FlightRoute) -> Route:
     """`route` as the fleet's `Route`: an absent speed and an unspecified end stay `None` (the
     simulation's defaults)."""
-    # TODO(pr-4): implement
-    raise NotImplementedError("pr-4: implement")
+    return Route(
+        _waypoints(route.waypoints),
+        speed_m_s=route.speed_m_s if route.HasField("speed_m_s") else None,
+        on_complete=_ROUTE_ENDS[route.on_complete],
+    )
 
 
 def fleet_command(request: CommandRequest) -> FleetCommand:
     """The fleet command a command request asks for."""
-    # TODO(pr-4): implement
-    raise NotImplementedError("pr-4: implement")
+    match request:
+        case pb.LaunchDroneRequest():
+            return Launch(request.drone_id, flight_route(request.route))
+        case pb.SetRouteRequest():
+            return SetRoute(request.drone_id, flight_route(request.route))
+        case pb.AddDetourRequest():
+            return Detour(request.drone_id, _waypoints(request.waypoints))
+        case pb.RecallDroneRequest():
+            return Recall(request.drone_id)
+        case pb.SetActiveDroneRequest():
+            return SetActive(request.drone_id)
 
 
 def drone_phase(phase: Phase) -> pb.DronePhase:
     """A telemetry phase word as the proto's `DronePhase`."""
-    # TODO(pr-4): implement
-    raise NotImplementedError("pr-4: implement")
+    return _PHASES[phase]
+
+
+def _enu(east: float, north: float, up: float) -> sim_pb.EnuPoint:
+    return sim_pb.EnuPoint(east=east, north=north, up=up)
 
 
 def fleet_nest(nest: Nest) -> pb.FleetNest:
     """A scenario's nest as `list_nests` reports it."""
-    # TODO(pr-4): implement
-    raise NotImplementedError("pr-4: implement")
+    return pb.FleetNest(
+        id=nest.id,
+        position=_enu(*nest.pad_enu),
+        yaw_deg=nest.yaw_deg,
+        drone_ids=list(nest.drone_ids),
+    )
 
 
 def drone_statuses(
@@ -113,5 +234,31 @@ def drone_statuses(
 ) -> tuple[pb.DroneStatus, ...]:
     """Every drone of `nests`, nest by nest in drone order: as `telemetry` reports it, or docked
     at its nest's pad, with the pad's heading, when it reports nothing of that drone."""
-    # TODO(pr-4): implement
-    raise NotImplementedError("pr-4: implement")
+    seen = {drone.id: drone for drone in telemetry}
+    statuses: list[pb.DroneStatus] = []
+    for nest in nests:
+        for drone_id in nest.drone_ids:
+            reported = seen.get(drone_id)
+            if reported is None:
+                statuses.append(
+                    pb.DroneStatus(
+                        id=drone_id,
+                        nest=nest.id,
+                        phase=pb.DRONE_PHASE_DOCKED,
+                        position=_enu(*nest.pad_enu),
+                        yaw_deg=nest.yaw_deg,
+                    )
+                )
+            else:
+                statuses.append(
+                    pb.DroneStatus(
+                        id=drone_id,
+                        nest=nest.id,
+                        phase=drone_phase(reported.phase),
+                        position=_enu(*reported.enu),
+                        yaw_deg=reported.yaw_deg,
+                        speed_m_s=reported.speed_m_s,
+                        targets_left=reported.targets_left,
+                    )
+                )
+    return tuple(statuses)
