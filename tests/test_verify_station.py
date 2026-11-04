@@ -179,3 +179,29 @@ async def test_verify_expecting_gpu_fails_against_a_cpu_server() -> None:
     accelerator = next(r for r in report.checks if r.name == "accelerator")
     assert not accelerator.ok
     assert accelerator.detail.startswith("CPU")
+
+
+def test_a_prompt_rides_in_the_stream_config() -> None:
+    # Given a verification run prompting for mattresses
+    # When its first stream message is built
+    request = verify_station.config_request("mattress")  # type: ignore[attr-defined]
+
+    # Then the station is steered to that concept
+    assert list(request.config.concept_prompts) == ["mattress"]
+
+
+def test_an_empty_prompt_leaves_the_stations_own_label_in_charge() -> None:
+    # Given a verification run with no prompt
+    # When its first stream message is built
+    request = verify_station.config_request("")  # type: ignore[attr-defined]
+
+    # Then it carries no concept prompt, so the server keeps its deploy-time label
+    assert list(request.config.concept_prompts) == []
+
+
+def test_the_verifier_prompts_for_the_euroc_rooms_mattresses_by_default() -> None:
+    # Given the verifier's command line with only an address
+    args = verify_station.build_parser().parse_args(["10.88.77.10:8081"])  # type: ignore[attr-defined]
+
+    # Then it prompts for a concept the recorded EuRoC frames contain
+    assert args.prompt == "mattress"

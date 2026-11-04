@@ -19,7 +19,9 @@ verifies the output:
     uv run python scripts/verify_station.py wss://<station-host>/connect --token <token>
 
 The stream goes over the server's Connect WebSocket (`/connect`); the
-token defaults to `$SURMAP_SURVEY_TOKEN`.
+token defaults to `$SURMAP_SURVEY_TOKEN`. `--prompt` (default
+`mattress`, a concept the EuRoC room contains) steers SAM through the
+stream config; `--prompt ""` sends none, testing the station's own label.
 
 Exits 0 only when every check passes. No target is stored in the
 repo: the address is a CLI argument, as with the deploy scripts.
@@ -49,6 +51,8 @@ DEFAULT_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "euroc_v101_rtabmap"
 _HEALTH_TIMEOUT_S = 60
 FRAME_WIDTH = 376
 FRAME_HEIGHT = 240
+# A concept the recorded EuRoC room contains (its gym mattresses); SAM 3.1 finds no "object".
+DEFAULT_PROMPT = "mattress"
 
 
 @dataclass(frozen=True)
@@ -164,6 +168,17 @@ def _stream_analysis(
     return asyncio.run(run())
 
 
+def config_request(prompt: str) -> survey_pb2.StationRequest:
+    """The stream's first message; a non-empty `prompt` steers SAM to that concept."""
+    return survey_pb2.StationRequest(
+        config=survey_pb2.StationStreamConfig(
+            calibration=survey_pb2.StereoCalibration(calibration_id="euroc-verify"),
+            analysis_mode=survey_pb2.ANALYSIS_MODE_EVERY_FRAME,
+            concept_prompts=[prompt] if prompt else [],
+        )
+    )
+
+
 def verify(
     address: str,
     fixture_dir: Path,
@@ -172,6 +187,7 @@ def verify(
     min_frames_with_detections: int = 1,
     expect_device: str = "any",
     token: str | None = None,
+    prompt: str = "",
 ) -> VerifyReport:
     """Feed the demo stream to the station at `address` (see `connect_url`).
 
@@ -197,14 +213,7 @@ def verify(
         )
 
     timestamps = load_timestamps(fixture_dir, frame_count)
-    requests = [
-        survey_pb2.StationRequest(
-            config=survey_pb2.StationStreamConfig(
-                calibration=survey_pb2.StereoCalibration(calibration_id="euroc-verify"),
-                analysis_mode=survey_pb2.ANALYSIS_MODE_EVERY_FRAME,
-            )
-        )
-    ]
+    requests = [config_request(prompt)]
     for index, t_ns in enumerate(timestamps):
         data = (fixture_dir / "mav0" / "cam0" / "data" / f"{t_ns}.jpg").read_bytes()
         requests.append(
@@ -262,7 +271,7 @@ def verify(
     return VerifyReport(results, rates)
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "address",
@@ -275,7 +284,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--frames", type=int, default=6)
     parser.add_argument("--min-detection-frames", type=int, default=1)
     parser.add_argument("--expect-device", choices=("any", "gpu", "cpu"), default="any")
-    args = parser.parse_args(argv)
+    parser.add_argument(
+        "--prompt",
+        default=DEFAULT_PROMPT,
+        help=f"SAM concept prompt sent in the stream config (default: {DEFAULT_PROMPT!r}, which "
+        "the EuRoC fixture contains; empty: none, so the station's own label applies)",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     report = verify(
         args.address,
         args.fixture,
@@ -283,6 +302,7 @@ def main(argv: list[str] | None = None) -> int:
         min_frames_with_detections=args.min_detection_frames,
         expect_device=args.expect_device,
         token=survey_token(args.token),
+        prompt=args.prompt,
     )
     for result in report.checks:
         print(f"{'PASS' if result.ok else 'FAIL'} {result.name}: {result.detail}")

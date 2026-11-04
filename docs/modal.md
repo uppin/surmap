@@ -155,11 +155,19 @@ the app files are read with the AST, because CI does not install `modal`.
 | App | File | Runs | Resources |
 |---|---|---|---|
 | `surmap-cm5-sim` | `src/surmap/survey/modal_cm5_app.py` | `cm5_main --slam-backend streaming --rtabmap-native … --region-points --detector none` on port 8080, no calibration dir: the simulator sends cameras and GPS over RPC | 4 CPU, 8 GiB; image builds RTAB-Map 0.23.1 natively (`scripts/build_rtabmap_native.sh`, about 15 min the first time), then `uv sync --no-dev` from `uv.lock` |
-| `surmap-station` | `src/surmap/survey/modal_station_app.py` | `station_main --detector sam31-torch` on port 8081, prompt `$SURMAP_STATION_LABEL` (default `object`) | L4 GPU (`SURMAP_MODAL_GPU`), 4 CPU, 16 GiB; checkpoint in Volume `surmap-sam3` with the `huggingface` secret, as `surmap-sam` |
+| `surmap-station` | `src/surmap/survey/modal_station_app.py` | `station_main --detector sam31-torch` on port 8081, prompt `$SURMAP_STATION_LABEL` (default `object`) when a client sends none | L4 GPU, or an A10G when no L4 is free (`SURMAP_MODAL_GPU`, a comma list, names another order), 4 CPU, 16 GiB; checkpoint in Volume `surmap-sam3` with the `huggingface` secret, as `surmap-sam`; `sam3` installed `--no-deps` after the pyproject, so numpy is surmap's pin |
 
 `SURMAP_MODAL_TIMEOUT` (default 86400 s) bounds a container, and so the longest
 survey stream; `SURMAP_MODAL_SCALEDOWN_WINDOW` (default 300 s) how long an
-idle one stays up.
+idle one stays up. These and `SURMAP_STATION_LABEL` are read where the app is
+deployed (`modal_hosting.StationSettings`); the app hands them to the container
+in a `Secret.from_dict`, because Modal imports the app file again inside the
+container, where the deploy shell's variables are not set.
+
+An app that waits for a GPU type the workspace cannot get shows nothing: no
+container, no log line, no cost, and web requests answer `303` every 150 s.
+`uvx modal container list` staying empty while a CPU function runs is the sign;
+the GPU fallback list is the cure.
 
 Create the token secret once per workspace; keep the token out of the repo:
 
@@ -175,7 +183,7 @@ verify it with the URL Modal prints:
 SURMAP_MODAL_TIMEOUT=3600 uv run --with modal modal serve src/surmap/survey/modal_cm5_app.py
 uv run python scripts/verify_cm5.py wss://<url> --simulated --hold-s 200   # token from $SURMAP_SURVEY_TOKEN
 uv run --with modal modal serve src/surmap/survey/modal_station_app.py
-uv run python scripts/verify_station.py wss://<url> --expect-device gpu
+uv run python scripts/verify_station.py wss://<url> --expect-device gpu   # --prompt mattress by default
 ```
 
 `modal deploy` instead keeps an app up; stop it with
@@ -194,8 +202,15 @@ What Modal's edge does to these servers, and how the code meets it:
 - Endpoint URLs are public — the bearer token guards every Connect call; only
   `/health/is_alive` answers without it.
 
-Verified on 2026-11-03 for the CM5 app only (`modal serve`, workspace
+Verified on 2026-11-03 for the CM5 app (`modal serve`, workspace
 `mantas-27062`): token refusal and acceptance, real RTAB-Map scene points, GPS
 anchors and region points over `wss://`, and one survey stream held for 205 s.
-The station app has not run on Modal yet.
+
+Verified on 2026-11-04 for the station app (`modal serve`, workspace
+`ginas-bb`; `mantas-27062` refuses GPU functions without a payment method):
+token refusal and acceptance; `StreamAnalysis` over `wss://` answering every
+frame in order, from SAM 3.1 on `cuda:0`; with `SURMAP_STATION_LABEL=mattress`
+and no client prompt (`--prompt ""`), detections with mask outlines on 6 of 12
+EuRoC frames; an image build log with no pip dependency conflict. The station
+is up about 20 s after its first request once the image is built.
 
