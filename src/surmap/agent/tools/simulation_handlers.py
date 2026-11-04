@@ -54,16 +54,15 @@ from surmap.simulation.map_floor import (
     stitch_floor,
     wgs84_to_enu,
 )
+from surmap.simulation.floor_edits import clear_map_floor, set_map_floor
 from surmap.simulation.scenario_manifest import (
     add_element,
     add_fire,
     add_model,
     behaviour_of,
-    clear_map_floor,
     remove_element,
     remove_fire,
     set_behaviour,
-    set_map_floor,
     set_weather,
     update_behaviour_node,
 )
@@ -98,7 +97,7 @@ def simulation_tool_handlers(
     tooling = SimulationTooling(
         store=store,
         sources=sources,
-        tile_source=tile_source or OsmTileSource(cache_dir=store.library_dir / "tile-cache"),
+        tile_source=tile_source or OsmTileSource(cache_dir=store.library_dir.parent / "tile-cache"),
     )
 
     def bind(tool: Callable[[Any, SimulationTooling], Awaitable[Any]]) -> Handler:
@@ -476,6 +475,7 @@ async def set_map_floor_tool(
         )
         floor = stitch_floor(tooling.tile_source, bbox)
         texture = tooling.store.store_floor_texture(floor.png, floor.texture_path)
+        attribution = getattr(tooling.tile_source, "attribution", None)
         saved = tooling.store.save(
             request.scenario_id,
             set_map_floor(
@@ -484,11 +484,18 @@ async def set_map_floor_tool(
                 ne=(bbox.ne_lat, bbox.ne_lon),
                 texture=texture,
                 zoom=floor.zoom,
+                attribution=attribution if isinstance(attribution, str) else None,
             ),
         )
         warnings: list[str] = []
         elements = [e for e in _manifest_elements(current.manifest) if e.get("id") != "ground"]
-        if isinstance(current.manifest.get("map_floor"), dict) and elements:
+        previous = current.manifest.get("map_floor")
+        same_floor = (
+            isinstance(previous, dict)
+            and previous.get("sw") == [bbox.sw_lat, bbox.sw_lon]
+            and previous.get("ne") == [bbox.ne_lat, bbox.ne_lon]
+        )
+        if isinstance(previous, dict) and not same_floor and elements:
             warnings.append(
                 "scenario was already based on a different map floor: existing elements "
                 "kept their ENU positions and now sit somewhere else on the map"

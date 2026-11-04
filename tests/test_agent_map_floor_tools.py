@@ -238,8 +238,10 @@ async def test_resetting_the_same_floor_does_not_warn_about_reanchoring(tmp_path
     reset = await tools["SetMapFloor"](
         pb.SetMapFloorRequest(
             scenario_id=scenario_id,
-            sw_lat=VILNIUS.sw_lat, sw_lon=VILNIUS.sw_lon,
-            ne_lat=VILNIUS.ne_lat, ne_lon=VILNIUS.ne_lon,
+            sw_lat=VILNIUS.sw_lat,
+            sw_lon=VILNIUS.sw_lon,
+            ne_lat=VILNIUS.ne_lat,
+            ne_lon=VILNIUS.ne_lon,
         ),
         None,
     )

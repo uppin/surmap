@@ -412,7 +412,8 @@ class ScenarioStore:
                 credits.append(
                     Credit(asset.ref, asset.title, asset.author, asset.licence, asset.page_url)
                 )
-        if isinstance(manifest.get("map_floor"), dict):
+        floor = manifest.get("map_floor")
+        if isinstance(floor, dict) and floor.get("attribution") == "© OpenStreetMap contributors":
             credits.append(
                 Credit(
                     "openstreetmap",
