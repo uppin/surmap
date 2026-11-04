@@ -20,6 +20,7 @@ from numpy.typing import NDArray
 
 from surmap.agent.tools.onboard import OnboardModel
 from surmap.demo.gallery import GalleryEntry
+from surmap.demo.history import CachedRecording
 from surmap.objects3d import UpAxis
 from surmap.survey.sam import SamDetection
 
@@ -27,6 +28,7 @@ __all__ = [
     "OBJECT_FRAME",
     "OBJECT_UP_AXIS",
     "BoxXYXY",
+    "CachedRecording",
     "FrameDetections",
     "GalleryEntry",
     "FrameImage",
@@ -93,6 +95,8 @@ class RunInfo:
     status: RunStatus
     onboard_model: str = ""
     """The on-board detector model that processed its frames; empty when it ran none."""
+    cached: bool = False
+    """Whether it was answered from a cached run instead of a new build."""
 
 
 @dataclass(frozen=True)
@@ -190,10 +194,11 @@ class SurveyWorkspace(Protocol):
         max_frames: int | None,
         fps: float | None,
         onboard_model: str | None,
+        rebuild: bool = False,
     ) -> RunInfo:
         """Run RTAB-Map (no SAM) on `dataset` and return the recorded run when it ends.
 
-        `onboard_model` is as `run_demo` takes it.
+        `onboard_model` and `rebuild` are as `run_demo` takes them.
         """
         ...
 
@@ -215,8 +220,12 @@ class SurveyWorkspace(Protocol):
         max_frames: int | None,
         fps: float | None,
         onboard_model: str | None,
+        rebuild: bool = False,
     ) -> RunInfo:
         """Run `dataset` headlessly with SAM looking for `prompt` and return when it ends.
+
+        A build is cached by its key (`cache_key`): unless `rebuild`, a request whose key has a
+        cached run answers from that run, marked `cached`, without running anything.
 
         `onboard_model` names the on-board detector model that processes the frames: a profile
         name, `ONBOARD_OFF` for none, or None for the station default. Prepares the scene first
@@ -225,6 +234,14 @@ class SurveyWorkspace(Protocol):
         `ValueError` for a non-positive `fps` or an unknown model, and `OnboardUnavailable` for
         a model this station cannot run.
         """
+        ...
+
+    def cached_runs(self, dataset: str) -> Sequence[CachedRecording]:
+        """The dataset's cached runs, newest first, one per cache key; `KeyError` when unknown."""
+        ...
+
+    def run_cached(self, run_id: str) -> RunInfo:
+        """The cached run `run_id`, marked cached, nothing run; `KeyError` when it is not one."""
         ...
 
     def run(self, run_id: str) -> RunInfo | None:

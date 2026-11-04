@@ -133,21 +133,23 @@ class ListOnboardModelsResponse(_message.Message):
     def __init__(self, models: _Optional[_Iterable[_Union[OnboardModel, _Mapping[str, _Any]]]] = ..., default_model: _Optional[str] = ...) -> None: ...
 
 class RunDemoRequest(_message.Message):
-    __slots__ = ("dataset", "prompt", "max_frames", "fps", "onboard_model")
+    __slots__ = ("dataset", "prompt", "max_frames", "fps", "onboard_model", "rebuild")
     DATASET_FIELD_NUMBER: _ClassVar[int]
     PROMPT_FIELD_NUMBER: _ClassVar[int]
     MAX_FRAMES_FIELD_NUMBER: _ClassVar[int]
     FPS_FIELD_NUMBER: _ClassVar[int]
     ONBOARD_MODEL_FIELD_NUMBER: _ClassVar[int]
+    REBUILD_FIELD_NUMBER: _ClassVar[int]
     dataset: str
     prompt: str
     max_frames: int
     fps: float
     onboard_model: str
-    def __init__(self, dataset: _Optional[str] = ..., prompt: _Optional[str] = ..., max_frames: _Optional[int] = ..., fps: _Optional[float] = ..., onboard_model: _Optional[str] = ...) -> None: ...
+    rebuild: bool
+    def __init__(self, dataset: _Optional[str] = ..., prompt: _Optional[str] = ..., max_frames: _Optional[int] = ..., fps: _Optional[float] = ..., onboard_model: _Optional[str] = ..., rebuild: bool = ...) -> None: ...
 
 class RunInfo(_message.Message):
-    __slots__ = ("run_id", "dataset", "prompt", "frames", "objects", "status", "onboard_model")
+    __slots__ = ("run_id", "dataset", "prompt", "frames", "objects", "status", "onboard_model", "cached")
     class Status(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
         __slots__ = ()
         STATUS_UNSPECIFIED: _ClassVar[RunInfo.Status]
@@ -167,6 +169,7 @@ class RunInfo(_message.Message):
     OBJECTS_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     ONBOARD_MODEL_FIELD_NUMBER: _ClassVar[int]
+    CACHED_FIELD_NUMBER: _ClassVar[int]
     run_id: str
     dataset: str
     prompt: str
@@ -174,23 +177,26 @@ class RunInfo(_message.Message):
     objects: int
     status: RunInfo.Status
     onboard_model: str
-    def __init__(self, run_id: _Optional[str] = ..., dataset: _Optional[str] = ..., prompt: _Optional[str] = ..., frames: _Optional[int] = ..., objects: _Optional[int] = ..., status: _Optional[_Union[RunInfo.Status, str]] = ..., onboard_model: _Optional[str] = ...) -> None: ...
+    cached: bool
+    def __init__(self, run_id: _Optional[str] = ..., dataset: _Optional[str] = ..., prompt: _Optional[str] = ..., frames: _Optional[int] = ..., objects: _Optional[int] = ..., status: _Optional[_Union[RunInfo.Status, str]] = ..., onboard_model: _Optional[str] = ..., cached: bool = ...) -> None: ...
 
 class RunDemoResponse(_message.Message):
-    __slots__ = ("run_id", "frames", "objects", "status", "onboard_model", "onboard_recognises_prompt")
+    __slots__ = ("run_id", "frames", "objects", "status", "onboard_model", "onboard_recognises_prompt", "cached")
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
     FRAMES_FIELD_NUMBER: _ClassVar[int]
     OBJECTS_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     ONBOARD_MODEL_FIELD_NUMBER: _ClassVar[int]
     ONBOARD_RECOGNISES_PROMPT_FIELD_NUMBER: _ClassVar[int]
+    CACHED_FIELD_NUMBER: _ClassVar[int]
     run_id: str
     frames: int
     objects: int
     status: RunInfo.Status
     onboard_model: str
     onboard_recognises_prompt: bool
-    def __init__(self, run_id: _Optional[str] = ..., frames: _Optional[int] = ..., objects: _Optional[int] = ..., status: _Optional[_Union[RunInfo.Status, str]] = ..., onboard_model: _Optional[str] = ..., onboard_recognises_prompt: bool = ...) -> None: ...
+    cached: bool
+    def __init__(self, run_id: _Optional[str] = ..., frames: _Optional[int] = ..., objects: _Optional[int] = ..., status: _Optional[_Union[RunInfo.Status, str]] = ..., onboard_model: _Optional[str] = ..., onboard_recognises_prompt: bool = ..., cached: bool = ...) -> None: ...
 
 class GetRunRequest(_message.Message):
     __slots__ = ("run_id",)
@@ -411,7 +417,7 @@ class DatasetLicense(_message.Message):
     def __init__(self, name: _Optional[str] = ..., url: _Optional[str] = ..., attribution: _Optional[str] = ...) -> None: ...
 
 class DatasetEntry(_message.Message):
-    __slots__ = ("id", "title", "description", "provider", "license", "modality", "official_url", "default_prompt", "prepared", "frame_count", "thumbnail_available", "location_label", "gps_centre", "gps_track", "credit")
+    __slots__ = ("id", "title", "description", "provider", "license", "modality", "official_url", "default_prompt", "prepared", "frame_count", "thumbnail_available", "location_label", "gps_centre", "gps_track", "credit", "runs")
     ID_FIELD_NUMBER: _ClassVar[int]
     TITLE_FIELD_NUMBER: _ClassVar[int]
     DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
@@ -427,6 +433,7 @@ class DatasetEntry(_message.Message):
     GPS_CENTRE_FIELD_NUMBER: _ClassVar[int]
     GPS_TRACK_FIELD_NUMBER: _ClassVar[int]
     CREDIT_FIELD_NUMBER: _ClassVar[int]
+    RUNS_FIELD_NUMBER: _ClassVar[int]
     id: str
     title: str
     description: str
@@ -442,7 +449,24 @@ class DatasetEntry(_message.Message):
     gps_centre: DatasetGeoPoint
     gps_track: _containers.RepeatedCompositeFieldContainer[DatasetGeoPoint]
     credit: str
-    def __init__(self, id: _Optional[str] = ..., title: _Optional[str] = ..., description: _Optional[str] = ..., provider: _Optional[str] = ..., license: _Optional[_Union[DatasetLicense, _Mapping[str, _Any]]] = ..., modality: _Optional[_Union[DatasetModality, str]] = ..., official_url: _Optional[str] = ..., default_prompt: _Optional[str] = ..., prepared: bool = ..., frame_count: _Optional[int] = ..., thumbnail_available: bool = ..., location_label: _Optional[str] = ..., gps_centre: _Optional[_Union[DatasetGeoPoint, _Mapping[str, _Any]]] = ..., gps_track: _Optional[_Iterable[_Union[DatasetGeoPoint, _Mapping[str, _Any]]]] = ..., credit: _Optional[str] = ...) -> None: ...
+    runs: _containers.RepeatedCompositeFieldContainer[CachedRun]
+    def __init__(self, id: _Optional[str] = ..., title: _Optional[str] = ..., description: _Optional[str] = ..., provider: _Optional[str] = ..., license: _Optional[_Union[DatasetLicense, _Mapping[str, _Any]]] = ..., modality: _Optional[_Union[DatasetModality, str]] = ..., official_url: _Optional[str] = ..., default_prompt: _Optional[str] = ..., prepared: bool = ..., frame_count: _Optional[int] = ..., thumbnail_available: bool = ..., location_label: _Optional[str] = ..., gps_centre: _Optional[_Union[DatasetGeoPoint, _Mapping[str, _Any]]] = ..., gps_track: _Optional[_Iterable[_Union[DatasetGeoPoint, _Mapping[str, _Any]]]] = ..., credit: _Optional[str] = ..., runs: _Optional[_Iterable[_Union[CachedRun, _Mapping[str, _Any]]]] = ...) -> None: ...
+
+class CachedRun(_message.Message):
+    __slots__ = ("cache_key", "run_id", "title", "frames", "created_at", "preview_frame_id")
+    CACHE_KEY_FIELD_NUMBER: _ClassVar[int]
+    RUN_ID_FIELD_NUMBER: _ClassVar[int]
+    TITLE_FIELD_NUMBER: _ClassVar[int]
+    FRAMES_FIELD_NUMBER: _ClassVar[int]
+    CREATED_AT_FIELD_NUMBER: _ClassVar[int]
+    PREVIEW_FRAME_ID_FIELD_NUMBER: _ClassVar[int]
+    cache_key: str
+    run_id: str
+    title: str
+    frames: int
+    created_at: float
+    preview_frame_id: int
+    def __init__(self, cache_key: _Optional[str] = ..., run_id: _Optional[str] = ..., title: _Optional[str] = ..., frames: _Optional[int] = ..., created_at: _Optional[float] = ..., preview_frame_id: _Optional[int] = ...) -> None: ...
 
 class ListDatasetsRequest(_message.Message):
     __slots__ = ()
@@ -473,16 +497,18 @@ class DatasetResponse(_message.Message):
     def __init__(self, dataset: _Optional[_Union[DatasetEntry, _Mapping[str, _Any]]] = ...) -> None: ...
 
 class RunRtabmapRequest(_message.Message):
-    __slots__ = ("dataset", "max_frames", "fps", "onboard_model")
+    __slots__ = ("dataset", "max_frames", "fps", "onboard_model", "rebuild")
     DATASET_FIELD_NUMBER: _ClassVar[int]
     MAX_FRAMES_FIELD_NUMBER: _ClassVar[int]
     FPS_FIELD_NUMBER: _ClassVar[int]
     ONBOARD_MODEL_FIELD_NUMBER: _ClassVar[int]
+    REBUILD_FIELD_NUMBER: _ClassVar[int]
     dataset: str
     max_frames: int
     fps: float
     onboard_model: str
-    def __init__(self, dataset: _Optional[str] = ..., max_frames: _Optional[int] = ..., fps: _Optional[float] = ..., onboard_model: _Optional[str] = ...) -> None: ...
+    rebuild: bool
+    def __init__(self, dataset: _Optional[str] = ..., max_frames: _Optional[int] = ..., fps: _Optional[float] = ..., onboard_model: _Optional[str] = ..., rebuild: bool = ...) -> None: ...
 
 class RunRtabmapResponse(_message.Message):
     __slots__ = ("run",)
@@ -525,3 +551,27 @@ class GetFrameResponse(_message.Message):
     image: bytes
     media_type: str
     def __init__(self, frame_id: _Optional[int] = ..., t_ns: _Optional[int] = ..., width: _Optional[int] = ..., height: _Optional[int] = ..., source: _Optional[_Union[FrameSource, str]] = ..., image: _Optional[bytes] = ..., media_type: _Optional[str] = ...) -> None: ...
+
+class ListRunsRequest(_message.Message):
+    __slots__ = ("dataset",)
+    DATASET_FIELD_NUMBER: _ClassVar[int]
+    dataset: str
+    def __init__(self, dataset: _Optional[str] = ...) -> None: ...
+
+class ListRunsResponse(_message.Message):
+    __slots__ = ("runs",)
+    RUNS_FIELD_NUMBER: _ClassVar[int]
+    runs: _containers.RepeatedCompositeFieldContainer[CachedRun]
+    def __init__(self, runs: _Optional[_Iterable[_Union[CachedRun, _Mapping[str, _Any]]]] = ...) -> None: ...
+
+class RunCachedRequest(_message.Message):
+    __slots__ = ("run_id",)
+    RUN_ID_FIELD_NUMBER: _ClassVar[int]
+    run_id: str
+    def __init__(self, run_id: _Optional[str] = ...) -> None: ...
+
+class RunCachedResponse(_message.Message):
+    __slots__ = ("run",)
+    RUN_FIELD_NUMBER: _ClassVar[int]
+    run: RunInfo
+    def __init__(self, run: _Optional[_Union[RunInfo, _Mapping[str, _Any]]] = ...) -> None: ...

@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file surmap/agent/v1/survey_tools.proto.
  */
 export const file_surmap_agent_v1_survey_tools: GenFile = /*@__PURE__*/
-  fileDesc("CiJzdXJtYXAvYWdlbnQvdjEvc3VydmV5X3Rvb2xzLnByb3RvEg9zdXJtYXAuYWdlbnQudjEiJwoEVmVjMxIJCgF4GAEgASgBEgkKAXkYAiABKAESCQoBehgDIAEoASI6CghQaXhlbEJveBIKCgJ4MBgBIAEoAhIKCgJ5MBgCIAEoAhIKCgJ4MRgDIAEoAhIKCgJ5MRgEIAEoAiIiCgpQaXhlbFBvaW50EgkKAXgYASABKAISCQoBeRgCIAEoAiISChBMaXN0RGVtb3NSZXF1ZXN0In4KCURlbW9TY2VuZRIKCgJpZBgBIAEoCRINCgV0aXRsZRgCIAEoCRIWCg5kZWZhdWx0X3Byb21wdBgDIAEoCRIQCghwcmVwYXJlZBgEIAEoCBIaCg1jYWNoZWRfcnVuX2lkGAUgASgJSACIAQFCEAoOX2NhY2hlZF9ydW5faWQiPwoRTGlzdERlbW9zUmVzcG9uc2USKgoGc2NlbmVzGAEgAygLMhouc3VybWFwLmFnZW50LnYxLkRlbW9TY2VuZSIaChhMaXN0T25ib2FyZE1vZGVsc1JlcXVlc3QicQoMT25ib2FyZE1vZGVsEgwKBG5hbWUYASABKAkSDQoFdGl0bGUYAiABKAkSDAoEbm90ZRgDIAEoCRIRCglhdmFpbGFibGUYBCABKAgSEgoKaXNfZGVmYXVsdBgFIAEoCBIPCgdjbGFzc2VzGAYgAygJImEKGUxpc3RPbmJvYXJkTW9kZWxzUmVzcG9uc2USLQoGbW9kZWxzGAEgAygLMh0uc3VybWFwLmFnZW50LnYxLk9uYm9hcmRNb2RlbBIVCg1kZWZhdWx0X21vZGVsGAIgASgJIrEBCg5SdW5EZW1vUmVxdWVzdBIPCgdkYXRhc2V0GAEgASgJEhMKBnByb21wdBgCIAEoCUgAiAEBEhcKCm1heF9mcmFtZXMYAyABKA1IAYgBARIQCgNmcHMYBCABKAFIAogBARIaCg1vbmJvYXJkX21vZGVsGAUgASgJSAOIAQFCCQoHX3Byb21wdEINCgtfbWF4X2ZyYW1lc0IGCgRfZnBzQhAKDl9vbmJvYXJkX21vZGVsIvsBCgdSdW5JbmZvEg4KBnJ1bl9pZBgBIAEoCRIPCgdkYXRhc2V0GAIgASgJEg4KBnByb21wdBgDIAEoCRIOCgZmcmFtZXMYBCABKA0SDwoHb2JqZWN0cxgFIAEoDRIvCgZzdGF0dXMYBiABKA4yHy5zdXJtYXAuYWdlbnQudjEuUnVuSW5mby5TdGF0dXMSFQoNb25ib2FyZF9tb2RlbBgHIAEoCSJWCgZTdGF0dXMSFgoSU1RBVFVTX1VOU1BFQ0lGSUVEEAASCwoHUlVOTklORxABEgwKCEZJTklTSEVEEAISDQoJQ0FOQ0VMTEVEEAMSCgoGRkFJTEVEEAQi0AEKD1J1bkRlbW9SZXNwb25zZRIOCgZydW5faWQYASABKAkSDgoGZnJhbWVzGAIgASgNEg8KB29iamVjdHMYAyABKA0SLwoGc3RhdHVzGAQgASgOMh8uc3VybWFwLmFnZW50LnYxLlJ1bkluZm8uU3RhdHVzEhUKDW9uYm9hcmRfbW9kZWwYBSABKAkSJgoZb25ib2FyZF9yZWNvZ25pc2VzX3Byb21wdBgGIAEoCEgAiAEBQhwKGl9vbmJvYXJkX3JlY29nbmlzZXNfcHJvbXB0Ih8KDUdldFJ1blJlcXVlc3QSDgoGcnVuX2lkGAEgASgJIjcKDkdldFJ1blJlc3BvbnNlEiUKA3J1bhgBIAEoCzIYLnN1cm1hcC5hZ2VudC52MS5SdW5JbmZvIm4KEFByb21wdFNhbVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEg8KB2NvbmNlcHQYAiABKAkSEQoJZnJhbWVfaWRzGAMgAygEEhcKCm1heF9mcmFtZXMYBCABKA1IAIgBAUINCgtfbWF4X2ZyYW1lcyKiAQoMU2FtRGV0ZWN0aW9uEhQKDGRldGVjdGlvbl9pZBgBIAEoCRINCgVsYWJlbBgCIAEoCRINCgVzY29yZRgDIAEoAhIrCghib3hfeHl4eRgEIAEoCzIZLnN1cm1hcC5hZ2VudC52MS5QaXhlbEJveBIxCgxtYXNrX3BvbHlnb24YBSADKAsyGy5zdXJtYXAuYWdlbnQudjEuUGl4ZWxQb2ludCJnChJTYW1GcmFtZURldGVjdGlvbnMSEAoIZnJhbWVfaWQYASABKAQSDAoEdF9ucxgCIAEoBBIxCgpkZXRlY3Rpb25zGAMgAygLMh0uc3VybWFwLmFnZW50LnYxLlNhbURldGVjdGlvbiJIChFQcm9tcHRTYW1SZXNwb25zZRIzCgZmcmFtZXMYASADKAsyIy5zdXJtYXAuYWdlbnQudjEuU2FtRnJhbWVEZXRlY3Rpb25zItcBChJGaW5kT2JqZWN0c1JlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhIKBWxhYmVsGAIgASgJSACIAQESKAoEbmVhchgDIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzSAGIAQESFQoIcmFkaXVzX20YBCABKAFIAogBARITCgZtb3ZpbmcYBSABKAhIA4gBARISCgVsaW1pdBgGIAEoDUgEiAEBQggKBl9sYWJlbEIHCgVfbmVhckILCglfcmFkaXVzX21CCQoHX21vdmluZ0IICgZfbGltaXQibgoLT3JpZW50ZWRCb3gSJQoGY2VudHJlGAEgASgLMhUuc3VybWFwLmFnZW50LnYxLlZlYzMSJgoHZXh0ZW50cxgCIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzEhAKCHJvdGF0aW9uGAMgAygBIlgKCU5laWdoYm91chIKCgJpZBgBIAEoCRISCgpkaXN0YW5jZV9tGAIgASgBEisKCHJlbGF0aW9uGAMgASgOMhkuc3VybWFwLmFnZW50LnYxLlJlbGF0aW9uIpsECg1PYmplY3RTdW1tYXJ5EgoKAmlkGAEgASgJEg0KBWxhYmVsGAIgASgJEhIKCmNvbmZpZGVuY2UYAyABKAISDQoFZnJhbWUYBCABKAkSDwoHdXBfYXhpcxgFIAEoCRINCgV1bml0cxgGIAEoCRIQCghuX3BvaW50cxgHIAEoDRIPCgduX2ZhY2VzGAggASgNEicKCGNlbnRyb2lkGAkgASgLMhUuc3VybWFwLmFnZW50LnYxLlZlYzMSJwoIYWFiYl9taW4YCiABKAsyFS5zdXJtYXAuYWdlbnQudjEuVmVjMxInCghhYWJiX21heBgLIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzEikKA29iYhgMIAEoCzIcLnN1cm1hcC5hZ2VudC52MS5PcmllbnRlZEJveBIQCghoZWlnaHRfbRgNIAEoARIUCgxmb290cHJpbnRfbTIYDiABKAESJQoFc2hhcGUYDyABKA4yFi5zdXJtYXAuYWdlbnQudjEuU2hhcGUSFwoPb2JzZXJ2ZWRfZnJhbWVzGBAgASgNEhIKCnRfZmlyc3RfbnMYESABKAQSEQoJdF9sYXN0X25zGBIgASgEEi4KCm5laWdoYm91cnMYEyADKAsyGi5zdXJtYXAuYWdlbnQudjEuTmVpZ2hib3VyEhQKDGdlb21ldHJ5X3VyaRgUIAEoCRIOCgZtb3ZpbmcYFSABKAgiRgoTRmluZE9iamVjdHNSZXNwb25zZRIvCgdvYmplY3RzGAEgAygLMh4uc3VybWFwLmFnZW50LnYxLk9iamVjdFN1bW1hcnkiNQoQR2V0T2JqZWN0UmVxdWVzdBIOCgZydW5faWQYASABKAkSEQoJb2JqZWN0X2lkGAIgASgJIkMKEUdldE9iamVjdFJlc3BvbnNlEi4KBm9iamVjdBgBIAEoCzIeLnN1cm1hcC5hZ2VudC52MS5PYmplY3RTdW1tYXJ5IocBChhHZXRPYmplY3RHZW9tZXRyeVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhEKCW9iamVjdF9pZBgCIAEoCRIXCgptYXhfcG9pbnRzGAMgASgNSACIAQESFAoHdm94ZWxfbRgEIAEoAUgBiAEBQg0KC19tYXhfcG9pbnRzQgoKCF92b3hlbF9tIlsKGUdldE9iamVjdEdlb21ldHJ5UmVzcG9uc2USEAoIb2JqX3RleHQYASABKAkSFAoMZ2VvbWV0cnlfdXJpGAIgASgJEhYKDmRlY2ltYXRlZF9mcm9tGAMgASgNIvcBCg9HZXRGcmFtZVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhUKC2ZyYW1lX2luZGV4GAIgASgNSAASEgoIZnJhbWVfaWQYAyABKARIABIOCgR0X25zGAQgASgESAASLQoIY3JvcF9ib3gYBSABKAsyGS5zdXJtYXAuYWdlbnQudjEuUGl4ZWxCb3hIARIYCg5jcm9wX29iamVjdF9pZBgGIAEoCUgBEhMKBnBhZF9weBgHIAEoDUgCiAEBEhUKCG1heF9zaWRlGAggASgNSAOIAQFCBAoCYXRCBgoEY3JvcEIJCgdfcGFkX3B4QgsKCV9tYXhfc2lkZSJJCg9EYXRhc2V0R2VvUG9pbnQSCwoDbG9uGAEgASgBEgsKA2xhdBgCIAEoARISCgVhbHRfbRgDIAEoAUgAiAEBQggKBl9hbHRfbSJACg5EYXRhc2V0TGljZW5zZRIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgthdHRyaWJ1dGlvbhgDIAEoCSLPAwoMRGF0YXNldEVudHJ5EgoKAmlkGAEgASgJEg0KBXRpdGxlGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhAKCHByb3ZpZGVyGAQgASgJEjAKB2xpY2Vuc2UYBSABKAsyHy5zdXJtYXAuYWdlbnQudjEuRGF0YXNldExpY2Vuc2USMgoIbW9kYWxpdHkYBiABKA4yIC5zdXJtYXAuYWdlbnQudjEuRGF0YXNldE1vZGFsaXR5EhQKDG9mZmljaWFsX3VybBgHIAEoCRIWCg5kZWZhdWx0X3Byb21wdBgIIAEoCRIQCghwcmVwYXJlZBgJIAEoCBITCgtmcmFtZV9jb3VudBgKIAEoDRIbChN0aHVtYm5haWxfYXZhaWxhYmxlGAsgASgIEhYKDmxvY2F0aW9uX2xhYmVsGAwgASgJEjkKCmdwc19jZW50cmUYDSABKAsyIC5zdXJtYXAuYWdlbnQudjEuRGF0YXNldEdlb1BvaW50SACIAQESMwoJZ3BzX3RyYWNrGA4gAygLMiAuc3VybWFwLmFnZW50LnYxLkRhdGFzZXRHZW9Qb2ludBIOCgZjcmVkaXQYDyABKAlCDQoLX2dwc19jZW50cmUiFQoTTGlzdERhdGFzZXRzUmVxdWVzdCJHChRMaXN0RGF0YXNldHNSZXNwb25zZRIvCghkYXRhc2V0cxgBIAMoCzIdLnN1cm1hcC5hZ2VudC52MS5EYXRhc2V0RW50cnkiJwoRR2V0RGF0YXNldFJlcXVlc3QSEgoKZGF0YXNldF9pZBgBIAEoCSIrChVQcmVwYXJlRGF0YXNldFJlcXVlc3QSEgoKZGF0YXNldF9pZBgBIAEoCSJBCg9EYXRhc2V0UmVzcG9uc2USLgoHZGF0YXNldBgBIAEoCzIdLnN1cm1hcC5hZ2VudC52MS5EYXRhc2V0RW50cnkilAEKEVJ1blJ0YWJtYXBSZXF1ZXN0Eg8KB2RhdGFzZXQYASABKAkSFwoKbWF4X2ZyYW1lcxgCIAEoDUgAiAEBEhAKA2ZwcxgDIAEoAUgBiAEBEhoKDW9uYm9hcmRfbW9kZWwYBCABKAlIAogBAUINCgtfbWF4X2ZyYW1lc0IGCgRfZnBzQhAKDl9vbmJvYXJkX21vZGVsIjsKElJ1blJ0YWJtYXBSZXNwb25zZRIlCgNydW4YASABKAsyGC5zdXJtYXAuYWdlbnQudjEuUnVuSW5mbyJzChZSdW5TYW1PbkRhdGFzZXRSZXF1ZXN0Eg8KB2RhdGFzZXQYASABKAkSFAoHY29uY2VwdBgCIAEoCUgAiAEBEhcKCm1heF9mcmFtZXMYAyABKA1IAYgBAUIKCghfY29uY2VwdEINCgtfbWF4X2ZyYW1lcyJiChdSdW5TYW1PbkRhdGFzZXRSZXNwb25zZRISCgpkYXRhc2V0X2lkGAEgASgJEjMKBmZyYW1lcxgCIAMoCzIjLnN1cm1hcC5hZ2VudC52MS5TYW1GcmFtZURldGVjdGlvbnMiogEKEEdldEZyYW1lUmVzcG9uc2USEAoIZnJhbWVfaWQYASABKAQSDAoEdF9ucxgCIAEoBBINCgV3aWR0aBgDIAEoDRIOCgZoZWlnaHQYBCABKA0SLAoGc291cmNlGAUgASgOMhwuc3VybWFwLmFnZW50LnYxLkZyYW1lU291cmNlEg0KBWltYWdlGAYgASgMEhIKCm1lZGlhX3R5cGUYByABKAkqRgoFU2hhcGUSFQoRU0hBUEVfVU5TUEVDSUZJRUQQABIKCgZMSU5FQVIQARIKCgZQTEFOQVIQAhIOCgpWT0xVTUVUUklDEAMqVQoIUmVsYXRpb24SGAoUUkVMQVRJT05fVU5TUEVDSUZJRUQQABIJCgVBQk9WRRABEgkKBUJFTE9XEAISCwoHTkVYVF9UTxADEgwKCE9WRVJMQVBTEAQqQgoLRnJhbWVTb3VyY2USHAoYRlJBTUVfU09VUkNFX1VOU1BFQ0lGSUVEEAASCAoERlVMTBABEgsKB0RJU1BMQVkQAipACg9EYXRhc2V0TW9kYWxpdHkSGAoUTU9EQUxJVFlfVU5TUEVDSUZJRUQQABIICgRHUkVZEAESCQoFQ09MT1IQAjKXCwoLU3VydmV5VG9vbHMSXgoJTGlzdERlbW9zEiEuc3VybWFwLmFnZW50LnYxLkxpc3REZW1vc1JlcXVlc3QaIi5zdXJtYXAuYWdlbnQudjEuTGlzdERlbW9zUmVzcG9uc2UiCsrzGAYIARAKGAESdgoRTGlzdE9uYm9hcmRNb2RlbHMSKS5zdXJtYXAuYWdlbnQudjEuTGlzdE9uYm9hcmRNb2RlbHNSZXF1ZXN0Giouc3VybWFwLmFnZW50LnYxLkxpc3RPbmJvYXJkTW9kZWxzUmVzcG9uc2UiCsrzGAYIARAKGAESWAoHUnVuRGVtbxIfLnN1cm1hcC5hZ2VudC52MS5SdW5EZW1vUmVxdWVzdBogLnN1cm1hcC5hZ2VudC52MS5SdW5EZW1vUmVzcG9uc2UiCsrzGAYIARAeGAISVQoGR2V0UnVuEh4uc3VybWFwLmFnZW50LnYxLkdldFJ1blJlcXVlc3QaHy5zdXJtYXAuYWdlbnQudjEuR2V0UnVuUmVzcG9uc2UiCsrzGAYIARAKGAESXgoJUHJvbXB0U2FtEiEuc3VybWFwLmFnZW50LnYxLlByb21wdFNhbVJlcXVlc3QaIi5zdXJtYXAuYWdlbnQudjEuUHJvbXB0U2FtUmVzcG9uc2UiCsrzGAYIARA8GAISZAoLRmluZE9iamVjdHMSIy5zdXJtYXAuYWdlbnQudjEuRmluZE9iamVjdHNSZXF1ZXN0GiQuc3VybWFwLmFnZW50LnYxLkZpbmRPYmplY3RzUmVzcG9uc2UiCsrzGAYIARAPGAESXgoJR2V0T2JqZWN0EiEuc3VybWFwLmFnZW50LnYxLkdldE9iamVjdFJlcXVlc3QaIi5zdXJtYXAuYWdlbnQudjEuR2V0T2JqZWN0UmVzcG9uc2UiCsrzGAYIARAKGAESdgoRR2V0T2JqZWN0R2VvbWV0cnkSKS5zdXJtYXAuYWdlbnQudjEuR2V0T2JqZWN0R2VvbWV0cnlSZXF1ZXN0Giouc3VybWFwLmFnZW50LnYxLkdldE9iamVjdEdlb21ldHJ5UmVzcG9uc2UiCsrzGAYIARAPGAESWwoIR2V0RnJhbWUSIC5zdXJtYXAuYWdlbnQudjEuR2V0RnJhbWVSZXF1ZXN0GiEuc3VybWFwLmFnZW50LnYxLkdldEZyYW1lUmVzcG9uc2UiCsrzGAYIARAPGAESZwoMTGlzdERhdGFzZXRzEiQuc3VybWFwLmFnZW50LnYxLkxpc3REYXRhc2V0c1JlcXVlc3QaJS5zdXJtYXAuYWdlbnQudjEuTGlzdERhdGFzZXRzUmVzcG9uc2UiCsrzGAYIARAKGAESXgoKR2V0RGF0YXNldBIiLnN1cm1hcC5hZ2VudC52MS5HZXREYXRhc2V0UmVxdWVzdBogLnN1cm1hcC5hZ2VudC52MS5EYXRhc2V0UmVzcG9uc2UiCsrzGAYIARAKGAESZgoOUHJlcGFyZURhdGFzZXQSJi5zdXJtYXAuYWdlbnQudjEuUHJlcGFyZURhdGFzZXRSZXF1ZXN0GiAuc3VybWFwLmFnZW50LnYxLkRhdGFzZXRSZXNwb25zZSIKyvMYBggBEB4YAhJhCgpSdW5SdGFibWFwEiIuc3VybWFwLmFnZW50LnYxLlJ1blJ0YWJtYXBSZXF1ZXN0GiMuc3VybWFwLmFnZW50LnYxLlJ1blJ0YWJtYXBSZXNwb25zZSIKyvMYBggBEB4YAhJwCg9SdW5TYW1PbkRhdGFzZXQSJy5zdXJtYXAuYWdlbnQudjEuUnVuU2FtT25EYXRhc2V0UmVxdWVzdBooLnN1cm1hcC5hZ2VudC52MS5SdW5TYW1PbkRhdGFzZXRSZXNwb25zZSIKyvMYBggBEDwYAmIGcHJvdG8z", [file_surmap_agent_v1_execution]);
+  fileDesc("CiJzdXJtYXAvYWdlbnQvdjEvc3VydmV5X3Rvb2xzLnByb3RvEg9zdXJtYXAuYWdlbnQudjEiJwoEVmVjMxIJCgF4GAEgASgBEgkKAXkYAiABKAESCQoBehgDIAEoASI6CghQaXhlbEJveBIKCgJ4MBgBIAEoAhIKCgJ5MBgCIAEoAhIKCgJ4MRgDIAEoAhIKCgJ5MRgEIAEoAiIiCgpQaXhlbFBvaW50EgkKAXgYASABKAISCQoBeRgCIAEoAiISChBMaXN0RGVtb3NSZXF1ZXN0In4KCURlbW9TY2VuZRIKCgJpZBgBIAEoCRINCgV0aXRsZRgCIAEoCRIWCg5kZWZhdWx0X3Byb21wdBgDIAEoCRIQCghwcmVwYXJlZBgEIAEoCBIaCg1jYWNoZWRfcnVuX2lkGAUgASgJSACIAQFCEAoOX2NhY2hlZF9ydW5faWQiPwoRTGlzdERlbW9zUmVzcG9uc2USKgoGc2NlbmVzGAEgAygLMhouc3VybWFwLmFnZW50LnYxLkRlbW9TY2VuZSIaChhMaXN0T25ib2FyZE1vZGVsc1JlcXVlc3QicQoMT25ib2FyZE1vZGVsEgwKBG5hbWUYASABKAkSDQoFdGl0bGUYAiABKAkSDAoEbm90ZRgDIAEoCRIRCglhdmFpbGFibGUYBCABKAgSEgoKaXNfZGVmYXVsdBgFIAEoCBIPCgdjbGFzc2VzGAYgAygJImEKGUxpc3RPbmJvYXJkTW9kZWxzUmVzcG9uc2USLQoGbW9kZWxzGAEgAygLMh0uc3VybWFwLmFnZW50LnYxLk9uYm9hcmRNb2RlbBIVCg1kZWZhdWx0X21vZGVsGAIgASgJItMBCg5SdW5EZW1vUmVxdWVzdBIPCgdkYXRhc2V0GAEgASgJEhMKBnByb21wdBgCIAEoCUgAiAEBEhcKCm1heF9mcmFtZXMYAyABKA1IAYgBARIQCgNmcHMYBCABKAFIAogBARIaCg1vbmJvYXJkX21vZGVsGAUgASgJSAOIAQESFAoHcmVidWlsZBgGIAEoCEgEiAEBQgkKB19wcm9tcHRCDQoLX21heF9mcmFtZXNCBgoEX2Zwc0IQCg5fb25ib2FyZF9tb2RlbEIKCghfcmVidWlsZCKLAgoHUnVuSW5mbxIOCgZydW5faWQYASABKAkSDwoHZGF0YXNldBgCIAEoCRIOCgZwcm9tcHQYAyABKAkSDgoGZnJhbWVzGAQgASgNEg8KB29iamVjdHMYBSABKA0SLwoGc3RhdHVzGAYgASgOMh8uc3VybWFwLmFnZW50LnYxLlJ1bkluZm8uU3RhdHVzEhUKDW9uYm9hcmRfbW9kZWwYByABKAkSDgoGY2FjaGVkGAggASgIIlYKBlN0YXR1cxIWChJTVEFUVVNfVU5TUEVDSUZJRUQQABILCgdSVU5OSU5HEAESDAoIRklOSVNIRUQQAhINCglDQU5DRUxMRUQQAxIKCgZGQUlMRUQQBCLgAQoPUnVuRGVtb1Jlc3BvbnNlEg4KBnJ1bl9pZBgBIAEoCRIOCgZmcmFtZXMYAiABKA0SDwoHb2JqZWN0cxgDIAEoDRIvCgZzdGF0dXMYBCABKA4yHy5zdXJtYXAuYWdlbnQudjEuUnVuSW5mby5TdGF0dXMSFQoNb25ib2FyZF9tb2RlbBgFIAEoCRImChlvbmJvYXJkX3JlY29nbmlzZXNfcHJvbXB0GAYgASgISACIAQESDgoGY2FjaGVkGAcgASgIQhwKGl9vbmJvYXJkX3JlY29nbmlzZXNfcHJvbXB0Ih8KDUdldFJ1blJlcXVlc3QSDgoGcnVuX2lkGAEgASgJIjcKDkdldFJ1blJlc3BvbnNlEiUKA3J1bhgBIAEoCzIYLnN1cm1hcC5hZ2VudC52MS5SdW5JbmZvIm4KEFByb21wdFNhbVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEg8KB2NvbmNlcHQYAiABKAkSEQoJZnJhbWVfaWRzGAMgAygEEhcKCm1heF9mcmFtZXMYBCABKA1IAIgBAUINCgtfbWF4X2ZyYW1lcyKiAQoMU2FtRGV0ZWN0aW9uEhQKDGRldGVjdGlvbl9pZBgBIAEoCRINCgVsYWJlbBgCIAEoCRINCgVzY29yZRgDIAEoAhIrCghib3hfeHl4eRgEIAEoCzIZLnN1cm1hcC5hZ2VudC52MS5QaXhlbEJveBIxCgxtYXNrX3BvbHlnb24YBSADKAsyGy5zdXJtYXAuYWdlbnQudjEuUGl4ZWxQb2ludCJnChJTYW1GcmFtZURldGVjdGlvbnMSEAoIZnJhbWVfaWQYASABKAQSDAoEdF9ucxgCIAEoBBIxCgpkZXRlY3Rpb25zGAMgAygLMh0uc3VybWFwLmFnZW50LnYxLlNhbURldGVjdGlvbiJIChFQcm9tcHRTYW1SZXNwb25zZRIzCgZmcmFtZXMYASADKAsyIy5zdXJtYXAuYWdlbnQudjEuU2FtRnJhbWVEZXRlY3Rpb25zItcBChJGaW5kT2JqZWN0c1JlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhIKBWxhYmVsGAIgASgJSACIAQESKAoEbmVhchgDIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzSAGIAQESFQoIcmFkaXVzX20YBCABKAFIAogBARITCgZtb3ZpbmcYBSABKAhIA4gBARISCgVsaW1pdBgGIAEoDUgEiAEBQggKBl9sYWJlbEIHCgVfbmVhckILCglfcmFkaXVzX21CCQoHX21vdmluZ0IICgZfbGltaXQibgoLT3JpZW50ZWRCb3gSJQoGY2VudHJlGAEgASgLMhUuc3VybWFwLmFnZW50LnYxLlZlYzMSJgoHZXh0ZW50cxgCIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzEhAKCHJvdGF0aW9uGAMgAygBIlgKCU5laWdoYm91chIKCgJpZBgBIAEoCRISCgpkaXN0YW5jZV9tGAIgASgBEisKCHJlbGF0aW9uGAMgASgOMhkuc3VybWFwLmFnZW50LnYxLlJlbGF0aW9uIpsECg1PYmplY3RTdW1tYXJ5EgoKAmlkGAEgASgJEg0KBWxhYmVsGAIgASgJEhIKCmNvbmZpZGVuY2UYAyABKAISDQoFZnJhbWUYBCABKAkSDwoHdXBfYXhpcxgFIAEoCRINCgV1bml0cxgGIAEoCRIQCghuX3BvaW50cxgHIAEoDRIPCgduX2ZhY2VzGAggASgNEicKCGNlbnRyb2lkGAkgASgLMhUuc3VybWFwLmFnZW50LnYxLlZlYzMSJwoIYWFiYl9taW4YCiABKAsyFS5zdXJtYXAuYWdlbnQudjEuVmVjMxInCghhYWJiX21heBgLIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzEikKA29iYhgMIAEoCzIcLnN1cm1hcC5hZ2VudC52MS5PcmllbnRlZEJveBIQCghoZWlnaHRfbRgNIAEoARIUCgxmb290cHJpbnRfbTIYDiABKAESJQoFc2hhcGUYDyABKA4yFi5zdXJtYXAuYWdlbnQudjEuU2hhcGUSFwoPb2JzZXJ2ZWRfZnJhbWVzGBAgASgNEhIKCnRfZmlyc3RfbnMYESABKAQSEQoJdF9sYXN0X25zGBIgASgEEi4KCm5laWdoYm91cnMYEyADKAsyGi5zdXJtYXAuYWdlbnQudjEuTmVpZ2hib3VyEhQKDGdlb21ldHJ5X3VyaRgUIAEoCRIOCgZtb3ZpbmcYFSABKAgiRgoTRmluZE9iamVjdHNSZXNwb25zZRIvCgdvYmplY3RzGAEgAygLMh4uc3VybWFwLmFnZW50LnYxLk9iamVjdFN1bW1hcnkiNQoQR2V0T2JqZWN0UmVxdWVzdBIOCgZydW5faWQYASABKAkSEQoJb2JqZWN0X2lkGAIgASgJIkMKEUdldE9iamVjdFJlc3BvbnNlEi4KBm9iamVjdBgBIAEoCzIeLnN1cm1hcC5hZ2VudC52MS5PYmplY3RTdW1tYXJ5IocBChhHZXRPYmplY3RHZW9tZXRyeVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhEKCW9iamVjdF9pZBgCIAEoCRIXCgptYXhfcG9pbnRzGAMgASgNSACIAQESFAoHdm94ZWxfbRgEIAEoAUgBiAEBQg0KC19tYXhfcG9pbnRzQgoKCF92b3hlbF9tIlsKGUdldE9iamVjdEdlb21ldHJ5UmVzcG9uc2USEAoIb2JqX3RleHQYASABKAkSFAoMZ2VvbWV0cnlfdXJpGAIgASgJEhYKDmRlY2ltYXRlZF9mcm9tGAMgASgNIvcBCg9HZXRGcmFtZVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhUKC2ZyYW1lX2luZGV4GAIgASgNSAASEgoIZnJhbWVfaWQYAyABKARIABIOCgR0X25zGAQgASgESAASLQoIY3JvcF9ib3gYBSABKAsyGS5zdXJtYXAuYWdlbnQudjEuUGl4ZWxCb3hIARIYCg5jcm9wX29iamVjdF9pZBgGIAEoCUgBEhMKBnBhZF9weBgHIAEoDUgCiAEBEhUKCG1heF9zaWRlGAggASgNSAOIAQFCBAoCYXRCBgoEY3JvcEIJCgdfcGFkX3B4QgsKCV9tYXhfc2lkZSJJCg9EYXRhc2V0R2VvUG9pbnQSCwoDbG9uGAEgASgBEgsKA2xhdBgCIAEoARISCgVhbHRfbRgDIAEoAUgAiAEBQggKBl9hbHRfbSJACg5EYXRhc2V0TGljZW5zZRIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgthdHRyaWJ1dGlvbhgDIAEoCSL5AwoMRGF0YXNldEVudHJ5EgoKAmlkGAEgASgJEg0KBXRpdGxlGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhAKCHByb3ZpZGVyGAQgASgJEjAKB2xpY2Vuc2UYBSABKAsyHy5zdXJtYXAuYWdlbnQudjEuRGF0YXNldExpY2Vuc2USMgoIbW9kYWxpdHkYBiABKA4yIC5zdXJtYXAuYWdlbnQudjEuRGF0YXNldE1vZGFsaXR5EhQKDG9mZmljaWFsX3VybBgHIAEoCRIWCg5kZWZhdWx0X3Byb21wdBgIIAEoCRIQCghwcmVwYXJlZBgJIAEoCBITCgtmcmFtZV9jb3VudBgKIAEoDRIbChN0aHVtYm5haWxfYXZhaWxhYmxlGAsgASgIEhYKDmxvY2F0aW9uX2xhYmVsGAwgASgJEjkKCmdwc19jZW50cmUYDSABKAsyIC5zdXJtYXAuYWdlbnQudjEuRGF0YXNldEdlb1BvaW50SACIAQESMwoJZ3BzX3RyYWNrGA4gAygLMiAuc3VybWFwLmFnZW50LnYxLkRhdGFzZXRHZW9Qb2ludBIOCgZjcmVkaXQYDyABKAkSKAoEcnVucxgQIAMoCzIaLnN1cm1hcC5hZ2VudC52MS5DYWNoZWRSdW5CDQoLX2dwc19jZW50cmUiewoJQ2FjaGVkUnVuEhEKCWNhY2hlX2tleRgBIAEoCRIOCgZydW5faWQYAiABKAkSDQoFdGl0bGUYAyABKAkSDgoGZnJhbWVzGAQgASgNEhIKCmNyZWF0ZWRfYXQYBSABKAESGAoQcHJldmlld19mcmFtZV9pZBgGIAEoDSIVChNMaXN0RGF0YXNldHNSZXF1ZXN0IkcKFExpc3REYXRhc2V0c1Jlc3BvbnNlEi8KCGRhdGFzZXRzGAEgAygLMh0uc3VybWFwLmFnZW50LnYxLkRhdGFzZXRFbnRyeSInChFHZXREYXRhc2V0UmVxdWVzdBISCgpkYXRhc2V0X2lkGAEgASgJIisKFVByZXBhcmVEYXRhc2V0UmVxdWVzdBISCgpkYXRhc2V0X2lkGAEgASgJIkEKD0RhdGFzZXRSZXNwb25zZRIuCgdkYXRhc2V0GAEgASgLMh0uc3VybWFwLmFnZW50LnYxLkRhdGFzZXRFbnRyeSK2AQoRUnVuUnRhYm1hcFJlcXVlc3QSDwoHZGF0YXNldBgBIAEoCRIXCgptYXhfZnJhbWVzGAIgASgNSACIAQESEAoDZnBzGAMgASgBSAGIAQESGgoNb25ib2FyZF9tb2RlbBgEIAEoCUgCiAEBEhQKB3JlYnVpbGQYBSABKAhIA4gBAUINCgtfbWF4X2ZyYW1lc0IGCgRfZnBzQhAKDl9vbmJvYXJkX21vZGVsQgoKCF9yZWJ1aWxkIjsKElJ1blJ0YWJtYXBSZXNwb25zZRIlCgNydW4YASABKAsyGC5zdXJtYXAuYWdlbnQudjEuUnVuSW5mbyJzChZSdW5TYW1PbkRhdGFzZXRSZXF1ZXN0Eg8KB2RhdGFzZXQYASABKAkSFAoHY29uY2VwdBgCIAEoCUgAiAEBEhcKCm1heF9mcmFtZXMYAyABKA1IAYgBAUIKCghfY29uY2VwdEINCgtfbWF4X2ZyYW1lcyJiChdSdW5TYW1PbkRhdGFzZXRSZXNwb25zZRISCgpkYXRhc2V0X2lkGAEgASgJEjMKBmZyYW1lcxgCIAMoCzIjLnN1cm1hcC5hZ2VudC52MS5TYW1GcmFtZURldGVjdGlvbnMiogEKEEdldEZyYW1lUmVzcG9uc2USEAoIZnJhbWVfaWQYASABKAQSDAoEdF9ucxgCIAEoBBINCgV3aWR0aBgDIAEoDRIOCgZoZWlnaHQYBCABKA0SLAoGc291cmNlGAUgASgOMhwuc3VybWFwLmFnZW50LnYxLkZyYW1lU291cmNlEg0KBWltYWdlGAYgASgMEhIKCm1lZGlhX3R5cGUYByABKAkiIgoPTGlzdFJ1bnNSZXF1ZXN0Eg8KB2RhdGFzZXQYASABKAkiPAoQTGlzdFJ1bnNSZXNwb25zZRIoCgRydW5zGAEgAygLMhouc3VybWFwLmFnZW50LnYxLkNhY2hlZFJ1biIiChBSdW5DYWNoZWRSZXF1ZXN0Eg4KBnJ1bl9pZBgBIAEoCSI6ChFSdW5DYWNoZWRSZXNwb25zZRIlCgNydW4YASABKAsyGC5zdXJtYXAuYWdlbnQudjEuUnVuSW5mbypGCgVTaGFwZRIVChFTSEFQRV9VTlNQRUNJRklFRBAAEgoKBkxJTkVBUhABEgoKBlBMQU5BUhACEg4KClZPTFVNRVRSSUMQAypVCghSZWxhdGlvbhIYChRSRUxBVElPTl9VTlNQRUNJRklFRBAAEgkKBUFCT1ZFEAESCQoFQkVMT1cQAhILCgdORVhUX1RPEAMSDAoIT1ZFUkxBUFMQBCpCCgtGcmFtZVNvdXJjZRIcChhGUkFNRV9TT1VSQ0VfVU5TUEVDSUZJRUQQABIICgRGVUxMEAESCwoHRElTUExBWRACKkAKD0RhdGFzZXRNb2RhbGl0eRIYChRNT0RBTElUWV9VTlNQRUNJRklFRBAAEggKBEdSRVkQARIJCgVDT0xPUhACMtQMCgtTdXJ2ZXlUb29scxJeCglMaXN0RGVtb3MSIS5zdXJtYXAuYWdlbnQudjEuTGlzdERlbW9zUmVxdWVzdBoiLnN1cm1hcC5hZ2VudC52MS5MaXN0RGVtb3NSZXNwb25zZSIKyvMYBggBEAoYARJ2ChFMaXN0T25ib2FyZE1vZGVscxIpLnN1cm1hcC5hZ2VudC52MS5MaXN0T25ib2FyZE1vZGVsc1JlcXVlc3QaKi5zdXJtYXAuYWdlbnQudjEuTGlzdE9uYm9hcmRNb2RlbHNSZXNwb25zZSIKyvMYBggBEAoYARJYCgdSdW5EZW1vEh8uc3VybWFwLmFnZW50LnYxLlJ1bkRlbW9SZXF1ZXN0GiAuc3VybWFwLmFnZW50LnYxLlJ1bkRlbW9SZXNwb25zZSIKyvMYBggBEB4YAhJVCgZHZXRSdW4SHi5zdXJtYXAuYWdlbnQudjEuR2V0UnVuUmVxdWVzdBofLnN1cm1hcC5hZ2VudC52MS5HZXRSdW5SZXNwb25zZSIKyvMYBggBEAoYARJeCglQcm9tcHRTYW0SIS5zdXJtYXAuYWdlbnQudjEuUHJvbXB0U2FtUmVxdWVzdBoiLnN1cm1hcC5hZ2VudC52MS5Qcm9tcHRTYW1SZXNwb25zZSIKyvMYBggBEDwYAhJkCgtGaW5kT2JqZWN0cxIjLnN1cm1hcC5hZ2VudC52MS5GaW5kT2JqZWN0c1JlcXVlc3QaJC5zdXJtYXAuYWdlbnQudjEuRmluZE9iamVjdHNSZXNwb25zZSIKyvMYBggBEA8YARJeCglHZXRPYmplY3QSIS5zdXJtYXAuYWdlbnQudjEuR2V0T2JqZWN0UmVxdWVzdBoiLnN1cm1hcC5hZ2VudC52MS5HZXRPYmplY3RSZXNwb25zZSIKyvMYBggBEAoYARJ2ChFHZXRPYmplY3RHZW9tZXRyeRIpLnN1cm1hcC5hZ2VudC52MS5HZXRPYmplY3RHZW9tZXRyeVJlcXVlc3QaKi5zdXJtYXAuYWdlbnQudjEuR2V0T2JqZWN0R2VvbWV0cnlSZXNwb25zZSIKyvMYBggBEA8YARJbCghHZXRGcmFtZRIgLnN1cm1hcC5hZ2VudC52MS5HZXRGcmFtZVJlcXVlc3QaIS5zdXJtYXAuYWdlbnQudjEuR2V0RnJhbWVSZXNwb25zZSIKyvMYBggBEA8YARJnCgxMaXN0RGF0YXNldHMSJC5zdXJtYXAuYWdlbnQudjEuTGlzdERhdGFzZXRzUmVxdWVzdBolLnN1cm1hcC5hZ2VudC52MS5MaXN0RGF0YXNldHNSZXNwb25zZSIKyvMYBggBEAoYARJeCgpHZXREYXRhc2V0EiIuc3VybWFwLmFnZW50LnYxLkdldERhdGFzZXRSZXF1ZXN0GiAuc3VybWFwLmFnZW50LnYxLkRhdGFzZXRSZXNwb25zZSIKyvMYBggBEAoYARJmCg5QcmVwYXJlRGF0YXNldBImLnN1cm1hcC5hZ2VudC52MS5QcmVwYXJlRGF0YXNldFJlcXVlc3QaIC5zdXJtYXAuYWdlbnQudjEuRGF0YXNldFJlc3BvbnNlIgrK8xgGCAEQHhgCEmEKClJ1blJ0YWJtYXASIi5zdXJtYXAuYWdlbnQudjEuUnVuUnRhYm1hcFJlcXVlc3QaIy5zdXJtYXAuYWdlbnQudjEuUnVuUnRhYm1hcFJlc3BvbnNlIgrK8xgGCAEQHhgCEnAKD1J1blNhbU9uRGF0YXNldBInLnN1cm1hcC5hZ2VudC52MS5SdW5TYW1PbkRhdGFzZXRSZXF1ZXN0Giguc3VybWFwLmFnZW50LnYxLlJ1blNhbU9uRGF0YXNldFJlc3BvbnNlIgrK8xgGCAEQPBgCElsKCExpc3RSdW5zEiAuc3VybWFwLmFnZW50LnYxLkxpc3RSdW5zUmVxdWVzdBohLnN1cm1hcC5hZ2VudC52MS5MaXN0UnVuc1Jlc3BvbnNlIgrK8xgGCAEQChgBEl4KCVJ1bkNhY2hlZBIhLnN1cm1hcC5hZ2VudC52MS5SdW5DYWNoZWRSZXF1ZXN0GiIuc3VybWFwLmFnZW50LnYxLlJ1bkNhY2hlZFJlc3BvbnNlIgrK8xgGCAEQChgBYgZwcm90bzM", [file_surmap_agent_v1_execution]);
 
 /**
  * A point or extent in the object's coordinate frame, in its units.
@@ -334,6 +334,14 @@ export type RunDemoRequest = Message<"surmap.agent.v1.RunDemoRequest"> & {
    * @generated from field: optional string onboard_model = 5;
    */
   onboardModel?: string | undefined;
+
+  /**
+   * Build afresh even when a cached run with the same cache key exists; false by default, so
+   * an identical request answers from that cached run.
+   *
+   * @generated from field: optional bool rebuild = 6;
+   */
+  rebuild?: boolean | undefined;
 };
 
 /**
@@ -397,6 +405,13 @@ export type RunInfo = Message<"surmap.agent.v1.RunInfo"> & {
    * @generated from field: string onboard_model = 7;
    */
   onboardModel: string;
+
+  /**
+   * Whether the answer came from a cached run instead of a new build.
+   *
+   * @generated from field: bool cached = 8;
+   */
+  cached: boolean;
 };
 
 /**
@@ -498,6 +513,13 @@ export type RunDemoResponse = Message<"surmap.agent.v1.RunDemoResponse"> & {
    * @generated from field: optional bool onboard_recognises_prompt = 6;
    */
   onboardRecognisesPrompt?: boolean | undefined;
+
+  /**
+   * Whether the answer came from a cached run instead of a new build.
+   *
+   * @generated from field: bool cached = 7;
+   */
+  cached: boolean;
 };
 
 /**
@@ -1377,6 +1399,13 @@ export type DatasetEntry = Message<"surmap.agent.v1.DatasetEntry"> & {
    * @generated from field: string credit = 15;
    */
   credit: string;
+
+  /**
+   * Its runs (cached builds), newest first, one per cache key; empty before the first build.
+   *
+   * @generated from field: repeated surmap.agent.v1.CachedRun runs = 16;
+   */
+  runs: CachedRun[];
 };
 
 /**
@@ -1385,6 +1414,62 @@ export type DatasetEntry = Message<"surmap.agent.v1.DatasetEntry"> & {
  */
 export const DatasetEntrySchema: GenMessage<DatasetEntry> = /*@__PURE__*/
   messageDesc(file_surmap_agent_v1_survey_tools, 30);
+
+/**
+ * One cached build of a dataset: the newest complete recording for its cache key.
+ *
+ * @generated from message surmap.agent.v1.CachedRun
+ */
+export type CachedRun = Message<"surmap.agent.v1.CachedRun"> & {
+  /**
+   * What it was built with, e.g. "rtabmap+sam=car;frames=200"; identical requests share it.
+   *
+   * @generated from field: string cache_key = 1;
+   */
+  cacheKey: string;
+
+  /**
+   * The recorded run: pass it to run_cached, get_run, find_objects or get_frame.
+   *
+   * @generated from field: string run_id = 2;
+   */
+  runId: string;
+
+  /**
+   * The run's title.
+   *
+   * @generated from field: string title = 3;
+   */
+  title: string;
+
+  /**
+   * Frames it recorded.
+   *
+   * @generated from field: uint32 frames = 4;
+   */
+  frames: number;
+
+  /**
+   * When it was built, in Unix seconds.
+   *
+   * @generated from field: double created_at = 5;
+   */
+  createdAt: number;
+
+  /**
+   * A recorded frame id to preview it with (get_frame, or /frames/<run_id>/<id>.jpg).
+   *
+   * @generated from field: uint32 preview_frame_id = 6;
+   */
+  previewFrameId: number;
+};
+
+/**
+ * Describes the message surmap.agent.v1.CachedRun.
+ * Use `create(CachedRunSchema)` to create a new message.
+ */
+export const CachedRunSchema: GenMessage<CachedRun> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 31);
 
 /**
  * @generated from message surmap.agent.v1.ListDatasetsRequest
@@ -1397,7 +1482,7 @@ export type ListDatasetsRequest = Message<"surmap.agent.v1.ListDatasetsRequest">
  * Use `create(ListDatasetsRequestSchema)` to create a new message.
  */
 export const ListDatasetsRequestSchema: GenMessage<ListDatasetsRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 31);
+  messageDesc(file_surmap_agent_v1_survey_tools, 32);
 
 /**
  * @generated from message surmap.agent.v1.ListDatasetsResponse
@@ -1416,7 +1501,7 @@ export type ListDatasetsResponse = Message<"surmap.agent.v1.ListDatasetsResponse
  * Use `create(ListDatasetsResponseSchema)` to create a new message.
  */
 export const ListDatasetsResponseSchema: GenMessage<ListDatasetsResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 32);
+  messageDesc(file_surmap_agent_v1_survey_tools, 33);
 
 /**
  * @generated from message surmap.agent.v1.GetDatasetRequest
@@ -1435,7 +1520,7 @@ export type GetDatasetRequest = Message<"surmap.agent.v1.GetDatasetRequest"> & {
  * Use `create(GetDatasetRequestSchema)` to create a new message.
  */
 export const GetDatasetRequestSchema: GenMessage<GetDatasetRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 33);
+  messageDesc(file_surmap_agent_v1_survey_tools, 34);
 
 /**
  * @generated from message surmap.agent.v1.PrepareDatasetRequest
@@ -1454,7 +1539,7 @@ export type PrepareDatasetRequest = Message<"surmap.agent.v1.PrepareDatasetReque
  * Use `create(PrepareDatasetRequestSchema)` to create a new message.
  */
 export const PrepareDatasetRequestSchema: GenMessage<PrepareDatasetRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 34);
+  messageDesc(file_surmap_agent_v1_survey_tools, 35);
 
 /**
  * @generated from message surmap.agent.v1.DatasetResponse
@@ -1473,7 +1558,7 @@ export type DatasetResponse = Message<"surmap.agent.v1.DatasetResponse"> & {
  * Use `create(DatasetResponseSchema)` to create a new message.
  */
 export const DatasetResponseSchema: GenMessage<DatasetResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 35);
+  messageDesc(file_surmap_agent_v1_survey_tools, 36);
 
 /**
  * @generated from message surmap.agent.v1.RunRtabmapRequest
@@ -1507,6 +1592,14 @@ export type RunRtabmapRequest = Message<"surmap.agent.v1.RunRtabmapRequest"> & {
    * @generated from field: optional string onboard_model = 4;
    */
   onboardModel?: string | undefined;
+
+  /**
+   * Build afresh even when a cached run with the same cache key exists; false by default, so
+   * an identical request answers from that cached run.
+   *
+   * @generated from field: optional bool rebuild = 5;
+   */
+  rebuild?: boolean | undefined;
 };
 
 /**
@@ -1514,7 +1607,7 @@ export type RunRtabmapRequest = Message<"surmap.agent.v1.RunRtabmapRequest"> & {
  * Use `create(RunRtabmapRequestSchema)` to create a new message.
  */
 export const RunRtabmapRequestSchema: GenMessage<RunRtabmapRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 36);
+  messageDesc(file_surmap_agent_v1_survey_tools, 37);
 
 /**
  * @generated from message surmap.agent.v1.RunRtabmapResponse
@@ -1533,7 +1626,7 @@ export type RunRtabmapResponse = Message<"surmap.agent.v1.RunRtabmapResponse"> &
  * Use `create(RunRtabmapResponseSchema)` to create a new message.
  */
 export const RunRtabmapResponseSchema: GenMessage<RunRtabmapResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 37);
+  messageDesc(file_surmap_agent_v1_survey_tools, 38);
 
 /**
  * @generated from message surmap.agent.v1.RunSamOnDatasetRequest
@@ -1566,7 +1659,7 @@ export type RunSamOnDatasetRequest = Message<"surmap.agent.v1.RunSamOnDatasetReq
  * Use `create(RunSamOnDatasetRequestSchema)` to create a new message.
  */
 export const RunSamOnDatasetRequestSchema: GenMessage<RunSamOnDatasetRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 38);
+  messageDesc(file_surmap_agent_v1_survey_tools, 39);
 
 /**
  * @generated from message surmap.agent.v1.RunSamOnDatasetResponse
@@ -1592,7 +1685,7 @@ export type RunSamOnDatasetResponse = Message<"surmap.agent.v1.RunSamOnDatasetRe
  * Use `create(RunSamOnDatasetResponseSchema)` to create a new message.
  */
 export const RunSamOnDatasetResponseSchema: GenMessage<RunSamOnDatasetResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 39);
+  messageDesc(file_surmap_agent_v1_survey_tools, 40);
 
 /**
  * @generated from message surmap.agent.v1.GetFrameResponse
@@ -1653,7 +1746,83 @@ export type GetFrameResponse = Message<"surmap.agent.v1.GetFrameResponse"> & {
  * Use `create(GetFrameResponseSchema)` to create a new message.
  */
 export const GetFrameResponseSchema: GenMessage<GetFrameResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 40);
+  messageDesc(file_surmap_agent_v1_survey_tools, 41);
+
+/**
+ * @generated from message surmap.agent.v1.ListRunsRequest
+ */
+export type ListRunsRequest = Message<"surmap.agent.v1.ListRunsRequest"> & {
+  /**
+   * The dataset whose runs to list: a DatasetEntry id from list_datasets.
+   *
+   * @generated from field: string dataset = 1;
+   */
+  dataset: string;
+};
+
+/**
+ * Describes the message surmap.agent.v1.ListRunsRequest.
+ * Use `create(ListRunsRequestSchema)` to create a new message.
+ */
+export const ListRunsRequestSchema: GenMessage<ListRunsRequest> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 42);
+
+/**
+ * @generated from message surmap.agent.v1.ListRunsResponse
+ */
+export type ListRunsResponse = Message<"surmap.agent.v1.ListRunsResponse"> & {
+  /**
+   * Its cached runs, newest first, one per cache key.
+   *
+   * @generated from field: repeated surmap.agent.v1.CachedRun runs = 1;
+   */
+  runs: CachedRun[];
+};
+
+/**
+ * Describes the message surmap.agent.v1.ListRunsResponse.
+ * Use `create(ListRunsResponseSchema)` to create a new message.
+ */
+export const ListRunsResponseSchema: GenMessage<ListRunsResponse> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 43);
+
+/**
+ * @generated from message surmap.agent.v1.RunCachedRequest
+ */
+export type RunCachedRequest = Message<"surmap.agent.v1.RunCachedRequest"> & {
+  /**
+   * The cached run to run: a CachedRun run_id from list_runs.
+   *
+   * @generated from field: string run_id = 1;
+   */
+  runId: string;
+};
+
+/**
+ * Describes the message surmap.agent.v1.RunCachedRequest.
+ * Use `create(RunCachedRequestSchema)` to create a new message.
+ */
+export const RunCachedRequestSchema: GenMessage<RunCachedRequest> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 44);
+
+/**
+ * @generated from message surmap.agent.v1.RunCachedResponse
+ */
+export type RunCachedResponse = Message<"surmap.agent.v1.RunCachedResponse"> & {
+  /**
+   * The cached run, marked cached.
+   *
+   * @generated from field: surmap.agent.v1.RunInfo run = 1;
+   */
+  run?: RunInfo | undefined;
+};
+
+/**
+ * Describes the message surmap.agent.v1.RunCachedResponse.
+ * Use `create(RunCachedResponseSchema)` to create a new message.
+ */
+export const RunCachedResponseSchema: GenMessage<RunCachedResponse> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 45);
 
 /**
  * What an object's extent looks like.
@@ -1963,6 +2132,29 @@ export const SurveyTools: GenService<{
     methodKind: "unary";
     input: typeof RunSamOnDatasetRequestSchema;
     output: typeof RunSamOnDatasetResponseSchema;
+  },
+  /**
+   * Lists a dataset's runs: the cached builds run_rtabmap and run_demo recorded, newest first,
+   * one per cache key (the mode, SAM prompt, on-board model and frame limit it was built with).
+   * Each holds its RTAB-Map map, dense depth and SAM results.
+   *
+   * @generated from rpc surmap.agent.v1.SurveyTools.ListRuns
+   */
+  listRuns: {
+    methodKind: "unary";
+    input: typeof ListRunsRequestSchema;
+    output: typeof ListRunsResponseSchema;
+  },
+  /**
+   * Runs a cached run from list_runs: answers at once from its recording, with no RTAB-Map and
+   * no SAM, so get_run, find_objects, prompt_sam and get_frame work on it.
+   *
+   * @generated from rpc surmap.agent.v1.SurveyTools.RunCached
+   */
+  runCached: {
+    methodKind: "unary";
+    input: typeof RunCachedRequestSchema;
+    output: typeof RunCachedResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_surmap_agent_v1_survey_tools, 0);

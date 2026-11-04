@@ -97,6 +97,21 @@ export interface DatasetView {
   locationLabel: string;
   gpsCentre: { lon: number; lat: number } | null;
   gpsTrack: { lon: number; lat: number }[];
+  /** Its runs (cached builds), newest first, one per cache key; empty before the first build. */
+  runs: DatasetRunView[];
+}
+
+/** One cached build of a dataset: the newest complete recording for its cache key. */
+export interface DatasetRunView {
+  /** What it was built with, e.g. `"rtabmap+sam=car;frames=200"`. */
+  cacheKey: string;
+  runId: string;
+  title: string;
+  frames: number;
+  /** When it was built, in Unix seconds. */
+  createdAt: number;
+  /** A recorded frame to preview it with; 0 when it recorded none. */
+  previewFrameId: number;
 }
 
 /** How a gallery card asks the agent to run a dataset. */

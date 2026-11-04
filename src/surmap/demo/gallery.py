@@ -27,6 +27,7 @@ from surmap.demo.datasets import (
     PreparedDataset,
     cached_dataset,
 )
+from surmap.demo.history import CachedRecording
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -57,6 +58,8 @@ class GalleryEntry:
     gps_centre: GeoPoint | None
     gps_track: tuple[GeoPoint, ...]
     thumbnail_url: str = ""
+    runs: tuple[CachedRecording, ...] = ()
+    """Its cached builds, newest first, one per cache key."""
 
 
 def gallery_entries(
