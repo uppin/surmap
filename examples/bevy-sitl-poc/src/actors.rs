@@ -122,8 +122,11 @@ impl FigureDef {
         height_m: Option<f32>,
         rig_glb: Option<&str>,
     ) -> Option<crate::figure_anim::RigDef> {
-        // TODO(pr-2): implement
-        todo!("FigureDef::rig_for")
+        let mut rig = self.pose_rigs.get(&pose).or(self.rig.as_ref())?.clone();
+        if let Some(glb) = rig_glb {
+            rig.glb = glb.to_owned();
+        }
+        Some(rig.at_height(height_m))
     }
 
     pub fn from_json(text: &str) -> Result<Self, String> {
@@ -154,6 +157,27 @@ impl FigureDef {
         }
         if let Some(rig) = &def.rig {
             rig.validate()?;
+        }
+        if def.rig.is_none() && !def.pose_rigs.is_empty() {
+            return Err("pose_rigs needs the figure's own rig, which carries standing".into());
+        }
+        for (pose, rig) in &def.pose_rigs {
+            if *pose == Pose::Standing {
+                return Err("pose_rigs must not name standing: the figure's rig carries it".into());
+            }
+            rig.validate().map_err(|e| format!("pose_rigs {}: {e}", pose.name()))?;
+        }
+        if def.rig.is_some() {
+            for pose in [Pose::Standing, Pose::Lying, Pose::Sitting, Pose::Waving] {
+                let named = def.pose_rigs.get(&pose).or(def.rig.as_ref()).and_then(|rig| rig.clip_for(pose));
+                if named.is_none() {
+                    return Err(format!(
+                        "no clip for pose {}: name one in rig clips or in pose_rigs.{}",
+                        pose.name(),
+                        pose.name()
+                    ));
+                }
+            }
         }
         Ok(def)
     }

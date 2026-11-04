@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use bevy::scene::{SceneInstanceReady, SceneRoot};
 
 use super::{Figure, FigureAsset, FigureLook, PersonLook, StandIn};
-use crate::figure_anim::{clip_time, locomotion, rig_scale, Clip, RigDef};
+use crate::figure_anim::{clip_time, locomotion, rig_scale, Clip, Clips, RigDef};
 use crate::wildfire::SimClock;
 use crate::world::SceneState;
 
@@ -38,17 +38,22 @@ struct BuiltRig {
     clips: Vec<Playing>,
 }
 
-/// A rig glTF in use, by path. `failed` names a clip the file does not have, so it is said once.
+/// A rig in use, by the file it plays and the clips it names: the same file under two clip maps
+/// is two rigs.
+type RigKey = (String, Clips);
+
+/// A rig glTF in use. `failed` names a clip the file does not have, so it is said once.
 struct RigAsset {
     gltf: Handle<Gltf>,
+    clips: Clips,
     built: Option<BuiltRig>,
     failed: bool,
 }
 
-/// The rigs in use: the figure's own, and any a person names instead (`glb`).
+/// The rigs in use: each person's, as their pose and their own `glb` select it.
 #[derive(Resource, Default)]
 pub struct Rigs {
-    assets: HashMap<String, RigAsset>,
+    assets: HashMap<RigKey, RigAsset>,
 }
 
 /// On a figure whose rig scene has been spawned under it.
@@ -85,20 +90,19 @@ pub fn prepare_rigs(
     let Some(FigureAsset(def)) = look.and_then(|look| looks.get(&look.0)) else {
         return;
     };
-    let Some(rig) = def.rig.as_ref() else {
-        return;
-    };
-    let mut wanted: Vec<String> = vec![rig.glb.clone()];
-    wanted.extend(figures.iter().filter_map(|figure| figure.rig_glb.clone()));
-    for glb in wanted {
-        if rigs.assets.contains_key(&glb) {
+    for figure in &figures {
+        let Some(rig) = def.rig_for(figure.pose(), figure.height_m, figure.rig_glb.as_deref()) else {
+            continue;
+        };
+        let key = (rig.glb.clone(), rig.clips.clone());
+        if rigs.assets.contains_key(&key) {
             continue;
         }
-        let gltf: Handle<Gltf> = assets.load(glb.clone());
+        let gltf: Handle<Gltf> = assets.load(rig.glb.clone());
         scene.pending.push(gltf.clone().untyped());
-        rigs.assets.insert(glb, RigAsset { gltf, built: None, failed: false });
+        rigs.assets.insert(key, RigAsset { gltf, clips: rig.clips, built: None, failed: false });
     }
-    for (glb, asset) in rigs.assets.iter_mut() {
+    for (key, asset) in rigs.assets.iter_mut() {
         if asset.built.is_some() || asset.failed {
             continue;
         }
@@ -109,11 +113,11 @@ pub fn prepare_rigs(
         let root = graph.root;
         let mut clips = Vec::with_capacity(CLIPS.len());
         for clip in CLIPS {
-            let Some(name) = rig.clips.name(clip) else {
+            let Some(name) = asset.clips.name(clip) else {
                 continue;
             };
             let Some(animation) = gltf.named_animations.get(name) else {
-                warn!("rig {glb} has no animation named {name:?}; the figure stays a capsule");
+                warn!("rig {} has no animation named {name:?}; the figure stays a capsule", key.0);
                 asset.failed = true;
                 break;
             };
@@ -131,7 +135,8 @@ pub fn prepare_rigs(
     }
 }
 
-/// Spawns the rig under each figure that has one and whose rig is built, scaled to its height.
+/// Spawns the rig under each figure whose rig (its pose's, with its own `glb`) is built, scaled to
+/// its height.
 pub fn spawn_rigs(
     mut commands: Commands,
     look: Option<Res<FigureLook>>,
@@ -142,20 +147,18 @@ pub fn spawn_rigs(
     let Some(FigureAsset(def)) = look.and_then(|look| looks.get(&look.0)) else {
         return;
     };
-    let Some(rig) = def.rig.as_ref() else {
-        return;
-    };
     for (figure_entity, figure) in &figures {
-        let glb = figure.rig_glb.clone().unwrap_or_else(|| rig.glb.clone());
-        let Some(built) = rigs.assets.get(&glb).and_then(|asset| asset.built.as_ref()) else {
+        let Some(rig) = def.rig_for(figure.pose(), figure.height_m, figure.rig_glb.as_deref()) else {
             continue;
         };
-        let mut figure_rig = rig.clone();
-        figure_rig.glb = glb;
-        let scale = rig_scale(rig, figure.height_m);
+        let key = (rig.glb.clone(), rig.clips.clone());
+        let Some(built) = rigs.assets.get(&key).and_then(|asset| asset.built.as_ref()) else {
+            continue;
+        };
+        let scale = rig_scale(&rig, figure.height_m);
         let root = RigRoot {
             figure: figure_entity,
-            def: figure_rig,
+            def: rig,
             clips: built.clips.clone(),
             graph: built.graph.clone(),
             weights: [0.0; 6],

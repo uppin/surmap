@@ -124,8 +124,12 @@ impl RigDef {
     /// speeds and walk-to-run threshold grow with the rig, so the person's feet keep pace with
     /// their clips. Height and blend are unchanged.
     pub fn at_height(&self, height_m: Option<f32>) -> Self {
-        // TODO(pr-2): implement
-        todo!("RigDef::at_height")
+        let scale = rig_scale(self, height_m);
+        let mut scaled = self.clone();
+        scaled.walk_ground_m_s *= scale;
+        scaled.run_ground_m_s *= scale;
+        scaled.run_above_m_s *= scale;
+        scaled
     }
 
     /// Every speed, height and blend > 0, `run_ground_m_s` > `walk_ground_m_s`, the glTF a
