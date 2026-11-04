@@ -265,6 +265,8 @@ impl Builder<'_, '_, '_> {
             Element::Building(_) => {}
             Element::Person(e) => self.person(e),
             Element::Vegetation(_) => {}
+            // TODO(pr-1): implement — spawn the class glTF under a moving root.
+            Element::Vehicle(_) => {}
         }
     }
 

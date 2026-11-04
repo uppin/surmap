@@ -38,6 +38,11 @@ class BevyCapture:
     # empty without an `object_tracks.jsonl`.
     object_tracks: dict[int, dict[str, Vec3]] = field(default_factory=dict)
     wind: dict[int, tuple[float, float]] = field(default_factory=dict)
+    # What each tracked body is (`person`, `car`, `train`, …), by id; and each frame's heading
+    # (ENU degrees counter-clockwise from east, by id), keyed by `t_ns`.
+    # TODO(pr-1): implement — read from `object_tracks.jsonl`.
+    object_kinds: dict[str, str] = field(default_factory=dict)
+    object_yaw_deg: dict[int, dict[str, float]] = field(default_factory=dict)
     # Each frame's burning and burnt floors per building (`(burning, burnt)` by id), keyed by
     # `t_ns`; empty without a `building_fires.jsonl`.
     building_fires: dict[int, dict[str, tuple[tuple[int, ...], tuple[int, ...]]]] = field(

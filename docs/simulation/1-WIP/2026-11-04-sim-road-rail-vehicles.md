@@ -13,17 +13,17 @@ PRD: `PRD-2026-11-04-sim-road-rail-vehicles.md` · Discovery:
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1)
+- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files @ `063079f` (`/plan-pr-stack` pass 1)
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
-  - [ ] Stubs this node owns (`vehicle.rs`, `Element::Vehicle`, `VehicleDef`, track `kind`/`yaw_deg`, Python `vehicle` kind, proto `VehicleElement`)
-  - [ ] Acceptance tests written and failing for the right reason
-  - [ ] Unit/integration tests written and failing
-  - [ ] Tests committed with the changeset
+- [wf 2] ✅ 2026-11-04 `/plan-pr-stack` Red — acceptance and failing lower-tier tests, committed · Rust 26 red / 167 green; Python 16 red (2 acceptance, 14 unit/it) — commit 2
+  - [x] Build and baseline healthy — `cargo test --locked` 167/167, `cargo check --target wasm32-unknown-unknown` ok, `uv run mypy` clean (486 files); `uv run pytest -q` 1891 passed, 1 pre-existing local failure (`tests/test_survey_cm5_rtabmap_e2e.py::test_euroc_pairs_stream_real_rtabmap_poses_and_points`, needs a local RTAB-Map sidecar — not this stack's)
+  - [x] Stubs this node owns (`vehicle.rs`, `behaviour::Goal` + `Runner::goal`, `Element::Vehicle`, `validate_vehicles`, `Body.kind`/`yaw_deg`, `surmap.simulation.vehicles`, `BevyCapture.object_kinds`/`object_yaw_deg`, proto `VehicleElement`)
+  - [x] Acceptance tests written and failing for the right reason (`tests/test_sim_vehicle_e2e.py`)
+  - [x] Unit/integration tests written and failing
+  - [x] Tests committed with the changeset
 - [wf 3] ⬜ `/green` Green — implement until every red test passes ·
   - [ ] Pin CC0 glTF packs in `assets/assets.lock.json` (criteria in *Assets*), `uv run python scripts/fetch_sim_assets.py` verifies them
   - [ ] Rust `scene_manifest.rs`: `vehicle` element, validated (known class, `cars` only on `train`, tree validated as `Target::Object`)
@@ -43,7 +43,7 @@ PRD: `PRD-2026-11-04-sim-road-rail-vehicles.md` · Discovery:
 
 ## Stack Context
 
-Stack `sim-traffic` (slug `sim-traffic`) — **1 of 3** · PR `#pending`.
+Stack `sim-traffic` (slug `sim-traffic`) — **1 of 3** · PR [#106](https://github.com/uppin/surmap/pull/106).
 **Kind:** Feature · adds — **Workflow:** feature preset; pass-2 route `/plan-red` Steps 7–9.
 Branch `pr-1-sim-traffic`, base `main`; successor `pr-2-sim-traffic`.
 Seam: a new element kind and its own module (`vehicle.rs`); shares only the behaviour runtime and
@@ -162,6 +162,19 @@ criteria for a class, the Green row halts ⛔ with the candidates found — no n
 - **Supporting evidence (not a rung)** — native still `--screenshot <dir> --at 20 --scenario
   street-traffic`, reviewed at wrap: vehicles on the roads, train on its track, wheels not floating.
 
+## Red tests (commit 2)
+
+| Test | Validates |
+|---|---|
+| `tests/test_sim_vehicle_e2e.py::test_an_agent_turn_adds_a_truck_that_drives_up_the_avenue` | agent `add_element` vehicle → served, valid, with its tree |
+| `tests/test_sim_vehicle_e2e.py::test_the_served_street_traffic_preset_is_the_golden_the_renderer_validates` | preset served = golden `tests/fixtures/sim_scenario/street-traffic.json` (written at Green from the preset) |
+| `tests/test_sim_vehicle_manifest.py` (11) | valid bus/train; refusals naming id + reason (class, cars, glb, set_wind, tint); preset classes; preset = golden |
+| `tests/test_agent_simulation_tools.py` — vehicle added; unknown class `INVALID_ARGUMENT` | handler |
+| `tests/test_bevy_capture.py::test_a_capture_carries_what_each_tracked_body_is_and_its_heading_per_frame` | `object_kinds`, `object_yaw_deg` |
+| `src/vehicle/tests.rs` (19) | class file name/kind, `VehicleDef` rules, shipped class files, accel/max-speed/turn limits, stop without overshoot, brake without goal, no circling, wheel angle, tree to path end, determinism, parked, carriages on track through a bend |
+| `src/scene_manifest/tests.rs` (7) | train with cars; `cars` refused off trains; `glb` override rules and asset path; no `set_wind`; golden parses with all four classes |
+| `src/actors/tests.rs` (2) | track line carries `kind`/`yaw_deg` (the existing exact-JSON test now pins the extended contract); a walking figure tracked as `person` facing its way |
+
 ## Prerequisites
 
 Deferred-work scan (`src/surmap/docs/todo/`, `src/surmap/docs/code-issues/`):
@@ -176,4 +189,11 @@ Deferred-work scan (`src/surmap/docs/todo/`, `src/surmap/docs/code-issues/`):
   target-agnostic; a vehicle is just a body that cannot turn on the spot.
 - Kenney/Quaternius CC0 packs are stylised low-poly — the pinned-CC0 rule wins over photo-realism;
   a scenario may override any vehicle's `glb` with a station-library asset (e.g. Sketchfab CC BY).
+- `Drive` reads the running leaf's **goal** (`behaviour::Goal`: point, speed, `stop` at a path's
+  end) rather than the runner's stepped position, so it can brake in time; `VehicleBody` resets the
+  runner to the vehicle's real place each tick. Speed is held so the turn radius never circles the
+  goal.
+- The proto field is `vehicle_class` (`class` is a Python keyword); the manifest key stays `class`.
+- The existing exact-JSON track-line test was updated to the extended contract in commit 2, so it is
+  red until Green emits `kind` and `yaw_deg`.
 - Trains follow their path, not a rail graph: no switching or collision; out of scope.

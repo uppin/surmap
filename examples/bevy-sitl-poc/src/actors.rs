@@ -201,6 +201,10 @@ pub struct Body {
     pub id: String,
     pub enu: Vec3,
     pub action: Option<String>,
+    /// What the body is: `person`, or a vehicle's class (`car`, `bus`, …).
+    pub kind: String,
+    /// The way it faces, ENU degrees counter-clockwise from east.
+    pub yaw_deg: f32,
 }
 
 /// One `object_tracks.jsonl` line (bevy-simulation.md § *Presets, ground truth and stills*): the
@@ -304,6 +308,9 @@ impl Figure {
             id: self.id.clone(),
             enu: Vec3::new(runner.position.x, runner.position.y, self.ground_z),
             action: runner.action().map(str::to_owned),
+            // TODO(pr-1): implement — the figure's facing.
+            kind: "person".to_owned(),
+            yaw_deg: 0.0,
         })
     }
 }

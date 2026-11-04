@@ -115,6 +115,13 @@ impl Runner {
     pub fn action(&self) -> Option<&str> {
         self.action
     }
+
+    /// The running leaf's goal at the last tick; `None` when it is not heading anywhere (`idle`,
+    /// a condition, a finished tree).
+    pub fn goal(&self) -> Option<super::Goal> {
+        // TODO(pr-1): implement
+        todo!("Runner::goal")
+    }
 }
 
 /// The wildfire fronts at `world.t_s` and the other burning ground, as polygons.

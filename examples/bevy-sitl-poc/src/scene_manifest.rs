@@ -112,6 +112,7 @@ pub enum Element {
     Building(Box<Building>),
     Person(Person),
     Vegetation(Vegetation),
+    Vehicle(Vehicle),
 }
 
 impl Element {
@@ -122,6 +123,7 @@ impl Element {
             Self::Building(e) => &e.id,
             Self::Person(e) => &e.id,
             Self::Vegetation(e) => &e.id,
+            Self::Vehicle(e) => &e.id,
         }
     }
 
@@ -139,7 +141,7 @@ impl Element {
                 keys
             }
             Self::Person(e) => vec![e.coat.as_str(), e.skin.as_str()],
-            Self::Vegetation(_) => vec![],
+            Self::Vegetation(_) | Self::Vehicle(_) => vec![],
         }
     }
 }
@@ -273,6 +275,36 @@ pub struct Person {
     pub behaviour: Option<crate::behaviour::Tree>,
 }
 
+/// A vehicle of a class (`vehicle/<class>.vehicle.json`) at its start pose, driven by its tree.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Vehicle {
+    pub id: String,
+    pub class: crate::vehicle::VehicleClass,
+    pub position_enu: [f32; 3],
+    /// Counter-clockwise from east, as `models`.
+    #[serde(default)]
+    pub yaw_deg: f32,
+    /// Where the vehicle drives; parked when absent.
+    #[serde(default)]
+    pub behaviour: Option<crate::behaviour::Tree>,
+    /// Overrides the class glTF.
+    #[serde(default)]
+    pub glb: Option<String>,
+    /// Trains only: carriages behind the locomotive.
+    #[serde(default)]
+    pub cars: u32,
+    /// sRGB multiplier on the glTF's base colours.
+    #[serde(default)]
+    pub tint: Option<[f32; 3]>,
+    /// Tracked in `object_tracks.jsonl` with its class as `kind`.
+    #[serde(default = "tracked")]
+    pub ground_truth: bool,
+}
+
+fn tracked() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ColliderKind {
@@ -375,6 +407,7 @@ impl SceneManifest {
         manifest.validate_weather_fire_vegetation()?;
         manifest.validate_buildings()?;
         manifest.validate_behaviours()?;
+        manifest.validate_vehicles()?;
         Ok(manifest)
     }
 
@@ -393,6 +426,13 @@ impl SceneManifest {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Each vehicle: `cars` only on a train, a `glb` override that is a relative glTF path, and a
+    /// tree valid for a body on the ground.
+    fn validate_vehicles(&self) -> Result<(), ManifestError> {
+        // TODO(pr-1): implement
         Ok(())
     }
 

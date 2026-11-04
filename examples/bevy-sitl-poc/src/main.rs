@@ -26,6 +26,7 @@ mod shots;
 mod sky;
 mod textures;
 mod ui;
+mod vehicle;
 mod vegetation;
 mod wildfire;
 mod wind;

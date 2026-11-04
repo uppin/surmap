@@ -448,3 +448,64 @@ fn the_store_written_downtown_blaze_scenario_is_a_valid_manifest() {
 
     assert!(!manifest.districts.is_empty() && !manifest.building_fires.is_empty());
 }
+
+fn with_vehicle(fields: &str) -> String {
+    with_elements(&format!(r#"[{{"kind": "vehicle", "id": "v1", "position_enu": [0, 0, 0], {fields}}}]"#))
+}
+
+#[test]
+fn a_vehicle_is_declared_by_its_class_with_its_start_pose_and_carriages() {
+    let manifest = SceneManifest::from_json(&with_vehicle(r#""class": "train", "cars": 4, "yaw_deg": 90"#)).expect("a valid train");
+
+    assert!(matches!(&manifest.elements[0], Element::Vehicle(v)
+        if v.class == crate::vehicle::VehicleClass::Train && v.cars == 4 && v.ground_truth));
+}
+
+#[test]
+fn carriages_on_anything_but_a_train_are_refused() {
+    let refused = SceneManifest::from_json(&with_vehicle(r#""class": "bus", "cars": 2"#));
+
+    assert!(matches!(refused, Err(ManifestError::Invalid(reason)) if reason.contains("v1") && reason.contains("cars")));
+}
+
+#[test]
+fn a_vehicle_glb_override_that_is_not_gltf_is_refused() {
+    let refused = SceneManifest::from_json(&with_vehicle(r#""class": "car", "glb": "models/car.obj""#));
+
+    assert_eq!(refused, Err(ManifestError::BadAssetPath("models/car.obj".into())));
+}
+
+#[test]
+fn a_vehicle_glb_override_escaping_the_assets_is_refused() {
+    let refused = SceneManifest::from_json(&with_vehicle(r#""class": "car", "glb": "../car.glb""#));
+
+    assert_eq!(refused, Err(ManifestError::BadAssetPath("../car.glb".into())));
+}
+
+#[test]
+fn a_vehicle_glb_override_is_an_asset_the_scene_needs() {
+    let manifest = SceneManifest::from_json(&with_vehicle(r#""class": "car", "glb": "library/sketchfab/ab12/model.glb""#)).expect("valid");
+
+    assert!(manifest.asset_paths().contains(&"library/sketchfab/ab12/model.glb".to_owned()));
+}
+
+#[test]
+fn a_vehicle_cannot_drive_the_wind() {
+    let veer = r#""class": "car", "behaviour": {"node": "set_wind", "from_deg": 0, "speed_m_s": 1, "gust_m_s": 0, "over_s": 1}"#;
+
+    let refused = SceneManifest::from_json(&with_vehicle(veer));
+
+    assert!(matches!(refused, Err(ManifestError::Invalid(reason)) if reason.contains("vehicle v1")));
+}
+
+#[test]
+fn the_street_traffic_scenario_the_station_writes_is_a_valid_manifest() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/sim_scenario/street-traffic.json");
+    let text = std::fs::read_to_string(path).expect("the station's street-traffic preset");
+
+    let manifest = SceneManifest::from_json(&text).expect("the renderer accepts it");
+
+    let classes: Vec<_> = manifest.elements.iter().filter_map(|e| match e { Element::Vehicle(v) => Some(v.class), _ => None }).collect();
+    use crate::vehicle::VehicleClass::{Bus, Car, Train, Truck};
+    assert!([Car, Bus, Truck, Train].iter().all(|c| classes.contains(c)), "{classes:?}");
+}

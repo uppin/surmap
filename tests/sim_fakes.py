@@ -165,6 +165,10 @@ def person_ids(manifest: Mapping[str, object]) -> list[str]:
     return [str(e["id"]) for e in _dicts(manifest, "elements") if e.get("kind") == "person"]
 
 
+def vehicles_of(manifest: Mapping[str, object]) -> list[dict[str, object]]:
+    return [e for e in _dicts(manifest, "elements") if e.get("kind") == "vehicle"]
+
+
 def district_ids(manifest: Mapping[str, object]) -> list[str]:
     return [str(d["id"]) for d in _dicts(manifest, "districts")]
 
