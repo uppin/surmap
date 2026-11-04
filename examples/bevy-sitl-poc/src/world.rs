@@ -136,6 +136,20 @@ pub fn enu(x: f32, y: f32, z: f32) -> Vec3 {
     Vec3::new(x, z, -y)
 }
 
+/// Half-extents of the map floor's fixed collider, centred under the floor
+/// plane at -0.02 m: it spans the floor and its top is at 0 m, the level the
+/// preset ground box's top used to be.
+pub fn floor_collider_half(east_m: f32, north_m: f32) -> [f32; 3] {
+    [east_m / 2.0, 0.02, north_m / 2.0]
+}
+
+/// A hand-edited manifest may still carry the preset `ground` box under a map
+/// floor; its opaque top would hide the floor, so the renderer skips it when
+/// a floor is present (the station removes it in `set_map_floor`).
+pub fn is_hidden_by_floor(element: &Element, has_floor: bool) -> bool {
+    has_floor && matches!(element, Element::Box(e) if e.id == "ground")
+}
+
 /// splitmix64: a tiny deterministic generator (no dependency).
 pub struct Seeded(u64);
 
@@ -243,12 +257,17 @@ pub fn build_world(
             ..default()
         });
         let mesh = meshes.add(Rectangle::new(east as f32, north as f32));
+        let half = floor_collider_half(east as f32, north as f32);
         commands.spawn((
             Name::new("Map floor"),
             Mesh3d(mesh),
             MeshMaterial3d(material),
             Transform::from_translation(enu(0.0, 0.0, -0.02))
                 .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+            // The floor is what the scene stands on now that the preset ground
+            // box is gone: a fixed collider whose top is at 0 m.
+            RigidBody::Fixed,
+            Collider::cuboid(half[0], half[1], half[2]),
         ));
     }
     commands.insert_resource(Wildfire::new(manifest.weather.as_ref(), &manifest.fires, &assets, &mut meshes, &mut state.pending));
@@ -279,7 +298,9 @@ pub fn build_world(
         nests: Vec::new(),
     };
     for element in &manifest.elements {
-        world.element(element);
+        if !is_hidden_by_floor(element, manifest.map_floor.is_some()) {
+            world.element(element);
+        }
     }
     let nests = world.nests;
     commands.insert_resource(Nests(nests));
