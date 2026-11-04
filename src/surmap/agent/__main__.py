@@ -37,6 +37,7 @@ from surmap.agent.server.app import (
     build_demo_workspace,
     build_simulation_rig,
     build_station,
+    default_state_dir,
     start_bevy_bridge,
 )
 from surmap.agent.tools.onboard import ONBOARD_OFF
@@ -58,12 +59,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m surmap.agent")
     parser.add_argument("--host", default=DEFAULT_HOST, help="bind address (default loopback)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--history-db", type=Path, default=None, help="demo run history DB")
+    parser.add_argument(
+        "--state-dir",
+        type=Path,
+        default=None,
+        help="where conversations, map scenes, runs, scenarios and tool outputs persist "
+        "(default: --cache-dir, else $SURMAP_DEMO_CACHE_DIR or ~/.cache/surmap)",
+    )
+    parser.add_argument(
+        "--history-db", type=Path, default=None, help="demo run history DB (default <state>)"
+    )
     parser.add_argument(
         "--conversations-db",
         type=Path,
         default=None,
-        help="chat conversations DB (history, model, replay); in memory when omitted",
+        help="chat conversations DB (history, model, replay); default <state>/conversations.sqlite",
     )
     parser.add_argument("--cache-dir", type=Path, default=None, help="demo scene cache")
     parser.add_argument(
@@ -155,6 +165,7 @@ def config_from_args(
     return AgentServerConfig(
         host=args.host,
         port=args.port,
+        state_dir=args.state_dir or args.cache_dir or default_state_dir(env),
         history_db=args.history_db,
         conversations_db=args.conversations_db,
         cache_dir=args.cache_dir,

@@ -148,11 +148,11 @@ def test_the_agent_config_carries_a_conversations_db(tmp_path: Path) -> None:
     store.close()
 
 
-def test_without_a_conversations_db_the_agent_keeps_conversations_in_memory() -> None:
-    # Given a plain local config with no `--conversations-db`
+def test_a_config_with_no_conversations_db_nor_state_dir_keeps_conversations_in_memory() -> None:
+    # Given a config with neither, as tests and embedders build it
     config = AgentServerConfig()
 
-    # Then no SQLite store is built (State A behaviour for local runs)
+    # Then no SQLite store is built
     assert config.conversations_db is None
     assert conversation_store(config) is None
 
