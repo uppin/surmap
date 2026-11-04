@@ -27,7 +27,7 @@ wasm-bindgen = "0.2"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 # ?scenario=<id> from the page URL, and the ?fleet=1 WebSocket to the station (already in Bevy's
 # dependency tree).
-web-sys = { version = "0.3", features = ["Window", "Location", "WebSocket", "MessageEvent", "CloseEvent", "ErrorEvent"] }
+web-sys = { version = "0.3", features = ["Window", "Location", "WebSocket", "BinaryType", "MessageEvent", "CloseEvent", "ErrorEvent"] }
 
 [profile.dev]
 opt-level = 1

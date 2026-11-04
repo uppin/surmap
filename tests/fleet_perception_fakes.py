@@ -86,7 +86,8 @@ def blocks(*runs: tuple[str | None, int]) -> list[bytes]:
     active drone switching between blocks."""
     messages: list[bytes] = []
     for drone, count in runs:
-        messages.extend(a_pair(len(messages) + 1 + i, drone) for i in range(count))
+        start = len(messages) + 1
+        messages.extend(a_pair(start + i, drone) for i in range(count))
     return messages
 
 

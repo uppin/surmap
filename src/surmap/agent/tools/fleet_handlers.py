@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping, Sequence
-from typing import Any
 
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
@@ -279,9 +278,41 @@ def drone_map_status_handler(store: ScenarioStore, perception: PerceptionRegistr
     a scenario the store does not have or a drone the scene does not have, `UNAVAILABLE` when no
     page streams the scenario."""
 
-    async def drone_map_status(_request: object, _ctx: object) -> Any:
-        # TODO(pr-5): implement
-        raise ConnectError(Code.UNIMPLEMENTED, "pr-5: implement")
+    async def drone_map_status(
+        request: pb.DroneMapStatusRequest, _ctx: object
+    ) -> pb.DroneMapStatusResponse:
+        nests = await blocking(lambda: nests_of(store.scenario(request.scenario_id).manifest))
+        drone_ids = [drone_id for nest in nests for drone_id in nest.drone_ids]
+        requested = request.drone_id if request.HasField("drone_id") else None
+        if requested is not None and requested not in drone_ids:
+            raise ConnectError(Code.NOT_FOUND, f"{requested} is not a drone of this scene")
+        page = perception.perception(request.scenario_id)
+        if page is None:
+            raise ConnectError(Code.UNAVAILABLE, f"no page streams scenario {request.scenario_id}")
+        by_id = {counts.drone_id: counts for counts in page.counts()}
+        wanted = [requested] if requested is not None else drone_ids
+        return pb.DroneMapStatusResponse(
+            drones=[
+                drone_map_counts(
+                    by_id.get(
+                        drone_id,
+                        DroneCounts(
+                            drone_id=drone_id,
+                            frames=0,
+                            posed=0,
+                            lost=0,
+                            keyframes=0,
+                            dropped=0,
+                            segmented_frames=0,
+                            detections=0,
+                            processing=False,
+                            last_t_ns=None,
+                        ),
+                    )
+                )
+                for drone_id in wanted
+            ]
+        )
 
     return drone_map_status
 
@@ -289,5 +320,14 @@ def drone_map_status_handler(store: ScenarioStore, perception: PerceptionRegistr
 def drone_map_counts(counts: DroneCounts) -> pb.DroneMapCounts:
     """A drone session's counts as `drone_map_status` reports them (`last_t_ns` 0 before any
     frame)."""
-    # TODO(pr-5): implement
-    raise NotImplementedError("pr-5: implement")
+    return pb.DroneMapCounts(
+        drone_id=counts.drone_id,
+        frames=counts.frames,
+        posed=counts.posed,
+        lost=counts.lost,
+        keyframes=counts.keyframes,
+        segmented_frames=counts.segmented_frames,
+        detections=counts.detections,
+        processing=counts.processing,
+        last_t_ns=counts.last_t_ns if counts.last_t_ns is not None else 0,
+    )

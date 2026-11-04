@@ -45,9 +45,12 @@ impl StreamPacer {
     /// The first tick is due; after a due tick, sent or dropped, the next pair is due one
     /// period later.
     pub fn decide(&mut self, t_ns: u64, buffered_bytes: usize) -> Pace {
-        // TODO(pr-5): implement
-        let _ = (t_ns, buffered_bytes, self.period_ns, self.backlog_cap_bytes, self.next_due_ns);
-        todo!("pr-5: implement")
+        let due_at = self.next_due_ns.unwrap_or(t_ns);
+        if t_ns < due_at {
+            return Pace::Wait;
+        }
+        self.next_due_ns = Some(due_at + self.period_ns);
+        if buffered_bytes > self.backlog_cap_bytes { Pace::Drop } else { Pace::Send }
     }
 }
 
@@ -61,16 +64,27 @@ pub fn pair_for(
     height: u32,
     pose_enu: [f64; 7],
 ) -> PairHeader {
-    // TODO(pr-5): implement
-    let _ = (active, frame_id, t_ns, width, height, pose_enu);
-    todo!("pr-5: implement")
+    PairHeader { frame_id, t_ns, width, height, pose_enu, drone_id: active.0.clone() }
 }
 
 /// The bridge socket a page URL's query (`location.search`) names: `bridge=ws://host:port`.
 pub fn bridge_url(search: &str) -> Option<String> {
-    // TODO(pr-5): implement
-    let _ = search;
-    todo!("pr-5: implement")
+    search
+        .trim_start_matches('?')
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("bridge="))
+        .filter(|url| !url.is_empty())
+        .map(str::to_owned)
+}
+
+/// The map status line under the feed panel, from one bridge `status` reply:
+/// `MAP nest-sw-d1 · 412 frames · 37 keyframes · tracking`.
+pub fn status_line(drone_id: Option<&str>, frames: u64, keyframes: u64, lost: bool) -> String {
+    format!(
+        "MAP {} · {frames} frames · {keyframes} keyframes · {}",
+        drone_id.unwrap_or("default"),
+        if lost { "lost" } else { "tracking" }
+    )
 }
 
 #[cfg(test)]

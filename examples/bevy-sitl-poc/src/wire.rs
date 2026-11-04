@@ -42,6 +42,8 @@ struct HelloHeader<'a> {
     kind: &'static str,
     camera: &'a CameraProfile,
     objects: &'a [GroundTruthObject],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scenario: Option<&'a str>,
 }
 
 #[derive(Serialize)]
@@ -73,7 +75,16 @@ fn frame(header_json: String, payloads: &[&[u8]]) -> Vec<u8> {
 /// The session opener: the whole camera profile (the bridge derives
 /// RTAB-Map's calibration from it) and the ground-truth objects.
 pub fn encode_hello(camera: &CameraProfile, objects: &[GroundTruthObject]) -> Vec<u8> {
-    let header = HelloHeader { kind: "hello", camera, objects };
+    encode_hello_with_scenario(camera, objects, None)
+}
+
+/// The session opener of a fleet page, naming the scenario it runs when it has one.
+pub fn encode_hello_with_scenario(
+    camera: &CameraProfile,
+    objects: &[GroundTruthObject],
+    scenario: Option<&str>,
+) -> Vec<u8> {
+    let header = HelloHeader { kind: "hello", camera, objects, scenario };
     frame(
         serde_json::to_string(&header).expect("hello header serializes"),
         &[],

@@ -24,15 +24,15 @@ PRD: `PRD-2026-11-04-fleet-perception.md` · Discovery: `2026-11-04-fleet-percep
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) ·
-  - [ ] Wire: optional `drone_id` on `pair` (Rust `PairHeader`, `encode_pair`; Python `decode_bevy_message`, `BevyPair`); optional `scenario` on `hello`; `status` gains `drone_id`; `hello.bin`/`pair.bin` byte-identical, new golden `pair-drone.bin`
-  - [ ] Python `fleet/perception.py`: `DroneSession` (backend, `SegmentationSink`, counts, optional per-drone `CaptureRecorder`), `FleetPerception` router (get-or-create per drone, `MAX_DRONE_SESSIONS = 4`, idle keeps backend, close finishes all), `PerceptionRegistry` keyed by scenario
-  - [ ] `SamSegmentationSink` over `surmap.survey.sam.SamDetector` (left frame → detections, counted); `InMemorySamDetector` in tests
-  - [ ] `serve_bevy_bridge` takes the router; `python -m surmap.agent --bevy-bridge-port` starts it with the streaming RTAB-Map factory and the configured SAM detector
-  - [ ] `FleetTools.DroneMapStatus` (SYNC · 10 s · FAIL) in n4's proto + regenerated code; handler beside n4's; registered with them
-  - [ ] Rust `fleet/stream.rs` (pure): `StreamPacer` (send at `rate_hz` of sim time, drop when `buffered_bytes > cap`), `pair_for(active, …)`; `fleet/bridge_wasm.rs`: `?bridge=ws://…` → binary `WebSocket`, `hello` at scene ready, eye `Readback` → `encode_pair` with the active drone id; status replies shown on the page (`ui.rs`)
-  - [ ] Real-sidecar e2e `tests/test_fleet_perception_rtabmap_e2e.py` added to the `rtabmap-e2e` CI step
-  - [ ] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
+- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) · all 31 red tests pass (22 `test_fleet_perception.py` + 2 `test_fleet_perception_e2e.py` + 7 `drone_map_status` in `test_agent_fleet_tools.py`); full `uv run pytest -q` 2399 passed, 38 skipped; real-sidecar `test_fleet_perception_rtabmap_e2e.py` passed locally (1 passed); `uv run ruff check`, `uv run ruff format --check`, `uv run mypy` (534 files) clean; `cargo test --locked` 360 passed; `cargo check --locked --target wasm32-unknown-unknown` passes
+  - [x] Wire: optional `drone_id` on `pair` (Rust `PairHeader`, `encode_pair`; Python `decode_bevy_message`, `BevyPair`); optional `scenario` on `hello`; `status` gains `drone_id`; `hello.bin`/`pair.bin` byte-identical, new golden `pair-drone.bin`
+  - [x] Python `fleet/perception.py`: `DroneSession` (backend, `SegmentationSink`, counts, optional per-drone `CaptureRecorder`), `FleetPerception` router (get-or-create per drone, `MAX_DRONE_SESSIONS = 4`, idle keeps backend, close finishes all), `PerceptionRegistry` keyed by scenario
+  - [x] `SamSegmentationSink` over `surmap.survey.sam.SamDetector` (left frame → detections, counted); `InMemorySamDetector` in tests
+  - [x] `serve_bevy_bridge` takes the router; `python -m surmap.agent --bevy-bridge-port` starts it with the streaming RTAB-Map factory and the configured SAM detector
+  - [x] `FleetTools.DroneMapStatus` (SYNC · 10 s · FAIL) in n4's proto + regenerated code; handler beside n4's; registered with them
+  - [x] Rust `fleet/stream.rs` (pure): `StreamPacer` (send at `rate_hz` of sim time, drop when `buffered_bytes > cap`), `pair_for(active, …)`; `fleet/bridge_wasm.rs`: `?bridge=ws://…` → binary `WebSocket`, `hello` at scene ready, eye `Readback` → `encode_pair` with the active drone id; status replies shown on the page (`ui.rs`)
+  - [x] Real-sidecar e2e `tests/test_fleet_perception_rtabmap_e2e.py` added to the `rtabmap-e2e` CI step
+  - [x] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (V1 suites incl. the real-sidecar e2e; V3 wasm check; V4 Chrome procedure with the status overlay and `drone_map_status` output)
   - [ ] `docs/simulation/bevy-simulation.md` — *Live stream* (the "not yet built" text at ~627–630 replaced): `?bridge=`, per-drone sessions, the cap, resume semantics

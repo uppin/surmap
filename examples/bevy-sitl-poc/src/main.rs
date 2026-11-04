@@ -51,7 +51,7 @@ use calibration::CameraProfile;
 use fleet::{viewed_body, ActiveDrone, FleetDrone, FleetRotor};
 use look::{apply_look, photographic, Lens};
 use shots::{fly_scripted, setup_overview, take_shots, FlightMode, RunMode};
-use ui::{setup_button, setup_ui, takeoff_button, update_status};
+use ui::{setup_button, setup_ui, takeoff_button, update_map_status, update_status};
 use world::{build_world, resolve_models, start_loading, ManifestAsset, ManifestLoader};
 
 #[derive(Component)]
@@ -170,6 +170,7 @@ fn main() {
                 spin_rotors,
                 scatter_once,
                 update_status.after(fleet::fly_fleet),
+                update_map_status,
                 take_shots,
                 shots::aim_overview_at_fire,
                 shots::aim_people_cam,
@@ -213,8 +214,13 @@ fn main() {
         .add_systems(FixedUpdate, apply_thrust);
     // The station link, only on a page opened with `?fleet=1` for a scenario.
     #[cfg(target_arch = "wasm32")]
-    if let (true, Some(scenario)) = (fleet::link_wasm::page_fleet_enabled(), linked_scenario) {
+    if let (true, Some(scenario)) = (fleet::link_wasm::page_fleet_enabled(), linked_scenario.clone()) {
         app.add_plugins(fleet::link_wasm::FleetLinkPlugin { scenario });
+    }
+    // The stereo stream, only on a page opened with `?bridge=ws://…`.
+    #[cfg(target_arch = "wasm32")]
+    if let Some(url) = fleet::bridge_wasm::page_bridge_url() {
+        app.add_plugins(fleet::bridge_wasm::BridgeStreamPlugin { url, scenario: linked_scenario });
     }
     let exit = app.run();
     if exit.is_error() {
