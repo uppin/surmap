@@ -15,7 +15,10 @@ import pytest
 from surmap.survey.cm5_main import build_parser as cm5_parser
 from surmap.survey.modal_hosting import (
     CM5_PORT,
+    SAM3_PACKAGE,
+    SAM3_RUNTIME_PACKAGES,
     STATION_PORT,
+    StationSettings,
     cm5_command,
     station_command,
 )
@@ -57,6 +60,38 @@ def _is_literal(node: ast.expr) -> bool:
     except ValueError:
         return False
     return True
+
+
+def image_steps(source: Path) -> list[ast.Call]:
+    """The module-level `image = (...)` builder chain, first call first."""
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    assigned = [
+        node.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "image" for target in node.targets)
+    ]
+    assert len(assigned) == 1, f"{source} assigns no module-level image"
+    steps: list[ast.Call] = []
+    node: ast.expr = assigned[0]
+    while isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+        steps.append(node)
+        node = node.func.value
+    return steps[::-1]
+
+
+def step_named(steps: list[ast.Call], name: str, first_arg: str) -> int:
+    """Index of the `.name(first_arg, ...)` step, by the unparsed first argument."""
+    found = [
+        index
+        for index, step in enumerate(steps)
+        if isinstance(step.func, ast.Attribute)
+        and step.func.attr == name
+        and step.args
+        and ast.unparse(step.args[0]) == first_arg
+    ]
+    assert len(found) == 1, f"no single .{name}({first_arg}, ...) step"
+    return found[0]
 
 
 def test_the_cm5_command_serves_the_simulated_drone_on_every_interface() -> None:
@@ -122,3 +157,84 @@ def test_the_station_app_runs_on_a_gpu_and_the_cm5_app_does_not() -> None:
     # Then only the station asks for a GPU
     assert keyword_value(station, "gpu") is not None
     assert keyword_value(cm5, "gpu") is None
+
+
+def test_the_label_set_at_deploy_time_is_the_label_the_container_runs() -> None:
+    # Given the settings read where the app is deployed, with a concept prompt chosen
+    deployed = StationSettings.from_env({"SURMAP_STATION_LABEL": "mattress"})
+
+    # When the container reads its settings from only the env the deploy hands it
+    in_container = StationSettings.from_env(deployed.container_env())
+
+    # Then the station it starts prompts SAM with the deploy-time label
+    args = station_parser().parse_args(station_command(in_container.label)[3:])
+    assert args.sam31_label == "mattress"
+
+
+def test_the_station_app_hands_the_container_its_settings_through_a_deploy_time_secret() -> None:
+    # Given the station app file, which CI does not import
+    function = decorator(module_function(STATION_APP, "serve"), "function")
+
+    # When its secrets and GPU are read
+    secrets = keyword_value(function, "secrets")
+    gpu = keyword_value(function, "gpu")
+
+    # Then the container gets the deploy-time settings, and the GPU list comes from them too
+    assert isinstance(secrets, ast.expr)
+    assert "Secret.from_dict(_SETTINGS.container_env())" in ast.unparse(secrets)
+    assert isinstance(gpu, ast.expr) and ast.unparse(gpu) == "_SETTINGS.gpus"
+
+
+def test_the_station_falls_back_from_an_l4_to_an_a10g_by_default() -> None:
+    # Given no GPU override
+    settings = StationSettings.from_env({})
+
+    # Then Modal may place it on an L4, or on an A10G when no L4 is free
+    assert settings.gpus == ["L4", "A10G"]
+
+
+def test_a_gpu_override_names_its_own_fallback_order() -> None:
+    # Given an override listing two GPU types
+    settings = StationSettings.from_env({"SURMAP_MODAL_GPU": "A10G, A100"})
+
+    # Then the station asks for exactly those, in that order
+    assert settings.gpus == ["A10G", "A100"]
+
+
+def test_the_station_keeps_its_day_long_timeout_and_five_minute_scaledown_by_default() -> None:
+    # Given no overrides
+    settings = StationSettings.from_env({})
+
+    # Then a stream may last a day, an idle container stays five minutes, SAM looks for objects
+    assert (settings.timeout_s, settings.scaledown_s, settings.label) == (86400, 300, "object")
+
+
+def test_the_sam3_runtime_leaves_numpy_to_surmaps_own_pin() -> None:
+    # Given the packages the station image installs for sam3
+    names = {package.split(">")[0].split("=")[0].split("<")[0] for package in SAM3_RUNTIME_PACKAGES}
+
+    # Then sam3's declared runtime dependencies are there, except its numpy<2 pin
+    assert {
+        "timm",
+        "tqdm",
+        "ftfy",
+        "regex",
+        "iopath",
+        "typing_extensions",
+        "huggingface_hub",
+    } <= names
+    assert "numpy" not in names
+
+
+def test_the_station_image_installs_sam3_without_its_deps_after_surmaps_pyproject() -> None:
+    # Given the station image's build steps, which CI does not run
+    steps = image_steps(STATION_APP)
+
+    # When the sam3 package and the pyproject install are found
+    pyproject = step_named(steps, "pip_install_from_pyproject", "'pyproject.toml'")
+    sam3 = step_named(steps, "pip_install", "SAM3_PACKAGE")
+
+    # Then sam3 comes after surmap's own pins, with no dependency resolution of its own
+    assert sam3 > pyproject
+    assert keyword_value(steps[sam3], "extra_options") == "--no-deps"
+    assert SAM3_PACKAGE.startswith("sam3 @ git+https://github.com/facebookresearch/sam3.git")
