@@ -236,8 +236,7 @@ fn stream_bridge(
         let Some(pending) = stream.pending.take() else {
             return;
         };
-        let active_drone = active.as_ref().map(|a| (**a).clone()).unwrap_or_default();
-        let header = pending.header(&active_drone, stream.frame_id, rig.width, rig.height);
+        let header = pending.header(stream.frame_id, rig.width, rig.height);
         stream.send(&encode_pair(&header, &left, &right));
         return;
     }

@@ -6,7 +6,7 @@
 #![allow(dead_code)]
 
 use bevy::app::{App, Update};
-use bevy::ecs::schedule::SystemSet;
+use bevy::ecs::schedule::{IntoScheduleConfigs, SystemSet};
 
 use super::ActiveDrone;
 use crate::wire::PairHeader;
@@ -85,10 +85,10 @@ impl PendingPair {
         Self { requested_by: active.clone(), t_ns, pose_enu }
     }
 
-    /// The pair's header as the stream's `frame_id`-th pair, once both eyes have landed while
-    /// `active_now` is the active drone.
-    pub fn header(&self, active_now: &ActiveDrone, frame_id: u64, width: u32, height: u32) -> PairHeader {
-        pair_for(active_now, frame_id, self.t_ns, width, height, self.pose_enu)
+    /// The pair's header as the stream's `frame_id`-th pair, once both eyes have landed. It
+    /// names the drone whose eyes were requested, whichever drone is active by then.
+    pub fn header(&self, frame_id: u64, width: u32, height: u32) -> PairHeader {
+        pair_for(&self.requested_by, frame_id, self.t_ns, width, height, self.pose_enu)
     }
 }
 
@@ -96,9 +96,13 @@ impl PendingPair {
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BridgeStreamSet;
 
-/// Places `BridgeStreamSet` in the frame's `Update` schedule.
+/// Places `BridgeStreamSet` in the frame's `Update` schedule: after the fleet has flown and the
+/// eyes have followed their bodies, so the pose it captures is the frame's own, not the last one's.
 pub fn order_bridge_stream(app: &mut App) {
-    app.configure_sets(Update, BridgeStreamSet);
+    app.configure_sets(
+        Update,
+        BridgeStreamSet.after(super::fly_fleet).after(crate::follow_drone_rig),
+    );
 }
 
 /// The bridge socket a page URL's query (`location.search`) names: `bridge=ws://host:port`.
@@ -124,7 +128,7 @@ pub fn status_line(drone_id: Option<&str>, frames: u64, keyframes: u64, lost: bo
 #[cfg(test)]
 mod tests {
     use bevy::ecs::schedule::{InternedSystemSet, IntoSystemSet, Schedules, SystemKey};
-    use bevy::prelude::{IntoScheduleConfigs, Query, Res, Transform};
+    use bevy::prelude::{Query, Res, Transform};
 
     use super::*;
     use crate::fleet::fly_fleet;
@@ -134,7 +138,6 @@ mod tests {
     const PAIR_DRONE_GOLDEN: &[u8] =
         include_bytes!("../../../../tests/fixtures/bevy_sim_wire/pair-drone.bin");
     const SW_D1: &str = "nest-sw-d1";
-    const NE_D1: &str = "nest-ne-d1";
     const POSE: [f64; 7] = [1.0, 3.0, 2.0, 0.0, 0.0, 0.0, 1.0];
     const MS: u64 = 1_000_000;
     /// A 60 fps render loop's tick, ns.
@@ -224,7 +227,7 @@ mod tests {
     fn a_switch_while_the_eyes_are_read_back_keeps_the_requesting_drones_id() {
         let requested = PendingPair::requested(&ActiveDrone(Some(SW_D1.into())), 700_000_000, POSE);
 
-        let header = requested.header(&ActiveDrone(Some(NE_D1.into())), 7, 4, 2);
+        let header = requested.header(7, 4, 2);
 
         assert_eq!(header.drone_id.as_deref(), Some(SW_D1));
     }

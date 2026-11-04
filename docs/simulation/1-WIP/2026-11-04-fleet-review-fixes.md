@@ -23,7 +23,7 @@ planned.
   - [x] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
   - [x] One reproduction per finding F1–F10, each failing because of the defect (see `## Reproductions`)
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — fix until every reproduction passes ·
+- [wf 3] ⏳ `/green` Green — fix until every reproduction passes ·
   - [ ] F1 bridge SAM: the agent's configured SAM (station detector, else the fake under `--sam-fake`), one detector per drone session, nothing retained per frame
   - [ ] F2 a streamed pair's `drone_id` is the drone whose eyes were read back (captured with `pending_pose` / `pending_t_ns`)
   - [ ] F3 bridge `handle` / `close` run off the event loop (`asyncio.to_thread`), so the agent loop keeps serving while a backend starts or closes

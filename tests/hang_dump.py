@@ -51,7 +51,7 @@ def hang_report(nodeid: str, elapsed_s: float) -> str:
 
 def _pending_tasks() -> list[asyncio.Task[object]]:
     """Every unfinished task of every open event loop, read from any thread."""
-    loops = [obj for obj in gc.get_objects() if isinstance(obj, asyncio.AbstractEventLoop)]
+    loops = [obj for obj in gc.get_objects() if _is_event_loop(obj)]
     tasks: list[asyncio.Task[object]] = []
     for loop in loops:
         if loop.is_closed():
@@ -63,6 +63,15 @@ def _pending_tasks() -> list[asyncio.Task[object]]:
             except RuntimeError:
                 continue
     return tasks
+
+
+def _is_event_loop(obj: object) -> bool:
+    """Whether a live object is an event loop; a `weakref.proxy` whose referent is gone (a failed
+    test's kept traceback can hold one) is not, rather than raising `ReferenceError`."""
+    try:
+        return isinstance(obj, asyncio.AbstractEventLoop)
+    except ReferenceError:
+        return False
 
 
 class HangWatchdog:
