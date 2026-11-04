@@ -231,7 +231,9 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
   roof, roof shape (`flat`, `gabled`, `hipped`, `pyramidal`), facade and roof colours, floors and
   glazing (`punched`, `curtain_wall`, `none`, with a window ratio) — an unset field stays, or comes
   from the district; `add_building_fire` lights a building on a floor (from 0) at a start time
-  and `remove_building_fire` removes it by id. A building outside every district needs a
+  — a building without its own `floors` is checked against the count its district gives it
+  (`floor(height / floor_m)`), as the renderer counts them — and `remove_building_fire` removes
+  it by id. A building outside every district needs a
   `material`, or a facade and a roof; unknown names, shapes, kinds, out-of-range colours, ratios
   or floors are `INVALID_ARGUMENT` with the reason. The edits are pure functions in
   `surmap.simulation.building_presets` (re-exported by `scenario_manifest`), the presets in

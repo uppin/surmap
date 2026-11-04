@@ -1,4 +1,4 @@
-//! The sim-disaster-2 sweep's contracts (`docs/simulation/1-WIP/2026-11-04-sim-disaster-2-sweep.md`):
+//! The sim-disaster-2 sweep's contracts (`docs/simulation/changelog/2026-11-04-sim-disaster-2-sweep.md`):
 //! flame flipbooks, pre-warmed smoke, per-window glow, metallic packing, the figure's visor and
 //! per-stand grass placement.
 
