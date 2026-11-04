@@ -360,8 +360,10 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
   share the scenario's id namespace, so a taken drone id is refused, and `remove_element` refuses
   a drone id. A pad inside a building or solid box below its top, on water, outside ±500 m / 0–60 m
   up, within 6 m of another nest, or past 8 nests is `INVALID_ARGUMENT` naming the nest and the
-  rule. The rules and the pad: [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md),
-  *Drone nests*.
+  rule. A scenario has no drone of its own, only its nests' drones. The scene-building skill
+  therefore makes a nest mandatory and places one one-drone nest by default, wherever the
+  subagent judges best. The rules and the pad:
+  [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *Drone nests*.
 - **Buildings and building fires**: preset names follow Overture's `facade_material` /
   `roof_material` vocabulary (the map's `overture-buildings` layer; no geometry is imported).
   `list_building_presets` returns the facade, roof and district names — shipped, plus any files

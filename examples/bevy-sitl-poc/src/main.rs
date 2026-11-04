@@ -249,6 +249,9 @@ fn setup_drone(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mode: Res<RunMode>,
 ) {
+    if !mode.has_legacy_drone() {
+        return;
+    }
     let body_kind = match mode.flight {
         FlightMode::Manual => RigidBody::Dynamic,
         FlightMode::SurveyLoop => RigidBody::KinematicPositionBased,

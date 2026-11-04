@@ -835,9 +835,14 @@ models were not fetched there (`aerial_asphalt_01_diff_2k.jpg`, `person/wave.glb
 
 When a scene has nests, each nest's drones spawn docked on its pad (`fleet.rs::spawn_fleet`, one
 body per drone id, tagged `FleetDrone { id }`, kinematic) and the legacy keyboard `Drone` is
-despawned. A kinematic autopilot flies them from a simulation-time-stamped command log. Scenes
-without nests are unchanged: one legacy drone, keyboard flight, and the `survey-loop` for stills
-and recordings.
+despawned. A kinematic autopilot flies them from a simulation-time-stamped command log.
+
+A station scenario (`--scenario` / `?scenario=`) flown live has no legacy drone at all
+(`RunMode::has_legacy_drone`): its nests' drones are its only drones, so a scenario the agent
+builds always holds at least one nest. The agent's scene skill makes a nest mandatory and places
+one one-drone nest by default. Only the shipped `scene.json` and scripted `survey-loop` stills and
+recordings keep the legacy drone, with keyboard flight and the `survey-loop` when there are no
+nests.
 
 ### The fleet log (`fleet/log.rs`)
 

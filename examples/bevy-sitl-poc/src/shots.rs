@@ -130,6 +130,12 @@ impl RunMode {
     pub fn unattended(&self) -> bool {
         self.screenshot.is_some() || self.record.is_some()
     }
+
+    /// The hard-coded keyboard drone: the shipped scene and scripted stills and recordings keep
+    /// it; a station scenario flown live has only its nests' drones.
+    pub fn has_legacy_drone(&self) -> bool {
+        self.scenario.is_none() || self.flight == FlightMode::SurveyLoop
+    }
 }
 
 /// `--look-at <district id>`: the overview still frames that district instead of the default view.
@@ -459,6 +465,15 @@ mod tests {
         let mode = RunMode::from_args(&args(&["--scenario", "wreck-on-the-avenue"])).expect("valid");
 
         assert_eq!(mode.scenario.as_deref(), Some("wreck-on-the-avenue"));
+    }
+
+    #[test]
+    fn a_station_scenario_flown_live_has_no_legacy_drone_only_its_nests_drones() {
+        let live = |list: &[&str]| RunMode::from_args(&args(list)).expect("valid").has_legacy_drone();
+
+        assert!(!live(&["--scenario", "wreck-on-the-avenue"]), "an agent's scene flies only its nests' drones");
+        assert!(live(&[]), "the shipped scene keeps its drone");
+        assert!(live(&["--scenario", "wreck-on-the-avenue", "--screenshot", "shots", "--at", "20"]), "a survey-loop still keeps its drone");
     }
 
     #[test]
