@@ -222,6 +222,7 @@ describe("chat page", () => {
           locationLabel: "Karlsruhe area, Germany (approx.)",
           gpsCentre: { lon: 8.4059, lat: 49.0069 },
           gpsTrack: [],
+          runs: [],
         },
       ],
     });

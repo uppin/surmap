@@ -116,6 +116,7 @@ async def test_a_call_s_arguments_reach_the_handler_as_its_request_message() -> 
         "objects": 0,
         "status": "FINISHED",
         "onboard_model": "",
+        "cached": False,
     }
 
 

@@ -159,6 +159,10 @@ run_rtabmap also take an onboard_model: the on-board detector that processes the
 from list_onboard_models, or "none" to run without one; leave it out for the station default. \
 An on-board model recognises only its listed classes (people and vehicles, not debris, buildings \
 or fire); when run_demo says it does not recognise the prompt, only SAM can find it. \
+Builds are cached by key (mode, SAM prompt, on-board model, frame limit): run_demo and \
+run_rtabmap answer from a dataset's cached run with the same key, marked cached, unless asked \
+to rebuild. list_runs lists a dataset's runs (its cached builds) and run_cached runs one; say \
+when an answer came from a cached run. \
 You also edit \
 the display map: place and move GLB shapes with the map tools, navigate \
 its camera, and draw route paths. Map edits change only what the person sees; routes are drawn \

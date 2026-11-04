@@ -101,6 +101,19 @@ service SurveyTools {
   rpc RunSamOnDataset(RunSamOnDatasetRequest) returns (RunSamOnDatasetResponse) {
     option (default_execution) = {mode: SYNC timeout_s: 60 on_timeout: DETACH};
   }
+
+  // Lists a dataset's runs: the cached builds run_rtabmap and run_demo recorded, newest first,
+  // one per cache key (the mode, SAM prompt, on-board model and frame limit it was built with).
+  // Each holds its RTAB-Map map, dense depth and SAM results.
+  rpc ListRuns(ListRunsRequest) returns (ListRunsResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Runs a cached run from list_runs: answers at once from its recording, with no RTAB-Map and
+  // no SAM, so get_run, find_objects, prompt_sam and get_frame work on it.
+  rpc RunCached(RunCachedRequest) returns (RunCachedResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
 }
 
 // A point or extent in the object's coordinate frame, in its units.
@@ -192,6 +205,9 @@ message RunDemoRequest {
   // The on-board detector model that processes the frames: an OnboardModel name from
   // list_onboard_models, or "none" for no on-board model; the station default when absent.
   optional string onboard_model = 5;
+  // Build afresh even when a cached run with the same cache key exists; false by default, so
+  // an identical request answers from that cached run.
+  optional bool rebuild = 6;
 }
 
 // Where a demo run is in its life.
@@ -223,6 +239,8 @@ message RunInfo {
   Status status = 6;
   // The on-board detector model that processed its frames; empty when it ran none.
   string onboard_model = 7;
+  // Whether the answer came from a cached run instead of a new build.
+  bool cached = 8;
 }
 
 message RunDemoResponse {
@@ -239,6 +257,8 @@ message RunDemoResponse {
   // Whether that on-board model has a class for the run's SAM concept; absent when no on-board
   // model ran. False means only SAM can find the concept.
   optional bool onboard_recognises_prompt = 6;
+  // Whether the answer came from a cached run instead of a new build.
+  bool cached = 7;
 }
 
 message GetRunRequest {
@@ -528,6 +548,24 @@ message DatasetEntry {
   repeated DatasetGeoPoint gps_track = 14;
   // The short credit line, as on the demo page.
   string credit = 15;
+  // Its runs (cached builds), newest first, one per cache key; empty before the first build.
+  repeated CachedRun runs = 16;
+}
+
+// One cached build of a dataset: the newest complete recording for its cache key.
+message CachedRun {
+  // What it was built with, e.g. "rtabmap+sam=car;frames=200"; identical requests share it.
+  string cache_key = 1;
+  // The recorded run: pass it to run_cached, get_run, find_objects or get_frame.
+  string run_id = 2;
+  // The run's title.
+  string title = 3;
+  // Frames it recorded.
+  uint32 frames = 4;
+  // When it was built, in Unix seconds.
+  double created_at = 5;
+  // A recorded frame id to preview it with (get_frame, or /frames/<run_id>/<id>.jpg).
+  uint32 preview_frame_id = 6;
 }
 
 message ListDatasetsRequest {}
@@ -562,6 +600,9 @@ message RunRtabmapRequest {
   // The on-board detector model that processes the frames: an OnboardModel name from
   // list_onboard_models, or "none" for no on-board model; the station default when absent.
   optional string onboard_model = 4;
+  // Build afresh even when a cached run with the same cache key exists; false by default, so
+  // an identical request answers from that cached run.
+  optional bool rebuild = 5;
 }
 
 message RunRtabmapResponse {
@@ -600,4 +641,24 @@ message GetFrameResponse {
   bytes image = 6;
   // The image's media type, e.g. "image/jpeg".
   string media_type = 7;
+}
+
+message ListRunsRequest {
+  // The dataset whose runs to list: a DatasetEntry id from list_datasets.
+  string dataset = 1;
+}
+
+message ListRunsResponse {
+  // Its cached runs, newest first, one per cache key.
+  repeated CachedRun runs = 1;
+}
+
+message RunCachedRequest {
+  // The cached run to run: a CachedRun run_id from list_runs.
+  string run_id = 1;
+}
+
+message RunCachedResponse {
+  // The cached run, marked cached.
+  RunInfo run = 1;
 }

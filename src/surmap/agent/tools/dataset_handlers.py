@@ -20,12 +20,15 @@ from surmap.agent.tools.workspace import (
 )
 from surmap.demo.datasets import GeoPoint, ImageModality, LicenseInfo
 from surmap.demo.gallery import GalleryEntry
+from surmap.demo.history import CachedRecording
 from surmap.survey.sam import SamDetection
 
 __all__ = [
     "get_dataset",
     "list_datasets",
+    "list_runs",
     "prepare_dataset",
+    "run_cached",
     "run_rtabmap",
     "run_sam_on_dataset",
 ]
@@ -72,10 +75,22 @@ def _dataset_message(entry: GalleryEntry) -> pb.DatasetEntry:
         location_label=entry.location_label,
         gps_track=[_geo_point(point) for point in entry.gps_track],
         credit=entry.credit,
+        runs=[_cached_run_message(cached) for cached in entry.runs],
     )
     if entry.gps_centre is not None:
         message.gps_centre.CopyFrom(_geo_point(entry.gps_centre))
     return message
+
+
+def _cached_run_message(cached: CachedRecording) -> pb.CachedRun:
+    return pb.CachedRun(
+        cache_key=cached.cache_key,
+        run_id=cached.run_id,
+        title=cached.title,
+        frames=cached.frames,
+        created_at=cached.created_at,
+        preview_frame_id=cached.preview_frame_id,
+    )
 
 
 def _dataset_or_refuse(workspace: SurveyWorkspace, dataset_id: str) -> GalleryEntry:
@@ -126,6 +141,7 @@ async def run_rtabmap(
             max_frames=request.max_frames if request.HasField("max_frames") else None,
             fps=request.fps if request.HasField("fps") else None,
             onboard_model=request.onboard_model if request.HasField("onboard_model") else None,
+            rebuild=request.rebuild,
         )
     except KeyError as missing:
         raise _not_found(missing) from missing
@@ -159,6 +175,25 @@ async def run_sam_on_dataset(
     )
 
 
+async def list_runs(request: pb.ListRunsRequest, workspace: SurveyWorkspace) -> pb.ListRunsResponse:
+    """`ListRuns`: the dataset's cached runs, newest first, one per cache key."""
+    _dataset_or_refuse(workspace, request.dataset)
+    return pb.ListRunsResponse(
+        runs=[_cached_run_message(cached) for cached in workspace.cached_runs(request.dataset)]
+    )
+
+
+async def run_cached(
+    request: pb.RunCachedRequest, workspace: SurveyWorkspace
+) -> pb.RunCachedResponse:
+    """`RunCached`: a cached run from its recording; no RTAB-Map, no SAM, no new run."""
+    try:
+        run = workspace.run_cached(request.run_id)
+    except KeyError as missing:
+        raise _not_found(missing) from missing
+    return pb.RunCachedResponse(run=_run_message(run))
+
+
 def _not_found(missing: KeyError) -> ConnectError:
     detail = missing.args[0] if missing.args else "not found"
     return ConnectError(Code.NOT_FOUND, str(detail))
@@ -173,6 +208,7 @@ def _run_message(run: RunInfo) -> pb.RunInfo:
         objects=run.objects,
         status=_RUN_STATUS[run.status],
         onboard_model=run.onboard_model,
+        cached=run.cached,
     )
 
 

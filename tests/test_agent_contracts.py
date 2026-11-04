@@ -76,6 +76,8 @@ def test_every_survey_tools_rpc_is_a_tool_named_in_snake_case() -> None:
         "prepare_dataset",
         "run_rtabmap",
         "run_sam_on_dataset",
+        "list_runs",
+        "run_cached",
     )
 
 
@@ -137,6 +139,8 @@ def test_each_tool_carries_the_default_execution_its_rpc_declares() -> None:
         "prepare_dataset": a_policy(SYNC, 30, DETACH),
         "run_rtabmap": a_policy(SYNC, 30, DETACH),
         "run_sam_on_dataset": a_policy(SYNC, 60, DETACH),
+        "list_runs": a_policy(SYNC, 10, FAIL),
+        "run_cached": a_policy(SYNC, 10, FAIL),
         "wait_for_jobs": a_policy(SYNC, 300, FAIL),
         "get_job": a_policy(SYNC, 10, FAIL),
         "cancel_job": a_policy(SYNC, 10, FAIL),

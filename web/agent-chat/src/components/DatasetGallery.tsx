@@ -2,12 +2,14 @@ import { useState, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  cachedRunPrompt,
   datasetRunPrompt,
   datasetThumbnailUrl,
   filterDatasets,
   gpsPreviewPoints,
+  runPreviewUrl,
 } from "@/lib/dataset-gallery";
-import type { DatasetRunMode, DatasetView } from "@/ports";
+import type { DatasetRunMode, DatasetRunView, DatasetView } from "@/ports";
 
 export interface DatasetGalleryProps {
   datasets: DatasetView[];
@@ -100,6 +102,7 @@ function DatasetCard(props: {
           </Badge>
           <Badge variant="outline">{dataset.provider}</Badge>
           <Badge variant="outline">{dataset.prepared ? `${dataset.frameCount} pairs` : "Not prepared"}</Badge>
+          {dataset.runs.length > 0 && <Badge>Cached</Badge>}
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">{dataset.description}</p>
       </div>
@@ -115,6 +118,9 @@ function DatasetCard(props: {
         )}{" "}
         · <span className="text-muted-foreground">{dataset.attribution}</span>
       </p>
+      {dataset.runs.length > 0 && (
+        <DatasetRuns dataset={dataset} serverUrl={props.serverUrl} onRun={props.onRun} />
+      )}
       <div className="mt-auto flex flex-wrap gap-2">
         <Button type="button" size="sm" onClick={() => run("rtabmap")}>
           Run RTAB-Map
@@ -130,6 +136,58 @@ function DatasetCard(props: {
         </a>
       </div>
     </article>
+  );
+}
+
+/** The dataset's runs: one cached build per cache key, each with a preview frame and a Run button. */
+function DatasetRuns(props: { dataset: DatasetView; serverUrl: string; onRun: (text: string) => void }): ReactNode {
+  const { dataset } = props;
+  return (
+    <section className="flex flex-col gap-1">
+      <h4 className="text-xs font-semibold">Runs</h4>
+      <ul aria-label="Runs" className="flex flex-col gap-2">
+        {dataset.runs.map((run) => (
+          <DatasetRunRow
+            key={run.runId}
+            run={run}
+            serverUrl={props.serverUrl}
+            onRun={() => props.onRun(cachedRunPrompt(dataset, run))}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function DatasetRunRow(props: { run: DatasetRunView; serverUrl: string; onRun: () => void }): ReactNode {
+  const { run } = props;
+  const preview = runPreviewUrl(props.serverUrl, run);
+  return (
+    <li className="flex items-center gap-2 rounded-md border p-1.5">
+      {preview !== null ? (
+        <a href={preview.replace(/\?max_side=\d+$/, "")} target="_blank" rel="noreferrer" className="shrink-0">
+          <img
+            src={preview}
+            alt={`Preview of run ${run.cacheKey}`}
+            className="h-10 w-16 rounded border object-cover"
+            loading="lazy"
+          />
+        </a>
+      ) : (
+        <div className="grid h-10 w-16 shrink-0 place-items-center rounded border bg-muted text-[10px] text-muted-foreground">
+          No frame
+        </div>
+      )}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <code className="truncate text-xs">{run.cacheKey}</code>
+        <span className="text-[11px] text-muted-foreground">
+          {run.frames} frames · {new Date(run.createdAt * 1000).toLocaleString()}
+        </span>
+      </div>
+      <Button type="button" size="sm" variant="outline" aria-label={`Run cached ${run.cacheKey}`} onClick={props.onRun}>
+        Run
+      </Button>
+    </li>
   );
 }
 

@@ -187,9 +187,9 @@ async def test_each_run_gets_a_fresh_onboard_source(tmp_path: Path) -> None:
     builder = RecordingBuilder()
     onboard = a_station(tmp_path, builder, has=(EFFICIENTDET,), default=EFFICIENTDET)
     with a_tool_rig(tmp_path, onboard=onboard) as rig:
-        # When the agent runs the scene twice
+        # When the agent runs the scene twice, rebuilding the second time past the cached run
         await run_demo(a_tiny_run(), rig.workspace)
-        await run_demo(a_tiny_run(), rig.workspace)
+        await run_demo(a_tiny_run(rebuild=True), rig.workspace)
 
     # Then each run had its own source, so no tracker state carries between runs
     assert [source.frame_ids for _, source in builder.built] == [[1, 2], [1, 2]]

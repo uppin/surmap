@@ -46,6 +46,8 @@ leading comment, and argument descriptions are the field comments.
 | `start_station` | `StationTools.StartStation` (with `--station`) | SYNC · 30 s · DETACH |
 | `stop_station` | `StationTools.StopStation` (with `--station`) | SYNC · 30 s · DETACH |
 | `run_sam_on_dataset` | `SurveyTools.RunSamOnDataset` | SYNC · 60 s · DETACH |
+| `list_runs` | `SurveyTools.ListRuns` | SYNC · 10 s · FAIL |
+| `run_cached` | `SurveyTools.RunCached` | SYNC · 10 s · FAIL |
 | `wait_for_jobs` | `AgentJobs.WaitForJobs` | SYNC · 300 s · FAIL |
 | `get_job` | `AgentJobs.GetJob` | SYNC · 10 s · FAIL |
 | `cancel_job` | `AgentJobs.CancelJob` | SYNC · 10 s · FAIL |
@@ -197,7 +199,7 @@ aircraft.
 |---|---|---|---|
 | `list_demos` | — | every scene: `id`, `title`, `default_prompt`, `prepared`, `cached_run_id` | SYNC · 10 s · FAIL |
 | `list_onboard_models` | — | every on-board (Coral) model: `name`, `title`, `note`, `available` on this station, `is_default`, `classes` (the 80 COCO classes it can recognise); and `default_model` (`"none"` when runs default to no model) | SYNC · 10 s · FAIL |
-| `run_demo` | `dataset`; `prompt` (scene default); `max_frames` (whole scene); `fps` (native, > 0); `onboard_model` (station default; `"none"` for no on-board model) | the ended run: `run_id`, frames, objects, `status`, `onboard_model`, `onboard_recognises_prompt` (absent without an on-board model) | SYNC · 30 s · DETACH |
+| `run_demo` | `dataset`; `prompt` (scene default); `max_frames` (whole scene); `fps` (native, > 0); `onboard_model` (station default; `"none"` for no on-board model); `rebuild` (false: an identical build answers from its cached run) | the ended run: `run_id`, frames, objects, `status`, `onboard_model`, `onboard_recognises_prompt` (absent without an on-board model), `cached` | SYNC · 30 s · DETACH |
 | `get_run` | `run_id` | `RunInfo`: dataset, prompt, frames, objects, status, `onboard_model` (empty for none) | SYNC · 10 s · FAIL |
 | `prompt_sam` | `run_id`, `concept`; `frame_ids` or `max_frames` (≤ 8) | per frame: `frame_id`, `t_ns`, detections with ids, label, score, box, mask polygon | SYNC · 60 s · DETACH |
 | `find_objects` | `run_id`; `label`, `near` + `radius_m`, `moving`, `limit` | object summaries, nearest first with `near`, else largest first; no neighbours | SYNC · 15 s · FAIL |
@@ -207,7 +209,7 @@ aircraft.
 | `list_datasets` | — | every gallery dataset: provider, licence, `GREY`/`COLOR` modality, prepared, frame count, thumbnail flag, location, GPS centre + downsampled track | SYNC · 10 s · FAIL |
 | `get_dataset` | `dataset_id` | one `DatasetEntry` | SYNC · 10 s · FAIL |
 | `prepare_dataset` | `dataset_id` | the prepared `DatasetEntry` | SYNC · 30 s · DETACH |
-| `run_rtabmap` | `dataset`; `max_frames`; `fps`; `onboard_model` (as `run_demo`) | the recorded RTAB-Map-only run (`RunInfo`) | SYNC · 30 s · DETACH |
+| `run_rtabmap` | `dataset`; `max_frames`; `fps`; `onboard_model`; `rebuild` (as `run_demo`) | the recorded RTAB-Map-only run (`RunInfo`, `cached` when it came from the cache) | SYNC · 30 s · DETACH |
 
 **On-board model choice** (`tools/onboard.py`). `OnboardModels` is the station's Coral profiles
 (`surmap.detection.profiles`) in its prepared model dir; a profile is `available` when the dir holds
@@ -222,6 +224,8 @@ vehicles, but not debris, buildings, collapsed buildings, boxes or fire, which o
 `run_demo` says so per run: `onboard_recognises_prompt` is whether the on-board model has a class for
 the SAM concept (a trailing plural `s` is ignored, so `cars` matches `car`).
 | `run_sam_on_dataset` | `dataset`; `concept` (dataset default); `max_frames` (≤ 8) | per-frame SAM detections on the dataset itself, no run | SYNC · 60 s · DETACH |
+| `list_runs` | `dataset` | the dataset's runs (`CachedRun`), newest first, one per cache key: `cache_key`, `run_id`, `title`, `frames`, `created_at`, `preview_frame_id` | SYNC · 10 s · FAIL |
+| `run_cached` | `run_id` (a `list_runs` run) | that run's `RunInfo`, `cached: true`; nothing is run or recorded | SYNC · 10 s · FAIL |
 
 ## Dataset gallery
 
@@ -240,6 +244,19 @@ preparing either extracts its `oxts` GPS fixes to `gps_track.json`, which
 the gallery renders as a map-preview track (the static centre shows before
 preparation). Thumbnails are the first left frame (`GET /datasets/<id>/thumbnail.jpg`,
 colour kept for colour datasets); the catalogue itself is `GET /datasets`.
+
+**Runs (cached builds).** `run_demo` and `run_rtabmap` cache each build by key
+(`workspace.cache_key`): RTAB-Map, the SAM concept, the on-board model and the frame limit, e.g.
+`rtabmap+sam=car;onboard=ssd;frames=200` (a limit covering the whole dataset counts as none). The
+key is stored per run in the history's `run_cache_keys`; a key's cached run is its newest complete,
+journalled, non-replay run (`RunHistoryStore.cached_runs`), so it holds that build's RTAB-Map map,
+dense depth and SAM results. An identical request answers from it, marked `cached`, and records
+nothing; `rebuild: true` records a new run, which then becomes the key's cached run. Each dataset
+keeps one cached run per key: `DatasetEntry.runs`, `list_runs`, and `runs` in `GET /datasets`. The
+gallery card badges a built dataset **Cached** and lists its **Runs**, each with a preview of its
+first recorded frame (`/frames/<run_id>/<frame_id>.jpg`) and a Run button that asks the agent to
+use `run_cached`. `run_sam_on_dataset` records no run, so it is not cached. Run archives do not
+carry cache keys, so an imported run is never a keyed cache.
 
 - **Objects.** An object's id is `obj_<surface_id>` of the run history's surface; its points are
   every point the run assigned to it, in frame `map`, up axis `-y`. `status` maps the history:
