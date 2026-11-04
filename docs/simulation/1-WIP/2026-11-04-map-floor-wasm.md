@@ -1,4 +1,4 @@
-# Changeset: Simulation map floor — map-floor-wasm
+# Changeset: Simulation map floor — Bevy rendering
 
 **Date**: 2026-11-04
 **Status**: 🚧 In Progress
@@ -8,57 +8,47 @@
 
 ## Summary
 
-Bevy renderer: spawn the floor plane (bbox-sized, ENU origin, texture 1:1) under the scene's elements.
-
-## Initial Discovery
-
-[2026-11-04-map-floor-wasm-initial-discovery.md](2026-11-04-map-floor-wasm-initial-discovery.md)
+The renderer draws the floor: one untiled plane at the ENU origin, sized from the bbox,
+textured with the stitched PNG (which receives the mip chain every asset-server image
+gets, so it does not shimmer from altitude). Because the ground box is gone, the floor
+carries a fixed collider whose top is at 0 m — what people, vehicles and nests stand on.
+A hand-edited manifest that still carries the preset `ground` box has it hidden by the
+renderer as a second line of defence.
 
 ## Stack Context
 
-**Stack**: simulation map floor · slug **`#map-floor`** — this PR is **4/5**
-**Branch**: `pr-4-map-floor-wasm` · **Base**: predecessor in the `#map-floor` stack (or `origin/main` for the bottom PR)
-**Kind**: Feature · behaviour-adds
-**Workflow**: preset `feature` · planned by `/plan-pr-stack` · pass-2 = failing tests
+**Stack**: `#map-floor` — **4 of 5** · **Branch**: `pr-4-map-floor-wasm` · **Base**: `pr-3-map-floor-tool`
+**Kind**: Feature · behaviour-adds · **Workflow**: preset `feature`
 
 ### Green wave
 
-**Wave:** 2 of 3
-**Node:** n4
-**Blocks:** the nodes above it in the `#map-floor` line
+**Wave:** 2 of 3 · **Node:** n4 · **Blocks:** n5 (served-scene confidence)
 
 ### Greenable independently?
 
-**yes — against a fixture floor**
+**yes** — against the manifest contract and a fixture texture from #127.
 
 ## Inherited Dependencies — do not implement here
 
 | Symbol / module | Owned by | State during this PR's green | What this PR does |
 |---|---|---|---|
-| (see Summary) | n2 manifest shape (fixture texture during planning) | stub / fixture | calls it; does not implement it |
+| `map_floor` parsing/validation | #127 | implemented below | reads `centre_and_size_enu`; does not re-validate beyond it |
 
 ## Verification
 
-**Method:** V1 cargo tests + inspected native screenshot
-- [ ] Verification executed — result recorded
-
-## Workflow
-
-- [wf 1] ✅ 2026-11-04 `/plan-red` Plan — changeset, initial discovery · this file
-- [wf 2] ✅ 2026-11-04 `/plan-red` Red — failing tests, committed ·
-- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes ·
-- [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
-  - [ ] Verification executed — result recorded
+V1 executed: cargo tests for the collider half-extents, preset-ground hiding, and the
+shared golden fixture — 365 Rust tests green. **Not done: the native screenshot** (needs
+the 66 MB asset fetch + release build); texture orientation follows Bevy's UV convention
+and remains the one manual check, recorded here honestly rather than claimed.
 
 ## Prerequisites
 
-Step 2b cross-check (`src/surmap/docs/todo/`, `src/surmap/docs/code-issues/`):
+As #127. **Outcome:** none blocking.
 
-| Record | Verdict |
-|---|---|
-| `src/surmap/docs/todo/2026-11-04-texture-uv-scale-measured.md` | — unrelated: facade/roof `uv_scale`; the floor texture is untiled |
-| `src/surmap/docs/todo/2026-11-04-cmu-and-pvc-textures.md` | — unrelated: facade texture sourcing |
-| `src/surmap/docs/todo/2026-11-03-bevy-visual-checkpoints-v3-v5.md` | ℹ answered: native-still inspection is this stack's V1 visual check precedent; V3–V5 themselves stay open |
-| `src/surmap/docs/code-issues/oversized-file-demo-server.md` | — unrelated: demo server file size |
+## Workflow
 
-**Outcome:** none blocking, no restructure prerequisite.
+- [wf 1] ✅ 2026-11-04 `/plan-red` Plan — changeset and discovery · this file
+- [wf 2] ✅ 2026-11-04 `/plan-red` Red — failing Rust tests · red commit `694d86b`
+- [wf 3] ✅ 2026-11-04 `/green` Green — floor collider + ground hiding · green commit `2dbe821`
+- [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
+  - [ ] Verification executed — result recorded (screenshot outstanding, see Verification)
