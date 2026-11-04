@@ -236,7 +236,9 @@ def clear_map_floor(manifest: Mapping[str, object]) -> Manifest:
     elements = edited.get("elements")
     items = list(elements) if isinstance(elements, list) else []
     present = {e.get("id") for e in items if isinstance(e, dict)}
-    edited["elements"] = [e for e in restored if not (isinstance(e, dict) and e.get("id") in present)] + items
+    edited["elements"] = [
+        e for e in restored if not (isinstance(e, dict) and e.get("id") in present)
+    ] + items
     validate_manifest(edited)
     return edited
 
