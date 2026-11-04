@@ -12,18 +12,18 @@ PRD: `PRD-2026-11-04-fleet-tools.md` · Discovery: `2026-11-04-fleet-tools-initi
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1) · commit 1 `f0a54f5`
+- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1) · commit 1 `5eb5d5b`
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ✅ 2026-11-04 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 46 failing (14 acceptance + 32 unit) — commit 2 `626960a`
+- [wf 2] ✅ 2026-11-04 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 46 failing (14 acceptance + 32 unit) — commit 2 `7ebb749`
   - [x] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
   - [x] Stubs this node owns (`fleet_tools.proto` + generated code, `agent/tools/fleet_handlers.py`, `services.fleet_module`)
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⏳ `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) ·
+- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) · 46/46 red tests green @ `89b611c` (49/49 in the two fleet-tool suites); pytest 2361 passed / 38 skipped / 0 failed, `cargo test --locked` 352 passed, mypy (529 files) and `ruff check` / `ruff format --check` (`--no-cache`) clean
   - [x] `proto/surmap/agent/v1/fleet_tools.proto`: `FleetTools` with `ListNests`, `ListDrones`, `LaunchDrone`, `SetRoute`, `AddDetour`, `RecallDrone`, `SetActiveDrone`, `GetFleetLog` (each SYNC · 10 s · FAIL, leading comments, field comments); `PROTOS += "fleet_tools"`; regenerated `_pb2`/`.pyi`/descriptor set
   - [x] `agent/tools/fleet_handlers.py`: `fleet_tool_handlers(store, registry)` and its pure helpers (`fleet_error`, `flight_route`, `fleet_command`, `drone_phase`, `fleet_nest`, `drone_statuses` — see `## Validation Results`); error mapping (unknown scenario/drone → `NOT_FOUND`, `FleetInvalid` → `INVALID_ARGUMENT`, `FleetRefused` → `FAILED_PRECONDITION`, `FleetUnavailable` → `UNAVAILABLE`, `FleetTimeout` → `DEADLINE_EXCEEDED`)
   - [x] Registration: `services.fleet_module`, `app.build_agent_description` (handlers, contracts, module — only with a `SimulationRig`), `binding._HANDLER_SERVICES`
@@ -312,6 +312,29 @@ Red-step notes — shapes the tests pin, which `[G]` must honour:
 - **Test station.** `tests/fleet_tool_fakes.py` (`a_fleet_station`, `FleetStation.call` /
   `a_linked_page` / `reports` / `turn`) is this node's; it reuses n3's `tests/fleet_fakes.py`
   unchanged. The skill `flying-the-fleet` and the wording changes have no test (Green TODOs).
+
+**Green (`89b611c`, on n3 `159e198`):** the 46 red tests pass; the three contract/registration tests
+that already passed still do. `uv run pytest -q` 2361 passed, 38 skipped, 0 failed; `mypy` 529
+files clean; `ruff check --no-cache` / `ruff format --no-cache --check` clean; `cargo test --locked`
+352 passed (no Rust in this node). Regenerating the protos
+(`uv run --with grpcio-tools==1.73.1 python scripts/gen_agent_rpc.py`) leaves no diff.
+
+Green notes:
+
+- The proto, `PROTOS`, `services.fleet_module`, `app.build_agent_description` and
+  `binding._HANDLER_SERVICES` were already real from the Red step; Green wrote the handlers, the
+  skill and the wording.
+- `fleet_error` falls back to `INTERNAL` for a `FleetError` subclass it does not know (none today).
+- `get_fleet_log` answers `NOT_FOUND` when the scenario has no session yet, and when a given
+  `session_id` is not one of *that scenario's* sessions (so a scenario's log cannot read another's).
+- `ListDrones` reports telemetry and the active drone only while a page is linked: n3's
+  `detach()` keeps the last telemetry, which would otherwise show a gone page's drones as flying.
+- The docked-detour message needs no extra naming: n3's `FleetInvalid` text is `"<drone> is
+  <phase>: …"`, so the rule prefix gives `not_flying: nest-sw-d1 is docked: …`.
+- No `sim_t_s` on `ListDronesResponse` (n3's controller exposes no telemetry time). **For `[W]`:**
+  file it as a follow-up TODO for when the controller exposes one.
+- No test covers the `flying-the-fleet` skill, the SYSTEM_PROMPT sentence or the `using-the-map`
+  wording (a Green TODO); the shipped catalogue lists `flying-the-fleet`.
 
 ## Acceptance Tests
 
