@@ -21,6 +21,7 @@ from surmap.simulation.bevy_wire import (
 )
 from surmap.simulation.camera_profile import profile_sensor_yaml
 from surmap.slam.stream_protocol import OdomUpdate, Rectification
+from surmap.slam.streaming import MapCloud
 from surmap.types import StereoFramePair
 
 
@@ -37,6 +38,8 @@ class StreamingBackend(Protocol):
     def process_frame(self, frame: StereoFramePair) -> None: ...
 
     def poll_updates(self) -> list[OdomUpdate]: ...
+
+    def map_cloud(self) -> MapCloud: ...
 
     def close(self) -> None: ...
 

@@ -11,6 +11,9 @@ and its frames, when they come again, go to the same backend. At most `MAX_DRONE
 sessions exist per connection; a further drone's pairs are answered with a status naming the
 limit and processed by nothing. Closing the connection finishes every session.
 
+`FleetPerception.drone_map` is the processing drone's map as it stands — its cloud and its last
+odometry pose — for the chat's live drone map (`GET /sim/map/<scenario>`).
+
 `PerceptionRegistry` finds a scenario's connected page for the agent's `drone_map_status` tool.
 """
 
@@ -40,14 +43,16 @@ from surmap.simulation.bevy_wire import (
 from surmap.simulation.camera_profile import profile_sensor_yaml
 from surmap.slam.keypoint_pixels import rectified_to_raw
 from surmap.slam.stream_protocol import MapUpdate, OdomUpdate, Rectification
+from surmap.slam.streaming import MapCloud
 from surmap.survey.sam import RawFrame, SamDetector
-from surmap.types import StereoFramePair
+from surmap.types import Pose, StereoFramePair
 
 __all__ = [
     "DEFAULT_DRONE",
     "MAX_DRONE_SESSIONS",
     "SAM_QUEUE_SIZE",
     "DroneCounts",
+    "DroneMap",
     "DroneSession",
     "FleetPerception",
     "PerceptionRegistry",
@@ -109,6 +114,15 @@ class DroneCounts:
     """Why its map stopped (the backend failed); `None` while it runs."""
 
 
+@dataclass(frozen=True)
+class DroneMap:
+    """One drone's map as it stands: its cloud and its last odometry pose (`None` before any)."""
+
+    drone_id: str
+    cloud: MapCloud
+    pose: Pose | None
+
+
 class DroneSession:
     """One drone's live map: its backend, its segmentation run, its optional recorder, and the
     counts its frames have produced."""
@@ -132,6 +146,8 @@ class DroneSession:
         self._last_t_ns: int | None = None
         self._error: str | None = None
         self._odometry: tuple[FrameKeypoints, ...] = ()
+        self._pose: Pose | None = None
+        self._map_lock = threading.Lock()
 
     @property
     def error(self) -> str | None:
@@ -194,10 +210,17 @@ class DroneSession:
             )
             if update.pose is not None:
                 self._posed += 1
+                self._pose = update.map_pose or update.pose
             if update.lost:
                 self._lost += 1
             self._lost_now = update.lost
         self._odometry = tuple(odometry)
+
+    def drone_map(self) -> DroneMap:
+        """This drone's map as it stands; safe beside `process` on another thread."""
+        with self._map_lock:  # the backend's placed-points cache is not thread-safe
+            cloud = self.backend.map_cloud()
+        return DroneMap(self.drone_id, cloud, self._pose)
 
     def status(self) -> BridgeStatus:
         """The status reply for this drone's last pair."""
@@ -345,6 +368,11 @@ class FleetPerception:
     def processing(self) -> str | None:
         """The drone whose frame was processed last; `None` before any."""
         return self._processing
+
+    def drone_map(self) -> DroneMap | None:
+        """The map of the drone whose frame was processed last; `None` before any."""
+        session = self._sessions.get(self._processing) if self._processing is not None else None
+        return None if session is None else session.drone_map()
 
     def close(self) -> None:
         """Finishes every drone session, in drone-id order, and unregisters the connection."""

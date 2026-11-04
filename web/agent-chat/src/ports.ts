@@ -127,6 +127,17 @@ export interface MapSceneView {
   layers: MapLayerView[];
 }
 
+/** The map a simulation's flying drone is building, drawn by the server in the demo's Follow view. */
+export interface DroneMapView {
+  droneId: string;
+  /** Its flight phase in the fleet's telemetry, e.g. "climbing" or "cruising". */
+  phase: string;
+  /** How many points its map has. */
+  points: number;
+  /** The view, a base64 PNG. */
+  png: string;
+}
+
 /** Where the SAM station (the GPU SAM runs on) is in its life. */
 export type StationStateView = "off" | "queued" | "starting" | "ready" | "stopping" | "error";
 
@@ -179,4 +190,6 @@ export interface ChatPort {
    * station refused it.
    */
   importSimulation(bundle: File, into: string | null): Promise<SimulationView>;
+  /** The map the scenario's drone is building while it flies; `null` while none flies. */
+  getDroneMap(scenarioId: string): Promise<DroneMapView | null>;
 }

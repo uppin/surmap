@@ -1133,6 +1133,38 @@ opens the full page.
 chat's `SimulationPane` / `App` tests pass. V4 — a release `trunk build` served by an agent with
 the bridge and the real streaming sidecar, opened in Chrome in preview mode: landed, only the
 overview; after take-off, the FPV with RTAB-Map's keypoints on the held frame.
+## The chat's live drone map: the demo's Follow view of what the drone builds
+
+Once a drone of the chat's simulation is in the air, a **Live map** pane appears under the
+simulation pane: the RTAB-Map cloud that drone is building, drawn the way the demo page's 3D pane
+draws it with Follow on — from behind and above the drone along its heading, the drone at 3/4 of
+the image height with a yellow arrow, 24 m of scene across (`cloud_view.render_follow_view`, the
+default pose of `CloudViewer`'s Follow framing).
+
+- **Route.** `GET /sim/map/<scenario>` (`sim_routes.drone_map`, CORS like `/datasets`): 200
+  `{"drone_id", "phase", "points", "png"}` (base64 PNG) for the drone the scenario's bridge page
+  streams now (`FleetPerception.drone_map`) while the fleet telemetry has it off the ground; 204
+  while no page streams the scenario, before its first frame, or while that drone is `docked`;
+  404 for an unknown scenario. The pages stream pairs on the ground too, so "flying" comes from
+  telemetry, not from frames arriving. Drawn off the event loop.
+- **The drone's camera.** `DroneSession` keeps its last odometry pose (`map_pose`, else `pose`);
+  `cloud_view.follow_camera` projects its optical axis onto the map's x-z floor, as the demo's
+  `floor_camera` does. Before any pose the view looks from the map's origin along +z. The
+  `StreamingBackend` protocol gains `map_cloud()`; a session reads it under its own lock (the
+  backend's placed-points cache is not thread-safe).
+- **Chat.** `ChatPort.getDroneMap(scenarioId)` (`null` on 204). While a simulation is open,
+  `ChatPage` polls it every second; the first map shows `DroneMapPane` (drone, phase, point count,
+  image), and the pane keeps the last image after the drone lands. A different scenario starts
+  with no pane.
+
+### Verified
+
+2026-11-04: V1 — `tests/test_sim_live_drone_map.py` (renderer, perception, the route over the real
+agent server with a fake fleet page and fake maps) and the chat's `DroneMapPane` / `App` /
+adapter tests pass. A synthetic street rendered through `render_follow_view` was inspected by eye.
+V4 in the browser against the real sidecar is still to run (`scripts/dev.sh --bridge`, launch a
+drone, see the pane appear and grow).
+
 ## The stereo rig: one camera profile
 
 `cameras/elp-stereo-pinhole.camera.json` (the SurMap ELP rig): 640×480, fx = fy = 381.36,

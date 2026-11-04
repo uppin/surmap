@@ -25,6 +25,10 @@ at any tilt and zoom; `FOLLOW_SPAN_M` of scene fills the view at zoom 1. Tilt
 and zoom adjust the follow view; an orbit or a pan takes over, starting
 from the exact follow view, and turns Follow off. Without a camera the
 follow view is the free one. A yellow arrow marks the camera in both.
+
+`render_follow_view` is that Follow view with no session around it: the default pose, a scene's
+bounds taken from its points. The chat's live drone map draws a fleet drone's map with it,
+the drone's `follow_camera` derived from its odometry pose.
 """
 
 from __future__ import annotations
@@ -40,6 +44,8 @@ from numpy.typing import NDArray
 from PIL import Image, ImageDraw
 
 from surmap.demo.surface_render import SurfaceLayer, draw_surface_ids, draw_surfaces
+from surmap.slam.streaming import pose_rotation
+from surmap.types import Pose
 
 Bounds = tuple[NDArray[np.float32], NDArray[np.float32]]
 # The shown frame's camera on the floor: x, z, unit heading dx, dz (`floor_camera`).
@@ -239,6 +245,34 @@ def render_cloud_view(
     each pixel. Background matches the old WebGL clear colour.
     """
     return _render(points, colors, _free_framing(bounds, pose), size, surfaces, None)
+
+
+def follow_camera(pose: Pose) -> FollowCamera:
+    """`pose`'s camera on the floor: its x-z position and its optical axis projected onto x-z
+    (+z when it looks straight down or up), as `floor_camera` places the demo's."""
+    rotation = pose_rotation(pose)
+    dx, dz = float(rotation[0, 2]), float(rotation[2, 2])
+    length = math.hypot(dx, dz)
+    if length < 1e-6:
+        dx, dz, length = 0.0, 1.0, 1.0
+    return {"x": pose.position.x, "z": pose.position.z, "dx": dx / length, "dz": dz / length}
+
+
+def render_follow_view(
+    points: NDArray[np.float32],
+    colors: NDArray[np.uint8],
+    camera: FollowCamera,
+    size: tuple[int, int] = CLOUD_VIEW_PX,
+) -> str:
+    """Every map point drawn in the Follow view of `camera` at the default pose, as base64 PNG:
+    behind and above it along its heading, with its yellow arrow. The view's height is the
+    middle of the points' (the camera's own with none)."""
+    if len(points):
+        bounds: Bounds = (points.min(axis=0), points.max(axis=0))
+    else:
+        bounds = (np.zeros(3, np.float32), np.zeros(3, np.float32))
+    framing = _follow_framing(bounds, CloudPose(), camera)
+    return _render(points, colors, framing, size, (), camera)
 
 
 @dataclass(frozen=True)
