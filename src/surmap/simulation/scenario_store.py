@@ -412,6 +412,16 @@ class ScenarioStore:
                 credits.append(
                     Credit(asset.ref, asset.title, asset.author, asset.licence, asset.page_url)
                 )
+        if isinstance(manifest.get("map_floor"), dict):
+            credits.append(
+                Credit(
+                    "openstreetmap",
+                    "OpenStreetMap map floor",
+                    "OpenStreetMap contributors",
+                    "ODbL",
+                    "https://www.openstreetmap.org/copyright",
+                )
+            )
         return tuple(credits)
 
 
@@ -430,6 +440,9 @@ def referenced_paths(manifest: Manifest) -> Sequence[str]:
                 for k, v in material.items()
                 if k in ("base_color", "normal", "roughness", "arm") and isinstance(v, str)
             ]
+    floor = manifest.get("map_floor")
+    if isinstance(floor, dict) and isinstance(floor.get("texture"), str):
+        paths.append(floor["texture"])
     return paths
 
 

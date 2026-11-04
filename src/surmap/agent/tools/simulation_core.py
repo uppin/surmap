@@ -39,6 +39,7 @@ class SimulationTooling:
 
     store: ScenarioStore
     sources: Mapping[str, AssetSource]
+    tile_source: TileSource
     hits: dict[str, AssetHit] = field(default_factory=dict)
     seen: dict[str, int] = field(default_factory=dict)
 

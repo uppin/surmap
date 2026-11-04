@@ -490,7 +490,7 @@ class SetMapFloorRequest(_message.Message):
     def __init__(self, scenario_id: _Optional[str] = ..., sw_lat: _Optional[float] = ..., sw_lon: _Optional[float] = ..., ne_lat: _Optional[float] = ..., ne_lon: _Optional[float] = ...) -> None: ...
 
 class MapFloorResponse(_message.Message):
-    __slots__ = ("scenario", "centre_lat", "centre_lon", "size_east_m", "size_north_m", "zoom", "texture")
+    __slots__ = ("scenario", "centre_lat", "centre_lon", "size_east_m", "size_north_m", "zoom", "texture", "warnings")
     SCENARIO_FIELD_NUMBER: _ClassVar[int]
     CENTRE_LAT_FIELD_NUMBER: _ClassVar[int]
     CENTRE_LON_FIELD_NUMBER: _ClassVar[int]
@@ -498,6 +498,7 @@ class MapFloorResponse(_message.Message):
     SIZE_NORTH_M_FIELD_NUMBER: _ClassVar[int]
     ZOOM_FIELD_NUMBER: _ClassVar[int]
     TEXTURE_FIELD_NUMBER: _ClassVar[int]
+    WARNINGS_FIELD_NUMBER: _ClassVar[int]
     scenario: ScenarioInfo
     centre_lat: float
     centre_lon: float
@@ -505,7 +506,48 @@ class MapFloorResponse(_message.Message):
     size_north_m: float
     zoom: int
     texture: str
-    def __init__(self, scenario: _Optional[_Union[ScenarioInfo, _Mapping[str, _Any]]] = ..., centre_lat: _Optional[float] = ..., centre_lon: _Optional[float] = ..., size_east_m: _Optional[float] = ..., size_north_m: _Optional[float] = ..., zoom: _Optional[int] = ..., texture: _Optional[str] = ...) -> None: ...
+    warnings: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, scenario: _Optional[_Union[ScenarioInfo, _Mapping[str, _Any]]] = ..., centre_lat: _Optional[float] = ..., centre_lon: _Optional[float] = ..., size_east_m: _Optional[float] = ..., size_north_m: _Optional[float] = ..., zoom: _Optional[int] = ..., texture: _Optional[str] = ..., warnings: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class ClearMapFloorRequest(_message.Message):
+    __slots__ = ("scenario_id",)
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    def __init__(self, scenario_id: _Optional[str] = ...) -> None: ...
+
+class GeoToEnuRequest(_message.Message):
+    __slots__ = ("scenario_id", "lat", "lon")
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    LAT_FIELD_NUMBER: _ClassVar[int]
+    LON_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    lat: float
+    lon: float
+    def __init__(self, scenario_id: _Optional[str] = ..., lat: _Optional[float] = ..., lon: _Optional[float] = ...) -> None: ...
+
+class GeoToEnuResponse(_message.Message):
+    __slots__ = ("position", "inside_floor")
+    POSITION_FIELD_NUMBER: _ClassVar[int]
+    INSIDE_FLOOR_FIELD_NUMBER: _ClassVar[int]
+    position: EnuPoint
+    inside_floor: bool
+    def __init__(self, position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., inside_floor: bool = ...) -> None: ...
+
+class EnuToGeoRequest(_message.Message):
+    __slots__ = ("scenario_id", "position")
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    POSITION_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    position: EnuPoint
+    def __init__(self, scenario_id: _Optional[str] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ...) -> None: ...
+
+class EnuToGeoResponse(_message.Message):
+    __slots__ = ("lat", "lon")
+    LAT_FIELD_NUMBER: _ClassVar[int]
+    LON_FIELD_NUMBER: _ClassVar[int]
+    lat: float
+    lon: float
+    def __init__(self, lat: _Optional[float] = ..., lon: _Optional[float] = ...) -> None: ...
 
 class GetScenarioRequest(_message.Message):
     __slots__ = ("scenario_id",)

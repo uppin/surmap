@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
+
 import pytest
+
+if TYPE_CHECKING:
+    from surmap.simulation.scenario_store import ScenarioStore
 
 from surmap.simulation.map_floor import GeoBBox, InMemoryTileSource, wgs84_to_enu
 from surmap.simulation.scenario_manifest import load_presets, validate_manifest
@@ -128,8 +134,10 @@ async def test_geo_to_enu_converts_through_the_tool_not_the_test(tmp_path: objec
     await tools["SetMapFloor"](
         pb.SetMapFloorRequest(
             scenario_id=created.scenario.id,
-            sw_lat=VILNIUS.sw_lat, sw_lon=VILNIUS.sw_lon,
-            ne_lat=VILNIUS.ne_lat, ne_lon=VILNIUS.ne_lon,
+            sw_lat=VILNIUS.sw_lat,
+            sw_lon=VILNIUS.sw_lon,
+            ne_lat=VILNIUS.ne_lat,
+            ne_lon=VILNIUS.ne_lon,
         ),
         None,
     )
@@ -149,7 +157,9 @@ async def test_geo_to_enu_converts_through_the_tool_not_the_test(tmp_path: objec
     back = await tools["EnuToGeo"](
         pb.EnuToGeoRequest(
             scenario_id=created.scenario.id,
-            position=pb.EnuPoint(east=converted.position.east, north=converted.position.north, up=0.0),
+            position=pb.EnuPoint(
+                east=converted.position.east, north=converted.position.north, up=0.0
+            ),
         ),
         None,
     )
@@ -169,10 +179,14 @@ async def test_clear_map_floor_tool_removes_the_floor_and_restores_ground(tmp_pa
     # Then the manifest has no floor and the ground box is back
     manifest = store.scenario(scenario_id).manifest
     assert "map_floor" not in manifest
-    assert "ground" in [e.get("id") for e in manifest["elements"] if isinstance(e, dict)]
+    elements = manifest.get("elements")
+    assert isinstance(elements, list)
+    assert "ground" in [e.get("id") for e in elements if isinstance(e, dict)]
 
 
-async def _floored_scenario(tmp_path: object) -> tuple[dict[str, object], object, str]:
+async def _floored_scenario(
+    tmp_path: object,
+) -> tuple[dict[str, Callable[..., Awaitable[object]]], ScenarioStore, str]:
     from pathlib import Path
 
     from surmap.agent.proto import simulation_tools_pb2 as pb
@@ -192,8 +206,10 @@ async def _floored_scenario(tmp_path: object) -> tuple[dict[str, object], object
     await tools["SetMapFloor"](
         pb.SetMapFloorRequest(
             scenario_id=created.scenario.id,
-            sw_lat=VILNIUS.sw_lat, sw_lon=VILNIUS.sw_lon,
-            ne_lat=VILNIUS.ne_lat, ne_lon=VILNIUS.ne_lon,
+            sw_lat=VILNIUS.sw_lat,
+            sw_lon=VILNIUS.sw_lon,
+            ne_lat=VILNIUS.ne_lat,
+            ne_lon=VILNIUS.ne_lon,
         ),
         None,
     )
