@@ -223,7 +223,9 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
   `wildfire-evacuation` (the edge with three people who wander and flee the fire, and a wind that
   veers), `flood-street` (the block in rain and fog), `district-showcase` (the four building
   districts side by side, no fire) and `downtown-blaze` (a downtown block whose glass tower
-  burns on floor 3 from t = 5 s in a 5 m/s westerly, a neighbour 5 m downwind).
+  burns on floor 3 from t = 5 s in a 5 m/s westerly, a neighbour 5 m downwind) and
+  `street-traffic` (the block with cars on the avenue, a bus and a truck on the cross street, a
+  parked car and a six-carriage freight train on a rail line along the west edge).
 - **Weather and fire**: `set_weather` sets rain (mm/h), fog visibility and the one wind (where it
   blows from, speed, gusts) that sways the vegetation and drives the fire and its smoke;
   `add_fire` lights a fire (ignition, start, spread rate, maximum radius, smoke) and `remove_fire`
@@ -241,6 +243,13 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
   `update_behaviour_node`; the rules in `surmap.simulation.behaviour_tree`). `add_element`'s
   `person` takes a `skin` material (`skin` when empty). Node kinds, the tick and the recorded tracks:
   [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *Behaviour trees*.
+- **Vehicles**: `add_element` takes a `vehicle` (`VehicleElement`): `id`, `vehicle_class`
+  (`car`, `bus`, `truck` or `train`), a start `position`, `yaw_deg`, `cars` (trains only) and an
+  optional drive as a behaviour tree (`behaviour_json`, the people's nodes; parked when empty).
+  An unknown class, carriages on anything but a train, or an invalid tree is `INVALID_ARGUMENT`
+  with the reason. The behaviour tools take a vehicle's id as a target too. Class files, the
+  driving limits and the recorded tracks:
+  [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *Vehicles*.
 - **Buildings and building fires**: preset names follow Overture's `facade_material` /
   `roof_material` vocabulary (the map's `overture-buildings` layer; no geometry is imported).
   `list_building_presets` returns the facade, roof and district names — shipped, plus any files

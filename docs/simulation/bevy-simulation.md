@@ -17,12 +17,13 @@ fetches, at runtime, from `examples/bevy-sitl-poc/assets/`:
 | `fx/<name>.fx.json` | one particle effect (flames, embers, smoke, rain) — see *Weather, wind and fire* |
 | `species/<name>.species.json` | one vegetation species (pine, dry grass) — see *Weather, wind and fire* |
 | `building/{facades,roofs,districts}/<name>.*.json`, `building/look.json`, `building/fire.json` | wall, roof and district presets, the buildings' look and the building fire's tuning — see *Buildings: presets, districts and building fires* |
+| `vehicle/<class>.vehicle.json` | one vehicle class: glTF, size, wheels, driving limits, carriages — see *Vehicles* |
 | `assets.lock.json` | every fetched file: URL, SHA-256, licence (CC0-1.0, or CC-BY with its `attribution`), source page |
 
 Element kinds the engine knows (positions are ENU metres at the element's base, yaw in
 degrees): `box` (ground, roads, water, pads; optional `scatter` of debris and a
 `ground_truth` kind), `collapsed_building` (slabs, tilt and a rubble fan laid out by `seed`),
-`building` (a window grid and one material, or wall, roof and glazing presets — see *Buildings*), `person`, `vegetation` (a stand of one species). `models` are
+`building` (a window grid and one material, or wall, roof and glazing presets — see *Buildings*), `person`, `vegetation` (a stand of one species), `vehicle` (a car, bus, truck or train that drives — see *Vehicles*). `models` are
 glTF/GLB instances with a collider (`none` / `box` / `trimesh`) and an optional ground-truth
 kind. The manifest is validated at load, by the renderer (`scene_manifest.rs`) and by the
 station (`surmap.simulation.scenario_manifest`) with the same rules: version 1, unique ids
@@ -323,9 +324,10 @@ tree `sequence[idle 20 s, set_wind 300° 10 m/s gust 3 over 30 s]`: the 6 m/s we
 then veers and builds.
 
 Every capture adds `object_tracks.jsonl`, one line per frame:
-`{"t_ns": n, "wind_enu": [ve, vn], "objects": [{"id": "evacuee-1", "enu": [e, n, u], "action": "flee_from_fire"}]}`
-— the wind's velocity and every person with a tree, sorted by id (`action` is `null` once its
-tree finished). `load_bevy_capture(dir).object_tracks` (`t_ns` → id → `Vec3`) and `.wind`
+`{"t_ns": n, "wind_enu": [ve, vn], "objects": [{"id": "evacuee-1", "enu": [e, n, u], "action": "flee_from_fire", "kind": "person", "yaw_deg": 92.0}]}`
+— the wind's velocity and every person with a tree and every tracked vehicle (*Vehicles*),
+sorted by id. `action` is `null` once its tree has finished, `kind` is `person` or the
+vehicle's class, and `yaw_deg` is the way it faces (ENU, counter-clockwise from east). `load_bevy_capture(dir).object_tracks` (`t_ns` → id → `Vec3`) and `.wind`
 (`t_ns` → `(ve, vn)`) read it; both are empty without the file.
 
 A still of a scene with people adds `people.png` (1280×720, 50° field of view): from 25 m
@@ -540,6 +542,137 @@ spec's character with metalness kept, each window its own flickering glow (revie
 panes), pre-warmed smoke in stills, district-resolved floors in the station and a recorded blaze
 end to end. Open work:
 `src/surmap/docs/todo/2026-11-04-{legacy-buildings-burn,cmu-and-pvc-textures,texture-uv-scale-measured}.md`.
+
+## Vehicles
+
+Cars, buses, trucks and trains drive. Each is a `vehicle` element of a class: a pinned glTF,
+moved by the same behaviour trees people use (*Behaviour trees*), with speed, acceleration,
+braking and turning limited the way a real vehicle's are. A train runs as a locomotive with
+carriages trailing it along its path. Moving vehicles are layered ground truth for the survey,
+recorded per frame in `object_tracks.jsonl`. They are never written into `ground_truth.json`,
+the static scene or RTAB-Map's map ([architecture.md](../architecture.md) §1).
+
+Why this shape: one motion mechanism. The trees are already validated by the station and the
+renderer and already editable by the agent's tools, so a vehicle is just a body that cannot turn
+on the spot. The trees stay target-agnostic, and `Drive` limits whatever they propose. Trains
+follow their path, not a rail graph, so there is no switching and no collision.
+
+### In the manifest
+
+```json
+{"kind": "vehicle", "id": "bus-cross-1", "class": "bus", "position_enu": [-45.0, 62.5, 0.0],
+ "tint": [1.0, 0.78, 0.1],
+ "behaviour": {"node": "repeat", "child": {"node": "sequence", "children": [
+   {"node": "follow_path", "enu": [[45.0, 62.5]], "speed_m_s": 8.0},
+   {"node": "idle", "s": 10.0},
+   {"node": "follow_path", "enu": [[-45.0, 62.5]], "speed_m_s": 8.0}]}}}
+{"kind": "vehicle", "id": "freight", "class": "train", "cars": 6, "yaw_deg": 90.0,
+ "position_enu": [-62.0, -50.0, 0.0], "behaviour": {"node": "follow_path", "enu": [[-62.0, 140.0]], "speed_m_s": 15.0}}
+```
+
+| Field | Meaning |
+|---|---|
+| `class` | `car` \| `bus` \| `truck` \| `train`; picks `vehicle/<class>.vehicle.json` |
+| `position_enu`, `yaw_deg` | the start pose (yaw counter-clockwise from east, as for `models`) |
+| `behaviour` | optional tree, validated as a ground body's (no `set_wind`); parked without one |
+| `glb` | optional override of the class glTF (a relative asset path, `.glb` / `.gltf`), e.g. a station-library asset |
+| `cars` | trains only: carriages behind the locomotive (default 0; refused on any other class) |
+| `tint` | optional sRGB multiplier on the glTF's base colours |
+| `ground_truth` | default `true`: tracked in `object_tracks.jsonl` with `kind` = `class` |
+
+The renderer (`scene_manifest.rs`) and the station (`surmap.simulation.vehicles`, through
+`scenario_manifest`) apply the same rules and refuse a vehicle by its id with the reason.
+
+### Class files (`assets/vehicle/<class>.vehicle.json`, data, no rebuild)
+
+| Field | Meaning |
+|---|---|
+| `glb` | the class glTF |
+| `model_scale` | uniform scale of the glTF and its carriages (default 1, > 0), for a model not authored in metres |
+| `model_yaw_deg` | the turn that points the glTF's nose along the vehicle's forward |
+| `length_m`, `width_m`, `height_m` | the collider and ground-truth extent |
+| `wheel_nodes`, `wheel_radius_m` | glTF node-name prefixes spun about their own bounds centre by distance / radius (road classes; empty when the model has no separable wheels) |
+| `max_speed_m_s`, `accel_m_s2`, `brake_m_s2`, `turn_rate_deg_s` | the driving limits |
+| `carriage_glb`, `carriage_spacing_m` | trains only |
+
+| Class | Model (licence) | Size (m) | Max speed · accel · brake · turn |
+|---|---|---|---|
+| `car` | Quaternius car (CC0) | 4.2 × 1.8 × 1.2 | 15 m/s · 3 · 6 m/s² · 45°/s |
+| `bus` | "Bus" by Poly by Google (CC BY 3.0), `model_scale` 0.07 | 11.0 × 3.5 × 3.4 | 12 · 1.2 · 3 · 20 |
+| `truck` | Quaternius truck (CC0), `model_scale` 1.25 | 6.6 × 3.4 × 3.6 | 12 · 1.0 · 3 · 18 |
+| `train` | Quaternius locomotive and wagon (CC0), carriages 8.4 m apart | 8.1 × 2.9 × 6.1 | 30 · 0.5 · 1.0 · 6 |
+
+The Quaternius models are pinned from poly.pizza. The fetch sends a `Referer` for
+`static.poly.pizza`, which refuses hot links without one. Kenney's kits cannot be pinned because
+their download links are signed and expire. The bus is the one non-CC0 vehicle asset (see
+*Everything is data*), and `test_the_only_pin_off_cc0_is_the_named_cc_by_bus` holds that line.
+It is one coach mesh, so its `wheel_nodes` is empty and its wheels do not spin. Its nose is +Z
+(`model_yaw_deg` 180), the end with the mirror arms.
+
+### Kinematics (`vehicle.rs`, pure, deterministic)
+
+The tree's running leaf proposes a **goal** (`behaviour::Goal`: a point, a speed, and `stop` at a
+path's end). `Drive` turns the goal into motion the class allows:
+
+- **Speed** eases toward the node's `speed_m_s`, capped at `max_speed_m_s`, at `accel_m_s2`. It
+  slows at `brake_m_s2` to stop at a stopping goal (the last point of a `move_to` or
+  `follow_path`). It closes that goal no faster than its stopping distance allows, and no faster
+  than half of turn rate × distance, so it creeps onto the goal and never overshoots.
+- **Heading** turns toward the goal at most at `turn_rate_deg_s`, and the body moves along it.
+  A goal to the side or behind is approached only at the speed that keeps the bearing turning
+  at most half the turn rate (`BEARING_SHARE`). The heading always catches up, so a vehicle never
+  circles a goal.
+- **A drive-through point** (a path corner) counts as reached when the vehicle passes it.
+- **Wheels** turn by distance / `wheel_radius_m`.
+
+Each tick the runner is reset to where the vehicle really is (`VehicleBody`), so a tree's
+`near_object` and its path ends see the vehicle's place. Vehicles tick with the people at 10 Hz
+(`actors/tick.rs`), and each body senses the others. A train's heading follows its path, and its
+carriages are placed `k × carriage_spacing_m` behind the locomotive **along the travelled
+polyline** (`carriage_poses`), so they stay on the track through bends. `vehicle/scene.rs` puts
+it on screen: the class glTF under a moving root, its wheel nodes spun, the carriages as
+separate roots.
+
+### Ground truth
+
+Every `object_tracks.jsonl` object carries `kind` (`person`, `car`, `bus`, `truck`, `train`) and
+`yaw_deg` (ENU, counter-clockwise from east), beside `id`, `enu` and `action`. A train is tracked
+as its locomotive, and its carriages are not tracked. A parked vehicle (no tree) is still only a
+track. `load_bevy_capture(...).object_kinds` (id → kind) and `.object_yaw_deg` (`t_ns` → id →
+degrees) read them, and both are empty for older tracks. How the on-board detectors are scored
+against them: *On-board detectors (measured)* § *Road and rail vehicles*.
+
+### Station, agent and preset
+
+`add_element` takes `VehicleElement {id, vehicle_class, position, yaw_deg, cars,
+behaviour_json}`. The proto field is `vehicle_class` because `class` is a Python keyword, and
+the manifest key stays `class`. The tree is validated by `surmap.simulation.behaviour_tree`. The
+behaviour tools (`set_behaviour`, …) take a vehicle's id as their target. The preset
+`street-traffic` (golden `tests/fixtures/sim_scenario/street-traffic.json`, parsed by the
+renderer's tests) is the shipped block with:
+
+- two cars driving the avenue and one parked;
+- a school-bus-yellow bus and a truck on the cross street;
+- a rail line (`box`, material `ballast`) along the block's west edge, with a six-carriage
+  freight train.
+
+### Verified
+
+Rust tests pin the following. `Drive` never exceeds speed, acceleration or turn rate, and it
+reaches a path's end without overshoot or circling. A scenario replays the same track.
+Carriages stay on the path at their spacing through a 90° bend. Wheel angle follows distance.
+The manifest rules (unknown class, `cars` off a train, a bad `glb`, a tree that sets the wind)
+and the golden `street-traffic.json` hold, and so does the track line with `kind`/`yaw_deg`.
+Python tests pin the same validation, the preset, `add_element` with a vehicle through the
+tool, the capture's kinds and headings, and an agent turn on a real socket that adds a truck
+driving up the avenue. A native still and a 64-frame recording of `street-traffic` were
+reviewed at wrap (2026-11-04):
+
+- the cars drive the avenue, and the bus and truck drive the cross street side by side;
+- the bus's mirror end leads along its travel, which confirms `model_yaw_deg` 180, and its
+  wheels sit on the road;
+- the truck's cab leads;
+- the train stands on its ballast line at the west edge.
 
 ## The stereo rig: one camera profile
 
