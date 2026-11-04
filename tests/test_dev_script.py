@@ -215,6 +215,26 @@ def test_the_agent_serves_the_simulation_page_by_default(tmp_path: pathlib.Path)
     assert f"--sim-dist {sim_dist}" in commands["agent"]
 
 
+def test_the_agent_keeps_its_state_in_the_repo_s_tmp_dir() -> None:
+    # When the stack is planned without options
+    commands = planned_commands()
+
+    # Then the agent's conversations, scenarios and the rest persist in <repo>/tmp/agent
+    assert f"--state-dir {ROOT}/tmp/agent" in commands["agent"]
+
+
+def test_the_repo_s_tmp_dir_is_ignored_by_git() -> None:
+    # When git is asked about a file the agent keeps in <repo>/tmp
+    result = subprocess.run(
+        ["git", "check-ignore", "-q", "tmp/agent/conversations.sqlite"],
+        cwd=ROOT,
+        timeout=DEADLINE_S,
+    )
+
+    # Then it is ignored
+    assert result.returncode == 0
+
+
 def test_the_stereo_bridge_is_off_by_default() -> None:
     # When the stack is planned without options
     commands = planned_commands()

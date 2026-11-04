@@ -125,6 +125,8 @@ __all__ = [
     "build_demo_workspace",
     "conversation_store",
     "default_model_factory",
+    "default_state_dir",
+    "map_scene_store",
     "onboard_models",
     "tool_outputs",
     "usage_log_path",
@@ -216,10 +218,17 @@ class AgentServerConfig:
 
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
+    state_dir: Path | None = None
+    """Where the agent keeps what a conversation leaves behind, so a restart over it brings the
+    chat back: `conversations.sqlite`, `map-scenes.sqlite`, `demo-history.db`, `simulation/`,
+    `agent-tool-outputs/`, `agent-geometry/`, `usage.jsonl`; a store's own setting wins. The
+    command line always sets it (default: the cache root). None keeps conversations and the map
+    scene in memory and the rest under the cache, as tests and embedders build it."""
     history_db: Path | None = None
-    """The demo run history; `<cache_dir>/demo-history.db` when None."""
+    """The demo run history; `<state_dir>/demo-history.db`, else `<cache_dir>/demo-history.db`."""
     conversations_db: Path | None = None
-    """The chat conversations (history, model, replay) in SQLite; in memory when None."""
+    """The chat conversations (history, model, replay) in SQLite;
+    `<state_dir>/conversations.sqlite`, else in memory."""
     cache_dir: Path | None = None
     """The demo scene cache; `$SURMAP_DEMO_CACHE_DIR` or `~/.cache/surmap/demo-datasets`."""
     model_id: str = DEFAULT_MODEL_ID
@@ -234,7 +243,7 @@ class AgentServerConfig:
     """Seconds one execution-policy `timeout_s` unit lasts; 1.0 outside tests."""
     tool_outputs_dir: Path | None = None
     """Where large or requested tool results are saved, a folder per conversation;
-    `<cache_dir>/agent-tool-outputs` when None (on Modal, the Volume)."""
+    `<state_dir>/agent-tool-outputs`, else `<cache_dir>/agent-tool-outputs`."""
     max_inline_output_bytes: int = DEFAULT_MAX_INLINE_BYTES
     """Bytes of JSON a tool result may be before it is saved instead; the command line fills it
     from `$SURMAP_AGENT_MAX_INLINE_OUTPUT_BYTES`."""
@@ -244,7 +253,8 @@ class AgentServerConfig:
     model_factory: ModelFactory | None = None
     """Builds models instead of the registry; the seam tests inject a scripted model through."""
     sim_dir: Path | None = None
-    """The simulation store (`simulation.sqlite` + `library/`); `<cache>/simulation` when None."""
+    """The simulation store (`simulation.sqlite` + `library/`); `<state_dir>/simulation`, else
+    `<cache>/simulation`."""
     sim_assets: Path = Path("examples/bevy-sitl-poc/assets")
     """The Bevy simulation's own assets; simulation tools are off when it is missing."""
     sim_dist: Path | None = None
@@ -285,7 +295,7 @@ def build_simulation_rig(config: AgentServerConfig) -> SimulationRig | None:
     simulation's assets are not where `config.sim_assets` says."""
     if not (config.sim_assets / "scene.json").is_file():
         return None
-    root = config.sim_dir or _cache_root(config) / "simulation"
+    root = config.sim_dir or _state_root(config) / "simulation"
     store = ScenarioStore(
         db_path=root / "simulation.sqlite",
         library_dir=root / "library",
@@ -378,29 +388,50 @@ def agent_sam(config: AgentServerConfig, station: StationControl | None) -> Vide
 def _cache_root(config: AgentServerConfig) -> Path:
     if config.cache_dir is not None:
         return config.cache_dir
-    return Path(os.environ.get("SURMAP_DEMO_CACHE_DIR", Path.home() / ".cache" / "surmap"))
+    return default_state_dir(os.environ)
+
+
+def default_state_dir(environ: Mapping[str, str]) -> Path:
+    """The cache root, where the command line keeps the agent's state when it names no dir:
+    `$SURMAP_DEMO_CACHE_DIR` or `~/.cache/surmap`."""
+    return Path(environ.get("SURMAP_DEMO_CACHE_DIR", Path.home() / ".cache" / "surmap"))
+
+
+def _state_root(config: AgentServerConfig) -> Path:
+    return config.state_dir if config.state_dir is not None else _cache_root(config)
 
 
 def tool_outputs(config: AgentServerConfig) -> ToolOutputs:
     """The root the server's conversations save large or requested tool results under."""
-    directory = config.tool_outputs_dir or _cache_root(config) / "agent-tool-outputs"
+    directory = config.tool_outputs_dir or _state_root(config) / "agent-tool-outputs"
     return ToolOutputs(directory=directory, max_inline_bytes=config.max_inline_output_bytes)
 
 
 def conversation_store(config: AgentServerConfig) -> SqliteConversationStore | None:
-    """The SQLite conversation store for `config.conversations_db`, or None to keep
-    conversations in memory (the local default)."""
-    if config.conversations_db is None:
-        return None
-    return SqliteConversationStore(config.conversations_db)
+    """The SQLite conversation store for `config.conversations_db`, else in the state dir, or
+    None to keep conversations in memory (a config with neither)."""
+    if config.conversations_db is not None:
+        return SqliteConversationStore(config.conversations_db)
+    if config.state_dir is not None:
+        return SqliteConversationStore(config.state_dir / "conversations.sqlite")
+    return None
+
+
+def map_scene_store(config: AgentServerConfig) -> MapSceneStore:
+    """The map scenes, saved in the state dir; in memory without one."""
+    if config.state_dir is None:
+        return MapSceneStore()
+    return MapSceneStore(db_path=config.state_dir / "map-scenes.sqlite")
 
 
 def usage_log_path(config: AgentServerConfig) -> Path:
     """Where the server's usage ledger writes: `$SURMAP_USAGE_LOG` when set, else
-    `<cache_dir>/usage.jsonl` when a cache dir is configured (on Modal that is the
-    Volume, so budgets survive a restart), else the home default."""
+    `<state_dir>/usage.jsonl`, else `<cache_dir>/usage.jsonl` when a cache dir is configured
+    (on Modal that is the Volume, so budgets survive a restart), else the home default."""
     if os.environ.get("SURMAP_USAGE_LOG", "").strip():
         return default_usage_log_path()
+    if config.state_dir is not None:
+        return config.state_dir / "usage.jsonl"
     if config.cache_dir is not None:
         return config.cache_dir / "usage.jsonl"
     return default_usage_log_path()
@@ -456,10 +487,14 @@ def build_demo_workspace(
     """
     detector = agent_sam(config, station)
     cache_dir = config.cache_dir if config.cache_dir is not None else default_cache_dir()
+    state_dir = config.state_dir if config.state_dir is not None else cache_dir
+    history_db = config.history_db
+    if history_db is None and config.state_dir is not None:
+        history_db = config.state_dir / "demo-history.db"
     server = make_demo_server(
         None,
         cache_dir=cache_dir,
-        history_db=config.history_db,
+        history_db=history_db,
         port=0,
         with_rtabmap=False,
         sam_fake=True,
@@ -469,7 +504,7 @@ def build_demo_workspace(
     return DemoWorkspace(
         server,
         detector=detector,
-        geometry=GeometryStore(cache_dir / "agent-geometry"),
+        geometry=GeometryStore(state_dir / "agent-geometry"),
         onboard=onboard_models(config),
     )
 
@@ -512,7 +547,7 @@ def build_agent_description(
         if survey_handlers is not None
         else dict(survey_tool_handlers(workspace))
     )
-    map_handlers: dict[str, Handler] = dict(map_tool_handlers(MapSceneStore()))
+    map_handlers: dict[str, Handler] = dict(map_tool_handlers(map_scene_store(config)))
     sim_handlers: dict[str, Handler] = (
         dict(simulation_tool_handlers(simulation.store, simulation.sources))
         if simulation is not None

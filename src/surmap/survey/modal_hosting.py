@@ -30,7 +30,8 @@ AGENT_WEB_DIST = "/opt/surmap/web"
 AGENT_CACHE = "/cache"
 # The agent's persisted state, all under the cache mount (Volume `surmap-agent-cache`), so a
 # container restart keeps it: the demo run history, the chat conversations, the simulation
-# store (`simulation.sqlite` + `library/`). The usage log joins them via `--cache-dir`.
+# store (`simulation.sqlite` + `library/`). The map scenes, tool outputs and usage log join
+# them via `--cache-dir`, which is also the agent's state dir.
 AGENT_HISTORY_DB = f"{AGENT_CACHE}/demo-history.db"
 AGENT_CONVERSATIONS_DB = f"{AGENT_CACHE}/conversations.sqlite"
 AGENT_SIM_DIR = f"{AGENT_CACHE}/simulation"

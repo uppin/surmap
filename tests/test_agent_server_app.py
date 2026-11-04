@@ -184,12 +184,14 @@ def test_with_no_flags_the_agent_serves_loopback_on_8780_for_the_vite_origin() -
     # When the command line is read
     config = config_from_args(argv, environ={})
 
-    # Then it is the default config: 127.0.0.1:8780, Muse, CORS for localhost:5173
+    # Then it is the default config: 127.0.0.1:8780, Muse, CORS for localhost:5173, the
+    # state kept under the home cache
     assert config == AgentServerConfig(
         host="127.0.0.1",
         port=8780,
         model_id=MUSE,
         cors_origins=("http://localhost:5173",),
+        state_dir=Path.home() / ".cache" / "surmap",
     )
 
 
@@ -212,6 +214,7 @@ def test_flags_set_the_port_model_history_and_fake_sam() -> None:
         model_id="ollama:llama3.2",
         history_db=Path("/data/demo-history.db"),
         cache_dir=Path("/data/demo-datasets"),
+        state_dir=Path("/data/demo-datasets"),
         sam_fake=True,
     )
 
@@ -224,7 +227,9 @@ def test_the_bevy_bridge_port_flag_sets_the_stereo_bridge_port() -> None:
     config = config_from_args(argv, environ={})
 
     # Then the config serves the bridge there
-    assert config == AgentServerConfig(bevy_bridge_port=8773)
+    assert config == AgentServerConfig(
+        bevy_bridge_port=8773, state_dir=Path.home() / ".cache" / "surmap"
+    )
 
 
 def test_a_fireworks_model_id_is_taken_whole_from_the_command_line() -> None:

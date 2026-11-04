@@ -165,7 +165,8 @@ single container is SQLite's only writer): `demo-history.db` (demo runs), the da
 cache and `agent-geometry/`, `simulation.sqlite` + `library/` (`--sim-dir`), the usage
 log `usage.jsonl` (so spend budgets stop resetting), and `conversations.sqlite`
 (`--conversations-db`: each conversation's message history, model and `GetConversation`
-replay). Running turns and jobs are process state and do not survive. The CM5 and the
+replay), `map-scenes.sqlite` (the chat's map: objects, routes, camera, layers) and
+`agent-tool-outputs/` — `/cache` is the agent's `--state-dir`. Running turns and jobs are process state and do not survive. The CM5 and the
 station hold no such state: the CM5's RTAB-Map belongs to a live stream, and the
 station's only file is the SAM checkpoint, already on `surmap-sam3`.
 
