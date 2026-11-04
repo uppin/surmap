@@ -37,6 +37,14 @@ pub struct GrassField {
 #[derive(Component)]
 pub struct Scattering;
 
+/// Where a stand's grass clumps stand (ENU metres): a pure function of the stand — its own
+/// `seed`, rectangle and density — and the species' `plants_per_unit`; the renderer instances
+/// exactly these, so no global seed decides a stand's grass.
+pub fn grass_instances(stand: &Vegetation, def: &SpeciesDef) -> Vec<Vec2> {
+    let _ = (stand, def);
+    todo!("per-stand grass placement")
+}
+
 pub(super) fn sow_grass(
     commands: &mut Commands,
     stand: &Vegetation,

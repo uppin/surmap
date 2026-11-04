@@ -49,6 +49,19 @@ pub struct FigureDef {
     pub steps_per_s: f32,
     /// The walking speed `steps_per_s` is quoted at, m/s.
     pub reference_speed_m_s: f32,
+    /// A dark visor on the front of the head, so the heading reads.
+    #[serde(default)]
+    pub visor: Option<Visor>,
+}
+
+/// A box on the figure (`size_m` x, y, z in the figure's frame; `offset_m` from its feet, −z is
+/// its front), solid `colour` (sRGB).
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Visor {
+    pub size_m: [f32; 3],
+    pub offset_m: [f32; 3],
+    pub colour: [f32; 3],
 }
 
 impl FigureDef {

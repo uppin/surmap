@@ -27,6 +27,8 @@ mod ui;
 mod vegetation;
 mod wildfire;
 mod wind;
+#[cfg(test)]
+mod sweep_tests;
 mod wire;
 mod world;
 

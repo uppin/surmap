@@ -52,6 +52,21 @@ pub struct FireLook {
     pub glow_inset_m: f32,
     pub soot: Soot,
     pub light: BlazeLight,
+    /// Each window's glow is scaled within `1 ± glow_variation`, seeded per window.
+    #[serde(default)]
+    pub glow_variation: f32,
+    /// How fast a window's glow flickers, Hz.
+    #[serde(default)]
+    pub glow_flicker_hz: f32,
+}
+
+impl FireLook {
+    /// The scale of window `window`'s glow in building `building_seed` at `t_s`: in
+    /// `[1 − glow_variation, 1 + glow_variation]`, different per window, flickering in time.
+    pub fn window_glow(&self, building_seed: u64, window: u32, t_s: f32) -> f32 {
+        let _ = (building_seed, window, t_s);
+        todo!("per-window glow")
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]

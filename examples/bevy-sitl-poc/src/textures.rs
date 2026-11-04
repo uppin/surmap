@@ -97,6 +97,13 @@ pub fn tiled_material(
     material
 }
 
+/// A glTF metallic-roughness map from a greyscale roughness map (R used) and a preset's scalar
+/// `metallic`: R 255, G the roughness, B `metallic`·255, A 255 — so roughness-only sets keep metal.
+pub fn pack_metallic_roughness(roughness_rgba: &[u8], metallic: f32) -> Vec<u8> {
+    let _ = (roughness_rgba, metallic);
+    todo!("pack metallic-roughness")
+}
+
 /// Box-filtered mip chain for a tightly packed RGBA8 image.
 pub fn build_mip_chain(data: &[u8], width: u32, height: u32) -> (Vec<u8>, u32) {
     let mut out = data.to_vec();

@@ -19,7 +19,7 @@ use crate::world::{build_world, ManifestAsset, SceneState};
 
 mod assets;
 mod fire_view;
-mod look;
+pub(crate) mod look;
 mod meshes;
 mod roofs;
 mod spawn;

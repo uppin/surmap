@@ -87,6 +87,23 @@ pub struct FxDef {
     /// The glow a fire casts on its surroundings (read from the fire's flames effect).
     #[serde(default)]
     pub light: Option<LightDef>,
+    /// Animate each particle through a sprite sheet (flame tongues); `None` draws `shape`.
+    #[serde(default)]
+    pub flipbook: Option<Flipbook>,
+    /// Screenshot mode: advance the effect this many seconds before the still, so a plume is as
+    /// old as the scene it is shot in.
+    #[serde(default)]
+    pub prewarm_s: f32,
+}
+
+/// A sprite sheet of `columns` × `rows` frames (`textures/fx/*.png`), played at `fps`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Flipbook {
+    pub texture: String,
+    pub columns: u32,
+    pub rows: u32,
+    pub fps: f32,
 }
 
 /// Burnt ground: a flat mesh above the terrain, its outer rim glowing with the front.

@@ -31,3 +31,5 @@ renderer refuses a fire it cannot draw by name.
 
 Now: decide burn-or-refuse, then either the per-floor legacy meshes with a planner-reviewed still,
 or a station rule mirroring the renderer's.
+
+**Consent:** deferred by the developer at the `sim-disaster-2` TODO gate (2026-11-04): not carried by the sweep node; stays recorded debt.
