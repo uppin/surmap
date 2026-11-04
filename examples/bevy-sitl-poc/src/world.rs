@@ -136,18 +136,29 @@ pub fn enu(x: f32, y: f32, z: f32) -> Vec3 {
     Vec3::new(x, z, -y)
 }
 
-/// Half-extents of the map floor's fixed collider, centred under the floor
-/// plane at -0.02 m: it spans the floor and its top is at 0 m, the level the
-/// preset ground box's top used to be.
-pub fn floor_collider_half(east_m: f32, north_m: f32) -> [f32; 3] {
-    [east_m / 2.0, 0.02, north_m / 2.0]
+/// The map floor's fixed collider in world space: its centre and half-extents
+/// (x east, y up, z south). It is spawned unrotated — the floor plane's -90°
+/// X rotation would stand a cuboid on edge as a wall — as a slab spanning the
+/// floor whose top is at 0 m, the level the preset ground box's top used to be.
+pub fn floor_collider(east_m: f32, north_m: f32) -> (Vec3, [f32; 3]) {
+    (enu(0.0, 0.0, -0.02), [east_m / 2.0, 0.02, north_m / 2.0])
+}
+
+/// The credit line the scene shows while a map floor is down: the floor's own
+/// attribution, or OpenStreetMap's when the manifest records none.
+pub fn floor_attribution_text(floor: &crate::scene_manifest::MapFloor) -> String {
+    floor
+        .attribution
+        .clone()
+        .unwrap_or_else(|| "© OpenStreetMap contributors".to_owned())
 }
 
 /// A hand-edited manifest may still carry the preset `ground` box under a map
 /// floor; its opaque top would hide the floor, so the renderer skips it when
 /// a floor is present (the station removes it in `set_map_floor`).
 pub fn is_hidden_by_floor(element: &Element, has_floor: bool) -> bool {
-    has_floor && matches!(element, Element::Box(e) if e.id == "ground")
+    has_floor
+        && matches!(element, Element::Box(e) if e.ground || matches!(e.id.as_str(), "ground" | "block-ground" | "apron"))
 }
 
 /// splitmix64: a tiny deterministic generator (no dependency).
@@ -257,17 +268,33 @@ pub fn build_world(
             ..default()
         });
         let mesh = meshes.add(Rectangle::new(east as f32, north as f32));
-        let half = floor_collider_half(east as f32, north as f32);
         commands.spawn((
             Name::new("Map floor"),
             Mesh3d(mesh),
             MeshMaterial3d(material),
             Transform::from_translation(enu(0.0, 0.0, -0.02))
                 .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
-            // The floor is what the scene stands on now that the preset ground
-            // box is gone: a fixed collider whose top is at 0 m.
+        ));
+        // The floor is what the scene stands on now that the preset ground box
+        // is gone. Its collider is a separate, unrotated entity: on the rotated
+        // plane entity a cuboid would stand on edge as a wall through the origin.
+        let (centre, half) = floor_collider(east as f32, north as f32);
+        commands.spawn((
+            Name::new("Map floor collider"),
             RigidBody::Fixed,
             Collider::cuboid(half[0], half[1], half[2]),
+            Transform::from_translation(centre),
+        ));
+        commands.spawn((
+            Text::new(floor_attribution_text(floor)),
+            TextFont { font_size: 11.0, ..default() },
+            TextColor(Color::WHITE),
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(12.0),
+                bottom: Val::Px(12.0),
+                ..default()
+            },
         ));
     }
     commands.insert_resource(Wildfire::new(manifest.weather.as_ref(), &manifest.fires, &assets, &mut meshes, &mut state.pending));
