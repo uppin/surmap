@@ -100,6 +100,7 @@ impl VehicleActor {
             action: self.body.runner.as_ref().and_then(|runner| runner.action()).map(str::to_owned),
             kind: self.class.kind().to_owned(),
             yaw_deg: drive.heading_rad.to_degrees(),
+            pose: None,
         })
     }
 }

@@ -54,8 +54,8 @@ from surmap.simulation.manifest_checks import ScenarioInvalid as ScenarioInvalid
 from surmap.simulation.manifest_checks import is_relative_path
 from surmap.simulation.manifest_checks import number as _number
 from surmap.simulation.manifest_checks import object_list as _list
-from surmap.simulation.vehicles import street_traffic, validate_vehicle
 from surmap.simulation.people import earthquake_survivors, validate_person_look
+from surmap.simulation.vehicles import street_traffic, validate_vehicle
 
 if TYPE_CHECKING:
     from surmap.simulation.scenario_store import StoredAsset

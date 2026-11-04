@@ -89,8 +89,8 @@
   },
   "models": [
     {
-      "id": "car-covered-0",
-      "glb": "models/covered_car/covered_car_2k.gltf",
+      "id": "car-0",
+      "glb": "models/car_concept/CarConcept.glb",
       "position_enu": [
         4.0,
         24.0,
@@ -99,11 +99,12 @@
       "yaw_deg": 28.6,
       "collider": "box",
       "ground_truth": true,
-      "kind": "car"
+      "kind": "car",
+      "normal_maps": false
     },
     {
-      "id": "car-covered-1",
-      "glb": "models/covered_car/covered_car_2k.gltf",
+      "id": "car-1",
+      "glb": "models/car_concept/CarConcept.glb",
       "position_enu": [
         -4.0,
         48.0,
@@ -112,11 +113,12 @@
       "yaw_deg": -51.6,
       "collider": "box",
       "ground_truth": true,
-      "kind": "car"
+      "kind": "car",
+      "normal_maps": false
     },
     {
-      "id": "car-covered-2",
-      "glb": "models/covered_car/covered_car_2k.gltf",
+      "id": "car-2",
+      "glb": "models/car_concept/CarConcept.glb",
       "position_enu": [
         12.0,
         40.0,
@@ -125,7 +127,8 @@
       "yaw_deg": 11.5,
       "collider": "box",
       "ground_truth": true,
-      "kind": "car"
+      "kind": "car",
+      "normal_maps": false
     }
   ],
   "elements": [
