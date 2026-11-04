@@ -22,4 +22,9 @@
   isolation, hub restart), one command test in `tests/test_modal_survey_apps.py`.
 
 Docs: [docs/modal.md](../../modal.md) §5, [docs/agent.md](../../agent.md) (*Limits*, flags).
-Not yet deployed: `modal deploy` + a live restart check on `ginas-bb` still to run.
+
+**Verified live** (`ginas-bb`, 2026-11-04): deployed, one conversation turn stored
+(`conversations.sqlite`: history, model, replay; `usage.jsonl`: one Meta record), app
+stopped to 404 and redeployed into a fresh container — the same conversation, replay
+and reply intact — and a follow-up turn in the new container answered from the restored
+history, appending at the next seq with a second usage record.
