@@ -868,6 +868,14 @@ cd web/agent-chat && yarn local-install && yarn dev   # http://localhost:5173
   `AgentJobs` with the conversation header. Turns a finished job starts
   arrive on the `WatchConversation` stream, opened once the server knows
   the conversation, and begin with a job notice.
+- **Simulation pane.** When the agent creates a simulation in the
+  conversation — a succeeded `create_scenario`, or a reply reporting the
+  `/sim/?scenario=<id>` URL of a scene a subagent built — a right-side pane
+  inside the chat shows the scenario's name, version and credits, an
+  **Open simulation** link, and the live Bevy page at `/sim/` in an iframe;
+  the Jobs panel moves below it. Later edits to that scenario bump the
+  version and reload the iframe. No creation, no pane. Derivation:
+  `src/view-model/simulation.ts`; component: `src/components/SimulationPane.tsx`.
 - **Subagent messages.** A `subagent_message` is a dashed card headed
   `Subagent sa-1 · scene-builder` with the message as Markdown, mid-turn or opening a turn.
 - **Previews.** A tool image is drawn inline from its bytes; an object

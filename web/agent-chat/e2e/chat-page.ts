@@ -74,4 +74,13 @@ export class ChatPage {
   geometryPreview(): Locator {
     return this.page.getByRole("figure", { name: "Object geometry preview" });
   }
+
+  /** The right-side simulation pane shown when the agent creates a simulation. */
+  simulation(): Locator {
+    return this.page.getByRole("region", { name: "Simulation" });
+  }
+
+  simulationFrame(name: string): Locator {
+    return this.page.getByTitle(`Simulation: ${name}`);
+  }
 }
