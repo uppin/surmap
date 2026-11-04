@@ -32,6 +32,10 @@ Put in it:
   the place or district, buildings, how many people and what they do, weather, wind, fire start
   times, assets to use or avoid.
 - **Which scenario** — a new one (and the name to give it), or the id of the one to change.
+- **The drone nests.** Every scene needs at least one: the scene has no drone of its own, and its
+  nests' drones are the only ones that can fly in it. Pass on any nests or drone counts the
+  person asked for. Otherwise the brief says one nest with one drone, placed where the
+  subagent judges best.
 - **What you decided for them**, so it does not ask: when the person left something open and a
   sensible default exists, choose it and say so in the brief.
 
