@@ -161,7 +161,8 @@ def _check_point(point: object, kind: str) -> None:
 
 
 def resolve_target(manifest: Mapping[str, object], target_id: str) -> str:
-    """Whether a behaviour tree can be set on `target_id` here: "wind" or "person", else refused."""
+    """Whether a behaviour tree can be set on `target_id` here: "wind", "person" or "vehicle", else
+    refused."""
     if target_id == "wind":
         if not isinstance(manifest.get("weather"), dict):
             raise ScenarioInvalid(
@@ -170,11 +171,11 @@ def resolve_target(manifest: Mapping[str, object], target_id: str) -> str:
         return "wind"
     for element in object_list(manifest, "elements"):
         if element.get("id") == target_id:
-            if element.get("kind") == "person":
-                return "person"
+            if element.get("kind") in ("person", "vehicle"):
+                return str(element["kind"])
             raise ScenarioInvalid(
                 f"{target_id!r} is a {element.get('kind')}: "
-                "only people and the wind take behaviour trees"
+                "only people, vehicles and the wind take behaviour trees"
             )
     raise ScenarioInvalid(f"no person or wind {target_id!r} in this scenario")
 

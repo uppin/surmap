@@ -432,7 +432,23 @@ impl SceneManifest {
     /// Each vehicle: `cars` only on a train, a `glb` override that is a relative glTF path, and a
     /// tree valid for a body on the ground.
     fn validate_vehicles(&self) -> Result<(), ManifestError> {
-        // TODO(pr-1): implement
+        use crate::behaviour::Target;
+        use crate::vehicle::VehicleClass;
+        for element in &self.elements {
+            let Element::Vehicle(vehicle) = element else {
+                continue;
+            };
+            let refused = |reason: String| ManifestError::Invalid(format!("vehicle {}: {reason}", vehicle.id));
+            if vehicle.cars > 0 && vehicle.class != VehicleClass::Train {
+                return Err(refused(format!("cars ({}) only on a train", vehicle.cars)));
+            }
+            if let Some(glb) = &vehicle.glb {
+                expect_suffix(glb, ".glb").or_else(|_| expect_suffix(glb, ".gltf"))?;
+            }
+            if let Some(tree) = &vehicle.behaviour {
+                tree.validate(Target::Object).map_err(refused)?;
+            }
+        }
         Ok(())
     }
 
@@ -449,8 +465,10 @@ impl SceneManifest {
             ]);
         }
         for element in &self.elements {
-            if let Element::Vegetation(stand) = element {
-                paths.push(stand.species.clone());
+            match element {
+                Element::Vegetation(stand) => paths.push(stand.species.clone()),
+                Element::Vehicle(vehicle) => paths.extend(vehicle.glb.clone()),
+                _ => {}
             }
         }
         if let Some(hdri) = &self.environment.hdri {

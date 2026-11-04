@@ -22,6 +22,7 @@ pub struct Runner {
     memory: Memory,
     finished: Option<Status>,
     action: Option<&'static str>,
+    goal: Option<super::Goal>,
 }
 
 /// What one node remembers between ticks: a composite's cursor, a leaf's timer and goal, and
@@ -52,6 +53,7 @@ struct Env<'a, 'w> {
     position: &'a mut Vec2,
     wind: &'a mut WindModel,
     action: &'a mut Option<&'static str>,
+    goal: &'a mut Option<super::Goal>,
     /// Wildfire fronts and other burning ground, as polygons, at `world.t_s`.
     fronts: Vec<Vec<Vec2>>,
 }
@@ -86,6 +88,7 @@ impl Runner {
             memory: Memory::default(),
             finished: None,
             action: None,
+            goal: None,
         }
     }
 
@@ -95,18 +98,21 @@ impl Runner {
             return status;
         }
         self.action = None;
+        self.goal = None;
         let mut env = Env {
             world,
             dt,
             position: &mut self.position,
             wind: &mut self.wind,
             action: &mut self.action,
+            goal: &mut self.goal,
             fronts: fronts(world),
         };
         let status = tick_node(&self.tree.root, &mut self.memory, &mut env);
         if status != Status::Running {
             self.finished = Some(status);
             self.action = None;
+            self.goal = None;
         }
         status
     }
@@ -119,8 +125,7 @@ impl Runner {
     /// The running leaf's goal at the last tick; `None` when it is not heading anywhere (`idle`,
     /// a condition, a finished tree).
     pub fn goal(&self) -> Option<super::Goal> {
-        // TODO(pr-1): implement
-        todo!("Runner::goal")
+        self.goal
     }
 }
 
@@ -181,7 +186,7 @@ fn tick_node(node: &Node, memory: &mut Memory, env: &mut Env) -> Status {
                 *memory = Memory::default();
                 Status::Success
             } else {
-                walk_towards(env, goal, *speed_m_s);
+                walk_towards(env, goal, *speed_m_s, true);
                 running(env, "move_to")
             }
         }
@@ -193,7 +198,8 @@ fn tick_node(node: &Node, memory: &mut Memory, env: &mut Env) -> Status {
                 *memory = Memory::default();
                 Status::Success
             } else {
-                walk_towards(env, Vec2::from_array(enu[memory.index]), *speed_m_s);
+                let stop = memory.index + 1 == enu.len();
+                walk_towards(env, Vec2::from_array(enu[memory.index]), *speed_m_s, stop);
                 running(env, "follow_path")
             }
         }
@@ -347,7 +353,7 @@ fn wander(radius_m: f32, speed_m_s: f32, seed: u64, memory: &mut Memory, env: &m
             goal
         }
     };
-    walk_towards(env, goal, speed_m_s);
+    walk_towards(env, goal, speed_m_s, false);
     running(env, "wander")
 }
 
@@ -418,7 +424,14 @@ fn arrived(env: &Env, goal: Vec2) -> bool {
     (*env.position).distance(goal) <= ARRIVED_M
 }
 
-fn walk_towards(env: &mut Env, goal: Vec2, speed_m_s: f32) {
+/// Walks toward `goal` at `speed_m_s`, and records it as the running leaf's goal: `stop` when
+/// the body must end on it (a path's end, a `move_to`), not merely drive through it.
+fn walk_towards(env: &mut Env, goal: Vec2, speed_m_s: f32, stop: bool) {
+    *env.goal = Some(super::Goal {
+        point: goal,
+        speed_m_s,
+        stop,
+    });
     let to_goal = goal - *env.position;
     let stride = (speed_m_s * env.dt).min(to_goal.length());
     *env.position += to_goal.normalize_or_zero() * stride;

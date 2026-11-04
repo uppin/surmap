@@ -53,11 +53,12 @@ from surmap.simulation.manifest_checks import Manifest as Manifest
 from surmap.simulation.manifest_checks import ScenarioInvalid as ScenarioInvalid
 from surmap.simulation.manifest_checks import number as _number
 from surmap.simulation.manifest_checks import object_list as _list
+from surmap.simulation.vehicles import street_traffic, validate_vehicle
 
 if TYPE_CHECKING:
     from surmap.simulation.scenario_store import StoredAsset
 
-ELEMENT_KINDS = ("box", "collapsed_building", "building", "person", "vegetation")
+ELEMENT_KINDS = ("box", "collapsed_building", "building", "person", "vegetation", "vehicle")
 COLLIDERS = ("none", "box", "trimesh")
 
 
@@ -191,6 +192,8 @@ def validate_manifest(manifest: Mapping[str, object]) -> None:
             _validate_vegetation(element)
         if element.get("kind") == "person" and element.get("behaviour") is not None:
             validate_behaviour(element["behaviour"], "object")
+        if element.get("kind") == "vehicle":
+            validate_vehicle(element)
     if scatters > 1:
         raise ScenarioInvalid("at most one element may scatter debris")
     if "weather" in manifest:
@@ -478,4 +481,5 @@ def load_presets(assets_dir: Path) -> dict[str, Manifest]:
         "wildfire-edge": edge,
         "wildfire-evacuation": _evacuation(edge),
         "flood-street": _flood_street(block),
+        "street-traffic": street_traffic(block),
     }

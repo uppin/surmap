@@ -276,8 +276,24 @@ def _element(request: pb.AddElementRequest) -> dict[str, object]:
             "density_per_100m2": stand.density_per_100m2,
             "seed": stand.seed,
         }
+    if which == "vehicle":
+        vehicle = request.vehicle
+        element = {
+            "kind": "vehicle",
+            "id": vehicle.id,
+            "class": vehicle.vehicle_class,
+            "position_enu": _xyz(vehicle.position),
+        }
+        if vehicle.HasField("yaw_deg"):
+            element["yaw_deg"] = vehicle.yaw_deg
+        if vehicle.cars:
+            element["cars"] = vehicle.cars
+        if vehicle.behaviour_json:
+            element["behaviour"] = _tree_json(vehicle.behaviour_json, "vehicle behaviour")
+        return element
     raise ConnectError(
-        Code.INVALID_ARGUMENT, "give one of box, building, collapsed_building, person, vegetation"
+        Code.INVALID_ARGUMENT,
+        "give one of box, building, collapsed_building, person, vegetation, vehicle",
     )
 
 

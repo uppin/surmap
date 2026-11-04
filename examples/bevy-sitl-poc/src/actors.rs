@@ -25,6 +25,7 @@ use crate::building::BuildingClock;
 use crate::building_fire::BuildingFires;
 use crate::fire::FireSpec;
 use crate::scene_manifest::Weather;
+use crate::vehicle::scene::{VehicleActor, VehicleAsset, VehicleClasses};
 use crate::wildfire::{SimClock, Wildfire};
 use crate::wind::WindModel;
 use crate::wire::GroundTruthObject;
@@ -155,6 +156,12 @@ pub fn bevy_yaw(heading: Vec2) -> f32 {
     (-heading.x).atan2(heading.y)
 }
 
+/// The ENU heading (degrees counter-clockwise from east) of a Bevy yaw about +Y: the inverse of
+/// `bevy_yaw`.
+pub fn enu_yaw_deg(bevy: f32) -> f32 {
+    bevy.cos().atan2(-bevy.sin()).to_degrees()
+}
+
 /// The vertical bob of a figure at `now_s`: one bob per step, `bob_m` high at the top of each.
 /// Steps per second scale with speed against the reference speed; standing still never bobs.
 pub fn bob(def: &FigureDef, speed_m_s: f32, phase: f32, now_s: f32) -> f32 {
@@ -219,6 +226,8 @@ pub fn track_line(t_ns: u64, wind: Vec2, bodies: &[Body]) -> String {
                 "id": body.id,
                 "enu": [body.enu.x, body.enu.y, body.enu.z],
                 "action": body.action,
+                "kind": body.kind,
+                "yaw_deg": body.yaw_deg,
             })
         })
         .collect();
@@ -308,9 +317,8 @@ impl Figure {
             id: self.id.clone(),
             enu: Vec3::new(runner.position.x, runner.position.y, self.ground_z),
             action: runner.action().map(str::to_owned),
-            // TODO(pr-1): implement — the figure's facing.
             kind: "person".to_owned(),
-            yaw_deg: 0.0,
+            yaw_deg: enu_yaw_deg(self.turn.to),
         })
     }
 }
@@ -387,6 +395,9 @@ pub fn tick_behaviours(
     buildings: BuildingClock,
     mut behaviour: ResMut<Behaviour>,
     mut figures: Query<&mut Figure>,
+    classes: Option<Res<VehicleClasses>>,
+    defs: Res<Assets<VehicleAsset>>,
+    mut vehicles: Query<&mut VehicleActor>,
 ) {
     let (Some(look), Some(mut scene)) = (look, scene) else {
         return;
@@ -408,6 +419,7 @@ pub fn tick_behaviours(
             &mut scene,
             fires.as_deref_mut(),
             &mut figures,
+            (classes.as_deref(), &*defs, &mut vehicles),
             gait.yaw_ease_s,
         );
         behaviour.ticks += 1;
@@ -420,6 +432,7 @@ fn tick_once(
     scene: &mut Wildfire,
     buildings: Option<&mut BuildingFires>,
     figures: &mut Query<&mut Figure>,
+    (classes, defs, vehicles): (Option<&VehicleClasses>, &Assets<VehicleAsset>, &mut Query<&mut VehicleActor>),
     yaw_ease_s: f32,
 ) {
     let fires: Vec<FireSpec> = scene.fire_specs();
@@ -446,6 +459,7 @@ fn tick_once(
     let objects: Vec<(String, Vec2)> = figures
         .iter()
         .map(|figure| (figure.id.clone(), figure.position()))
+        .chain(vehicles.iter().map(|vehicle| (vehicle.id.clone(), vehicle.body.drive.position)))
         .collect();
     let world = World {
         t_s,
@@ -456,6 +470,13 @@ fn tick_once(
     };
     for mut figure in figures.iter_mut() {
         figure.step(&world, yaw_ease_s);
+    }
+    if let Some(classes) = classes {
+        for mut vehicle in vehicles.iter_mut() {
+            if let Some(def) = classes.def(vehicle.class, defs) {
+                vehicle.body.tick(def, &world, DT);
+            }
+        }
     }
 }
 

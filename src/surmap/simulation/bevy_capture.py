@@ -39,8 +39,8 @@ class BevyCapture:
     object_tracks: dict[int, dict[str, Vec3]] = field(default_factory=dict)
     wind: dict[int, tuple[float, float]] = field(default_factory=dict)
     # What each tracked body is (`person`, `car`, `train`, …), by id; and each frame's heading
-    # (ENU degrees counter-clockwise from east, by id), keyed by `t_ns`.
-    # TODO(pr-1): implement — read from `object_tracks.jsonl`.
+    # (ENU degrees counter-clockwise from east, by id), keyed by `t_ns`. Empty for tracks that
+    # predate them.
     object_kinds: dict[str, str] = field(default_factory=dict)
     object_yaw_deg: dict[int, dict[str, float]] = field(default_factory=dict)
     # Each frame's burning and burnt floors per building (`(burning, burnt)` by id), keyed by
@@ -254,7 +254,9 @@ def load_bevy_capture(root: Path) -> BevyCapture:
         )
     profile_path = root / "camera.json"
     camera = load_camera_profile(profile_path) if profile_path.is_file() else None
-    object_tracks, wind = _load_object_tracks(root / "object_tracks.jsonl")
+    object_tracks, wind, object_kinds, object_yaw_deg = _load_object_tracks(
+        root / "object_tracks.jsonl"
+    )
     return BevyCapture(
         calibration=calibration,
         objects=tuple(objects),
@@ -263,6 +265,8 @@ def load_bevy_capture(root: Path) -> BevyCapture:
         fire_perimeters=_load_fire_perimeters(root / "fire_perimeter.jsonl"),
         object_tracks=object_tracks,
         wind=wind,
+        object_kinds=object_kinds,
+        object_yaw_deg=object_yaw_deg,
         building_fires=_load_building_fires(root / "building_fires.jsonl"),
     )
 
@@ -302,12 +306,20 @@ def _load_building_fires(
 
 def _load_object_tracks(
     path: Path,
-) -> tuple[dict[int, dict[str, Vec3]], dict[int, tuple[float, float]]]:
-    """`object_tracks.jsonl`: one `{t_ns, wind_enu, objects}` line per frame; objects by id."""
+) -> tuple[
+    dict[int, dict[str, Vec3]],
+    dict[int, tuple[float, float]],
+    dict[str, str],
+    dict[int, dict[str, float]],
+]:
+    """`object_tracks.jsonl`: one `{t_ns, wind_enu, objects}` line per frame; objects by id, with
+    each body's `kind` and `yaw_deg` where the line carries them."""
     if not path.is_file():
-        return {}, {}
+        return {}, {}, {}, {}
     tracks: dict[int, dict[str, Vec3]] = {}
     wind: dict[int, tuple[float, float]] = {}
+    kinds: dict[str, str] = {}
+    yaw: dict[int, dict[str, float]] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
@@ -318,14 +330,20 @@ def _load_object_tracks(
         if not isinstance(raw_objects, list):
             raise ValueError("objects must be a list")
         by_id: dict[str, Vec3] = {}
+        headings: dict[str, float] = {}
         for raw in raw_objects:
             body = _as_obj(raw, "tracked object")
             body_id = body.get("id")
             if not isinstance(body_id, str):
                 raise ValueError("a tracked object needs an id")
             by_id[body_id] = _vec(body.get("enu"))
+            if isinstance(body.get("kind"), str):
+                kinds[body_id] = str(body["kind"])
+            if "yaw_deg" in body:
+                headings[body_id] = _num(body, "yaw_deg")
         tracks[t_ns] = by_id
-    return tracks, wind
+        yaw[t_ns] = headings
+    return tracks, wind, kinds, yaw
 
 
 def _load_fire_perimeters(path: Path) -> dict[int, dict[str, tuple[tuple[float, float], ...]]]:

@@ -120,6 +120,8 @@ fn main() {
         .init_asset_loader::<fxdef::SpeciesLoader>()
         .init_asset::<actors::FigureAsset>()
         .init_asset_loader::<actors::FigureLoader>()
+        .init_asset::<vehicle::scene::VehicleAsset>()
+        .init_asset_loader::<vehicle::scene::VehicleLoader>()
         .init_resource::<actors::Behaviour>()
         .init_resource::<fx::SoftDiscs>()
         .init_resource::<prewarm::Prewarm>()
@@ -181,6 +183,10 @@ fn main() {
                 actors::attach_bodies,
                 actors::pose_figures,
                 actors::attach_visors,
+                vehicle::scene::attach_vehicles,
+                vehicle::scene::tint_vehicles,
+                vehicle::scene::spin_wheels,
+                vehicle::scene::place_vehicles,
             )
                 .chain()
                 .after(build_world),
