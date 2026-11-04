@@ -1162,8 +1162,8 @@ default pose of `CloudViewer`'s Follow framing).
 2026-11-04: V1 — `tests/test_sim_live_drone_map.py` (renderer, perception, the route over the real
 agent server with a fake fleet page and fake maps) and the chat's `DroneMapPane` / `App` /
 adapter tests pass. A synthetic street rendered through `render_follow_view` was inspected by eye.
-V4 in the browser against the real sidecar is still to run (`scripts/dev.sh --bridge`, launch a
-drone, see the pane appear and grow).
+V4 in the browser against the real sidecar was planned (`scripts/dev.sh --bridge`, launch a
+drone, see the pane appear and grow) and skipped at the developer's decision; it has not run.
 
 ## The stereo rig: one camera profile
 

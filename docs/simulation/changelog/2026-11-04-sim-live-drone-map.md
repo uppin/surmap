@@ -12,4 +12,4 @@
 - Perception: `StreamingBackend.map_cloud()` joins the protocol; `DroneSession` keeps its last
   odometry pose; `FleetPerception.drone_map()`.
 - Verification: pytest 2612 passed / 38 skipped, vitest 181; ruff, mypy, eslint (2 existing
-  warnings), tsc clean. Browser V4 against the real sidecar not yet run.
+  warnings), tsc clean. Browser V4 against the real sidecar skipped at the developer's decision (not run).
