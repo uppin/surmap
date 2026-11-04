@@ -577,7 +577,7 @@ end to end. Open work:
 
 ## Vehicles
 
-Cars, buses, trucks and trains drive. Each is a `vehicle` element of a class: a pinned glTF,
+Cars, buses, trucks and trains drive, and boats and ships sail on water (*Boats and ships*). Each is a `vehicle` element of a class: a pinned glTF,
 moved by the same behaviour trees people use (*Behaviour trees*), with speed, acceleration,
 braking and turning limited the way a real vehicle's are. A train runs as a locomotive with
 carriages trailing it along its path. Moving vehicles are layered ground truth for the survey,
@@ -604,7 +604,7 @@ follow their path, not a rail graph, so there is no switching and no collision.
 
 | Field | Meaning |
 |---|---|
-| `class` | `car` \| `bus` \| `truck` \| `train`; picks `vehicle/<class>.vehicle.json` |
+| `class` | `car` \| `bus` \| `truck` \| `train` \| `boat` \| `ship`; picks `vehicle/<class>.vehicle.json` |
 | `position_enu`, `yaw_deg` | the start pose (yaw counter-clockwise from east, as for `models`) |
 | `behaviour` | optional tree, validated as a ground body's (no `set_wind`); parked without one |
 | `glb` | optional override of the class glTF (a relative asset path, `.glb` / `.gltf`), e.g. a station-library asset |
@@ -641,6 +641,40 @@ their download links are signed and expire. The bus is the one non-CC0 vehicle a
 It is one coach mesh, so its `wheel_nodes` is empty and its wheels do not spin. Its nose is +Z
 (`model_yaw_deg` 180), the end with the mirror arms.
 
+### Boats and ships
+
+`boat` and `ship` are vehicle classes with `"medium": "water"`. They are driven by the same trees
+and the same `Drive` limits as the road classes, and they ride a water surface instead of the
+ground:
+
+- **Water** is a `box` with `"water": true` (an explicit flag, because material keys are
+  free-form). A vessel floats on the top of the box it starts in.
+- **Validation** (`scene_manifest/water.rs`, and `surmap.simulation.water` for the station): a
+  vessel must start on water, and every `move_to` / `follow_path` point must lie on water. A
+  vessel's tree may not contain `wander` or `flee_from_fire`, whose points are not known at load.
+  A road or rail class may not start on water. A refused vessel is named with the reason.
+- **Sea state** (`sea.rs`, pure, kinematic, no buoyancy physics): wave height follows the
+  scenario's base wind speed (a 100 m fetch, capped at 1 m), and the period runs from 2.5 to 6 s.
+  Three swells give each vessel heave, pitch and roll, scaled by its class's `wave_response` and
+  phased by its id, so a still at `--at t` and a recording replay identically. The sea follows
+  the base wind, not the live (behaviour-tree) wind.
+- **Class fields** beside the road ones: `medium` (`water`), `draft_m`, `wave_response` (required
+  for a water class), and `keel_below_origin_m`, which lifts the model so its keel sits on the
+  surface. `wheel_nodes` is empty.
+
+| Class | Model (licence) | Size (m) | Max speed · accel · brake · turn | Draft · wave response |
+|---|---|---|---|---|
+| `boat` | Quaternius boat (CC0), `model_scale` 0.56, `model_yaw_deg` 180 | 5.0 × 2.6 × 1.1 | 8 m/s · 1.5 · 1.0 m/s² · 25°/s | 0.6 m · 1.0 |
+| `ship` | Quaternius ship (CC0), `model_scale` 3.9, `model_yaw_deg` 270 | 60.0 × 20.7 × 44.9 | 7 · 0.1 · 0.08 · 2 | 4.0 m · 0.1 |
+
+Kenney's *Watercraft Kit* was the first choice, but its download refuses a scripted fetch, so the
+equivalent Quaternius CC0 pair is pinned from poly.pizza. The ship is a three-masted sailing
+ship, the only CC0 ship that could be pinned. Its masts make it 44.9 m tall.
+
+The preset `flood-rescue` (golden `tests/fixtures/sim_scenario/flood-rescue.json`) is the flood
+with a 10 m × 100 m water channel and two rescue boats shuttling along it in opposite
+directions. It has no ship, because a 20.7 m beam does not fit the channel.
+
 ### Kinematics (`vehicle.rs`, pure, deterministic)
 
 The tree's running leaf proposes a **goal** (`behaviour::Goal`: a point, a speed, and `stop` at a
@@ -667,7 +701,7 @@ separate roots.
 
 ### Ground truth
 
-Every `object_tracks.jsonl` object carries `kind` (`person`, `car`, `bus`, `truck`, `train`) and
+Every `object_tracks.jsonl` object carries `kind` (`person`, `car`, `bus`, `truck`, `train`, `boat`, `ship`) and
 `yaw_deg` (ENU, counter-clockwise from east), beside `id`, `enu` and `action`. A train is tracked
 as its locomotive, and its carriages are not tracked. A parked vehicle (no tree) is still only a
 track. `load_bevy_capture(...).object_kinds` (id → kind) and `.object_yaw_deg` (`t_ns` → id →
@@ -958,3 +992,29 @@ holds floors under these numbers: efficientdet-lite0 finds cars in ≥ 10 % of t
 ssdlite-mobiledet finds cars and people in ≥ 25 %. To re-record, from `examples/bevy-sitl-poc`,
 keep `frames/left_rgb/` and the JSON files of
 `BEVY_ASSET_ROOT=$PWD cargo run --release -- --record cap --frames 75 --rate-hz 1 --start 12 --jpeg --colour`.
+
+### Boats and ships (`flood-rescue`)
+
+`boat` and `ship` both answer to COCO's `boat` label. Their footprints come from the class files
+(`VEHICLE_FOOTPRINT_M`), as the road classes' do. Boats are scored on the preset. The ship is
+scored on an untracked variant of the preset with the water widened to 40 m and one moored ship
+at (0, 62), because the preset's channel cannot hold one. One lap each (`--frames 128 --rate-hz 1
+--start 0 --colour --jpeg`), score 0.3, object-frames found / in view:
+
+| Scene | Profile | Boat | Ship | False positives |
+|---|---|---|---|---|
+| `flood-rescue` | efficientdet-lite0 | 0/47 | – | 90 |
+| | ssd-mobilenet-v2 | 0/47 | – | 57 |
+| | ssdlite-mobiledet | 3/47 (6 %) | – | 407 (66 of them `boat`) |
+| ship variant | efficientdet-lite0 | 0/47 | 0/0 | 71 |
+| | ssd-mobilenet-v2 | 0/47 | 0/0 | 47 |
+| | ssdlite-mobiledet | 0/47 | 0/0 | 423 (23 of them `boat`) |
+
+Both classes are **under the bar**, and no realism iteration was run (fast-tracked).
+- **Boat:** ssdlite-mobiledet fires `boat` 66 times on the preset, yet matches only 3 boats. The
+  detections may be falling beside the expected boxes, for example because heave and keel lift
+  are not in the tracked height, or because they land on the water box itself.
+- **Ship:** never counts as in view. Its 60 × 20.7 × 44.9 m box (the masts) is never half inside
+  the frame from the survey loop's height.
+
+Recorded as `src/surmap/docs/todo/2026-11-04-vessels-detectors-miss.md`.

@@ -1,7 +1,7 @@
 # 2026-11-04 — which CC0 boat and ship models the vessels pin
 
 **Kind:** Product
-**Source:** `docs/simulation/1-WIP/2026-11-04-sim-water-vessels.md` (PR #109, stack `#sim-traffic` node n3 3/3)
+**Source:** `docs/simulation/changelog/2026-11-04-sim-water-vessels.md` (PR #109, stack `#sim-traffic` node n3 3/3)
 **Asked by:** `/green` row 3, `[G]` n3, Claude Opus 5.5 subagent under `#yolo`
 **Status:** Reviewed
 
