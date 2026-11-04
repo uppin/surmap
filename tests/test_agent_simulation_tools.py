@@ -280,7 +280,7 @@ async def test_a_lying_survivor_is_added_with_their_pose_height_and_facing(tmp_p
         pb.AddElementRequest(
             scenario_id=created.scenario.id,
             person=pb.PersonElement(
-                id="survivor-1",
+                id="survivor-9",
                 position=pb.EnuPoint(east=-15.0, north=31.0, up=0.0),
                 coat="coat_yellow",
                 pose="lying",
@@ -293,7 +293,7 @@ async def test_a_lying_survivor_is_added_with_their_pose_height_and_facing(tmp_p
     # Then the new version holds the survivor lying, at their height, facing their way
     assert isinstance(added, pb.ScenarioResponse)
     manifest = json.loads(added.scenario.manifest_json)
-    survivor = next(e for e in manifest["elements"] if e["id"] == "survivor-1")
+    survivor = next(e for e in manifest["elements"] if e["id"] == "survivor-9")
     assert (survivor["pose"], survivor["height_m"], survivor["yaw_deg"]) == ("lying", 1.68, 30.0)
 
 
