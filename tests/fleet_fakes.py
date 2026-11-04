@@ -12,16 +12,47 @@ import json
 from collections.abc import AsyncIterator, Callable, Iterable, Sequence
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import websockets
 from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed
 
+from surmap.simulation.fleet.commands import Launch, Route
+from surmap.simulation.fleet.link import SimHello
+from surmap.simulation.scenario_manifest import load_presets
+from surmap.simulation.scenario_store import ScenarioStore
 from tests.agent_server_fakes import STEP_TIMEOUT_S
+from tests.sim_fakes import POC_ASSETS
 
 PROTOCOL = "fleet/v1"
 EARTHQUAKE_FLEET_DRONES = ("nest-sw-d1", "nest-sw-d2", "nest-ne-d1", "nest-ne-d2", "nest-roof-d1")
+QUAKE_FLEET = "quake-fleet"
+"""The id `a_fleet_store` gives its earthquake-fleet scenario."""
+
+# The first command of `tests/fixtures/fleet/commands.json`.
+THE_SHARED_LAUNCH = Launch(
+    "nest-sw-d1",
+    Route(((-20.0, 0.0, 15.0), (-20.0, 60.0, 18.0)), speed_m_s=6.0, on_complete="hover"),
+)
+
+
+def a_fleet_store(tmp_path: Path) -> ScenarioStore:
+    """A scenario store holding the earthquake-fleet scenario `QUAKE_FLEET`."""
+    store = ScenarioStore(
+        db_path=tmp_path / "simulation.sqlite",
+        library_dir=tmp_path / "library",
+        presets=load_presets(POC_ASSETS),
+    )
+    store.create_scenario("Quake fleet", "earthquake-fleet")
+    return store
+
+
+def a_hello() -> SimHello:
+    """The page's hello for `QUAKE_FLEET` at 0 s, naming its five drones."""
+    return SimHello(QUAKE_FLEET, 0.0, EARTHQUAKE_FLEET_DRONES)
+
 
 Frame = dict[str, Any]
 

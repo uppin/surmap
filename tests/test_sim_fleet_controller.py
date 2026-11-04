@@ -1,11 +1,10 @@
-"""The station's fleet controller, registry and log store, without a server: what a command must
-pass before it is sent, how a sent command waits for its answer, how pages link, and how the
-applied commands are kept and exported as the renderer's `--fleet-log`."""
+"""The station's fleet controller, without a server or a registry: what a command must pass
+before it is sent, how a sent command waits for its answer, and what the controller reports from
+the page's telemetry."""
 
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from pathlib import Path
 
 import pytest
@@ -25,15 +24,12 @@ from surmap.simulation.fleet.controller import (
     FleetController,
     FleetInvalid,
     FleetRefused,
-    FleetRegistry,
     FleetTimeout,
     FleetTiming,
     FleetUnavailable,
     InvalidRule,
 )
 from surmap.simulation.fleet.link import (
-    CLOSE_ALREADY_LINKED,
-    CLOSE_PROTOCOL_ERROR,
     Applied,
     DroneTelemetry,
     Phase,
@@ -41,30 +37,21 @@ from surmap.simulation.fleet.link import (
     SimHello,
     Telemetry,
 )
-from surmap.simulation.fleet.log_store import FleetLogStore, UnknownSession
+from surmap.simulation.fleet.log_store import FleetLogStore
 from surmap.simulation.fleet_nests import nests_of
 from surmap.simulation.scenario_manifest import load_presets
-from surmap.simulation.scenario_store import ScenarioStore
 from tests.fleet_fakes import (
-    EARTHQUAKE_FLEET_DRONES,
+    QUAKE_FLEET,
     RecordingLink,
     RecordingSleep,
-    ScriptedSocket,
-    eventually,
-    hello_frame,
+    a_hello,
     settle,
-    telemetry_frame,
 )
 from tests.sim_fakes import POC_ASSETS
 
-SCENARIO = "quake-fleet"
+SCENARIO = QUAKE_FLEET
 SW_D1 = "nest-sw-d1"
 NE_D1 = "nest-ne-d1"
-FIXTURES = Path(__file__).parent / "fixtures"
-# The first command of `tests/fixtures/fleet/commands.json`.
-THE_SHARED_LAUNCH = Launch(
-    SW_D1, Route(((-20.0, 0.0, 15.0), (-20.0, 60.0, 18.0)), speed_m_s=6.0, on_complete="hover")
-)
 
 
 # ---- builders ---------------------------------------------------------------------------------
@@ -86,10 +73,6 @@ def a_linked_controller(
     return controller, link
 
 
-def a_hello() -> SimHello:
-    return SimHello(SCENARIO, 0.0, EARTHQUAKE_FLEET_DRONES)
-
-
 def a_route(*waypoints: Waypoint, speed_m_s: float | None = None) -> Route:
     return Route(tuple(waypoints), speed_m_s=speed_m_s)
 
@@ -104,17 +87,6 @@ def a_drone(drone: str, phase: Phase) -> DroneTelemetry:
 
 def telemetry_of(*drones: DroneTelemetry, at_s: float = 1.0, active: str = SW_D1) -> Telemetry:
     return Telemetry(at_s, active, drones)
-
-
-def a_fleet_store(tmp_path: Path) -> ScenarioStore:
-    """A scenario store holding the earthquake-fleet scenario `quake-fleet`."""
-    store = ScenarioStore(
-        db_path=tmp_path / "simulation.sqlite",
-        library_dir=tmp_path / "library",
-        presets=load_presets(POC_ASSETS),
-    )
-    store.create_scenario("Quake fleet", "earthquake-fleet")
-    return store
 
 
 async def answer(controller: FleetController, link: RecordingLink, seq: int, at_s: float) -> None:
@@ -416,203 +388,3 @@ async def test_the_latest_telemetry_is_what_the_controller_reports(tmp_path: Pat
 
     # Then it reports the second
     assert (controller.drones(), controller.active()) == ((a_drone(SW_D1, "climbing"),), NE_D1)
-
-
-# ---- the registry links pages -----------------------------------------------------------------
-
-
-async def test_a_page_that_links_an_unknown_scenario_is_closed_as_a_protocol_error(
-    tmp_path: Path,
-) -> None:
-    # Given a registry that has no scenario `no-such-scenario`
-    registry = FleetRegistry(a_fleet_store(tmp_path))
-    page = ScriptedSocket()
-    page.say(hello_frame("no-such-scenario"))
-
-    # When a page links it
-    await registry.link("no-such-scenario", page)
-
-    # Then it is closed as a protocol error
-    assert await page.close_code() == CLOSE_PROTOCOL_ERROR
-
-
-def test_the_registry_keeps_one_controller_per_scenario(tmp_path: Path) -> None:
-    # Given a registry over the earthquake-fleet scenario
-    registry = FleetRegistry(a_fleet_store(tmp_path))
-
-    # When its controller is asked for twice
-    first, again = registry.controller(SCENARIO), registry.controller(SCENARIO)
-
-    # Then it is the same controller, for that scenario
-    assert (first is again, first.scenario_id) == (True, SCENARIO)
-
-
-async def test_a_page_that_says_hello_is_linked_until_it_hangs_up(tmp_path: Path) -> None:
-    # Given a page that says hello
-    registry = FleetRegistry(a_fleet_store(tmp_path))
-    page = ScriptedSocket()
-    page.say(hello_frame(SCENARIO))
-    linking = asyncio.create_task(registry.link(SCENARIO, page))
-    await eventually(lambda: registry.controller(SCENARIO).linked)
-
-    # When it hangs up
-    page.hang_up()
-    await linking
-
-    # Then the scenario is no longer linked
-    assert registry.controller(SCENARIO).linked is False
-
-
-async def test_telemetry_a_linked_page_sends_reaches_its_controller(tmp_path: Path) -> None:
-    # Given a linked page
-    registry = FleetRegistry(a_fleet_store(tmp_path))
-    page = ScriptedSocket()
-    page.say(hello_frame(SCENARIO))
-    linking = asyncio.create_task(registry.link(SCENARIO, page))
-
-    # When it reports its drones with the north-east drone active
-    page.say(telemetry_frame(2.0, NE_D1))
-    await eventually(lambda: registry.controller(SCENARIO).active() == NE_D1)
-    page.hang_up()
-    await linking
-
-    # Then the scenario's controller has heard it
-    assert registry.controller(SCENARIO).active() == NE_D1
-
-
-async def test_a_second_page_for_a_linked_scenario_is_closed_as_already_linked(
-    tmp_path: Path,
-) -> None:
-    # Given a scenario with a linked page
-    registry = FleetRegistry(a_fleet_store(tmp_path))
-    first = ScriptedSocket()
-    first.say(hello_frame(SCENARIO))
-    linking = asyncio.create_task(registry.link(SCENARIO, first))
-    await eventually(lambda: registry.controller(SCENARIO).linked)
-
-    # When a second page links the same scenario
-    second = ScriptedSocket()
-    second.say(hello_frame(SCENARIO))
-    await registry.link(SCENARIO, second)
-
-    # Then the second is closed as already linked, and the first stays linked
-    assert (await second.close_code(), first.closed_with) == (CLOSE_ALREADY_LINKED, None)
-    assert registry.controller(SCENARIO).linked is True
-    first.hang_up()
-    await linking
-
-
-NOT_A_HELLO = {
-    "telemetry first": telemetry_frame(0.5, None),
-    "another protocol": hello_frame(SCENARIO, protocol="fleet/v2"),
-}
-
-
-@pytest.mark.parametrize("opening", NOT_A_HELLO.values(), ids=NOT_A_HELLO.keys())
-async def test_a_page_that_does_not_open_with_a_fleet_v1_hello_is_closed_as_a_protocol_error(
-    tmp_path: Path, opening: dict[str, object]
-) -> None:
-    # Given a page whose first frame is not a fleet/v1 hello
-    registry = FleetRegistry(a_fleet_store(tmp_path))
-    page = ScriptedSocket()
-    page.say(opening)
-
-    # When it links
-    await registry.link(SCENARIO, page)
-
-    # Then it is closed as a protocol error and never linked
-    assert (await page.close_code(), registry.controller(SCENARIO).linked) == (
-        CLOSE_PROTOCOL_ERROR,
-        False,
-    )
-
-
-async def test_an_unknown_frame_after_hello_closes_the_link_as_a_protocol_error(
-    tmp_path: Path,
-) -> None:
-    # Given a linked page
-    registry = FleetRegistry(a_fleet_store(tmp_path))
-    page = ScriptedSocket()
-    page.say(hello_frame(SCENARIO))
-    linking = asyncio.create_task(registry.link(SCENARIO, page))
-
-    # When it sends a frame fleet/v1 does not have
-    page.say_text('{"type":"self_destruct"}')
-    await linking
-
-    # Then the link is closed as a protocol error and the scenario unlinked
-    assert (page.closed_with, registry.controller(SCENARIO).linked) == (
-        CLOSE_PROTOCOL_ERROR,
-        False,
-    )
-
-
-# ---- the log store ----------------------------------------------------------------------------
-
-
-def test_a_stored_session_exports_as_the_fleet_log_file_the_renderer_reads(
-    tmp_path: Path,
-) -> None:
-    # Given a session that applied a launch as entry 1 and a set_active as entry 3
-    store = FleetLogStore(tmp_path / "simulation.sqlite")
-    session = store.start_session(SCENARIO, a_hello())
-    store.record(session, Stamped(1, 2.0, THE_SHARED_LAUNCH))
-    store.record(session, Stamped(3, 12.5, SetActive(SW_D1)))
-
-    # When it is exported
-    exported = store.export_jsonl(session)
-
-    # Then the export is the shared station-export fixture, line for line
-    assert exported == (FIXTURES / "fleet_link" / "session.fleet.jsonl").read_text(encoding="utf-8")
-
-
-def test_entries_come_back_in_simulation_time_order(tmp_path: Path) -> None:
-    # Given entries recorded out of time order
-    store = FleetLogStore(tmp_path / "simulation.sqlite")
-    session = store.start_session(SCENARIO, a_hello())
-    store.record(session, Stamped(2, 5.0, SetActive(NE_D1)))
-    store.record(session, Stamped(1, 2.0, SetActive(SW_D1)))
-
-    # When the session's entries are read
-    entries = store.entries(session)
-
-    # Then they are in simulation-time order
-    assert [entry.seq for entry in entries] == [1, 2]
-
-
-def test_each_linked_page_is_its_own_session(tmp_path: Path) -> None:
-    # Given two sessions of the scenario, the first with one entry
-    store = FleetLogStore(tmp_path / "simulation.sqlite")
-    first = store.start_session(SCENARIO, a_hello())
-    store.record(first, Stamped(1, 2.0, SetActive(NE_D1)))
-    second = store.start_session(SCENARIO, SimHello(SCENARIO, 30.0, EARTHQUAKE_FLEET_DRONES))
-
-    # When the scenario's sessions are listed
-    sessions = store.sessions(SCENARIO)
-
-    # Then both are listed oldest first with their hellos, and the second has no entries
-    assert [(s.session_id, s.hello.sim_t_s) for s in sessions] == [(first, 0.0), (second, 30.0)]
-    assert store.entries(second) == ()
-
-
-def test_an_unknown_session_has_no_entries(tmp_path: Path) -> None:
-    # Given an empty log store
-    store = FleetLogStore(tmp_path / "simulation.sqlite")
-
-    # When an unknown session is read, then it is refused
-    with pytest.raises(UnknownSession):
-        store.entries(999)
-
-
-def test_the_fleet_tables_live_in_the_scenario_file_beside_its_scenarios(tmp_path: Path) -> None:
-    # Given a scenario store holding a scenario
-    scenarios = a_fleet_store(tmp_path)
-
-    # When a fleet session is kept in the same file
-    FleetLogStore(scenarios.db_path).start_session(SCENARIO, a_hello())
-
-    # Then the file has the fleet tables, and the scenario is still there
-    with sqlite3.connect(scenarios.db_path) as db:
-        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"fleet_sessions", "fleet_log"} <= tables
-    assert scenarios.scenario(SCENARIO).id == SCENARIO

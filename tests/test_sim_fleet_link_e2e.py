@@ -40,18 +40,19 @@ from surmap.simulation.fleet.controller import (
     InvalidRule,
 )
 from surmap.simulation.fleet.link import CLOSE_ALREADY_LINKED, Applied, DroneTelemetry
-from surmap.simulation.scenario_manifest import load_presets
-from surmap.simulation.scenario_store import ScenarioStore
 from tests.agent_fakes import ScriptedChatModel, answer
 from tests.agent_tool_fakes import a_tool_rig
 from tests.fake_ollama import a_closed_ollama_url
 from tests.fleet_fakes import (
+    QUAKE_FLEET,
+    THE_SHARED_LAUNCH,
     Answer,
     Applies,
     FakeSim,
     RecordingSleep,
     Refuses,
     StaysSilent,
+    a_fleet_store,
     a_sim_page,
     drone_frame,
     eventually,
@@ -59,15 +60,10 @@ from tests.fleet_fakes import (
 )
 from tests.sim_fakes import POC_ASSETS, RecordingFetch
 
-SCENARIO = "quake-fleet"
+SCENARIO = QUAKE_FLEET
 SW_D1 = "nest-sw-d1"
 NE_D1 = "nest-ne-d1"
 FIXTURES = Path(__file__).parent / "fixtures"
-
-# The first command of `tests/fixtures/fleet/commands.json`.
-THE_SHARED_LAUNCH = Launch(
-    SW_D1, Route(((-20.0, 0.0, 15.0), (-20.0, 60.0, 18.0)), speed_m_s=6.0, on_complete="hover")
-)
 
 
 @dataclass(frozen=True)
@@ -91,15 +87,9 @@ class Station:
 
 @asynccontextmanager
 async def a_station(tmp_path: Path, timing: FleetTiming | None = None) -> AsyncIterator[Station]:
-    store = ScenarioStore(
-        db_path=tmp_path / "simulation.sqlite",
-        library_dir=tmp_path / "library",
-        presets=load_presets(POC_ASSETS),
-    )
-    store.create_scenario("Quake fleet", "earthquake-fleet")
     fetch = RecordingFetch()
     simulation = SimulationRig(
-        store=store,
+        store=a_fleet_store(tmp_path),
         sources={
             "polyhaven": PolyHaven(fetch),
             "ambientcg": AmbientCg(fetch),
