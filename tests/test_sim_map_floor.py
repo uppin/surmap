@@ -11,6 +11,7 @@ from surmap.simulation.floor_edits import set_map_floor
 from surmap.simulation.map_floor import (
     GeoBBox,
     InMemoryTileSource,
+    OsmTileSource,
     MapFloorError,
     OsmTileSource,
     bbox_geometry,
