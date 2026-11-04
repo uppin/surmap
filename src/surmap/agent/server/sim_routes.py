@@ -28,11 +28,9 @@ from surmap.simulation.asset_sources import AssetSource
 from surmap.simulation.fleet.controller import FleetTiming
 from surmap.simulation.fleet.perception import PerceptionRegistry
 from surmap.simulation.fleet.registry import FleetRegistry
-from surmap.simulation.map_floor import OsmTileSource
+from surmap.simulation.map_floor import OsmTileSource, TileSource
 from surmap.simulation.scenario_bundle import SUFFIX, BundleInvalid, export_bundle, import_bundle
 from surmap.simulation.scenario_store import Scenario, ScenarioStore, UnknownRecord
-from surmap.simulation.map_floor import OsmTileSource, TileSource
-from surmap.simulation.scenario_store import ScenarioStore, UnknownRecord
 
 SIM_PREFIX = "/sim/"
 IMPORT_PATH = "/sim/import"
