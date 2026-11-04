@@ -262,6 +262,8 @@ message BoxElement {
   optional double yaw_deg = 5;
   bool collider = 6;
   optional string ground_truth_kind = 7;
+  // A water surface boats and ships float on (floodwater, a river, a harbour).
+  bool water = 8;
 }
 
 message BuildingElement {
@@ -294,6 +296,12 @@ message PersonElement {
   string coat = 3;
   // A skin material the scenario declares; the scenario's default skin when empty.
   string skin = 4;
+  // "standing" (default when empty), "lying" (an injured survivor), "sitting" or "waving".
+  string pose = 5;
+  // Body height, 0.9–2.2 m; the figure's own height when unset.
+  optional double height_m = 6;
+  // The way a posed person faces, degrees counter-clockwise from east.
+  optional double yaw_deg = 7;
 }
 
 message VegetationElement {
@@ -310,6 +318,21 @@ message VegetationElement {
   int64 seed = 7;
 }
 
+message VehicleElement {
+  string id = 1;
+  // "car", "bus", "truck", "train", "boat" or "ship": picks the class's glTF, size and limits.
+  // Boats and ships start on a water box and steer only to points on water.
+  string vehicle_class = 2;
+  // Where it starts, on the ground.
+  EnuPoint position = 3;
+  // The way it faces at the start, degrees counter-clockwise from east.
+  optional double yaw_deg = 4;
+  // Trains only: carriages behind the locomotive.
+  uint32 cars = 5;
+  // Where it drives, as a behaviour tree (JSON, the person trees' nodes); parked when empty.
+  string behaviour_json = 6;
+}
+
 message AddElementRequest {
   string scenario_id = 1;
   oneof element {
@@ -318,6 +341,7 @@ message AddElementRequest {
     CollapsedBuildingElement collapsed_building = 4;
     PersonElement person = 5;
     VegetationElement vegetation = 6;
+    VehicleElement vehicle = 7;
   }
 }
 

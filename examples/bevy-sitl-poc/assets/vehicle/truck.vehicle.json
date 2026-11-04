@@ -1,0 +1,17 @@
+{
+  "glb": "models/quaternius/truck.glb",
+  "model_yaw_deg": 180.0,
+  "length_m": 6.6,
+  "width_m": 3.4,
+  "height_m": 3.6,
+  "wheel_nodes": [
+    "FrontWheel_",
+    "BackWheels"
+  ],
+  "wheel_radius_m": 0.55,
+  "max_speed_m_s": 12.0,
+  "accel_m_s2": 1.0,
+  "brake_m_s2": 3.0,
+  "turn_rate_deg_s": 18.0,
+  "model_scale": 1.25
+}

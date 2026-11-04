@@ -3,6 +3,9 @@
 use super::*;
 use bevy::math::Vec3;
 
+mod nature;
+mod water;
+
 const A_MANIFEST: &str = r#"{
     "version": 1,
     "camera": "cameras/rig.camera.json",
@@ -243,110 +246,6 @@ fn a_scenario_written_by_the_station_store_is_a_valid_manifest() {
         .any(|m| m.glb == "library/sketchfab/3f1c0a/model.glb"));
 }
 
-fn with_weather_and_fire(extra: &str) -> String {
-    format!(
-        r#"{{"version": 1, "camera": "cameras/rig.camera.json", "environment": {{"hdri": null,
-            "sun_illuminance_lux": 1.0, "sun_elevation_deg": 1.0, "sun_azimuth_deg": 1.0,
-            "fog_visibility_m": 1.0}},
-            "materials": {{"concrete": {{"color": [0.5, 0.5, 0.5]}}}},
-            "weather": {{"rain_mm_h": 2.0, "wind": {{"from_deg": 250.0, "speed_m_s": 6.0}}}},
-            {extra}}}"#
-    )
-}
-
-fn a_fire(id: &str, spread: f32) -> String {
-    format!(
-        r#"{{"id": "{id}", "ignition_enu": [-20, 60, 0], "spread_m_s": {spread}, "max_radius_m": 35}}"#
-    )
-}
-
-#[test]
-fn weather_fires_and_vegetation_are_declared_in_json_with_their_defaults() {
-    let text = with_weather_and_fire(&format!(
-        r#""fires": [{}], "elements": [{{"kind": "vegetation", "id": "pines", "species": "species/pine.species.json",
-            "position_enu": [-40, 60, 0], "size_m": [40, 60], "density_per_100m2": 3, "seed": 11}}]"#,
-        a_fire("front-1", 0.15)
-    ));
-
-    let manifest = SceneManifest::from_json(&text).expect("valid");
-
-    let weather = manifest.weather.expect("weather");
-    assert_eq!(
-        (weather.wind.gust_m_s, weather.rain_fx.as_str()),
-        (0.0, "fx/rain.fx.json")
-    );
-    let fire = &manifest.fires[0];
-    assert_eq!(
-        (fire.start_s, fire.smoke, fire.head_wind_gain),
-        (0.0, true, 0.5)
-    );
-    assert_eq!(fire.effects.smoke, "fx/smoke.fx.json");
-    assert!(matches!(&manifest.elements[0], Element::Vegetation(v) if v.seed == 11));
-}
-
-#[test]
-fn a_fire_sharing_an_element_id_is_refused() {
-    let text = with_weather_and_fire(&format!(
-        r#""fires": [{}], "elements": [{{"kind": "box", "id": "front-1", "material": "concrete", "size_m": [1, 1, 1], "position_enu": [0, 0, 0]}}]"#,
-        a_fire("front-1", 0.15)
-    ));
-
-    assert_eq!(
-        SceneManifest::from_json(&text),
-        Err(ManifestError::DuplicateId("front-1".into()))
-    );
-}
-
-#[test]
-fn a_fire_that_cannot_spread_is_refused() {
-    let text = with_weather_and_fire(&format!(r#""fires": [{}]"#, a_fire("front-1", 0.0)));
-
-    assert!(matches!(
-        SceneManifest::from_json(&text),
-        Err(ManifestError::Invalid(_))
-    ));
-}
-
-#[test]
-fn a_species_path_that_is_not_a_species_file_is_refused() {
-    let text = with_weather_and_fire(
-        r#""elements": [{"kind": "vegetation", "id": "pines", "species": "models/pine.glb",
-            "position_enu": [0, 0, 0], "size_m": [10, 10], "density_per_100m2": 3, "seed": 1}]"#,
-    );
-
-    assert_eq!(
-        SceneManifest::from_json(&text),
-        Err(ManifestError::BadAssetPath("models/pine.glb".into()))
-    );
-}
-
-#[test]
-fn a_fire_effect_path_names_an_effect_file() {
-    let text = with_weather_and_fire(
-        r#""fires": [{"id": "f", "ignition_enu": [0, 0, 0], "spread_m_s": 0.1, "max_radius_m": 5,
-            "effects": {"flames": "textures/fire.png"}}]"#,
-    );
-
-    assert_eq!(
-        SceneManifest::from_json(&text),
-        Err(ManifestError::BadAssetPath("textures/fire.png".into()))
-    );
-}
-
-#[test]
-fn the_store_written_wildfire_scenario_is_a_valid_manifest() {
-    let path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/fixtures/sim_scenario/wildfire-edge.json"
-    );
-    let text = std::fs::read_to_string(path).expect("the station store's wildfire fixture");
-
-    let manifest = SceneManifest::from_json(&text)
-        .expect("the renderer accepts the store's wildfire scenario");
-
-    assert!(!manifest.fires.is_empty() && manifest.weather.is_some());
-}
-
 fn a_person_with(behaviour: &str) -> String {
     format!(
         r#"{{"version": 1, "camera": "cameras/rig.camera.json", "environment": {{"hdri": null,
@@ -447,4 +346,102 @@ fn the_store_written_downtown_blaze_scenario_is_a_valid_manifest() {
     let manifest = SceneManifest::from_json(&text).expect("the renderer accepts the store's downtown-blaze scenario");
 
     assert!(!manifest.districts.is_empty() && !manifest.building_fires.is_empty());
+}
+
+fn with_vehicle(fields: &str) -> String {
+    with_elements(&format!(r#"[{{"kind": "vehicle", "id": "v1", "position_enu": [0, 0, 0], {fields}}}]"#))
+}
+
+#[test]
+fn a_vehicle_is_declared_by_its_class_with_its_start_pose_and_carriages() {
+    let manifest = SceneManifest::from_json(&with_vehicle(r#""class": "train", "cars": 4, "yaw_deg": 90"#)).expect("a valid train");
+
+    assert!(matches!(&manifest.elements[0], Element::Vehicle(v)
+        if v.class == crate::vehicle::VehicleClass::Train && v.cars == 4 && v.ground_truth));
+}
+
+#[test]
+fn carriages_on_anything_but_a_train_are_refused() {
+    let refused = SceneManifest::from_json(&with_vehicle(r#""class": "bus", "cars": 2"#));
+
+    assert!(matches!(refused, Err(ManifestError::Invalid(reason)) if reason.contains("v1") && reason.contains("cars")));
+}
+
+#[test]
+fn a_vehicle_glb_override_that_is_not_gltf_is_refused() {
+    let refused = SceneManifest::from_json(&with_vehicle(r#""class": "car", "glb": "models/car.obj""#));
+
+    assert_eq!(refused, Err(ManifestError::BadAssetPath("models/car.obj".into())));
+}
+
+#[test]
+fn a_vehicle_glb_override_escaping_the_assets_is_refused() {
+    let refused = SceneManifest::from_json(&with_vehicle(r#""class": "car", "glb": "../car.glb""#));
+
+    assert_eq!(refused, Err(ManifestError::BadAssetPath("../car.glb".into())));
+}
+
+#[test]
+fn a_vehicle_glb_override_is_an_asset_the_scene_needs() {
+    let manifest = SceneManifest::from_json(&with_vehicle(r#""class": "car", "glb": "library/sketchfab/ab12/model.glb""#)).expect("valid");
+
+    assert!(manifest.asset_paths().contains(&"library/sketchfab/ab12/model.glb".to_owned()));
+}
+
+#[test]
+fn a_vehicle_cannot_drive_the_wind() {
+    let veer = r#""class": "car", "behaviour": {"node": "set_wind", "from_deg": 0, "speed_m_s": 1, "gust_m_s": 0, "over_s": 1}"#;
+
+    let refused = SceneManifest::from_json(&with_vehicle(veer));
+
+    assert!(matches!(refused, Err(ManifestError::Invalid(reason)) if reason.contains("vehicle v1")));
+}
+
+#[test]
+fn the_street_traffic_scenario_the_station_writes_is_a_valid_manifest() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/sim_scenario/street-traffic.json");
+    let text = std::fs::read_to_string(path).expect("the station's street-traffic preset");
+
+    let manifest = SceneManifest::from_json(&text).expect("the renderer accepts it");
+
+    let classes: Vec<_> = manifest.elements.iter().filter_map(|e| match e { Element::Vehicle(v) => Some(v.class), _ => None }).collect();
+    use crate::vehicle::VehicleClass::{Bus, Car, Train, Truck};
+    assert!([Car, Bus, Truck, Train].iter().all(|c| classes.contains(c)), "{classes:?}");
+}
+
+fn with_person(fields: &str) -> String {
+    with_elements(&format!(r#"[{{"kind": "person", "id": "p1", "position_enu": [0, 0, 0], "coat": "concrete", "skin": "concrete", {fields}}}]"#))
+}
+
+#[test]
+fn a_person_taller_than_any_survivor_is_refused() {
+    let refused = SceneManifest::from_json(&with_person(r#""height_m": 3.0"#));
+
+    assert!(matches!(refused, Err(ManifestError::Invalid(reason)) if reason.contains("p1") && reason.contains("height_m")));
+}
+
+#[test]
+fn a_person_rig_override_that_is_not_gltf_is_refused() {
+    let refused = SceneManifest::from_json(&with_person(r#""glb": "models/person.fbx""#));
+
+    assert_eq!(refused, Err(ManifestError::BadAssetPath("models/person.fbx".into())));
+}
+
+#[test]
+fn a_person_rig_override_is_an_asset_the_scene_needs() {
+    let manifest = SceneManifest::from_json(&with_person(r#""glb": "library/polypizza/x1/person.glb""#)).expect("valid");
+
+    assert!(manifest.asset_paths().contains(&"library/polypizza/x1/person.glb".to_owned()));
+}
+
+#[test]
+fn the_survivors_scenario_the_station_writes_is_a_valid_manifest() {
+    use crate::figure_anim::Pose::{Lying, Sitting, Waving};
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/sim_scenario/earthquake-survivors.json");
+    let text = std::fs::read_to_string(path).expect("the station's earthquake-survivors preset");
+
+    let manifest = SceneManifest::from_json(&text).expect("the renderer accepts it");
+
+    let poses: Vec<_> = manifest.elements.iter().filter_map(|e| match e { Element::Person(p) => Some(p.pose), _ => None }).collect();
+    assert!([Lying, Sitting, Waving].iter().all(|p| poses.contains(p)), "{poses:?}");
 }

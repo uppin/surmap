@@ -151,7 +151,7 @@ class AddModelRequest(_message.Message):
     def __init__(self, scenario_id: _Optional[str] = ..., asset_ref: _Optional[str] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., yaw_deg: _Optional[float] = ..., scale: _Optional[float] = ..., collider: _Optional[_Union[Collider, str]] = ..., ground_truth_kind: _Optional[str] = ..., element_id: _Optional[str] = ...) -> None: ...
 
 class BoxElement(_message.Message):
-    __slots__ = ("id", "material", "size", "position", "yaw_deg", "collider", "ground_truth_kind")
+    __slots__ = ("id", "material", "size", "position", "yaw_deg", "collider", "ground_truth_kind", "water")
     ID_FIELD_NUMBER: _ClassVar[int]
     MATERIAL_FIELD_NUMBER: _ClassVar[int]
     SIZE_FIELD_NUMBER: _ClassVar[int]
@@ -159,6 +159,7 @@ class BoxElement(_message.Message):
     YAW_DEG_FIELD_NUMBER: _ClassVar[int]
     COLLIDER_FIELD_NUMBER: _ClassVar[int]
     GROUND_TRUTH_KIND_FIELD_NUMBER: _ClassVar[int]
+    WATER_FIELD_NUMBER: _ClassVar[int]
     id: str
     material: str
     size: EnuPoint
@@ -166,7 +167,8 @@ class BoxElement(_message.Message):
     yaw_deg: float
     collider: bool
     ground_truth_kind: str
-    def __init__(self, id: _Optional[str] = ..., material: _Optional[str] = ..., size: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., yaw_deg: _Optional[float] = ..., collider: bool = ..., ground_truth_kind: _Optional[str] = ...) -> None: ...
+    water: bool
+    def __init__(self, id: _Optional[str] = ..., material: _Optional[str] = ..., size: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., yaw_deg: _Optional[float] = ..., collider: bool = ..., ground_truth_kind: _Optional[str] = ..., water: bool = ...) -> None: ...
 
 class BuildingElement(_message.Message):
     __slots__ = ("id", "material", "size", "position", "yaw_deg", "windows")
@@ -203,16 +205,22 @@ class CollapsedBuildingElement(_message.Message):
     def __init__(self, id: _Optional[str] = ..., material: _Optional[str] = ..., footprint_east_m: _Optional[float] = ..., footprint_north_m: _Optional[float] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., yaw_deg: _Optional[float] = ..., seed: _Optional[int] = ...) -> None: ...
 
 class PersonElement(_message.Message):
-    __slots__ = ("id", "position", "coat", "skin")
+    __slots__ = ("id", "position", "coat", "skin", "pose", "height_m", "yaw_deg")
     ID_FIELD_NUMBER: _ClassVar[int]
     POSITION_FIELD_NUMBER: _ClassVar[int]
     COAT_FIELD_NUMBER: _ClassVar[int]
     SKIN_FIELD_NUMBER: _ClassVar[int]
+    POSE_FIELD_NUMBER: _ClassVar[int]
+    HEIGHT_M_FIELD_NUMBER: _ClassVar[int]
+    YAW_DEG_FIELD_NUMBER: _ClassVar[int]
     id: str
     position: EnuPoint
     coat: str
     skin: str
-    def __init__(self, id: _Optional[str] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., coat: _Optional[str] = ..., skin: _Optional[str] = ...) -> None: ...
+    pose: str
+    height_m: float
+    yaw_deg: float
+    def __init__(self, id: _Optional[str] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., coat: _Optional[str] = ..., skin: _Optional[str] = ..., pose: _Optional[str] = ..., height_m: _Optional[float] = ..., yaw_deg: _Optional[float] = ...) -> None: ...
 
 class VegetationElement(_message.Message):
     __slots__ = ("id", "species", "position", "size_east_m", "size_north_m", "density_per_100m2", "seed")
@@ -232,21 +240,39 @@ class VegetationElement(_message.Message):
     seed: int
     def __init__(self, id: _Optional[str] = ..., species: _Optional[str] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., size_east_m: _Optional[float] = ..., size_north_m: _Optional[float] = ..., density_per_100m2: _Optional[float] = ..., seed: _Optional[int] = ...) -> None: ...
 
+class VehicleElement(_message.Message):
+    __slots__ = ("id", "vehicle_class", "position", "yaw_deg", "cars", "behaviour_json")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    VEHICLE_CLASS_FIELD_NUMBER: _ClassVar[int]
+    POSITION_FIELD_NUMBER: _ClassVar[int]
+    YAW_DEG_FIELD_NUMBER: _ClassVar[int]
+    CARS_FIELD_NUMBER: _ClassVar[int]
+    BEHAVIOUR_JSON_FIELD_NUMBER: _ClassVar[int]
+    id: str
+    vehicle_class: str
+    position: EnuPoint
+    yaw_deg: float
+    cars: int
+    behaviour_json: str
+    def __init__(self, id: _Optional[str] = ..., vehicle_class: _Optional[str] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., yaw_deg: _Optional[float] = ..., cars: _Optional[int] = ..., behaviour_json: _Optional[str] = ...) -> None: ...
+
 class AddElementRequest(_message.Message):
-    __slots__ = ("scenario_id", "box", "building", "collapsed_building", "person", "vegetation")
+    __slots__ = ("scenario_id", "box", "building", "collapsed_building", "person", "vegetation", "vehicle")
     SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
     BOX_FIELD_NUMBER: _ClassVar[int]
     BUILDING_FIELD_NUMBER: _ClassVar[int]
     COLLAPSED_BUILDING_FIELD_NUMBER: _ClassVar[int]
     PERSON_FIELD_NUMBER: _ClassVar[int]
     VEGETATION_FIELD_NUMBER: _ClassVar[int]
+    VEHICLE_FIELD_NUMBER: _ClassVar[int]
     scenario_id: str
     box: BoxElement
     building: BuildingElement
     collapsed_building: CollapsedBuildingElement
     person: PersonElement
     vegetation: VegetationElement
-    def __init__(self, scenario_id: _Optional[str] = ..., box: _Optional[_Union[BoxElement, _Mapping[str, _Any]]] = ..., building: _Optional[_Union[BuildingElement, _Mapping[str, _Any]]] = ..., collapsed_building: _Optional[_Union[CollapsedBuildingElement, _Mapping[str, _Any]]] = ..., person: _Optional[_Union[PersonElement, _Mapping[str, _Any]]] = ..., vegetation: _Optional[_Union[VegetationElement, _Mapping[str, _Any]]] = ...) -> None: ...
+    vehicle: VehicleElement
+    def __init__(self, scenario_id: _Optional[str] = ..., box: _Optional[_Union[BoxElement, _Mapping[str, _Any]]] = ..., building: _Optional[_Union[BuildingElement, _Mapping[str, _Any]]] = ..., collapsed_building: _Optional[_Union[CollapsedBuildingElement, _Mapping[str, _Any]]] = ..., person: _Optional[_Union[PersonElement, _Mapping[str, _Any]]] = ..., vegetation: _Optional[_Union[VegetationElement, _Mapping[str, _Any]]] = ..., vehicle: _Optional[_Union[VehicleElement, _Mapping[str, _Any]]] = ...) -> None: ...
 
 class RemoveElementRequest(_message.Message):
     __slots__ = ("scenario_id", "element_id")

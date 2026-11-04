@@ -12,7 +12,7 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import Mapping, Sequence
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from surmap.simulation.behaviour_tree import (
@@ -51,13 +51,17 @@ from surmap.simulation.building_presets import validate_buildings
 from surmap.simulation.building_scenes import district_showcase, downtown_blaze
 from surmap.simulation.manifest_checks import Manifest as Manifest
 from surmap.simulation.manifest_checks import ScenarioInvalid as ScenarioInvalid
+from surmap.simulation.manifest_checks import is_relative_path
 from surmap.simulation.manifest_checks import number as _number
 from surmap.simulation.manifest_checks import object_list as _list
+from surmap.simulation.people import earthquake_survivors, validate_person_look
+from surmap.simulation.vehicles import street_traffic, validate_vehicle
+from surmap.simulation.water import flood_rescue, validate_vessels
 
 if TYPE_CHECKING:
     from surmap.simulation.scenario_store import StoredAsset
 
-ELEMENT_KINDS = ("box", "collapsed_building", "building", "person", "vegetation")
+ELEMENT_KINDS = ("box", "collapsed_building", "building", "person", "vegetation", "vehicle")
 COLLIDERS = ("none", "box", "trimesh")
 
 
@@ -71,8 +75,7 @@ def _materials(manifest: Mapping[str, object]) -> dict[str, dict[str, object]]:
 def _relative(path: object, what: str) -> str:
     if not isinstance(path, str) or not path:
         raise ScenarioInvalid(f"{what} must be a path")
-    pure = PurePosixPath(path)
-    if pure.is_absolute() or ".." in pure.parts or "" in path.split("/"):
+    if not is_relative_path(path):
         raise ScenarioInvalid(f"{what} {path!r} must stay inside the assets")
     return path
 
@@ -189,8 +192,12 @@ def validate_manifest(manifest: Mapping[str, object]) -> None:
         scatters += isinstance(element.get("scatter"), dict)
         if element.get("kind") == "vegetation":
             _validate_vegetation(element)
-        if element.get("kind") == "person" and element.get("behaviour") is not None:
-            validate_behaviour(element["behaviour"], "object")
+        if element.get("kind") == "person":
+            validate_person_look(element)
+            if element.get("behaviour") is not None:
+                validate_behaviour(element["behaviour"], "object")
+        if element.get("kind") == "vehicle":
+            validate_vehicle(element)
     if scatters > 1:
         raise ScenarioInvalid("at most one element may scatter debris")
     if "weather" in manifest:
@@ -210,6 +217,7 @@ def validate_manifest(manifest: Mapping[str, object]) -> None:
     for fire in _list(manifest, "fires"):
         _validate_fire(fire, seen)
     validate_buildings(manifest)
+    validate_vessels(manifest)
 
 
 def element_ids(manifest: Mapping[str, object]) -> list[str]:
@@ -446,8 +454,10 @@ def _evacuation(edge: Manifest) -> Manifest:
 
 def load_presets(assets_dir: Path) -> dict[str, Manifest]:
     """`earthquake-block` (the shipped scene), `empty-lot` (its rig, sky and bare ground),
-    `wildfire-edge` and `flood-street` built from them, `wildfire-evacuation`: the edge with
-    people and a veering wind, and the building presets `district-showcase` and `downtown-blaze`."""
+    `wildfire-edge` and `flood-street` built from them, `flood-rescue`: the flood with two boats
+    on it, `wildfire-evacuation`: the edge with people and a veering wind, `earthquake-survivors`:
+    the block with five people in their poses, and the building presets `district-showcase` and
+    `downtown-blaze`."""
     block: Manifest = json.loads((Path(assets_dir) / "scene.json").read_text(encoding="utf-8"))
     materials = _materials(block)
     lot: Manifest = {
@@ -470,6 +480,7 @@ def load_presets(assets_dir: Path) -> dict[str, Manifest]:
     for manifest in (block, lot):
         validate_manifest(manifest)
     edge = _wildfire_edge(lot)
+    flood_street = _flood_street(block)
     return {
         "earthquake-block": block,
         "empty-lot": lot,
@@ -477,5 +488,8 @@ def load_presets(assets_dir: Path) -> dict[str, Manifest]:
         "downtown-blaze": downtown_blaze(lot),
         "wildfire-edge": edge,
         "wildfire-evacuation": _evacuation(edge),
-        "flood-street": _flood_street(block),
+        "flood-street": flood_street,
+        "flood-rescue": flood_rescue(flood_street),
+        "street-traffic": street_traffic(block),
+        "earthquake-survivors": earthquake_survivors(block),
     }
