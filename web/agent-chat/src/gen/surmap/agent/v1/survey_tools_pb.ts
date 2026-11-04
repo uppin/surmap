@@ -11,7 +11,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file surmap/agent/v1/survey_tools.proto.
  */
 export const file_surmap_agent_v1_survey_tools: GenFile = /*@__PURE__*/
-  fileDesc("CiJzdXJtYXAvYWdlbnQvdjEvc3VydmV5X3Rvb2xzLnByb3RvEg9zdXJtYXAuYWdlbnQudjEiJwoEVmVjMxIJCgF4GAEgASgBEgkKAXkYAiABKAESCQoBehgDIAEoASI6CghQaXhlbEJveBIKCgJ4MBgBIAEoAhIKCgJ5MBgCIAEoAhIKCgJ4MRgDIAEoAhIKCgJ5MRgEIAEoAiIiCgpQaXhlbFBvaW50EgkKAXgYASABKAISCQoBeRgCIAEoAiISChBMaXN0RGVtb3NSZXF1ZXN0In4KCURlbW9TY2VuZRIKCgJpZBgBIAEoCRINCgV0aXRsZRgCIAEoCRIWCg5kZWZhdWx0X3Byb21wdBgDIAEoCRIQCghwcmVwYXJlZBgEIAEoCBIaCg1jYWNoZWRfcnVuX2lkGAUgASgJSACIAQFCEAoOX2NhY2hlZF9ydW5faWQiPwoRTGlzdERlbW9zUmVzcG9uc2USKgoGc2NlbmVzGAEgAygLMhouc3VybWFwLmFnZW50LnYxLkRlbW9TY2VuZSKDAQoOUnVuRGVtb1JlcXVlc3QSDwoHZGF0YXNldBgBIAEoCRITCgZwcm9tcHQYAiABKAlIAIgBARIXCgptYXhfZnJhbWVzGAMgASgNSAGIAQESEAoDZnBzGAQgASgBSAKIAQFCCQoHX3Byb21wdEINCgtfbWF4X2ZyYW1lc0IGCgRfZnBzIuQBCgdSdW5JbmZvEg4KBnJ1bl9pZBgBIAEoCRIPCgdkYXRhc2V0GAIgASgJEg4KBnByb21wdBgDIAEoCRIOCgZmcmFtZXMYBCABKA0SDwoHb2JqZWN0cxgFIAEoDRIvCgZzdGF0dXMYBiABKA4yHy5zdXJtYXAuYWdlbnQudjEuUnVuSW5mby5TdGF0dXMiVgoGU3RhdHVzEhYKElNUQVRVU19VTlNQRUNJRklFRBAAEgsKB1JVTk5JTkcQARIMCghGSU5JU0hFRBACEg0KCUNBTkNFTExFRBADEgoKBkZBSUxFRBAEInMKD1J1bkRlbW9SZXNwb25zZRIOCgZydW5faWQYASABKAkSDgoGZnJhbWVzGAIgASgNEg8KB29iamVjdHMYAyABKA0SLwoGc3RhdHVzGAQgASgOMh8uc3VybWFwLmFnZW50LnYxLlJ1bkluZm8uU3RhdHVzIh8KDUdldFJ1blJlcXVlc3QSDgoGcnVuX2lkGAEgASgJIjcKDkdldFJ1blJlc3BvbnNlEiUKA3J1bhgBIAEoCzIYLnN1cm1hcC5hZ2VudC52MS5SdW5JbmZvIm4KEFByb21wdFNhbVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEg8KB2NvbmNlcHQYAiABKAkSEQoJZnJhbWVfaWRzGAMgAygEEhcKCm1heF9mcmFtZXMYBCABKA1IAIgBAUINCgtfbWF4X2ZyYW1lcyKiAQoMU2FtRGV0ZWN0aW9uEhQKDGRldGVjdGlvbl9pZBgBIAEoCRINCgVsYWJlbBgCIAEoCRINCgVzY29yZRgDIAEoAhIrCghib3hfeHl4eRgEIAEoCzIZLnN1cm1hcC5hZ2VudC52MS5QaXhlbEJveBIxCgxtYXNrX3BvbHlnb24YBSADKAsyGy5zdXJtYXAuYWdlbnQudjEuUGl4ZWxQb2ludCJnChJTYW1GcmFtZURldGVjdGlvbnMSEAoIZnJhbWVfaWQYASABKAQSDAoEdF9ucxgCIAEoBBIxCgpkZXRlY3Rpb25zGAMgAygLMh0uc3VybWFwLmFnZW50LnYxLlNhbURldGVjdGlvbiJIChFQcm9tcHRTYW1SZXNwb25zZRIzCgZmcmFtZXMYASADKAsyIy5zdXJtYXAuYWdlbnQudjEuU2FtRnJhbWVEZXRlY3Rpb25zItcBChJGaW5kT2JqZWN0c1JlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhIKBWxhYmVsGAIgASgJSACIAQESKAoEbmVhchgDIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzSAGIAQESFQoIcmFkaXVzX20YBCABKAFIAogBARITCgZtb3ZpbmcYBSABKAhIA4gBARISCgVsaW1pdBgGIAEoDUgEiAEBQggKBl9sYWJlbEIHCgVfbmVhckILCglfcmFkaXVzX21CCQoHX21vdmluZ0IICgZfbGltaXQibgoLT3JpZW50ZWRCb3gSJQoGY2VudHJlGAEgASgLMhUuc3VybWFwLmFnZW50LnYxLlZlYzMSJgoHZXh0ZW50cxgCIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzEhAKCHJvdGF0aW9uGAMgAygBIlgKCU5laWdoYm91chIKCgJpZBgBIAEoCRISCgpkaXN0YW5jZV9tGAIgASgBEisKCHJlbGF0aW9uGAMgASgOMhkuc3VybWFwLmFnZW50LnYxLlJlbGF0aW9uIpsECg1PYmplY3RTdW1tYXJ5EgoKAmlkGAEgASgJEg0KBWxhYmVsGAIgASgJEhIKCmNvbmZpZGVuY2UYAyABKAISDQoFZnJhbWUYBCABKAkSDwoHdXBfYXhpcxgFIAEoCRINCgV1bml0cxgGIAEoCRIQCghuX3BvaW50cxgHIAEoDRIPCgduX2ZhY2VzGAggASgNEicKCGNlbnRyb2lkGAkgASgLMhUuc3VybWFwLmFnZW50LnYxLlZlYzMSJwoIYWFiYl9taW4YCiABKAsyFS5zdXJtYXAuYWdlbnQudjEuVmVjMxInCghhYWJiX21heBgLIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzEikKA29iYhgMIAEoCzIcLnN1cm1hcC5hZ2VudC52MS5PcmllbnRlZEJveBIQCghoZWlnaHRfbRgNIAEoARIUCgxmb290cHJpbnRfbTIYDiABKAESJQoFc2hhcGUYDyABKA4yFi5zdXJtYXAuYWdlbnQudjEuU2hhcGUSFwoPb2JzZXJ2ZWRfZnJhbWVzGBAgASgNEhIKCnRfZmlyc3RfbnMYESABKAQSEQoJdF9sYXN0X25zGBIgASgEEi4KCm5laWdoYm91cnMYEyADKAsyGi5zdXJtYXAuYWdlbnQudjEuTmVpZ2hib3VyEhQKDGdlb21ldHJ5X3VyaRgUIAEoCRIOCgZtb3ZpbmcYFSABKAgiRgoTRmluZE9iamVjdHNSZXNwb25zZRIvCgdvYmplY3RzGAEgAygLMh4uc3VybWFwLmFnZW50LnYxLk9iamVjdFN1bW1hcnkiNQoQR2V0T2JqZWN0UmVxdWVzdBIOCgZydW5faWQYASABKAkSEQoJb2JqZWN0X2lkGAIgASgJIkMKEUdldE9iamVjdFJlc3BvbnNlEi4KBm9iamVjdBgBIAEoCzIeLnN1cm1hcC5hZ2VudC52MS5PYmplY3RTdW1tYXJ5IocBChhHZXRPYmplY3RHZW9tZXRyeVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhEKCW9iamVjdF9pZBgCIAEoCRIXCgptYXhfcG9pbnRzGAMgASgNSACIAQESFAoHdm94ZWxfbRgEIAEoAUgBiAEBQg0KC19tYXhfcG9pbnRzQgoKCF92b3hlbF9tIlsKGUdldE9iamVjdEdlb21ldHJ5UmVzcG9uc2USEAoIb2JqX3RleHQYASABKAkSFAoMZ2VvbWV0cnlfdXJpGAIgASgJEhYKDmRlY2ltYXRlZF9mcm9tGAMgASgNIvcBCg9HZXRGcmFtZVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhUKC2ZyYW1lX2luZGV4GAIgASgNSAASEgoIZnJhbWVfaWQYAyABKARIABIOCgR0X25zGAQgASgESAASLQoIY3JvcF9ib3gYBSABKAsyGS5zdXJtYXAuYWdlbnQudjEuUGl4ZWxCb3hIARIYCg5jcm9wX29iamVjdF9pZBgGIAEoCUgBEhMKBnBhZF9weBgHIAEoDUgCiAEBEhUKCG1heF9zaWRlGAggASgNSAOIAQFCBAoCYXRCBgoEY3JvcEIJCgdfcGFkX3B4QgsKCV9tYXhfc2lkZSJJCg9EYXRhc2V0R2VvUG9pbnQSCwoDbG9uGAEgASgBEgsKA2xhdBgCIAEoARISCgVhbHRfbRgDIAEoAUgAiAEBQggKBl9hbHRfbSJACg5EYXRhc2V0TGljZW5zZRIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgthdHRyaWJ1dGlvbhgDIAEoCSLPAwoMRGF0YXNldEVudHJ5EgoKAmlkGAEgASgJEg0KBXRpdGxlGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhAKCHByb3ZpZGVyGAQgASgJEjAKB2xpY2Vuc2UYBSABKAsyHy5zdXJtYXAuYWdlbnQudjEuRGF0YXNldExpY2Vuc2USMgoIbW9kYWxpdHkYBiABKA4yIC5zdXJtYXAuYWdlbnQudjEuRGF0YXNldE1vZGFsaXR5EhQKDG9mZmljaWFsX3VybBgHIAEoCRIWCg5kZWZhdWx0X3Byb21wdBgIIAEoCRIQCghwcmVwYXJlZBgJIAEoCBITCgtmcmFtZV9jb3VudBgKIAEoDRIbChN0aHVtYm5haWxfYXZhaWxhYmxlGAsgASgIEhYKDmxvY2F0aW9uX2xhYmVsGAwgASgJEjkKCmdwc19jZW50cmUYDSABKAsyIC5zdXJtYXAuYWdlbnQudjEuRGF0YXNldEdlb1BvaW50SACIAQESMwoJZ3BzX3RyYWNrGA4gAygLMiAuc3VybWFwLmFnZW50LnYxLkRhdGFzZXRHZW9Qb2ludBIOCgZjcmVkaXQYDyABKAlCDQoLX2dwc19jZW50cmUiFQoTTGlzdERhdGFzZXRzUmVxdWVzdCJHChRMaXN0RGF0YXNldHNSZXNwb25zZRIvCghkYXRhc2V0cxgBIAMoCzIdLnN1cm1hcC5hZ2VudC52MS5EYXRhc2V0RW50cnkiJwoRR2V0RGF0YXNldFJlcXVlc3QSEgoKZGF0YXNldF9pZBgBIAEoCSIrChVQcmVwYXJlRGF0YXNldFJlcXVlc3QSEgoKZGF0YXNldF9pZBgBIAEoCSJBCg9EYXRhc2V0UmVzcG9uc2USLgoHZGF0YXNldBgBIAEoCzIdLnN1cm1hcC5hZ2VudC52MS5EYXRhc2V0RW50cnkiZgoRUnVuUnRhYm1hcFJlcXVlc3QSDwoHZGF0YXNldBgBIAEoCRIXCgptYXhfZnJhbWVzGAIgASgNSACIAQESEAoDZnBzGAMgASgBSAGIAQFCDQoLX21heF9mcmFtZXNCBgoEX2ZwcyI7ChJSdW5SdGFibWFwUmVzcG9uc2USJQoDcnVuGAEgASgLMhguc3VybWFwLmFnZW50LnYxLlJ1bkluZm8icwoWUnVuU2FtT25EYXRhc2V0UmVxdWVzdBIPCgdkYXRhc2V0GAEgASgJEhQKB2NvbmNlcHQYAiABKAlIAIgBARIXCgptYXhfZnJhbWVzGAMgASgNSAGIAQFCCgoIX2NvbmNlcHRCDQoLX21heF9mcmFtZXMiYgoXUnVuU2FtT25EYXRhc2V0UmVzcG9uc2USEgoKZGF0YXNldF9pZBgBIAEoCRIzCgZmcmFtZXMYAiADKAsyIy5zdXJtYXAuYWdlbnQudjEuU2FtRnJhbWVEZXRlY3Rpb25zIqIBChBHZXRGcmFtZVJlc3BvbnNlEhAKCGZyYW1lX2lkGAEgASgEEgwKBHRfbnMYAiABKAQSDQoFd2lkdGgYAyABKA0SDgoGaGVpZ2h0GAQgASgNEiwKBnNvdXJjZRgFIAEoDjIcLnN1cm1hcC5hZ2VudC52MS5GcmFtZVNvdXJjZRINCgVpbWFnZRgGIAEoDBISCgptZWRpYV90eXBlGAcgASgJKkYKBVNoYXBlEhUKEVNIQVBFX1VOU1BFQ0lGSUVEEAASCgoGTElORUFSEAESCgoGUExBTkFSEAISDgoKVk9MVU1FVFJJQxADKlUKCFJlbGF0aW9uEhgKFFJFTEFUSU9OX1VOU1BFQ0lGSUVEEAASCQoFQUJPVkUQARIJCgVCRUxPVxACEgsKB05FWFRfVE8QAxIMCghPVkVSTEFQUxAEKkIKC0ZyYW1lU291cmNlEhwKGEZSQU1FX1NPVVJDRV9VTlNQRUNJRklFRBAAEggKBEZVTEwQARILCgdESVNQTEFZEAIqQAoPRGF0YXNldE1vZGFsaXR5EhgKFE1PREFMSVRZX1VOU1BFQ0lGSUVEEAASCAoER1JFWRABEgkKBUNPTE9SEAIynwoKC1N1cnZleVRvb2xzEl4KCUxpc3REZW1vcxIhLnN1cm1hcC5hZ2VudC52MS5MaXN0RGVtb3NSZXF1ZXN0GiIuc3VybWFwLmFnZW50LnYxLkxpc3REZW1vc1Jlc3BvbnNlIgrK8xgGCAEQChgBElgKB1J1bkRlbW8SHy5zdXJtYXAuYWdlbnQudjEuUnVuRGVtb1JlcXVlc3QaIC5zdXJtYXAuYWdlbnQudjEuUnVuRGVtb1Jlc3BvbnNlIgrK8xgGCAEQHhgCElUKBkdldFJ1bhIeLnN1cm1hcC5hZ2VudC52MS5HZXRSdW5SZXF1ZXN0Gh8uc3VybWFwLmFnZW50LnYxLkdldFJ1blJlc3BvbnNlIgrK8xgGCAEQChgBEl4KCVByb21wdFNhbRIhLnN1cm1hcC5hZ2VudC52MS5Qcm9tcHRTYW1SZXF1ZXN0GiIuc3VybWFwLmFnZW50LnYxLlByb21wdFNhbVJlc3BvbnNlIgrK8xgGCAEQPBgCEmQKC0ZpbmRPYmplY3RzEiMuc3VybWFwLmFnZW50LnYxLkZpbmRPYmplY3RzUmVxdWVzdBokLnN1cm1hcC5hZ2VudC52MS5GaW5kT2JqZWN0c1Jlc3BvbnNlIgrK8xgGCAEQDxgBEl4KCUdldE9iamVjdBIhLnN1cm1hcC5hZ2VudC52MS5HZXRPYmplY3RSZXF1ZXN0GiIuc3VybWFwLmFnZW50LnYxLkdldE9iamVjdFJlc3BvbnNlIgrK8xgGCAEQChgBEnYKEUdldE9iamVjdEdlb21ldHJ5Eikuc3VybWFwLmFnZW50LnYxLkdldE9iamVjdEdlb21ldHJ5UmVxdWVzdBoqLnN1cm1hcC5hZ2VudC52MS5HZXRPYmplY3RHZW9tZXRyeVJlc3BvbnNlIgrK8xgGCAEQDxgBElsKCEdldEZyYW1lEiAuc3VybWFwLmFnZW50LnYxLkdldEZyYW1lUmVxdWVzdBohLnN1cm1hcC5hZ2VudC52MS5HZXRGcmFtZVJlc3BvbnNlIgrK8xgGCAEQDxgBEmcKDExpc3REYXRhc2V0cxIkLnN1cm1hcC5hZ2VudC52MS5MaXN0RGF0YXNldHNSZXF1ZXN0GiUuc3VybWFwLmFnZW50LnYxLkxpc3REYXRhc2V0c1Jlc3BvbnNlIgrK8xgGCAEQChgBEl4KCkdldERhdGFzZXQSIi5zdXJtYXAuYWdlbnQudjEuR2V0RGF0YXNldFJlcXVlc3QaIC5zdXJtYXAuYWdlbnQudjEuRGF0YXNldFJlc3BvbnNlIgrK8xgGCAEQChgBEmYKDlByZXBhcmVEYXRhc2V0EiYuc3VybWFwLmFnZW50LnYxLlByZXBhcmVEYXRhc2V0UmVxdWVzdBogLnN1cm1hcC5hZ2VudC52MS5EYXRhc2V0UmVzcG9uc2UiCsrzGAYIARAeGAISYQoKUnVuUnRhYm1hcBIiLnN1cm1hcC5hZ2VudC52MS5SdW5SdGFibWFwUmVxdWVzdBojLnN1cm1hcC5hZ2VudC52MS5SdW5SdGFibWFwUmVzcG9uc2UiCsrzGAYIARAeGAIScAoPUnVuU2FtT25EYXRhc2V0Eicuc3VybWFwLmFnZW50LnYxLlJ1blNhbU9uRGF0YXNldFJlcXVlc3QaKC5zdXJtYXAuYWdlbnQudjEuUnVuU2FtT25EYXRhc2V0UmVzcG9uc2UiCsrzGAYIARA8GAJiBnByb3RvMw", [file_surmap_agent_v1_execution]);
+  fileDesc("CiJzdXJtYXAvYWdlbnQvdjEvc3VydmV5X3Rvb2xzLnByb3RvEg9zdXJtYXAuYWdlbnQudjEiJwoEVmVjMxIJCgF4GAEgASgBEgkKAXkYAiABKAESCQoBehgDIAEoASI6CghQaXhlbEJveBIKCgJ4MBgBIAEoAhIKCgJ5MBgCIAEoAhIKCgJ4MRgDIAEoAhIKCgJ5MRgEIAEoAiIiCgpQaXhlbFBvaW50EgkKAXgYASABKAISCQoBeRgCIAEoAiISChBMaXN0RGVtb3NSZXF1ZXN0In4KCURlbW9TY2VuZRIKCgJpZBgBIAEoCRINCgV0aXRsZRgCIAEoCRIWCg5kZWZhdWx0X3Byb21wdBgDIAEoCRIQCghwcmVwYXJlZBgEIAEoCBIaCg1jYWNoZWRfcnVuX2lkGAUgASgJSACIAQFCEAoOX2NhY2hlZF9ydW5faWQiPwoRTGlzdERlbW9zUmVzcG9uc2USKgoGc2NlbmVzGAEgAygLMhouc3VybWFwLmFnZW50LnYxLkRlbW9TY2VuZSIaChhMaXN0T25ib2FyZE1vZGVsc1JlcXVlc3QicQoMT25ib2FyZE1vZGVsEgwKBG5hbWUYASABKAkSDQoFdGl0bGUYAiABKAkSDAoEbm90ZRgDIAEoCRIRCglhdmFpbGFibGUYBCABKAgSEgoKaXNfZGVmYXVsdBgFIAEoCBIPCgdjbGFzc2VzGAYgAygJImEKGUxpc3RPbmJvYXJkTW9kZWxzUmVzcG9uc2USLQoGbW9kZWxzGAEgAygLMh0uc3VybWFwLmFnZW50LnYxLk9uYm9hcmRNb2RlbBIVCg1kZWZhdWx0X21vZGVsGAIgASgJIrEBCg5SdW5EZW1vUmVxdWVzdBIPCgdkYXRhc2V0GAEgASgJEhMKBnByb21wdBgCIAEoCUgAiAEBEhcKCm1heF9mcmFtZXMYAyABKA1IAYgBARIQCgNmcHMYBCABKAFIAogBARIaCg1vbmJvYXJkX21vZGVsGAUgASgJSAOIAQFCCQoHX3Byb21wdEINCgtfbWF4X2ZyYW1lc0IGCgRfZnBzQhAKDl9vbmJvYXJkX21vZGVsIvsBCgdSdW5JbmZvEg4KBnJ1bl9pZBgBIAEoCRIPCgdkYXRhc2V0GAIgASgJEg4KBnByb21wdBgDIAEoCRIOCgZmcmFtZXMYBCABKA0SDwoHb2JqZWN0cxgFIAEoDRIvCgZzdGF0dXMYBiABKA4yHy5zdXJtYXAuYWdlbnQudjEuUnVuSW5mby5TdGF0dXMSFQoNb25ib2FyZF9tb2RlbBgHIAEoCSJWCgZTdGF0dXMSFgoSU1RBVFVTX1VOU1BFQ0lGSUVEEAASCwoHUlVOTklORxABEgwKCEZJTklTSEVEEAISDQoJQ0FOQ0VMTEVEEAMSCgoGRkFJTEVEEAQi0AEKD1J1bkRlbW9SZXNwb25zZRIOCgZydW5faWQYASABKAkSDgoGZnJhbWVzGAIgASgNEg8KB29iamVjdHMYAyABKA0SLwoGc3RhdHVzGAQgASgOMh8uc3VybWFwLmFnZW50LnYxLlJ1bkluZm8uU3RhdHVzEhUKDW9uYm9hcmRfbW9kZWwYBSABKAkSJgoZb25ib2FyZF9yZWNvZ25pc2VzX3Byb21wdBgGIAEoCEgAiAEBQhwKGl9vbmJvYXJkX3JlY29nbmlzZXNfcHJvbXB0Ih8KDUdldFJ1blJlcXVlc3QSDgoGcnVuX2lkGAEgASgJIjcKDkdldFJ1blJlc3BvbnNlEiUKA3J1bhgBIAEoCzIYLnN1cm1hcC5hZ2VudC52MS5SdW5JbmZvIm4KEFByb21wdFNhbVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEg8KB2NvbmNlcHQYAiABKAkSEQoJZnJhbWVfaWRzGAMgAygEEhcKCm1heF9mcmFtZXMYBCABKA1IAIgBAUINCgtfbWF4X2ZyYW1lcyKiAQoMU2FtRGV0ZWN0aW9uEhQKDGRldGVjdGlvbl9pZBgBIAEoCRINCgVsYWJlbBgCIAEoCRINCgVzY29yZRgDIAEoAhIrCghib3hfeHl4eRgEIAEoCzIZLnN1cm1hcC5hZ2VudC52MS5QaXhlbEJveBIxCgxtYXNrX3BvbHlnb24YBSADKAsyGy5zdXJtYXAuYWdlbnQudjEuUGl4ZWxQb2ludCJnChJTYW1GcmFtZURldGVjdGlvbnMSEAoIZnJhbWVfaWQYASABKAQSDAoEdF9ucxgCIAEoBBIxCgpkZXRlY3Rpb25zGAMgAygLMh0uc3VybWFwLmFnZW50LnYxLlNhbURldGVjdGlvbiJIChFQcm9tcHRTYW1SZXNwb25zZRIzCgZmcmFtZXMYASADKAsyIy5zdXJtYXAuYWdlbnQudjEuU2FtRnJhbWVEZXRlY3Rpb25zItcBChJGaW5kT2JqZWN0c1JlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhIKBWxhYmVsGAIgASgJSACIAQESKAoEbmVhchgDIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzSAGIAQESFQoIcmFkaXVzX20YBCABKAFIAogBARITCgZtb3ZpbmcYBSABKAhIA4gBARISCgVsaW1pdBgGIAEoDUgEiAEBQggKBl9sYWJlbEIHCgVfbmVhckILCglfcmFkaXVzX21CCQoHX21vdmluZ0IICgZfbGltaXQibgoLT3JpZW50ZWRCb3gSJQoGY2VudHJlGAEgASgLMhUuc3VybWFwLmFnZW50LnYxLlZlYzMSJgoHZXh0ZW50cxgCIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzEhAKCHJvdGF0aW9uGAMgAygBIlgKCU5laWdoYm91chIKCgJpZBgBIAEoCRISCgpkaXN0YW5jZV9tGAIgASgBEisKCHJlbGF0aW9uGAMgASgOMhkuc3VybWFwLmFnZW50LnYxLlJlbGF0aW9uIpsECg1PYmplY3RTdW1tYXJ5EgoKAmlkGAEgASgJEg0KBWxhYmVsGAIgASgJEhIKCmNvbmZpZGVuY2UYAyABKAISDQoFZnJhbWUYBCABKAkSDwoHdXBfYXhpcxgFIAEoCRINCgV1bml0cxgGIAEoCRIQCghuX3BvaW50cxgHIAEoDRIPCgduX2ZhY2VzGAggASgNEicKCGNlbnRyb2lkGAkgASgLMhUuc3VybWFwLmFnZW50LnYxLlZlYzMSJwoIYWFiYl9taW4YCiABKAsyFS5zdXJtYXAuYWdlbnQudjEuVmVjMxInCghhYWJiX21heBgLIAEoCzIVLnN1cm1hcC5hZ2VudC52MS5WZWMzEikKA29iYhgMIAEoCzIcLnN1cm1hcC5hZ2VudC52MS5PcmllbnRlZEJveBIQCghoZWlnaHRfbRgNIAEoARIUCgxmb290cHJpbnRfbTIYDiABKAESJQoFc2hhcGUYDyABKA4yFi5zdXJtYXAuYWdlbnQudjEuU2hhcGUSFwoPb2JzZXJ2ZWRfZnJhbWVzGBAgASgNEhIKCnRfZmlyc3RfbnMYESABKAQSEQoJdF9sYXN0X25zGBIgASgEEi4KCm5laWdoYm91cnMYEyADKAsyGi5zdXJtYXAuYWdlbnQudjEuTmVpZ2hib3VyEhQKDGdlb21ldHJ5X3VyaRgUIAEoCRIOCgZtb3ZpbmcYFSABKAgiRgoTRmluZE9iamVjdHNSZXNwb25zZRIvCgdvYmplY3RzGAEgAygLMh4uc3VybWFwLmFnZW50LnYxLk9iamVjdFN1bW1hcnkiNQoQR2V0T2JqZWN0UmVxdWVzdBIOCgZydW5faWQYASABKAkSEQoJb2JqZWN0X2lkGAIgASgJIkMKEUdldE9iamVjdFJlc3BvbnNlEi4KBm9iamVjdBgBIAEoCzIeLnN1cm1hcC5hZ2VudC52MS5PYmplY3RTdW1tYXJ5IocBChhHZXRPYmplY3RHZW9tZXRyeVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhEKCW9iamVjdF9pZBgCIAEoCRIXCgptYXhfcG9pbnRzGAMgASgNSACIAQESFAoHdm94ZWxfbRgEIAEoAUgBiAEBQg0KC19tYXhfcG9pbnRzQgoKCF92b3hlbF9tIlsKGUdldE9iamVjdEdlb21ldHJ5UmVzcG9uc2USEAoIb2JqX3RleHQYASABKAkSFAoMZ2VvbWV0cnlfdXJpGAIgASgJEhYKDmRlY2ltYXRlZF9mcm9tGAMgASgNIvcBCg9HZXRGcmFtZVJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhUKC2ZyYW1lX2luZGV4GAIgASgNSAASEgoIZnJhbWVfaWQYAyABKARIABIOCgR0X25zGAQgASgESAASLQoIY3JvcF9ib3gYBSABKAsyGS5zdXJtYXAuYWdlbnQudjEuUGl4ZWxCb3hIARIYCg5jcm9wX29iamVjdF9pZBgGIAEoCUgBEhMKBnBhZF9weBgHIAEoDUgCiAEBEhUKCG1heF9zaWRlGAggASgNSAOIAQFCBAoCYXRCBgoEY3JvcEIJCgdfcGFkX3B4QgsKCV9tYXhfc2lkZSJJCg9EYXRhc2V0R2VvUG9pbnQSCwoDbG9uGAEgASgBEgsKA2xhdBgCIAEoARISCgVhbHRfbRgDIAEoAUgAiAEBQggKBl9hbHRfbSJACg5EYXRhc2V0TGljZW5zZRIMCgRuYW1lGAEgASgJEgsKA3VybBgCIAEoCRITCgthdHRyaWJ1dGlvbhgDIAEoCSLPAwoMRGF0YXNldEVudHJ5EgoKAmlkGAEgASgJEg0KBXRpdGxlGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEhAKCHByb3ZpZGVyGAQgASgJEjAKB2xpY2Vuc2UYBSABKAsyHy5zdXJtYXAuYWdlbnQudjEuRGF0YXNldExpY2Vuc2USMgoIbW9kYWxpdHkYBiABKA4yIC5zdXJtYXAuYWdlbnQudjEuRGF0YXNldE1vZGFsaXR5EhQKDG9mZmljaWFsX3VybBgHIAEoCRIWCg5kZWZhdWx0X3Byb21wdBgIIAEoCRIQCghwcmVwYXJlZBgJIAEoCBITCgtmcmFtZV9jb3VudBgKIAEoDRIbChN0aHVtYm5haWxfYXZhaWxhYmxlGAsgASgIEhYKDmxvY2F0aW9uX2xhYmVsGAwgASgJEjkKCmdwc19jZW50cmUYDSABKAsyIC5zdXJtYXAuYWdlbnQudjEuRGF0YXNldEdlb1BvaW50SACIAQESMwoJZ3BzX3RyYWNrGA4gAygLMiAuc3VybWFwLmFnZW50LnYxLkRhdGFzZXRHZW9Qb2ludBIOCgZjcmVkaXQYDyABKAlCDQoLX2dwc19jZW50cmUiFQoTTGlzdERhdGFzZXRzUmVxdWVzdCJHChRMaXN0RGF0YXNldHNSZXNwb25zZRIvCghkYXRhc2V0cxgBIAMoCzIdLnN1cm1hcC5hZ2VudC52MS5EYXRhc2V0RW50cnkiJwoRR2V0RGF0YXNldFJlcXVlc3QSEgoKZGF0YXNldF9pZBgBIAEoCSIrChVQcmVwYXJlRGF0YXNldFJlcXVlc3QSEgoKZGF0YXNldF9pZBgBIAEoCSJBCg9EYXRhc2V0UmVzcG9uc2USLgoHZGF0YXNldBgBIAEoCzIdLnN1cm1hcC5hZ2VudC52MS5EYXRhc2V0RW50cnkilAEKEVJ1blJ0YWJtYXBSZXF1ZXN0Eg8KB2RhdGFzZXQYASABKAkSFwoKbWF4X2ZyYW1lcxgCIAEoDUgAiAEBEhAKA2ZwcxgDIAEoAUgBiAEBEhoKDW9uYm9hcmRfbW9kZWwYBCABKAlIAogBAUINCgtfbWF4X2ZyYW1lc0IGCgRfZnBzQhAKDl9vbmJvYXJkX21vZGVsIjsKElJ1blJ0YWJtYXBSZXNwb25zZRIlCgNydW4YASABKAsyGC5zdXJtYXAuYWdlbnQudjEuUnVuSW5mbyJzChZSdW5TYW1PbkRhdGFzZXRSZXF1ZXN0Eg8KB2RhdGFzZXQYASABKAkSFAoHY29uY2VwdBgCIAEoCUgAiAEBEhcKCm1heF9mcmFtZXMYAyABKA1IAYgBAUIKCghfY29uY2VwdEINCgtfbWF4X2ZyYW1lcyJiChdSdW5TYW1PbkRhdGFzZXRSZXNwb25zZRISCgpkYXRhc2V0X2lkGAEgASgJEjMKBmZyYW1lcxgCIAMoCzIjLnN1cm1hcC5hZ2VudC52MS5TYW1GcmFtZURldGVjdGlvbnMiogEKEEdldEZyYW1lUmVzcG9uc2USEAoIZnJhbWVfaWQYASABKAQSDAoEdF9ucxgCIAEoBBINCgV3aWR0aBgDIAEoDRIOCgZoZWlnaHQYBCABKA0SLAoGc291cmNlGAUgASgOMhwuc3VybWFwLmFnZW50LnYxLkZyYW1lU291cmNlEg0KBWltYWdlGAYgASgMEhIKCm1lZGlhX3R5cGUYByABKAkqRgoFU2hhcGUSFQoRU0hBUEVfVU5TUEVDSUZJRUQQABIKCgZMSU5FQVIQARIKCgZQTEFOQVIQAhIOCgpWT0xVTUVUUklDEAMqVQoIUmVsYXRpb24SGAoUUkVMQVRJT05fVU5TUEVDSUZJRUQQABIJCgVBQk9WRRABEgkKBUJFTE9XEAISCwoHTkVYVF9UTxADEgwKCE9WRVJMQVBTEAQqQgoLRnJhbWVTb3VyY2USHAoYRlJBTUVfU09VUkNFX1VOU1BFQ0lGSUVEEAASCAoERlVMTBABEgsKB0RJU1BMQVkQAipACg9EYXRhc2V0TW9kYWxpdHkSGAoUTU9EQUxJVFlfVU5TUEVDSUZJRUQQABIICgRHUkVZEAESCQoFQ09MT1IQAjKXCwoLU3VydmV5VG9vbHMSXgoJTGlzdERlbW9zEiEuc3VybWFwLmFnZW50LnYxLkxpc3REZW1vc1JlcXVlc3QaIi5zdXJtYXAuYWdlbnQudjEuTGlzdERlbW9zUmVzcG9uc2UiCsrzGAYIARAKGAESdgoRTGlzdE9uYm9hcmRNb2RlbHMSKS5zdXJtYXAuYWdlbnQudjEuTGlzdE9uYm9hcmRNb2RlbHNSZXF1ZXN0Giouc3VybWFwLmFnZW50LnYxLkxpc3RPbmJvYXJkTW9kZWxzUmVzcG9uc2UiCsrzGAYIARAKGAESWAoHUnVuRGVtbxIfLnN1cm1hcC5hZ2VudC52MS5SdW5EZW1vUmVxdWVzdBogLnN1cm1hcC5hZ2VudC52MS5SdW5EZW1vUmVzcG9uc2UiCsrzGAYIARAeGAISVQoGR2V0UnVuEh4uc3VybWFwLmFnZW50LnYxLkdldFJ1blJlcXVlc3QaHy5zdXJtYXAuYWdlbnQudjEuR2V0UnVuUmVzcG9uc2UiCsrzGAYIARAKGAESXgoJUHJvbXB0U2FtEiEuc3VybWFwLmFnZW50LnYxLlByb21wdFNhbVJlcXVlc3QaIi5zdXJtYXAuYWdlbnQudjEuUHJvbXB0U2FtUmVzcG9uc2UiCsrzGAYIARA8GAISZAoLRmluZE9iamVjdHMSIy5zdXJtYXAuYWdlbnQudjEuRmluZE9iamVjdHNSZXF1ZXN0GiQuc3VybWFwLmFnZW50LnYxLkZpbmRPYmplY3RzUmVzcG9uc2UiCsrzGAYIARAPGAESXgoJR2V0T2JqZWN0EiEuc3VybWFwLmFnZW50LnYxLkdldE9iamVjdFJlcXVlc3QaIi5zdXJtYXAuYWdlbnQudjEuR2V0T2JqZWN0UmVzcG9uc2UiCsrzGAYIARAKGAESdgoRR2V0T2JqZWN0R2VvbWV0cnkSKS5zdXJtYXAuYWdlbnQudjEuR2V0T2JqZWN0R2VvbWV0cnlSZXF1ZXN0Giouc3VybWFwLmFnZW50LnYxLkdldE9iamVjdEdlb21ldHJ5UmVzcG9uc2UiCsrzGAYIARAPGAESWwoIR2V0RnJhbWUSIC5zdXJtYXAuYWdlbnQudjEuR2V0RnJhbWVSZXF1ZXN0GiEuc3VybWFwLmFnZW50LnYxLkdldEZyYW1lUmVzcG9uc2UiCsrzGAYIARAPGAESZwoMTGlzdERhdGFzZXRzEiQuc3VybWFwLmFnZW50LnYxLkxpc3REYXRhc2V0c1JlcXVlc3QaJS5zdXJtYXAuYWdlbnQudjEuTGlzdERhdGFzZXRzUmVzcG9uc2UiCsrzGAYIARAKGAESXgoKR2V0RGF0YXNldBIiLnN1cm1hcC5hZ2VudC52MS5HZXREYXRhc2V0UmVxdWVzdBogLnN1cm1hcC5hZ2VudC52MS5EYXRhc2V0UmVzcG9uc2UiCsrzGAYIARAKGAESZgoOUHJlcGFyZURhdGFzZXQSJi5zdXJtYXAuYWdlbnQudjEuUHJlcGFyZURhdGFzZXRSZXF1ZXN0GiAuc3VybWFwLmFnZW50LnYxLkRhdGFzZXRSZXNwb25zZSIKyvMYBggBEB4YAhJhCgpSdW5SdGFibWFwEiIuc3VybWFwLmFnZW50LnYxLlJ1blJ0YWJtYXBSZXF1ZXN0GiMuc3VybWFwLmFnZW50LnYxLlJ1blJ0YWJtYXBSZXNwb25zZSIKyvMYBggBEB4YAhJwCg9SdW5TYW1PbkRhdGFzZXQSJy5zdXJtYXAuYWdlbnQudjEuUnVuU2FtT25EYXRhc2V0UmVxdWVzdBooLnN1cm1hcC5hZ2VudC52MS5SdW5TYW1PbkRhdGFzZXRSZXNwb25zZSIKyvMYBggBEDwYAmIGcHJvdG8z", [file_surmap_agent_v1_execution]);
 
 /**
  * A point or extent in the object's coordinate frame, in its units.
@@ -200,6 +200,102 @@ export const ListDemosResponseSchema: GenMessage<ListDemosResponse> = /*@__PURE_
   messageDesc(file_surmap_agent_v1_survey_tools, 5);
 
 /**
+ * @generated from message surmap.agent.v1.ListOnboardModelsRequest
+ */
+export type ListOnboardModelsRequest = Message<"surmap.agent.v1.ListOnboardModelsRequest"> & {
+};
+
+/**
+ * Describes the message surmap.agent.v1.ListOnboardModelsRequest.
+ * Use `create(ListOnboardModelsRequestSchema)` to create a new message.
+ */
+export const ListOnboardModelsRequestSchema: GenMessage<ListOnboardModelsRequest> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 6);
+
+/**
+ * One on-board detector model a run can process its frames with.
+ *
+ * @generated from message surmap.agent.v1.OnboardModel
+ */
+export type OnboardModel = Message<"surmap.agent.v1.OnboardModel"> & {
+  /**
+   * The name run_demo and run_rtabmap take as onboard_model, e.g. "efficientdet-lite0".
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * Human-readable title.
+   *
+   * @generated from field: string title = 2;
+   */
+  title: string;
+
+  /**
+   * What sets it apart from the others, e.g. its speed or hit rate.
+   *
+   * @generated from field: string note = 3;
+   */
+  note: string;
+
+  /**
+   * Whether this station has the model's files; a run with an unavailable model is refused.
+   *
+   * @generated from field: bool available = 4;
+   */
+  available: boolean;
+
+  /**
+   * Whether a run with no onboard_model uses this model.
+   *
+   * @generated from field: bool is_default = 5;
+   */
+  isDefault: boolean;
+
+  /**
+   * The object classes it can recognise (COCO), e.g. "person", "car"; it cannot detect anything
+   * else, so debris, buildings and fire are left to SAM.
+   *
+   * @generated from field: repeated string classes = 6;
+   */
+  classes: string[];
+};
+
+/**
+ * Describes the message surmap.agent.v1.OnboardModel.
+ * Use `create(OnboardModelSchema)` to create a new message.
+ */
+export const OnboardModelSchema: GenMessage<OnboardModel> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 7);
+
+/**
+ * @generated from message surmap.agent.v1.ListOnboardModelsResponse
+ */
+export type ListOnboardModelsResponse = Message<"surmap.agent.v1.ListOnboardModelsResponse"> & {
+  /**
+   * Every on-board model, in catalogue order.
+   *
+   * @generated from field: repeated surmap.agent.v1.OnboardModel models = 1;
+   */
+  models: OnboardModel[];
+
+  /**
+   * The model a run with no onboard_model uses; "none" when such a run has no on-board model.
+   *
+   * @generated from field: string default_model = 2;
+   */
+  defaultModel: string;
+};
+
+/**
+ * Describes the message surmap.agent.v1.ListOnboardModelsResponse.
+ * Use `create(ListOnboardModelsResponseSchema)` to create a new message.
+ */
+export const ListOnboardModelsResponseSchema: GenMessage<ListOnboardModelsResponse> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_survey_tools, 8);
+
+/**
  * @generated from message surmap.agent.v1.RunDemoRequest
  */
 export type RunDemoRequest = Message<"surmap.agent.v1.RunDemoRequest"> & {
@@ -230,6 +326,14 @@ export type RunDemoRequest = Message<"surmap.agent.v1.RunDemoRequest"> & {
    * @generated from field: optional double fps = 4;
    */
   fps?: number | undefined;
+
+  /**
+   * The on-board detector model that processes the frames: an OnboardModel name from
+   * list_onboard_models, or "none" for no on-board model; the station default when absent.
+   *
+   * @generated from field: optional string onboard_model = 5;
+   */
+  onboardModel?: string | undefined;
 };
 
 /**
@@ -237,7 +341,7 @@ export type RunDemoRequest = Message<"surmap.agent.v1.RunDemoRequest"> & {
  * Use `create(RunDemoRequestSchema)` to create a new message.
  */
 export const RunDemoRequestSchema: GenMessage<RunDemoRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 6);
+  messageDesc(file_surmap_agent_v1_survey_tools, 9);
 
 /**
  * Where a demo run is in its life.
@@ -286,6 +390,13 @@ export type RunInfo = Message<"surmap.agent.v1.RunInfo"> & {
    * @generated from field: surmap.agent.v1.RunInfo.Status status = 6;
    */
   status: RunInfo_Status;
+
+  /**
+   * The on-board detector model that processed its frames; empty when it ran none.
+   *
+   * @generated from field: string onboard_model = 7;
+   */
+  onboardModel: string;
 };
 
 /**
@@ -293,7 +404,7 @@ export type RunInfo = Message<"surmap.agent.v1.RunInfo"> & {
  * Use `create(RunInfoSchema)` to create a new message.
  */
 export const RunInfoSchema: GenMessage<RunInfo> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 7);
+  messageDesc(file_surmap_agent_v1_survey_tools, 10);
 
 /**
  * A run's state.
@@ -339,7 +450,7 @@ export enum RunInfo_Status {
  * Describes the enum surmap.agent.v1.RunInfo.Status.
  */
 export const RunInfo_StatusSchema: GenEnum<RunInfo_Status> = /*@__PURE__*/
-  enumDesc(file_surmap_agent_v1_survey_tools, 7, 0);
+  enumDesc(file_surmap_agent_v1_survey_tools, 10, 0);
 
 /**
  * @generated from message surmap.agent.v1.RunDemoResponse
@@ -372,6 +483,21 @@ export type RunDemoResponse = Message<"surmap.agent.v1.RunDemoResponse"> & {
    * @generated from field: surmap.agent.v1.RunInfo.Status status = 4;
    */
   status: RunInfo_Status;
+
+  /**
+   * The on-board detector model that processed its frames; empty when it ran none.
+   *
+   * @generated from field: string onboard_model = 5;
+   */
+  onboardModel: string;
+
+  /**
+   * Whether that on-board model has a class for the run's SAM concept; absent when no on-board
+   * model ran. False means only SAM can find the concept.
+   *
+   * @generated from field: optional bool onboard_recognises_prompt = 6;
+   */
+  onboardRecognisesPrompt?: boolean | undefined;
 };
 
 /**
@@ -379,7 +505,7 @@ export type RunDemoResponse = Message<"surmap.agent.v1.RunDemoResponse"> & {
  * Use `create(RunDemoResponseSchema)` to create a new message.
  */
 export const RunDemoResponseSchema: GenMessage<RunDemoResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 8);
+  messageDesc(file_surmap_agent_v1_survey_tools, 11);
 
 /**
  * @generated from message surmap.agent.v1.GetRunRequest
@@ -398,7 +524,7 @@ export type GetRunRequest = Message<"surmap.agent.v1.GetRunRequest"> & {
  * Use `create(GetRunRequestSchema)` to create a new message.
  */
 export const GetRunRequestSchema: GenMessage<GetRunRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 9);
+  messageDesc(file_surmap_agent_v1_survey_tools, 12);
 
 /**
  * @generated from message surmap.agent.v1.GetRunResponse
@@ -417,7 +543,7 @@ export type GetRunResponse = Message<"surmap.agent.v1.GetRunResponse"> & {
  * Use `create(GetRunResponseSchema)` to create a new message.
  */
 export const GetRunResponseSchema: GenMessage<GetRunResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 10);
+  messageDesc(file_surmap_agent_v1_survey_tools, 13);
 
 /**
  * @generated from message surmap.agent.v1.PromptSamRequest
@@ -457,7 +583,7 @@ export type PromptSamRequest = Message<"surmap.agent.v1.PromptSamRequest"> & {
  * Use `create(PromptSamRequestSchema)` to create a new message.
  */
 export const PromptSamRequestSchema: GenMessage<PromptSamRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 11);
+  messageDesc(file_surmap_agent_v1_survey_tools, 14);
 
 /**
  * One SAM instance on one frame.
@@ -506,7 +632,7 @@ export type SamDetection = Message<"surmap.agent.v1.SamDetection"> & {
  * Use `create(SamDetectionSchema)` to create a new message.
  */
 export const SamDetectionSchema: GenMessage<SamDetection> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 12);
+  messageDesc(file_surmap_agent_v1_survey_tools, 15);
 
 /**
  * The detections on one frame.
@@ -541,7 +667,7 @@ export type SamFrameDetections = Message<"surmap.agent.v1.SamFrameDetections"> &
  * Use `create(SamFrameDetectionsSchema)` to create a new message.
  */
 export const SamFrameDetectionsSchema: GenMessage<SamFrameDetections> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 13);
+  messageDesc(file_surmap_agent_v1_survey_tools, 16);
 
 /**
  * @generated from message surmap.agent.v1.PromptSamResponse
@@ -560,7 +686,7 @@ export type PromptSamResponse = Message<"surmap.agent.v1.PromptSamResponse"> & {
  * Use `create(PromptSamResponseSchema)` to create a new message.
  */
 export const PromptSamResponseSchema: GenMessage<PromptSamResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 14);
+  messageDesc(file_surmap_agent_v1_survey_tools, 17);
 
 /**
  * @generated from message surmap.agent.v1.FindObjectsRequest
@@ -614,7 +740,7 @@ export type FindObjectsRequest = Message<"surmap.agent.v1.FindObjectsRequest"> &
  * Use `create(FindObjectsRequestSchema)` to create a new message.
  */
 export const FindObjectsRequestSchema: GenMessage<FindObjectsRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 15);
+  messageDesc(file_surmap_agent_v1_survey_tools, 18);
 
 /**
  * An oriented bounding box.
@@ -649,7 +775,7 @@ export type OrientedBox = Message<"surmap.agent.v1.OrientedBox"> & {
  * Use `create(OrientedBoxSchema)` to create a new message.
  */
 export const OrientedBoxSchema: GenMessage<OrientedBox> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 16);
+  messageDesc(file_surmap_agent_v1_survey_tools, 19);
 
 /**
  * Another object close to this one.
@@ -684,7 +810,7 @@ export type Neighbour = Message<"surmap.agent.v1.Neighbour"> & {
  * Use `create(NeighbourSchema)` to create a new message.
  */
 export const NeighbourSchema: GenMessage<Neighbour> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 17);
+  messageDesc(file_surmap_agent_v1_survey_tools, 20);
 
 /**
  * A compact, geometry-free description of one reconstructed 3D object.
@@ -845,7 +971,7 @@ export type ObjectSummary = Message<"surmap.agent.v1.ObjectSummary"> & {
  * Use `create(ObjectSummarySchema)` to create a new message.
  */
 export const ObjectSummarySchema: GenMessage<ObjectSummary> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 18);
+  messageDesc(file_surmap_agent_v1_survey_tools, 21);
 
 /**
  * @generated from message surmap.agent.v1.FindObjectsResponse
@@ -864,7 +990,7 @@ export type FindObjectsResponse = Message<"surmap.agent.v1.FindObjectsResponse">
  * Use `create(FindObjectsResponseSchema)` to create a new message.
  */
 export const FindObjectsResponseSchema: GenMessage<FindObjectsResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 19);
+  messageDesc(file_surmap_agent_v1_survey_tools, 22);
 
 /**
  * @generated from message surmap.agent.v1.GetObjectRequest
@@ -890,7 +1016,7 @@ export type GetObjectRequest = Message<"surmap.agent.v1.GetObjectRequest"> & {
  * Use `create(GetObjectRequestSchema)` to create a new message.
  */
 export const GetObjectRequestSchema: GenMessage<GetObjectRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 20);
+  messageDesc(file_surmap_agent_v1_survey_tools, 23);
 
 /**
  * @generated from message surmap.agent.v1.GetObjectResponse
@@ -909,7 +1035,7 @@ export type GetObjectResponse = Message<"surmap.agent.v1.GetObjectResponse"> & {
  * Use `create(GetObjectResponseSchema)` to create a new message.
  */
 export const GetObjectResponseSchema: GenMessage<GetObjectResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 21);
+  messageDesc(file_surmap_agent_v1_survey_tools, 24);
 
 /**
  * @generated from message surmap.agent.v1.GetObjectGeometryRequest
@@ -949,7 +1075,7 @@ export type GetObjectGeometryRequest = Message<"surmap.agent.v1.GetObjectGeometr
  * Use `create(GetObjectGeometryRequestSchema)` to create a new message.
  */
 export const GetObjectGeometryRequestSchema: GenMessage<GetObjectGeometryRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 22);
+  messageDesc(file_surmap_agent_v1_survey_tools, 25);
 
 /**
  * @generated from message surmap.agent.v1.GetObjectGeometryResponse
@@ -982,7 +1108,7 @@ export type GetObjectGeometryResponse = Message<"surmap.agent.v1.GetObjectGeomet
  * Use `create(GetObjectGeometryResponseSchema)` to create a new message.
  */
 export const GetObjectGeometryResponseSchema: GenMessage<GetObjectGeometryResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 23);
+  messageDesc(file_surmap_agent_v1_survey_tools, 26);
 
 /**
  * @generated from message surmap.agent.v1.GetFrameRequest
@@ -1069,7 +1195,7 @@ export type GetFrameRequest = Message<"surmap.agent.v1.GetFrameRequest"> & {
  * Use `create(GetFrameRequestSchema)` to create a new message.
  */
 export const GetFrameRequestSchema: GenMessage<GetFrameRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 24);
+  messageDesc(file_surmap_agent_v1_survey_tools, 27);
 
 /**
  * A WGS84 position for a dataset's GPS map preview.
@@ -1104,7 +1230,7 @@ export type DatasetGeoPoint = Message<"surmap.agent.v1.DatasetGeoPoint"> & {
  * Use `create(DatasetGeoPointSchema)` to create a new message.
  */
 export const DatasetGeoPointSchema: GenMessage<DatasetGeoPoint> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 25);
+  messageDesc(file_surmap_agent_v1_survey_tools, 28);
 
 /**
  * A dataset's licence as the gallery shows it.
@@ -1139,7 +1265,7 @@ export type DatasetLicense = Message<"surmap.agent.v1.DatasetLicense"> & {
  * Use `create(DatasetLicenseSchema)` to create a new message.
  */
 export const DatasetLicenseSchema: GenMessage<DatasetLicense> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 26);
+  messageDesc(file_surmap_agent_v1_survey_tools, 29);
 
 /**
  * One dataset of the gallery catalogue.
@@ -1258,7 +1384,7 @@ export type DatasetEntry = Message<"surmap.agent.v1.DatasetEntry"> & {
  * Use `create(DatasetEntrySchema)` to create a new message.
  */
 export const DatasetEntrySchema: GenMessage<DatasetEntry> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 27);
+  messageDesc(file_surmap_agent_v1_survey_tools, 30);
 
 /**
  * @generated from message surmap.agent.v1.ListDatasetsRequest
@@ -1271,7 +1397,7 @@ export type ListDatasetsRequest = Message<"surmap.agent.v1.ListDatasetsRequest">
  * Use `create(ListDatasetsRequestSchema)` to create a new message.
  */
 export const ListDatasetsRequestSchema: GenMessage<ListDatasetsRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 28);
+  messageDesc(file_surmap_agent_v1_survey_tools, 31);
 
 /**
  * @generated from message surmap.agent.v1.ListDatasetsResponse
@@ -1290,7 +1416,7 @@ export type ListDatasetsResponse = Message<"surmap.agent.v1.ListDatasetsResponse
  * Use `create(ListDatasetsResponseSchema)` to create a new message.
  */
 export const ListDatasetsResponseSchema: GenMessage<ListDatasetsResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 29);
+  messageDesc(file_surmap_agent_v1_survey_tools, 32);
 
 /**
  * @generated from message surmap.agent.v1.GetDatasetRequest
@@ -1309,7 +1435,7 @@ export type GetDatasetRequest = Message<"surmap.agent.v1.GetDatasetRequest"> & {
  * Use `create(GetDatasetRequestSchema)` to create a new message.
  */
 export const GetDatasetRequestSchema: GenMessage<GetDatasetRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 30);
+  messageDesc(file_surmap_agent_v1_survey_tools, 33);
 
 /**
  * @generated from message surmap.agent.v1.PrepareDatasetRequest
@@ -1328,7 +1454,7 @@ export type PrepareDatasetRequest = Message<"surmap.agent.v1.PrepareDatasetReque
  * Use `create(PrepareDatasetRequestSchema)` to create a new message.
  */
 export const PrepareDatasetRequestSchema: GenMessage<PrepareDatasetRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 31);
+  messageDesc(file_surmap_agent_v1_survey_tools, 34);
 
 /**
  * @generated from message surmap.agent.v1.DatasetResponse
@@ -1347,7 +1473,7 @@ export type DatasetResponse = Message<"surmap.agent.v1.DatasetResponse"> & {
  * Use `create(DatasetResponseSchema)` to create a new message.
  */
 export const DatasetResponseSchema: GenMessage<DatasetResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 32);
+  messageDesc(file_surmap_agent_v1_survey_tools, 35);
 
 /**
  * @generated from message surmap.agent.v1.RunRtabmapRequest
@@ -1373,6 +1499,14 @@ export type RunRtabmapRequest = Message<"surmap.agent.v1.RunRtabmapRequest"> & {
    * @generated from field: optional double fps = 3;
    */
   fps?: number | undefined;
+
+  /**
+   * The on-board detector model that processes the frames: an OnboardModel name from
+   * list_onboard_models, or "none" for no on-board model; the station default when absent.
+   *
+   * @generated from field: optional string onboard_model = 4;
+   */
+  onboardModel?: string | undefined;
 };
 
 /**
@@ -1380,7 +1514,7 @@ export type RunRtabmapRequest = Message<"surmap.agent.v1.RunRtabmapRequest"> & {
  * Use `create(RunRtabmapRequestSchema)` to create a new message.
  */
 export const RunRtabmapRequestSchema: GenMessage<RunRtabmapRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 33);
+  messageDesc(file_surmap_agent_v1_survey_tools, 36);
 
 /**
  * @generated from message surmap.agent.v1.RunRtabmapResponse
@@ -1399,7 +1533,7 @@ export type RunRtabmapResponse = Message<"surmap.agent.v1.RunRtabmapResponse"> &
  * Use `create(RunRtabmapResponseSchema)` to create a new message.
  */
 export const RunRtabmapResponseSchema: GenMessage<RunRtabmapResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 34);
+  messageDesc(file_surmap_agent_v1_survey_tools, 37);
 
 /**
  * @generated from message surmap.agent.v1.RunSamOnDatasetRequest
@@ -1432,7 +1566,7 @@ export type RunSamOnDatasetRequest = Message<"surmap.agent.v1.RunSamOnDatasetReq
  * Use `create(RunSamOnDatasetRequestSchema)` to create a new message.
  */
 export const RunSamOnDatasetRequestSchema: GenMessage<RunSamOnDatasetRequest> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 35);
+  messageDesc(file_surmap_agent_v1_survey_tools, 38);
 
 /**
  * @generated from message surmap.agent.v1.RunSamOnDatasetResponse
@@ -1458,7 +1592,7 @@ export type RunSamOnDatasetResponse = Message<"surmap.agent.v1.RunSamOnDatasetRe
  * Use `create(RunSamOnDatasetResponseSchema)` to create a new message.
  */
 export const RunSamOnDatasetResponseSchema: GenMessage<RunSamOnDatasetResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 36);
+  messageDesc(file_surmap_agent_v1_survey_tools, 39);
 
 /**
  * @generated from message surmap.agent.v1.GetFrameResponse
@@ -1519,7 +1653,7 @@ export type GetFrameResponse = Message<"surmap.agent.v1.GetFrameResponse"> & {
  * Use `create(GetFrameResponseSchema)` to create a new message.
  */
 export const GetFrameResponseSchema: GenMessage<GetFrameResponse> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_survey_tools, 37);
+  messageDesc(file_surmap_agent_v1_survey_tools, 40);
 
 /**
  * What an object's extent looks like.
@@ -1684,6 +1818,18 @@ export const SurveyTools: GenService<{
     methodKind: "unary";
     input: typeof ListDemosRequestSchema;
     output: typeof ListDemosResponseSchema;
+  },
+  /**
+   * Lists the on-board detector models (Coral Edge TPU networks) a run can process its frames
+   * with, whether this station has each one's files, and which is the station default. Pick one
+   * by name as run_demo's or run_rtabmap's onboard_model, or pass "none" for no on-board model.
+   *
+   * @generated from rpc surmap.agent.v1.SurveyTools.ListOnboardModels
+   */
+  listOnboardModels: {
+    methodKind: "unary";
+    input: typeof ListOnboardModelsRequestSchema;
+    output: typeof ListOnboardModelsResponseSchema;
   },
   /**
    * Runs a demo scene with a SAM prompt and returns when the run ends. Runs take minutes: by
