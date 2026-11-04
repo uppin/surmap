@@ -6,7 +6,7 @@
 //! status replies feed the map status line under the feed panel. In the preview
 //! (`preview::ViewMode::Preview`) each sent pair's left eye is also held by its frame id, and a
 //! reply's odometry turns the held frame it names into the `preview::FpvFrame` with its
-//! keypoints. Natively nothing streams.
+//! keypoints and the on-board detections the bridge sent for it. Natively nothing streams.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -18,8 +18,8 @@ use wasm_bindgen::JsCast;
 use web_sys::{BinaryType, CloseEvent, ErrorEvent, MessageEvent, WebSocket};
 
 use super::stream::{
-    bridge_url, order_bridge_stream, parse_odometry, status_line, BridgeStreamSet, FrameKeypoints,
-    Pace, PendingPair, StreamPacer,
+    bridge_url, order_bridge_stream, parse_detections, parse_odometry, status_line, BridgeStreamSet,
+    DetectedObject, FrameDetections, FrameKeypoints, Pace, PendingPair, StreamPacer,
 };
 use super::ActiveDrone;
 use crate::calibration::CameraProfile;
@@ -86,8 +86,12 @@ struct BridgeStream {
     status: Rc<RefCell<String>>,
     /// The odometry replies carried, not yet matched to a held frame.
     odometry: Rc<RefCell<Vec<FrameKeypoints>>>,
+    /// The on-board detections replies carried, not yet held.
+    detections: Rc<RefCell<Vec<FrameDetections>>>,
     /// The sent left eyes waiting for their odometry; only in the preview.
     held: Option<HeldFrames>,
+    /// What the on-board model found on the sent frames, by frame; only in the preview.
+    held_detections: HeldFrames<Vec<DetectedObject>>,
     left_rgba: Option<Vec<u8>>,
     _callbacks: (
         Closure<dyn FnMut(MessageEvent)>,
@@ -104,6 +108,8 @@ impl BridgeStream {
         let shared = Rc::clone(&status);
         let odometry: Rc<RefCell<Vec<FrameKeypoints>>> = Rc::default();
         let arrived = Rc::clone(&odometry);
+        let detections: Rc<RefCell<Vec<FrameDetections>>> = Rc::default();
+        let found = Rc::clone(&detections);
         let on_message = Closure::<dyn FnMut(MessageEvent)>::new(move |event: MessageEvent| {
             let Some(text) = event.data().as_string() else {
                 return;
@@ -115,6 +121,7 @@ impl BridgeStream {
                 return;
             }
             arrived.borrow_mut().extend(parse_odometry(&reply));
+            found.borrow_mut().extend(parse_detections(&reply));
             let number = |key: &str| {
                 reply
                     .get(key)
@@ -157,7 +164,9 @@ impl BridgeStream {
             pending: None,
             status,
             odometry,
+            detections,
             held: preview.then(|| HeldFrames::new(HELD_FRAMES)),
+            held_detections: HeldFrames::new(HELD_FRAMES),
             left_rgba: None,
             _callbacks: (on_message, on_close, on_error),
         })
@@ -205,13 +214,24 @@ fn on_bridge_eye(
     commands.entity(read.entity).despawn();
 }
 
-/// The newest held frame whose odometry came back becomes the preview's `FpvFrame`.
+/// The newest held frame whose odometry came back becomes the preview's `FpvFrame`, with what
+/// the on-board model found on it (a frame's detections come with its pair's reply, never after
+/// its odometry).
 fn show_answered_frame(commands: &mut Commands, stream: &mut BridgeStream) {
     let arrived: Vec<FrameKeypoints> = stream.odometry.borrow_mut().drain(..).collect();
+    let found: Vec<FrameDetections> = stream.detections.borrow_mut().drain(..).collect();
     let Some(held) = stream.held.as_mut() else { return };
+    let held_detections = &mut stream.held_detections;
+    for frame in found {
+        held_detections.hold(frame.frame_id, frame.objects);
+    }
     let answered = arrived
         .into_iter()
-        .filter_map(|frame| held.take(frame.frame_id).map(|rgba| FpvFrame { rgba, keypoints: frame.keypoints, detections: Vec::new() }))
+        .filter_map(|frame| {
+            let rgba = held.take(frame.frame_id)?;
+            let detections = held_detections.take(frame.frame_id).unwrap_or_default();
+            Some(FpvFrame { rgba, keypoints: frame.keypoints, detections })
+        })
         .last();
     if let Some(frame) = answered {
         commands.insert_resource(frame);

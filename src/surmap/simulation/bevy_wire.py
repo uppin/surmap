@@ -97,7 +97,8 @@ class BridgeStatus:
 
 
 def encode_status(status: BridgeStatus) -> str:
-    """The status text message; `drone_id`, `error` and `odometry` appear only when set."""
+    """The status text message; `drone_id`, `error`, `odometry` and `detections` appear only
+    when set."""
     body: dict[str, object] = {
         "type": "status",
         "frames": status.frames,
@@ -114,6 +115,22 @@ def encode_status(status: BridgeStatus) -> str:
         body["odometry"] = [
             {"frame_id": frame.frame_id, "keypoints": [list(k) for k in frame.keypoints]}
             for frame in status.odometry
+        ]
+    if status.detections:
+        body["detections"] = [
+            {
+                "frame_id": frame.frame_id,
+                "objects": [
+                    {
+                        "label": found.label,
+                        "score": found.score,
+                        "box": list(found.box_xyxy),
+                        "track_id": found.track_id,
+                    }
+                    for found in frame.objects
+                ],
+            }
+            for frame in status.detections
         ]
     return json.dumps(body, separators=(",", ":"))
 

@@ -35,6 +35,8 @@ from surmap.simulation.bevy_wire import (
     BevyPair,
     BevyWireError,
     BridgeStatus,
+    DetectedObject,
+    FrameDetections,
     FrameKeypoints,
     decode_bevy_message,
 )
@@ -121,8 +123,9 @@ class DroneCounts:
 
 
 class DroneSession:
-    """One drone's live map: its backend, its segmentation run, its optional recorder, and the
-    counts its frames have produced."""
+    """One drone's live map: its backend, its segmentation run, its optional recorder, the
+    on-board model the agent chose (none until `use_detector`), and the counts its frames have
+    produced."""
 
     def __init__(
         self,
@@ -143,6 +146,12 @@ class DroneSession:
         self._last_t_ns: int | None = None
         self._error: str | None = None
         self._odometry: tuple[FrameKeypoints, ...] = ()
+        self._detector: DetectionSource | None = None
+        self._detections: tuple[FrameDetections, ...] = ()
+
+    def use_detector(self, detector: DetectionSource | None) -> None:
+        """Runs `detector` on each later pair's left frame; `None` runs none."""
+        self._detector = detector
 
     @property
     def error(self) -> str | None:
@@ -209,6 +218,20 @@ class DroneSession:
                 self._lost += 1
             self._lost_now = update.lost
         self._odometry = tuple(odometry)
+        self._detections = self._detect(pair)
+
+    def _detect(self, pair: BevyPair) -> tuple[FrameDetections, ...]:
+        """What the on-board model finds on `pair`'s grey left frame, given to it as RGB. A
+        failing model finds nothing on the frame; the map is not its to stop."""
+        if self._detector is None:
+            return ()
+        grey = np.frombuffer(pair.left_data, dtype=np.uint8).reshape(pair.height, pair.width)
+        try:
+            found = self._detector.detect_tracked(pair.frame_id, np.dstack((grey, grey, grey)))
+        except Exception:
+            return ()
+        objects = tuple(DetectedObject(d.label, d.score, d.box_xyxy, d.track_id) for d in found)
+        return (FrameDetections(pair.frame_id, objects),) if objects else ()
 
     def status(self) -> BridgeStatus:
         """The status reply for this drone's last pair."""
@@ -221,6 +244,7 @@ class DroneSession:
             drone_id=None if self.drone_id == DEFAULT_DRONE else self.drone_id,
             error=self._error,
             odometry=self._odometry,
+            detections=self._detections,
         )
 
     def counts(self, *, processing: bool) -> DroneCounts:
@@ -280,7 +304,8 @@ class FleetPerception:
     `hello` keeps the camera profile and the scenario, and registers this connection in
     `registry` under the scenario; each `pair` goes to its drone's session (created through the
     factories, at most `max_sessions`), which becomes the processing drone; `close` finishes
-    every session in drone-id order and unregisters the connection.
+    every session in drone-id order and unregisters the connection. `use_detector` runs an
+    on-board model on every session, each with a source of its own.
     """
 
     def __init__(
@@ -300,6 +325,7 @@ class FleetPerception:
         self._hello: BevyHello | None = None
         self._sessions: dict[str, DroneSession] = {}
         self._processing: str | None = None
+        self._detector: DetectorChoice | None = None
 
     def handle(self, message: bytes) -> BridgeStatus:
         """One wire message in, its status reply out. A pair before any hello is a
@@ -341,6 +367,8 @@ class FleetPerception:
                 self._segmentation_factory(drone_id),
                 self._recorder_factory(drone_id) if self._recorder_factory is not None else None,
             )
+            if self._detector is not None:
+                session.use_detector(self._detector.build())
             self._sessions[drone_id] = session
         session.process(pair, self._hello.camera.id)
         self._processing = drone_id
@@ -349,7 +377,9 @@ class FleetPerception:
     def use_detector(self, choice: DetectorChoice | None) -> None:
         """Runs `choice`'s on-board model on every drone session's frames, now and for each
         session created later; `None` runs none."""
-        raise NotImplementedError
+        self._detector = choice
+        for session in self._sessions.values():
+            session.use_detector(choice.build() if choice is not None else None)
 
     def counts(self) -> tuple[DroneCounts, ...]:
         """Every drone session's counts, in drone-id order."""
@@ -449,13 +479,18 @@ class SamSegmentationSink:
 
 class PerceptionRegistry:
     """The connected bridge pages, by the scenario their `hello` names; the latest page of a
-    scenario wins."""
+    scenario wins. It also keeps the on-board model chosen for each scenario, which every page
+    of the scenario runs."""
 
     def __init__(self) -> None:
         self._pages: dict[str, FleetPerception] = {}
+        self._detectors: dict[str, DetectorChoice] = {}
 
     def register(self, scenario_id: str, perception: FleetPerception) -> None:
         self._pages[scenario_id] = perception
+        choice = self._detectors.get(scenario_id)
+        if choice is not None:
+            perception.use_detector(choice)
 
     def unregister(self, scenario_id: str, perception: FleetPerception) -> None:
         """Forgets `perception` if it is still the scenario's page."""
@@ -469,8 +504,16 @@ class PerceptionRegistry:
     def choose_detector(self, scenario_id: str, choice: DetectorChoice | None) -> bool:
         """Keeps `choice` as the scenario's on-board model and applies it to the scenario's
         page, and to any page that registers for it later; whether a page streams it now."""
-        raise NotImplementedError
+        if choice is None:
+            self._detectors.pop(scenario_id, None)
+        else:
+            self._detectors[scenario_id] = choice
+        page = self._pages.get(scenario_id)
+        if page is not None:
+            page.use_detector(choice)
+        return page is not None
 
     def detector(self, scenario_id: str) -> str | None:
         """The on-board model chosen for the scenario; `None` when none is."""
-        raise NotImplementedError
+        choice = self._detectors.get(scenario_id)
+        return choice.model if choice is not None else None

@@ -58,7 +58,17 @@ drone you launched and from which nest.
 screen and processed, so call it on the drone whose view matters now, and say which drone you
 switched to. It works on a docked drone too.
 
-## 6. Finish
+## 6. Detect objects on the active drone's camera
+
+`set_onboard_model(scenario_id, onboard_model)` makes the station run an on-board detector model
+(a name from `list_onboard_models`) on the active drone's frames; `"none"` stops it. The
+simulation preview then outlines each detection on the drone's camera view, with a label card
+(`<class> #<track> <score>%`) beside it. The model recognises only its listed classes (people and
+vehicles, not debris, buildings or fire), so pick one when the person is looking for those.
+The choice holds for the scenario: `streaming: false` means no page streams it yet, and the
+model starts when one does. A model the station has no files for fails `FAILED_PRECONDITION`.
+
+## 7. Finish
 
 Recall drones that are no longer needed, and confirm with `list_drones` that they are `DOCKED`.
 `get_fleet_log(scenario_id)` returns the latest fleet session's applied commands as the replay

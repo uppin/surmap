@@ -181,8 +181,33 @@ pub struct FrameDetections {
 /// The on-board detections a `status` reply carries (`"detections"`), in order; none when it has
 /// no such field. A malformed entry or object is skipped.
 pub fn parse_detections(reply: &serde_json::Value) -> Vec<FrameDetections> {
-    let _ = reply;
-    unimplemented!()
+    let Some(entries) = reply.get("detections").and_then(serde_json::Value::as_array) else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter_map(|entry| {
+            let frame_id = entry.get("frame_id")?.as_u64()?;
+            let objects = entry
+                .get("objects")
+                .and_then(serde_json::Value::as_array)
+                .map(|objects| objects.iter().filter_map(detected_object).collect())
+                .unwrap_or_default();
+            Some(FrameDetections { frame_id, objects })
+        })
+        .collect()
+}
+
+/// One `{label, score, box: [x0, y0, x1, y1], track_id}` object; anything else is `None`.
+fn detected_object(value: &serde_json::Value) -> Option<DetectedObject> {
+    let corners = value.get("box")?.as_array()?;
+    let [x0, y0, x1, y1] = corners.as_slice() else { return None };
+    Some(DetectedObject {
+        label: value.get("label")?.as_str()?.to_owned(),
+        score: value.get("score")?.as_f64()? as f32,
+        box_xyxy: [x0.as_f64()? as f32, y0.as_f64()? as f32, x1.as_f64()? as f32, y1.as_f64()? as f32],
+        track_id: value.get("track_id")?.as_u64()?,
+    })
 }
 
 #[cfg(test)]

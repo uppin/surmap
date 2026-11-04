@@ -10,16 +10,16 @@
 ## Workflow
 
 - [wf 1] ✅ 2026-11-04 `/plan-red` Plan — PRD, changeset, initial discovery · PRD + this file + discovery
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Python: `encode_status` carries per-frame detections; `DroneSession` runs the chosen detector on the grey left frame and reports its detections; the registry applies a scenario's choice to its page, now and on a later hello
-  - [ ] Agent: `set_onboard_model` sets, clears and refuses (unknown model / unavailable / unknown scenario); described to the model as SYNC · 10 s · FAIL
-  - [ ] Bevy: `parse_detections`, `DetectionsByFrame`, `layout_cards` (no overlap, inside the image, just above when free), `detection_cards`, `draw_detections`
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Bridge `status` reply: `detections: [{frame_id, objects: [{label, score, box, track_id}]}]` (only when non-empty)
-  - [ ] `DroneSession.use_detector`, `FleetPerception.use_detector`, `PerceptionRegistry.choose_detector`
-  - [ ] `set_onboard_model` proto + handler, registered in `app.py`; `flying-the-fleet` skill and SYSTEM_PROMPT mention it
-  - [ ] Bevy FPV: boxes and leaders drawn into the held frame, label cards as UI text laid out in display pixels
-- [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
+- [wf 2] ✅ 2026-11-04 `/plan-red` Red — acceptance and failing lower-tier tests, committed · d748f44 — pytest 17 red, cargo 13 red (stubs)
+  - [x] Python: `encode_status` carries per-frame detections; `DroneSession` runs the chosen detector on the grey left frame and reports its detections; the registry applies a scenario's choice to its page, now and on a later hello
+  - [x] Agent: `set_onboard_model` sets, clears and refuses (unknown model / unavailable / unknown scenario); described to the model as SYNC · 10 s · FAIL
+  - [x] Bevy: `parse_detections`, `DetectionsByFrame`, `layout_cards` (no overlap, inside the image, just above when free), `detection_cards`, `draw_detections`
+- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes · pytest 2618, cargo 410, wasm check clean
+  - [x] Bridge `status` reply: `detections: [{frame_id, objects: [{label, score, box, track_id}]}]` (only when non-empty)
+  - [x] `DroneSession.use_detector`, `FleetPerception.use_detector`, `PerceptionRegistry.choose_detector`
+  - [x] `set_onboard_model` proto + handler, registered in `app.py`; `flying-the-fleet` skill and SYSTEM_PROMPT mention it
+  - [x] Bevy FPV: boxes and leaders drawn into the held frame, label cards as UI text laid out in display pixels
+- [wf 4] ⏳ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/simulation/bevy-simulation.md` — the status reply's `detections`, the preview overlay
   - [ ] `docs/agent.md` — `set_onboard_model` in *Fleet tools*

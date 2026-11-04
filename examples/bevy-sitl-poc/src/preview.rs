@@ -3,7 +3,9 @@
 //! ground, its first-person camera once it flies. In the air the FPV shows the frame RTAB-Map
 //! processed with that frame's tracked keypoints: a sent frame is held until its odometry comes
 //! back (`HeldFrames`), so the view may lag the live camera but points never sit on another
-//! frame. The Bevy systems that draw it are `preview_ui`.
+//! frame. When the agent runs an on-board model (`set_onboard_model`), the frame's detections are
+//! outlined on it, each with a label card laid out as the demo page's SAM cards are
+//! (`layout_cards`): near its object, joined by a leader, never overlapping another card.
 
 use std::collections::VecDeque;
 
@@ -192,21 +194,89 @@ pub struct Card {
 /// another card and inside the `width` x `height` image. The smallest objects are placed first:
 /// they have the fewest free spots near them. Cards come back in `items`' order.
 pub fn layout_cards(items: &[CardItem], width: f32, height: f32) -> Vec<Card> {
-    let _ = (items, width, height, CARD_MARGIN_PX, CARD_GAP_PX, CARD_GRID_PX);
-    unimplemented!()
+    let area = |b: [f32; 4]| (b[2] - b[0]) * (b[3] - b[1]);
+    let mut order: Vec<usize> = (0..items.len()).collect();
+    order.sort_by(|&a, &b| area(items[a].bbox).total_cmp(&area(items[b].bbox)).then(a.cmp(&b)));
+    let mut laid: Vec<Option<Card>> = vec![None; items.len()];
+    let mut placed: Vec<Card> = Vec::with_capacity(items.len());
+    for i in order {
+        let CardItem { anchor, bbox: [bx1, by1, bx2, by2], width: w, height: h } = items[i];
+        let (cx, cy) = ((bx1 + bx2) / 2.0, (by1 + by2) / 2.0);
+        let max_x = CARD_MARGIN_PX.max(width - CARD_MARGIN_PX - w);
+        let max_y = CARD_MARGIN_PX.max(height - CARD_MARGIN_PX - h);
+        let clamp = |[x, y]: [f32; 2]| [x.max(CARD_MARGIN_PX).min(max_x), y.max(CARD_MARGIN_PX).min(max_y)];
+        // Just above, below, left and right of the box; then every free spot on a grid.
+        let mut candidates: Vec<[f32; 2]> = [
+            [cx - w / 2.0, by1 - CARD_GAP_PX - h],
+            [cx - w / 2.0, by2 + CARD_GAP_PX],
+            [bx1 - CARD_GAP_PX - w, cy - h / 2.0],
+            [bx2 + CARD_GAP_PX, cy - h / 2.0],
+        ]
+        .map(clamp)
+        .to_vec();
+        let mut y = CARD_MARGIN_PX;
+        while y <= max_y {
+            let mut x = CARD_MARGIN_PX;
+            while x <= max_x {
+                candidates.push([x, y]);
+                x += CARD_GRID_PX;
+            }
+            y += CARD_GRID_PX;
+        }
+        let (mut best, mut best_score) = (candidates[0], f32::INFINITY);
+        for [x, y] in candidates {
+            let crowded = placed.iter().any(|p| {
+                x < p.x + p.width + CARD_GAP_PX
+                    && p.x < x + w + CARD_GAP_PX
+                    && y < p.y + p.height + CARD_GAP_PX
+                    && p.y < y + h + CARD_GAP_PX
+            });
+            if crowded {
+                continue;
+            }
+            let dx = (bx1 - (x + w)).max(x - bx2).max(0.0);
+            let dy = (by1 - (y + h)).max(y - by2).max(0.0);
+            let covers = x < bx2 && bx1 < x + w && y < by2 && by1 < y + h;
+            // Touching (within the gap) is as close as it gets; then the most centred above it.
+            let score = dx.hypot(dy).max(CARD_GAP_PX)
+                + if covers { 1e4 } else { 0.0 }
+                + 1e-3 * (x + w / 2.0 - cx).abs()
+                + 1e-4 * (y - by1).max(0.0);
+            if score < best_score {
+                (best, best_score) = ([x, y], score);
+            }
+        }
+        let [x, y] = best;
+        let card = Card {
+            x,
+            y,
+            width: w,
+            height: h,
+            from: [anchor[0].max(x).min(x + w), anchor[1].max(y).min(y + h)],
+            to: anchor,
+        };
+        placed.push(card);
+        laid[i] = Some(card);
+    }
+    laid.into_iter().map(|card| card.expect("every item is placed")).collect()
 }
 
 /// A detection's card text: `<label> #<track> <score>%`.
 pub fn card_text(object: &DetectedObject) -> String {
-    let _ = object;
-    unimplemented!()
+    format!("{} #{} {}%", object.label, object.track_id, (object.score * 100.0).round() as u32)
 }
 
 /// A detection's card to place in display px, its frame-pixel box scaled by `scale` (display px
 /// per frame px); the card is sized to its text.
 pub fn card_item(object: &DetectedObject, scale: f32) -> CardItem {
-    let _ = (object, scale, CHAR_EM, CARD_PADDING_PX);
-    unimplemented!()
+    let bbox = object.box_xyxy.map(|corner| corner * scale);
+    let glyphs = card_text(object).chars().count() as f32;
+    CardItem {
+        anchor: [(bbox[0] + bbox[2]) / 2.0, (bbox[1] + bbox[3]) / 2.0],
+        bbox,
+        width: (glyphs * CARD_FONT_PX * CHAR_EM).round() + 2.0 * CARD_PADDING_PX,
+        height: CARD_HEIGHT_PX,
+    }
 }
 
 /// Draws into tight RGBA rows (`width` x `height`) each box's outline and each leader with a dot
@@ -219,8 +289,47 @@ pub fn draw_detections(
     leaders: &[([f32; 2], [f32; 2])],
     line_px: u32,
 ) {
-    let _ = (rgba, width, height, boxes, leaders, line_px);
-    unimplemented!()
+    let mut paint = |x: i64, y: i64| {
+        if (0..i64::from(width)).contains(&x) && (0..i64::from(height)).contains(&y) {
+            let i = ((y as usize) * width as usize + x as usize) * 4;
+            let [r, g, b] = DETECTION_COLOUR;
+            rgba[i..i + 4].copy_from_slice(&[r, g, b, 255]);
+        }
+    };
+    let line = line_px.max(1) as i64;
+    let stroke = |[ax, ay]: [f32; 2], [bx, by]: [f32; 2], paint: &mut dyn FnMut(i64, i64)| {
+        // Stamped every half pixel along the segment, `line` pixels square.
+        let steps = ((bx - ax).abs().max((by - ay).abs()) * 2.0).ceil() as i64 + 1;
+        for step in 0..=steps {
+            let t = step as f32 / steps as f32;
+            let x0 = (ax + (bx - ax) * t - (line - 1) as f32 / 2.0).floor() as i64;
+            let y0 = (ay + (by - ay) * t - (line - 1) as f32 / 2.0).floor() as i64;
+            for dy in 0..line {
+                for dx in 0..line {
+                    paint(x0 + dx, y0 + dy);
+                }
+            }
+        }
+    };
+    for &[x0, y0, x1, y1] in boxes {
+        for (a, b) in [([x0, y0], [x1, y0]), ([x1, y0], [x1, y1]), ([x1, y1], [x0, y1]), ([x0, y1], [x0, y0])] {
+            stroke(a, b, &mut paint);
+        }
+    }
+    let radius = 2.0 * line as f32;
+    for &(from, to) in leaders {
+        stroke(from, to, &mut paint);
+        for [cx, cy] in [from, to] {
+            let reach = radius.ceil() as i64;
+            for y in (cy as i64 - reach)..=(cy as i64 + reach) {
+                for x in (cx as i64 - reach)..=(cx as i64 + reach) {
+                    if (x as f32 + 0.5 - cx).hypot(y as f32 + 0.5 - cy) <= radius {
+                        paint(x, y);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// The preview's full-window layer over the chase view; shown in FPV.
@@ -234,6 +343,10 @@ pub struct PreviewImage;
 /// The layer of keypoint dots over the FPV image.
 #[derive(Component)]
 pub struct PreviewDots;
+
+/// The layer of detection label cards over the FPV image.
+#[derive(Component)]
+pub struct PreviewCards;
 
 /// The image an `FpvFrame` is drawn into.
 #[derive(Resource)]
@@ -294,15 +407,14 @@ fn setup_preview(
                     },
                 ))
                 .with_children(|image| {
-                    image.spawn((
-                        PreviewDots,
-                        Node {
-                            position_type: PositionType::Absolute,
-                            width: Val::Percent(100.0),
-                            height: Val::Percent(100.0),
-                            ..default()
-                        },
-                    ));
+                    let layer = || Node {
+                        position_type: PositionType::Absolute,
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
+                        ..default()
+                    };
+                    image.spawn((PreviewDots, layer()));
+                    image.spawn((PreviewCards, layer()));
                 });
         });
 }
@@ -329,46 +441,94 @@ fn switch_preview(
     }
 }
 
-/// Draws a new `FpvFrame`: its pixels into the held image (shown in place of the live eye from
-/// then on), its keypoints as dots placed as fractions of the frame, coloured by depth.
+/// Draws a new `FpvFrame`, and again when the image's displayed size changes: its pixels with
+/// each detection's box and card leader drawn in, into the held image (shown in place of the
+/// live eye from then on); its keypoints as dots placed as fractions of the frame, coloured by
+/// depth; and a label card per detection, laid out in display pixels so cards never overlap at
+/// any preview size.
+#[allow(clippy::too_many_arguments)]
 fn show_fpv_frame(
     mut commands: Commands,
     frame: Option<Res<FpvFrame>>,
     held: Option<Res<HeldFeed>>,
     rig: Option<Res<CameraProfile>>,
     mut images: ResMut<Assets<Image>>,
-    mut image_nodes: Query<&mut ImageNode, With<PreviewImage>>,
+    mut image_nodes: Query<(&mut ImageNode, &ComputedNode), With<PreviewImage>>,
     dots: Query<Entity, With<PreviewDots>>,
+    cards: Query<Entity, With<PreviewCards>>,
+    mut shown_at: Local<Vec2>,
 ) {
     let (Some(frame), Some(held), Some(rig)) = (frame, held, rig) else { return };
-    if !frame.is_changed() {
+    let Ok((mut node, computed)) = image_nodes.single_mut() else { return };
+    let display = computed.size() * computed.inverse_scale_factor();
+    if !frame.is_changed() && display == *shown_at {
         return;
     }
+    *shown_at = display;
+    let scale = if display.x > 0.0 { display.x / rig.width as f32 } else { 1.0 };
+    let items: Vec<CardItem> = frame.detections.iter().map(|object| card_item(object, scale)).collect();
+    let laid = layout_cards(&items, display.x, display.y);
     if let Some(image) = images.get_mut(&held.0) {
-        image.data = Some(frame.rgba.clone());
+        let mut rgba = frame.rgba.clone();
+        let boxes: Vec<[f32; 4]> = frame.detections.iter().map(|object| object.box_xyxy).collect();
+        let leaders: Vec<([f32; 2], [f32; 2])> =
+            laid.iter().map(|card| (card.from.map(|v| v / scale), card.to.map(|v| v / scale))).collect();
+        let line_px = (1.5 / scale).round().max(1.0) as u32;
+        draw_detections(&mut rgba, rig.width, rig.height, &boxes, &leaders, line_px);
+        image.data = Some(rgba);
     }
-    for mut node in &mut image_nodes {
-        if node.image != held.0 {
-            node.image = held.0.clone();
-        }
+    if node.image != held.0 {
+        node.image = held.0.clone();
     }
-    let Ok(layer) = dots.single() else { return };
+    if let Ok(layer) = dots.single() {
+        commands.entity(layer).despawn_related::<Children>();
+        commands.entity(layer).with_children(|layer| {
+            for [u, v, depth] in &frame.keypoints {
+                let [r, g, b] = depth_colour(*depth);
+                layer.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Percent(u / rig.width as f32 * 100.0),
+                        top: Val::Percent(v / rig.height as f32 * 100.0),
+                        width: Val::Px(DOT_PX),
+                        height: Val::Px(DOT_PX),
+                        margin: UiRect { left: Val::Px(-DOT_PX / 2.0), top: Val::Px(-DOT_PX / 2.0), ..default() },
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb_u8(r, g, b)),
+                ));
+            }
+        });
+    }
+    let Ok(layer) = cards.single() else { return };
+    let [r, g, b] = DETECTION_COLOUR;
     commands.entity(layer).despawn_related::<Children>();
     commands.entity(layer).with_children(|layer| {
-        for [u, v, depth] in &frame.keypoints {
-            let [r, g, b] = depth_colour(*depth);
-            layer.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: Val::Percent(u / rig.width as f32 * 100.0),
-                    top: Val::Percent(v / rig.height as f32 * 100.0),
-                    width: Val::Px(DOT_PX),
-                    height: Val::Px(DOT_PX),
-                    margin: UiRect { left: Val::Px(-DOT_PX / 2.0), top: Val::Px(-DOT_PX / 2.0), ..default() },
-                    ..default()
-                },
-                BackgroundColor(Color::srgb_u8(r, g, b)),
-            ));
+        for (card, object) in laid.iter().zip(&frame.detections) {
+            layer
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(card.x),
+                        top: Val::Px(card.y),
+                        width: Val::Px(card.width),
+                        height: Val::Px(card.height),
+                        border: UiRect::all(Val::Px(1.0)),
+                        padding: UiRect::horizontal(Val::Px(CARD_PADDING_PX - 1.0)),
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba_u8(12, 14, 17, 230)),
+                    BorderColor::all(Color::srgb_u8(r, g, b)),
+                ))
+                .with_children(|card| {
+                    card.spawn((
+                        Text::new(card_text(object)),
+                        TextFont { font_size: CARD_FONT_PX, ..default() },
+                        TextColor(Color::srgb_u8(232, 248, 255)),
+                        TextLayout::new_with_no_wrap(),
+                    ));
+                });
         }
     });
 }
