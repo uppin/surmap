@@ -12,12 +12,13 @@ name, description, JSON Schema arguments and default execution policy.
 | `proto/surmap/agent/v1/execution.proto` | `default_execution` method option, `ExecutionPolicy`, `ExecutionMode`, `OnTimeout`, `JobHandle` |
 | `proto/surmap/agent/v1/survey_tools.proto` | `SurveyTools` — demo, SAM, object and frame tools |
 | `proto/surmap/agent/v1/map_tools.proto` | `MapTools` — place/move GLB shapes, navigate the camera, draw routes, load layers on the embedded map |
+| `proto/surmap/agent/v1/fleet_tools.proto` | `FleetTools` — nests and drones of a running simulation, launch/route/detour/recall, the active drone, the fleet log (simulation only) |
 | `proto/surmap/agent/v1/jobs.proto` | `AgentJobs` — follow and cancel detached tool calls |
 | `proto/surmap/agent/v1/chat.proto` | `ChatService` — the browser's chat API (`StreamTurn`, `WatchConversation`, `Steer`, `CancelTurn`, `ListModels`, `GetConversation`), streaming `TurnEvent`s |
 | `src/surmap/agent/proto/` | Generated `_pb2.py` / `.pyi` and `agent_descriptor_set.binpb` (checked in) |
 | `src/surmap/agent/contracts.py` | `ToolContract`, `tool_contracts(service)`, `resolve_execution(contract, arguments)` |
 | `src/surmap/agent/subagents.py` | `SubagentPool`, `SubagentSetup`, `subagent_tools` — delegated work in a context of its own (*Subagents*) |
-| `src/surmap/agent/services.py` | `survey_tools_module`, `agent_jobs_module`, `chat_service_module` — `ServiceModule`s where an rpc with no handler answers `UNIMPLEMENTED` |
+| `src/surmap/agent/services.py` | `survey_tools_module`, `agent_jobs_module`, `chat_service_module`, `fleet_module` — `ServiceModule`s where an rpc with no handler answers `UNIMPLEMENTED` |
 
 ## Tool catalogue
 
@@ -80,6 +81,14 @@ leading comment, and argument descriptions are the field comments.
 | `remove_building_fire` | `SimulationTools.RemoveBuildingFire` | SYNC · 10 s · FAIL |
 | `get_scenario` | `SimulationTools.GetScenario` | SYNC · 10 s · FAIL |
 | `list_scenarios` | `SimulationTools.ListScenarios` | SYNC · 10 s · FAIL |
+| `list_nests` | `FleetTools.ListNests` | SYNC · 10 s · FAIL |
+| `list_drones` | `FleetTools.ListDrones` | SYNC · 10 s · FAIL |
+| `launch_drone` | `FleetTools.LaunchDrone` | SYNC · 10 s · FAIL |
+| `set_route` | `FleetTools.SetRoute` | SYNC · 10 s · FAIL |
+| `add_detour` | `FleetTools.AddDetour` | SYNC · 10 s · FAIL |
+| `recall_drone` | `FleetTools.RecallDrone` | SYNC · 10 s · FAIL |
+| `set_active_drone` | `FleetTools.SetActiveDrone` | SYNC · 10 s · FAIL |
+| `get_fleet_log` | `FleetTools.GetFleetLog` | SYNC · 10 s · FAIL |
 | `start_subagent` | — (`surmap.agent.subagents`) | SYNC · 10 s · FAIL |
 | `message_subagent` | — (`surmap.agent.subagents`) | SYNC · 10 s · FAIL |
 | `message_main_agent` | — (a subagent's only) | SYNC · 10 s · FAIL |
@@ -116,7 +125,9 @@ decoding the request.
 `survey_tool_handlers(workspace)` maps every `SurveyTools` rpc to a handler over a
 `SurveyWorkspace` port (`tools/port.py`). `DemoWorkspace` (`tools/workspace.py`) is the default
 adapter: it drives the demo's `DemoRunHost` headlessly, reads its run history (so agent runs show
-in the console) and publishes GLB through a `GeometryStore` (`tools/geometry.py`). Read/run only.
+in the console) and publishes GLB through a `GeometryStore` (`tools/geometry.py`). Read/run only —
+the one exception is the fleet tools below, which task the simulation's drones and never a real
+aircraft.
 
 | Tool | Arguments | Result | Default execution |
 |---|---|---|---|
@@ -186,7 +197,8 @@ colour kept for colour datasets); the catalogue itself is `GET /datasets`.
 `MapTools` edits a display scene in a `MapSceneStore` (in-memory, per
 `scene_id`, `default` when unnamed): placed GLB shapes (`geometry_uri` +
 lon/lat position, rotation, scale), the camera, and drawn route paths
-(display only — never a flight plan). Every change bumps the scene
+(display only — never a flight plan; to fly a *simulated* drone, use the fleet tools below).
+Every change bumps the scene
 `revision`; the chat UI polls `get_map_scene` and redraws. Positions off the
 world, a non-positive scale, zoom outside 0..22, or a route under two points
 are `INVALID_ARGUMENT`; an unknown object, route or layer is `NOT_FOUND`; a
@@ -300,6 +312,49 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
   export as a `--fleet-log`. Messages, checks and close codes:
   [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *The fleet link*.
 
+## Fleet tools (`surmap.agent.tools.fleet_handlers`)
+
+`FleetTools` (`proto/surmap/agent/v1/fleet_tools.proto`, handlers in
+`fleet_handlers.fleet_tool_handlers(store, registry)`, module `services.fleet_module`) is the
+agent's hands on a *running* simulation. It is registered only when the server has a
+`SimulationRig`, beside `SimulationTools`; every rpc is SYNC · 10 s · FAIL. The scenario is
+resolved through the store first — an unknown one is `NOT_FOUND` for every rpc, before the
+registry is touched. Nests and pads come from the scenario's latest manifest
+(`fleet_nests.nests_of`); drone state from the scenario's `FleetController` (the fleet link,
+above), whose last telemetry is reported only while a page is linked.
+
+**Simulation-only rule.** These tools task the simulation's drones on machine 3 only; nothing
+here reaches PX4 or any real flight controller (docs/architecture.md §1). The SYSTEM_PROMPT and
+the `flying-the-fleet` skill say the same to the model: simulated drones can be tasked, real
+aircraft are never commanded.
+
+| Tool | Arguments | Result |
+|---|---|---|
+| `list_nests` | `scenario_id` | each `FleetNest { id, EnuPoint position, yaw_deg, repeated drone_ids }` |
+| `list_drones` | `scenario_id` | `linked`, `active` (empty when none), `repeated DroneStatus { id, nest, DronePhase phase, EnuPoint position, yaw_deg, speed_m_s, targets_left }`; without a link, `linked: false` and every drone `DOCKED` at its pad |
+| `launch_drone` | `scenario_id`, `drone_id`, `FlightRoute route { repeated EnuPoint waypoints; optional speed_m_s; RouteEnd on_complete }` | `FleetCommandResult { seq, at_s }` — the sequence number and simulation time it took effect |
+| `set_route` | same as `launch_drone` | `FleetCommandResult` |
+| `add_detour` | `scenario_id`, `drone_id`, `repeated EnuPoint waypoints` | `FleetCommandResult` |
+| `recall_drone` | `scenario_id`, `drone_id` | `FleetCommandResult` |
+| `set_active_drone` | `scenario_id`, `drone_id` | `FleetCommandResult` |
+| `get_fleet_log` | `scenario_id`, `optional session_id` (latest when absent) | `session_id`, `fleet_log_jsonl` (the `--fleet-log` replay file) |
+
+Routes are ENU metres on the simulated block: waypoints 5–60 m up within ±500 m, speed
+0.5–8 m/s when given; `on_complete` is `RETURN` (the default) or `HOVER`. Phases are
+`DOCKED`, `CLIMBING`, `CRUISING`, `DETOURING`, `HOVERING`, `RETURNING`, `LANDING`. The flight
+itself is observed with `list_drones`, never awaited by a job. `get_fleet_log` answers
+`NOT_FOUND` when the scenario has no session yet, or when the given `session_id` is not one of
+that scenario's sessions.
+
+- **Errors.** `NOT_FOUND` — unknown scenario or drone; `INVALID_ARGUMENT` — a command the
+  station refuses before sending it (`FleetInvalid`), its message led by the rule
+  (`<rule>: <message>`, e.g. `not_flying: nest-sw-d1 is docked: …`); `FAILED_PRECONDITION` —
+  the page refused it (`FleetRefused`), with the page's reason word for word; `UNAVAILABLE` —
+  no page linked (`FleetUnavailable`); `DEADLINE_EXCEEDED` — the page did not answer in time
+  (`FleetTimeout`, 5 s in the controller). Without a link, only commands a docked drone accepts
+  (`launch_drone`, `set_active_drone`) reach the `UNAVAILABLE` answer: validation runs first,
+  so `set_route` / `add_detour` / `recall_drone` on a docked drone answer `INVALID_ARGUMENT`.
+
 ## SAM station (`surmap.agent.tools.station`, `station_modal`)
 
 The GPU the agent's SAM runs on, brought up on first use and taken down when idle. One
@@ -367,7 +422,8 @@ Shipped skills:
 
 | Skill | What it teaches |
 |---|---|
-| `using-the-map` | The map tools: placing and moving GLB objects, navigating the camera, drawing routes (drawn paths, never flight plans), loading layers, scenes and revisions |
+| `using-the-map` | The map tools: placing and moving GLB objects, navigating the camera, drawing routes (drawn paths, never flight plans — simulated drones are flown with the fleet tools), loading layers, scenes and revisions |
+| `flying-the-fleet` | Flying a simulated fleet: `list_nests`/`list_drones`, planning ENU routes clear of buildings (5–60 m up, ≤ 8 m/s), launch, detours and re-routes, `set_active_drone` for the on-screen feed, recall, `get_fleet_log`, and what to do on each error |
 | `creating-a-simulation` | The main agent's part of a scene build: write a complete brief, `start_subagent` with `building-a-simulation-scene`, relay its questions with `message_subagent`, report the scenario |
 | `building-a-simulation-scene` | A subagent's procedure over the simulation tools: preset, buildings, people and behaviour, weather and fire, licence-gated assets, `get_scenario` check, the report |
 

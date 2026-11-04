@@ -8,8 +8,10 @@ description: How to use the map tools: place and move objects, navigate the came
 The map tools edit the display map the person is looking at: GLB shapes placed on it,
 the camera, drawn route paths, and data layers. Map edits change only what the person
 sees. A route here is a drawn path, never a flight plan, and no map tool commands a
-vehicle — if the person asks for flight or navigation of a real vehicle, say the map
-cannot do that and offer to draw the path instead.
+vehicle. For a *simulated* drone in the station's simulation, use the fleet tools (load
+`flying-the-fleet`) instead. If the person asks for flight or navigation of a real vehicle,
+say the map cannot do that and offer to draw the path instead; real aircraft are never
+commanded.
 
 Load this skill before placing, moving or drawing anything on the map, then work
 through the tools below. Read the scene back with `get_map_scene` after a change when

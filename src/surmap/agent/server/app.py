@@ -37,6 +37,7 @@ from surmap.agent.llm.fireworks import FireworksChatModel
 from surmap.agent.llm.meta import DEFAULT_AGENT_META_MODEL, META_PROVIDER, MetaResponsesChatModel
 from surmap.agent.llm.registry import ChatModelRegistry
 from surmap.agent.proto import (
+    fleet_tools_pb2,
     jobs_pb2,
     map_tools_pb2,
     simulation_tools_pb2,
@@ -55,6 +56,7 @@ from surmap.agent.services import (
     Handler,
     agent_jobs_module,
     chat_service_module,
+    fleet_module,
     map_tools_module,
     simulation_tools_module,
     station_tools_module,
@@ -62,6 +64,7 @@ from surmap.agent.services import (
 )
 from surmap.agent.skills import SkillCatalogue, skill_tools
 from surmap.agent.subagents import SubagentSetup
+from surmap.agent.tools.fleet_handlers import fleet_tool_handlers
 from surmap.agent.tools.geometry import GeometryStore
 from surmap.agent.tools.handlers import survey_tool_handlers
 from surmap.agent.tools.map_handlers import MapSceneStore, map_tool_handlers
@@ -93,6 +96,7 @@ _SURVEY_TOOLS = survey_tools_pb2.DESCRIPTOR.services_by_name["SurveyTools"]
 _MAP_TOOLS = map_tools_pb2.DESCRIPTOR.services_by_name["MapTools"]
 _SIMULATION_TOOLS = simulation_tools_pb2.DESCRIPTOR.services_by_name["SimulationTools"]
 _STATION_TOOLS = station_tools_pb2.DESCRIPTOR.services_by_name["StationTools"]
+_FLEET_TOOLS = fleet_tools_pb2.DESCRIPTOR.services_by_name["FleetTools"]
 _AGENT_JOBS = jobs_pb2.DESCRIPTOR.services_by_name["AgentJobs"]
 """The three tool services; their rpcs are the tools a conversation binds."""
 
@@ -141,7 +145,8 @@ or fire); when run_demo says it does not recognise the prompt, only SAM can find
 You also edit \
 the display map: place and move GLB shapes with the map tools, navigate \
 its camera, and draw route paths. Map edits change only what the person sees; routes are drawn \
-paths, never flight plans. You only launch demos and read results; you never command a vehicle.
+paths, never flight plans. Simulated drones in the station's simulation can be tasked with the \
+fleet tools. Real aircraft are never commanded. You otherwise only launch demos and read results.
 
 Some tools run as jobs. When a tool call returns a job handle instead of a result, say that \
 the job started and name its job id, for example "run_demo started as job j-2". Never say a \
@@ -154,7 +159,8 @@ the new guidance first, and cancel_job a job they no longer want.
 You also have skills: reviewed instructions for kinds of work. Call list_skills to see \
 them, and load_skill to read the one that fits the task before you start it — in \
 particular, load the map skill before placing, moving or drawing anything on the map, and the \
-simulation skill before creating or changing a simulation scene.
+simulation skill before creating or changing a simulation scene, and the fleet skill before \
+tasking a simulated drone.
 
 Work with many steps that the person needs only the outcome of — building a simulation scene is \
 the main case — goes to a subagent: start_subagent hands it a complete brief and it works in a \
@@ -359,8 +365,8 @@ def build_agent_description(
 
     `survey_handlers` defaults to `survey_tool_handlers(workspace)`; `registry` to one over the
     process environment, which also lists the models. With `simulation`, the `SimulationTools`
-    are mounted, bound as agent tools, `/sim/` serves the page, scenarios and library, and
-    `/sim/fleet` links a running page to the station's fleet controllers.
+    and `FleetTools` are mounted and bound as agent tools, `/sim/` serves the page, scenarios
+    and library, and `/sim/fleet` links a running page to the station's fleet controllers.
     With `station`, the `StationTools` are mounted and bound the same way.
     """
     ledger = UsageLedger()
@@ -381,6 +387,11 @@ def build_agent_description(
         if simulation is not None
         else {}
     )
+    fleet_handlers: dict[str, Handler] = (
+        dict(fleet_tool_handlers(simulation.store, simulation.fleet))
+        if simulation is not None
+        else {}
+    )
     station_handlers: dict[str, Handler] = (
         dict(station_tool_handlers(station)) if station is not None else {}
     )
@@ -388,12 +399,14 @@ def build_agent_description(
         **survey_only,
         **map_handlers,
         **sim_handlers,
+        **fleet_handlers,
         **station_handlers,
     }
     contracts = (
         *tool_contracts(_SURVEY_TOOLS),
         *tool_contracts(_MAP_TOOLS),
         *(tool_contracts(_SIMULATION_TOOLS) if simulation is not None else ()),
+        *(tool_contracts(_FLEET_TOOLS) if simulation is not None else ()),
         *(tool_contracts(_STATION_TOOLS) if station is not None else ()),
         *tool_contracts(_AGENT_JOBS),
     )
@@ -421,7 +434,14 @@ def build_agent_description(
         services=(
             survey_tools_module(guarded(survey_only)),
             map_tools_module(guarded(map_handlers)),
-            *((simulation_tools_module(guarded(sim_handlers)),) if simulation is not None else ()),
+            *(
+                (
+                    simulation_tools_module(guarded(sim_handlers)),
+                    fleet_module(guarded(fleet_handlers)),
+                )
+                if simulation is not None
+                else ()
+            ),
             *((station_tools_module(guarded(station_handlers)),) if station is not None else ()),
             agent_jobs_module(guarded(agent_jobs_handlers(hub))),
             chat_service_module(guarded(chat_handlers(hub))),

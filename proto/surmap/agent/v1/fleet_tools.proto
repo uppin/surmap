@@ -1,0 +1,210 @@
+syntax = "proto3";
+
+package surmap.agent.v1;
+
+import "surmap/agent/v1/execution.proto";
+import "surmap/agent/v1/simulation_tools.proto";
+
+/*
+The survey agent's fleet tools: see a running simulation's drone nests and drones, launch a
+drone on a planned route, change its route or send it on a detour, recall it, and choose whose
+camera is on screen. Every rpc here is a model-facing tool: its snake_case name is the tool
+name, its leading comment the tool description, and its request message the tool's argument
+schema.
+
+These tools task the simulation's drones on machine 3 only; nothing here reaches PX4 or any
+real flight controller (docs/architecture.md section 1). Commands reach the scenario's page
+through the fleet link (/sim/fleet), which applies them on the simulation clock and answers
+when each took effect. Positions are ENU metres (east, north, up) on the simulated block.
+*/
+
+service FleetTools {
+  // Lists a scenario's drone nests: each nest's id, its pad's ENU position and heading, and the
+  // ids of the drones docked there.
+  rpc ListNests(ListNestsRequest) returns (ListNestsResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Lists a scenario's drones as the linked simulation page last reported them: each drone's
+  // nest, phase, ENU position, heading, speed and waypoints left, and which drone is active.
+  // Without a linked page, linked is false and every drone is docked at its pad.
+  rpc ListDrones(ListDronesRequest) returns (ListDronesResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Launches a docked simulated drone on a route: ENU waypoints 5-60 m up within 500 m of the
+  // origin, an optional speed (0.5-8 m/s) and whether to return to the nest or hover at the
+  // end. Answers the simulation time it took effect; follow the flight with list_drones.
+  rpc LaunchDrone(LaunchDroneRequest) returns (FleetCommandResult) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Replaces an airborne simulated drone's remaining route with a new one, flown from where the
+  // drone is now. Same route rules as launch_drone.
+  rpc SetRoute(SetRouteRequest) returns (FleetCommandResult) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Sends an airborne simulated drone on a detour: it flies these ENU waypoints first, then
+  // resumes the route it was flying. Use it for a closer look.
+  rpc AddDetour(AddDetourRequest) returns (FleetCommandResult) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Recalls an airborne simulated drone: it flies back above its nest, lands and docks.
+  rpc RecallDrone(RecallDroneRequest) returns (FleetCommandResult) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Makes a simulated drone the active one: from the time it takes effect, its camera is the
+  // feed on screen and the one processed. Pick the drone whose view matters now.
+  rpc SetActiveDrone(SetActiveDroneRequest) returns (FleetCommandResult) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Returns a fleet session's applied commands as the replay file the simulation reads
+  // (--fleet-log JSON lines): the latest session when no session_id is given.
+  rpc GetFleetLog(GetFleetLogRequest) returns (GetFleetLogResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+}
+
+// What a simulated drone is doing.
+enum DronePhase {
+  DRONE_PHASE_UNSPECIFIED = 0;
+  // On its nest's pad.
+  DRONE_PHASE_DOCKED = 1;
+  // Taking off to its first waypoint's height.
+  DRONE_PHASE_CLIMBING = 2;
+  // Flying its route.
+  DRONE_PHASE_CRUISING = 3;
+  // Flying a detour before resuming its route.
+  DRONE_PHASE_DETOURING = 4;
+  // Holding at the end of a route that ends in a hover.
+  DRONE_PHASE_HOVERING = 5;
+  // Flying back above its nest.
+  DRONE_PHASE_RETURNING = 6;
+  // Descending onto its nest's pad.
+  DRONE_PHASE_LANDING = 7;
+}
+
+// What a drone does after its route's last waypoint.
+enum RouteEnd {
+  // The simulation's default: return to the nest.
+  ROUTE_END_UNSPECIFIED = 0;
+  // Fly back to the nest, land and dock.
+  ROUTE_END_RETURN = 1;
+  // Hold at the last waypoint.
+  ROUTE_END_HOVER = 2;
+}
+
+// A drone nest: a docking pad and the drones it houses.
+message FleetNest {
+  string id = 1;
+  // The pad's centre at deck level, ENU metres.
+  EnuPoint position = 2;
+  // The pad's heading, degrees clockwise from north.
+  double yaw_deg = 3;
+  // The ids of the drones docked here, in order (e.g. "nest-sw-d1").
+  repeated string drone_ids = 4;
+}
+
+// A simulated drone as the linked page last reported it.
+message DroneStatus {
+  string id = 1;
+  // The id of the nest the drone belongs to.
+  string nest = 2;
+  DronePhase phase = 3;
+  // ENU metres.
+  EnuPoint position = 4;
+  // Degrees clockwise from north.
+  double yaw_deg = 5;
+  double speed_m_s = 6;
+  // Waypoints still to fly, the current one included.
+  int32 targets_left = 7;
+}
+
+// A planned flight.
+message FlightRoute {
+  // ENU waypoints flown in order; at least one, each 5-60 m up and within 500 m east and north
+  // of the origin.
+  repeated EnuPoint waypoints = 1;
+  // Cruise speed, 0.5-8 m/s; the simulation's default (5 m/s) when absent.
+  optional double speed_m_s = 2;
+  // What to do after the last waypoint; return to the nest when unspecified.
+  RouteEnd on_complete = 3;
+}
+
+// A command the simulation applied.
+message FleetCommandResult {
+  // The command's place in the session's fleet log.
+  int32 seq = 1;
+  // The simulation time it took effect, s.
+  double at_s = 2;
+}
+
+message ListNestsRequest {
+  string scenario_id = 1;
+}
+
+message ListNestsResponse {
+  repeated FleetNest nests = 1;
+}
+
+message ListDronesRequest {
+  string scenario_id = 1;
+}
+
+message ListDronesResponse {
+  // Whether a simulation page is linked for the scenario.
+  bool linked = 1;
+  // The id of the drone whose camera is on screen; empty when none is.
+  string active = 2;
+  repeated DroneStatus drones = 3;
+}
+
+message LaunchDroneRequest {
+  string scenario_id = 1;
+  // A docked drone's id, e.g. "nest-sw-d1".
+  string drone_id = 2;
+  FlightRoute route = 3;
+}
+
+message SetRouteRequest {
+  string scenario_id = 1;
+  // An airborne drone's id.
+  string drone_id = 2;
+  FlightRoute route = 3;
+}
+
+message AddDetourRequest {
+  string scenario_id = 1;
+  // An airborne drone's id.
+  string drone_id = 2;
+  // ENU waypoints flown before the drone resumes its route; same rules as a route's.
+  repeated EnuPoint waypoints = 3;
+}
+
+message RecallDroneRequest {
+  string scenario_id = 1;
+  // An airborne drone's id.
+  string drone_id = 2;
+}
+
+message SetActiveDroneRequest {
+  string scenario_id = 1;
+  // The drone whose camera becomes the feed.
+  string drone_id = 2;
+}
+
+message GetFleetLogRequest {
+  string scenario_id = 1;
+  // A session of the scenario; the latest when absent.
+  optional int32 session_id = 2;
+}
+
+message GetFleetLogResponse {
+  int32 session_id = 1;
+  // The session's applied commands, one JSON object per line, as --fleet-log reads them.
+  string fleet_log_jsonl = 2;
+}
