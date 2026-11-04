@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import io
 import threading
-from collections.abc import Callable
+from collections import deque
+from collections.abc import AsyncIterable, Awaitable, Callable
 from typing import Protocol
 
 import websockets.asyncio.server
@@ -18,6 +19,7 @@ from surmap.simulation.bevy_wire import (
     BridgeStatus,
     decode_bevy_message,
     encode_status,
+    is_pair_message,
 )
 from surmap.simulation.camera_profile import profile_sensor_yaml
 from surmap.slam.stream_protocol import OdomUpdate, Rectification
@@ -146,7 +148,8 @@ async def serve_bevy_bridge(
 
     A session's work (a map starting, PNG encodes, thread joins, `docker rm`) blocks, so it runs
     on a worker thread and the event loop, shared with the agent's own server, keeps serving.
-    A connection's messages are still handled one at a time and in order, and `close` waits for
+    A connection's messages are still handled one at a time and in order, though a pair
+    superseded while the session works is skipped (`serve_connection`), and `close` waits for
     a `handle` a cancelled handler left running."""
 
     async def handler(socket: websockets.asyncio.server.ServerConnection) -> None:
@@ -162,11 +165,76 @@ async def serve_bevy_bridge(
                 session.close()
 
         try:
-            async for message in socket:
-                if isinstance(message, bytes):
-                    status = await asyncio.to_thread(handle, message)
-                    await socket.send(encode_status(status))
+            await serve_connection(socket, socket.send, handle)
         finally:
             await asyncio.to_thread(close)
 
     return await websockets.asyncio.server.serve(handler, host, port)
+
+
+class BridgeMailbox:
+    """A connection's messages on their way from its reader to its worker: every hello in
+    arrival order, and of the pairs only the newest — a pair still waiting when a newer one
+    arrives is skipped, so a slow session always goes on with the latest frame."""
+
+    def __init__(self) -> None:
+        self._waiting: deque[tuple[bool, bytes]] = deque()
+        self._arrived = asyncio.Event()
+        self._closed = False
+        self.superseded = 0
+        """Pairs skipped because a newer one arrived before the worker took them."""
+
+    def put(self, message: bytes) -> None:
+        pair = is_pair_message(message)
+        if pair:
+            older = next((entry for entry in self._waiting if entry[0]), None)
+            if older is not None:
+                self._waiting.remove(older)
+                self.superseded += 1
+        self._waiting.append((pair, message))
+        self._arrived.set()
+
+    def close(self) -> None:
+        """No more messages; what is waiting is still taken."""
+        self._closed = True
+        self._arrived.set()
+
+    async def take(self) -> bytes | None:
+        """The next message, once one is waiting; `None` once closed and drained."""
+        while not self._waiting:
+            if self._closed:
+                return None
+            self._arrived.clear()
+            await self._arrived.wait()
+        return self._waiting.popleft()[1]
+
+
+async def serve_connection(
+    messages: AsyncIterable[str | bytes],
+    send: Callable[[str], Awaitable[None]],
+    handle: Callable[[bytes], BridgeStatus],
+) -> None:
+    """One connection: each binary message `handle`d on a worker thread, its status `send`.
+
+    The reader never waits on `handle`: it keeps reading into a `BridgeMailbox`, so the page's
+    socket never backs up behind a slow session and the session works on the newest pair. The
+    connection ends once the reader has ended and what was waiting is handled; a `handle` that
+    fails ends it at once."""
+    mailbox = BridgeMailbox()
+
+    async def read() -> None:
+        try:
+            async for message in messages:
+                if isinstance(message, bytes):
+                    mailbox.put(message)
+        finally:
+            mailbox.close()
+
+    reader = asyncio.create_task(read())
+    try:
+        while (message := await mailbox.take()) is not None:
+            status = await asyncio.to_thread(handle, message)
+            await send(encode_status(status))
+        await reader
+    finally:
+        reader.cancel()
