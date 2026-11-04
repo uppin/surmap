@@ -2,8 +2,6 @@
 //! flame flipbooks, pre-warmed smoke, per-window glow, metallic packing, the figure's visor and
 //! per-stand grass placement.
 
-use bevy::math::Vec2;
-
 use crate::actors::FigureDef;
 use crate::building::look::BuildingLook;
 use crate::fxdef::{FxDef, SpeciesDef};

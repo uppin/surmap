@@ -10,8 +10,8 @@ use super::look::BuildingLook;
 use super::spawn::BuildingView;
 use crate::building_fire::{BuildingFires, FloorState};
 use crate::fx::{self, Emission, SoftDiscs};
-use crate::fxdef::{FxAsset, FxDef, Shape, Spawn};
-use crate::wildfire::FireEmitter;
+use crate::fxdef::{FxAsset, FxDef, Spawn};
+use crate::wildfire::{FireEmitter, SimClock};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -87,6 +87,7 @@ pub struct BlazeEffects<'w> {
     effects: ResMut<'w, Assets<EffectAsset>>,
     images: ResMut<'w, Assets<Image>>,
     discs: ResMut<'w, SoftDiscs>,
+    assets: Res<'w, AssetServer>,
 }
 
 fn rate_per_emitter(def: &FxDef, spacing_m: f32) -> f32 {
@@ -104,8 +105,7 @@ impl BlazeEffects<'_> {
                 continue;
             };
             layer.spacing_m = def.emitter_spacing_m;
-            layer.image = (def.shape == Shape::SoftDisc)
-                .then(|| self.discs.handle(&mut self.images, def.softness));
+            layer.image = fx::sprite(&def, &mut self.discs, &mut self.images, &self.assets);
             let radius = def.emit_radius_m.unwrap_or(layer.spacing_m / 2.0);
             let rate = rate_per_emitter(&def, layer.spacing_m);
             let name = format!(
@@ -201,6 +201,39 @@ fn spawn_emitters(
                 ))
                 .id();
             view.emitters.push(id);
+        }
+    }
+}
+
+/// The seed of a building's window glow: a hash of its id.
+fn glow_seed(id: &str) -> u64 {
+    id.bytes().fold(0xCBF2_9CE4_8422_2325, |h, b| (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01B3))
+}
+
+/// Per frame: every window of a burning floor glows at its own seeded, flickering scale.
+pub fn flicker_window_glow(
+    clock: SimClock,
+    blaze: Option<Res<BuildingBlaze>>,
+    glows: Query<&Mesh3d>,
+    mut meshes: ResMut<Assets<Mesh>>,
+) {
+    let Some(blaze) = blaze else { return };
+    let t = clock.now();
+    for view in &blaze.views {
+        let seed = glow_seed(&view.id);
+        for &floor in &view.shown.0 {
+            let Some(mesh) = view.floors[floor as usize].glow.and_then(|e| glows.get(e).ok()) else {
+                continue;
+            };
+            let Some(mesh) = meshes.get_mut(&mesh.0) else { continue };
+            let windows = mesh.count_vertices() / 4;
+            let colours: Vec<[f32; 4]> = (0..windows)
+                .flat_map(|w| {
+                    let g = blaze.look.fire.window_glow(seed, (floor << 12) | w as u32, t);
+                    [[g, g, g, 1.0]; 4]
+                })
+                .collect();
+            mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colours);
         }
     }
 }

@@ -10,6 +10,8 @@ are checked here, so the station never serves a style the simulation would refus
 from __future__ import annotations
 
 import copy
+import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -297,6 +299,52 @@ def style_building(
     return _edited(manifest, "elements", elements)
 
 
+DEFAULT_FLOOR_M = 3.0
+
+
+def _district_floor_m(district: Mapping[str, object], assets_dir: Path) -> float:
+    name = str(district.get("preset"))
+    relative = name if "/" in name else f"building/districts/{name}.district.json"
+    try:
+        preset = json.loads((assets_dir / relative).read_text())
+    except (OSError, ValueError):
+        return DEFAULT_FLOOR_M
+    value = preset.get("floor_m") if isinstance(preset, dict) else None
+    return float(value) if isinstance(value, int | float) and value > 0 else DEFAULT_FLOOR_M
+
+
+def _check_district_floors(
+    manifest: Mapping[str, object], fire_id: str, building_id: str, floor: int, assets_dir: Path
+) -> None:
+    """Refuse a floor past the count the district gives a building with no `floors` of its own."""
+    target = next(
+        e
+        for e in object_list(manifest, "elements")
+        if e.get("kind") == "building" and e.get("id") == building_id
+    )
+    position, size = target.get("position_enu"), target.get("size_m")
+    if target.get("floors") is not None or not (
+        isinstance(position, list) and isinstance(size, list) and len(size) == 3
+    ):
+        return
+    district = next(
+        (
+            d
+            for d in reversed(object_list(manifest, "districts"))
+            if _holds(d, float(position[0]), float(position[1]))
+        ),
+        None,
+    )
+    if district is None:
+        return
+    floor_m = _district_floor_m(district, assets_dir)
+    floors = max(1, math.floor(float(size[2]) / floor_m + 1e-3))
+    if floor >= floors:
+        raise ScenarioInvalid(
+            f"building fire {fire_id}: floor {floor} is not below {building_id}'s {floors} floors"
+        )
+
+
 def add_building_fire(
     manifest: Mapping[str, object],
     fire_id: str,
@@ -304,15 +352,20 @@ def add_building_fire(
     building: str,
     floor: int,
     start_s: float = 0.0,
+    assets_dir: Path | None = None,
 ) -> Manifest:
-    """A new manifest with a fire lit in `building` on `floor` at `start_s`."""
+    """A new manifest with a fire lit in `building` on `floor` at `start_s`. With `assets_dir`, a
+    building without `floors` takes the district's count, as the renderer counts them."""
     fire: dict[str, object] = {
         "id": fire_id,
         "building": building,
         "floor": floor,
         "start_s": start_s,
     }
-    return _edited(manifest, "building_fires", [*object_list(manifest, "building_fires"), fire])
+    edited = _edited(manifest, "building_fires", [*object_list(manifest, "building_fires"), fire])
+    if assets_dir is not None:
+        _check_district_floors(edited, fire_id, building, floor, Path(assets_dir))
+    return edited
 
 
 def remove_building_fire(manifest: Mapping[str, object], fire_id: str) -> Manifest:

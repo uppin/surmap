@@ -1,10 +1,10 @@
 {
   "material": {
-    "base_color": "textures/concrete_block_wall_diff_2k.jpg",
-    "normal": "textures/concrete_block_wall_nor_gl_2k.jpg",
-    "arm": "textures/concrete_block_wall_arm_2k.jpg",
-    "uv_scale": 0.5,
-    "reflectance": 0.35
+    "uv_scale": 0.8,
+    "reflectance": 0.35,
+    "base_color": "textures/PavingStones125A_2K-JPG_Color.jpg",
+    "normal": "textures/PavingStones125A_2K-JPG_NormalGL.jpg",
+    "roughness": "textures/PavingStones125A_2K-JPG_Roughness.jpg"
   },
   "colourable": false,
   "glazing": {

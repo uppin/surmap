@@ -193,6 +193,7 @@ pub struct FireSurfaces<'w> {
     standard: ResMut<'w, Assets<StandardMaterial>>,
     images: ResMut<'w, Assets<Image>>,
     discs: ResMut<'w, fx::SoftDiscs>,
+    assets: Res<'w, AssetServer>,
 }
 
 /// The entities a fire moves: its emitters and its light.
@@ -233,6 +234,7 @@ pub fn update_fires(
         standard,
         images,
         discs,
+        assets,
     } = &mut surfaces;
     let now = clock.now();
     let wind = scene.wind.velocity_enu(now);
@@ -241,8 +243,7 @@ pub fn update_fires(
             if layer.effect.is_none() {
                 if let Some(def) = ready_effect(fxs, &layer.fx) {
                     layer.spacing_m = def.emitter_spacing_m;
-                    layer.image = (def.shape == crate::fxdef::Shape::SoftDisc)
-                        .then(|| discs.handle(images, def.softness));
+                    layer.image = fx::sprite(&def, discs, images, assets);
                     let rate = rate_per_emitter(&def, layer.spacing_m);
                     let name = format!("{} {:?}", fire.id, layer.kind);
                     layer.effect = Some(effects.add(fx::effect(

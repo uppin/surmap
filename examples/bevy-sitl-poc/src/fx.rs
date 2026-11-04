@@ -78,8 +78,17 @@ pub fn effect(def: &FxDef, name: &str, rate_per_s: f32, emission: Emission) -> E
     };
     let gravity = AccelModifier::new(writer.lit(Vec3::new(0.0, def.motion.gravity, 0.0)).expr());
 
+    let sprite_index = def.flipbook.as_ref().map(|book| {
+        // Each particle plays the sheet at `fps`, started at a phase its own lifetime picks.
+        let frames = (book.columns * book.rows) as i32;
+        let phase = writer.attr(Attribute::LIFETIME) * writer.lit(37.0_f32);
+        let frame = (writer.attr(Attribute::AGE) * writer.lit(book.fps) + phase)
+            .cast(ScalarType::Int)
+            .rem(writer.lit(frames));
+        SetAttributeModifier::new(Attribute::SPRITE_INDEX, frame.expr())
+    });
     let mut module = writer.finish();
-    if def.shape == Shape::SoftDisc {
+    if def.flipbook.is_some() || def.shape == Shape::SoftDisc {
         module.add_texture_slot("shape");
     }
     let mut asset = EffectAsset::new(
@@ -110,7 +119,17 @@ pub fn effect(def: &FxDef, name: &str, rate_per_s: f32, emission: Emission) -> E
             gradient: sizes,
             screen_space_size: false,
         });
-    if def.shape == Shape::SoftDisc {
+    if let (Some(book), Some(index)) = (&def.flipbook, sprite_index) {
+        asset = asset
+            .update(index)
+            .render(ParticleTextureModifier {
+                texture_slot,
+                sample_mapping: ImageSampleMapping::Modulate,
+            })
+            .render(FlipbookModifier {
+                sprite_grid_size: UVec2::new(book.columns, book.rows),
+            });
+    } else if def.shape == Shape::SoftDisc {
         asset = asset.render(ParticleTextureModifier {
             texture_slot,
             sample_mapping: ImageSampleMapping::ModulateOpacityFromR,
@@ -127,6 +146,20 @@ pub fn effect(def: &FxDef, name: &str, rate_per_s: f32, emission: Emission) -> E
 enum Position {
     Sphere(SetPositionSphereModifier),
     Box(SetAttributeModifier),
+}
+
+/// The image an effect's particles sample: its flipbook's sheet, else the generated soft disc.
+pub fn sprite(
+    def: &FxDef,
+    discs: &mut SoftDiscs,
+    images: &mut Assets<Image>,
+    assets: &AssetServer,
+) -> Option<Handle<Image>> {
+    match (&def.flipbook, def.shape) {
+        (Some(book), _) => Some(assets.load(book.texture.clone())),
+        (None, Shape::SoftDisc) => Some(discs.handle(images, def.softness)),
+        (None, _) => None,
+    }
 }
 
 /// The radial alpha texture of a soft disc (red channel): 1 at the centre, 0 at the rim.

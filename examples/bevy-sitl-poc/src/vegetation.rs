@@ -28,7 +28,9 @@ use crate::world::{enu, Seeded};
 mod grass;
 mod meshes;
 
-pub use grass::{grass_instances, scatter_stands, show_grass};
+#[cfg(test)]
+pub use grass::grass_instances;
+pub use grass::{scatter_stands, show_grass};
 use grass::{sow_grass, GrassField};
 use meshes::{pine, PINE_MESH_HEIGHT_M};
 

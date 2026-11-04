@@ -203,7 +203,31 @@ impl FxDef {
         if fx.emitter_spacing_m <= 0.0 || fx.refresh_s <= 0.0 {
             return Err("emitter_spacing_m and refresh_s must be positive".into());
         }
+        if let Some(book) = &fx.flipbook {
+            book.validate()?;
+        }
+        if fx.prewarm_s < 0.0 {
+            return Err("prewarm_s must not be negative".into());
+        }
         Ok(fx)
+    }
+}
+
+impl Flipbook {
+    fn validate(&self) -> Result<(), String> {
+        if self.columns == 0 || self.rows == 0 {
+            return Err("flipbook columns and rows must be positive".into());
+        }
+        if self.fps <= 0.0 {
+            return Err("flipbook fps must be positive".into());
+        }
+        if !self.texture.starts_with("textures/fx/")
+            || !self.texture.ends_with(".png")
+            || self.texture.split('/').any(|part| part.is_empty() || part == "..")
+        {
+            return Err("flipbook texture must be a textures/fx/*.png path".into());
+        }
+        Ok(())
     }
 }
 

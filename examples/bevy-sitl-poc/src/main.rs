@@ -17,6 +17,7 @@ mod flight;
 mod fx;
 mod fxdef;
 mod look;
+mod prewarm;
 mod record;
 mod rig;
 mod scene_manifest;
@@ -117,6 +118,8 @@ fn main() {
         .init_asset_loader::<actors::FigureLoader>()
         .init_resource::<actors::Behaviour>()
         .init_resource::<fx::SoftDiscs>()
+        .init_resource::<prewarm::Prewarm>()
+        .init_resource::<textures::RoughnessPacking>()
         .init_resource::<vegetation::PendingStands>()
         .init_resource::<vegetation::PineKits>()
         .init_asset::<ManifestAsset>()
@@ -153,6 +156,7 @@ fn main() {
                 spin_rotors,
                 scatter_once,
                 update_status,
+                prewarm::prewarm_effects.before(take_shots),
                 take_shots,
                 shots::aim_overview_at_fire,
                 shots::aim_people_cam,
@@ -171,6 +175,7 @@ fn main() {
                 wildfire::update_fires,
                 wildfire::rain_around_cameras,
                 actors::animate_figures,
+                actors::attach_visors,
             )
                 .chain()
                 .after(build_world),

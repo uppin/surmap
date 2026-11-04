@@ -3,7 +3,7 @@
     "base_color": "textures/roof_slates_03_diff_2k.jpg",
     "normal": "textures/roof_slates_03_nor_gl_2k.jpg",
     "arm": "textures/roof_slates_03_arm_2k.jpg",
-    "uv_scale": 0.33,
+    "uv_scale": 0.25,
     "reflectance": 0.35
   },
   "colourable": false,

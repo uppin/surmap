@@ -5,6 +5,16 @@ use serde::Deserialize;
 
 use crate::building_style::RoofShape;
 
+/// A splitmix64 hash of a building's seed and a window's index.
+fn hash(building_seed: u64, window: u32) -> u64 {
+    let mut z = building_seed
+        .wrapping_add(u64::from(window).wrapping_mul(0x9E37_79B9_7F4A_7C15))
+        .wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 pub struct FlatRoof {
     pub parapet_m: f32,
@@ -64,8 +74,12 @@ impl FireLook {
     /// The scale of window `window`'s glow in building `building_seed` at `t_s`: in
     /// `[1 − glow_variation, 1 + glow_variation]`, different per window, flickering in time.
     pub fn window_glow(&self, building_seed: u64, window: u32, t_s: f32) -> f32 {
-        let _ = (building_seed, window, t_s);
-        todo!("per-window glow")
+        let bits = hash(building_seed, window);
+        let unit = |shift: u32| ((bits >> shift) & 0xFFFF) as f32 / 65535.0;
+        let steady = unit(0) * 2.0 - 1.0;
+        let phase = unit(16) * std::f32::consts::TAU;
+        let flicker = (std::f32::consts::TAU * self.glow_flicker_hz * t_s + phase).sin();
+        1.0 + self.glow_variation * (0.6 * steady + 0.4 * flicker)
     }
 }
 

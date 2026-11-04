@@ -61,8 +61,14 @@
   "max_particles": 20000,
   "emitter_spacing_m": 1.5,
   "refresh_s": 1.0,
-  "stretch": 1.8,
+  "stretch": 1.0,
   "shape": "soft_disc",
   "softness": 0.7,
-  "emit_radius_m": 0.35
+  "emit_radius_m": 0.35,
+  "flipbook": {
+    "texture": "textures/fx/flame_tongues.png",
+    "columns": 10,
+    "rows": 6,
+    "fps": 30.0
+  }
 }

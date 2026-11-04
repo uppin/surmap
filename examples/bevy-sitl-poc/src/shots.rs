@@ -180,7 +180,7 @@ pub struct PeopleCam;
 pub struct Shots {
     overview: Handle<Image>,
     people: Handle<Image>,
-    settled_frames: u32,
+    pub(crate) settled_frames: u32,
     requested: bool,
     captured: u32,
 }

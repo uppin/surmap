@@ -180,9 +180,10 @@ pub fn spawn_building(
     let pane = part(surfaces, "glass", &glazing.glass);
     let glow = presets.glow.map(|(colour, intensity)| {
         let c = Color::srgb(colour[0], colour[1], colour[2]).to_linear();
+        // Unlit, so each window's vertex colour scales the glow.
         surfaces.flat(StandardMaterial {
-            base_color: Color::BLACK,
-            emissive: LinearRgba::rgb(c.red, c.green, c.blue) * intensity,
+            base_color: Color::LinearRgba(LinearRgba::rgb(c.red, c.green, c.blue) * intensity),
+            unlit: true,
             cull_mode: None,
             ..default()
         })

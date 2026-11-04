@@ -21,19 +21,19 @@ PRD: none (sweep of recorded TODOs; each TODO file is the requirement) · Discov
 - [wf 2] ✅ 2026-11-04 `/plan-red` Red — failing tests for every testable item, committed · Rust 9 red (`sweep_tests.rs`: flipbook, prewarm, window glow, metallic packing, visor, per-stand grass), Python 4 red (district floors ×2, recorded dynamics ×2); 155 Rust inherited green
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — implement until every red test passes, then the visual items ·
-  - [ ] C1 floors from the district preset (`2026-11-04-building-fire-floor-from-district`)
-  - [ ] C2 recorded dynamics fixtures, end to end (`2026-11-03-fire-perimeter-capture-end-to-end`)
-  - [ ] C3 per-stand grass seed (`2026-11-03-per-stand-grass-seed`)
-  - [ ] C4 load-independent differencing budget (`2026-11-03-differencing-frame-budget-timing-flake`)
-  - [ ] P1 flame-tongue flipbooks (`2026-11-03-flame-tongue-flipbook-sprites`)
-  - [ ] P2 building texture character + metallic packing (`2026-11-04-building-texture-character`)
-  - [ ] P3 per-window glow variation (`2026-11-04-building-window-glow-variation`)
-  - [ ] P4 pre-warmed smoke in stills (`2026-11-04-building-smoke-prewarm-stills`)
-  - [ ] P5 figure facing cue (`2026-11-03-figure-facing-cue`)
-  - [ ] P6 fire light A/B (`2026-11-03-fire-light-visibility`)
-  - [ ] Each solved TODO file deleted; screenshot set S1 taken
-  - [ ] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`; clippy clean in touched code
+- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes, then the visual items · Rust 167/167 (9 red now green), Python 1924 passed / 33 skipped, ruff/mypy clean, wasm check ok, clippy clean in touched code; C4 10/10 under `yes > /dev/null` on every core; fixtures evacuation 68 KB, blaze 28 KB; S1 stills taken (planner judges)
+  - [x] C1 floors from the district preset (`2026-11-04-building-fire-floor-from-district`)
+  - [x] C2 recorded dynamics fixtures, end to end (`2026-11-03-fire-perimeter-capture-end-to-end`)
+  - [x] C3 per-stand grass seed (`2026-11-03-per-stand-grass-seed`)
+  - [x] C4 load-independent differencing budget (`2026-11-03-differencing-frame-budget-timing-flake`)
+  - [x] P1 flame-tongue flipbooks (`2026-11-03-flame-tongue-flipbook-sprites`)
+  - [x] P2 building texture character + metallic packing (`2026-11-04-building-texture-character`)
+  - [x] P3 per-window glow variation (`2026-11-04-building-window-glow-variation`)
+  - [x] P4 pre-warmed smoke in stills (`2026-11-04-building-smoke-prewarm-stills`)
+  - [x] P5 figure facing cue (`2026-11-03-figure-facing-cue`)
+  - [x] P6 fire light A/B (`2026-11-03-fire-light-visibility`)
+  - [x] Each solved TODO file deleted; screenshot set S1 taken
+  - [x] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`; clippy clean in touched code
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (tests, V3 load run, planner-reviewed S1)
   - [ ] `docs/simulation/bevy-simulation.md` updated for every new field; changelog `2026-11-04-sim-disaster-2-sweep.md`; `HACKATHON.md` rows for new texture/flipbook sources
@@ -94,6 +94,25 @@ Everything tunable stays runtime JSON (developer: "everything should come declar
 - **V3** — C4: the differencing test passes 10/10 under synthetic CPU load (command recorded).
 - **V4** (developer-consented: planner-reviewed screenshots) — **S1**: W2 t=40 overview + fire-eye,
   D2 t=400 overview + fire-eye, B1 t=60 people, D1 downtown/suburban/industrial, P6 pairs.
+
+## Green record
+
+- **C4 (V3)**: `for i in $(seq $(sysctl -n hw.ncpu)); do (yes > /dev/null &); done`, then ten runs of
+  `uv run pytest -q tests/test_moving_differencing.py::test_differencing_is_within_frame_budget` at a
+  load average of 10-14: 10/10 passed (0.29-0.62 s per run including start-up); `yes` killed after.
+  The test now takes the best of three `time.process_time()` runs against the same 0.05 s budget.
+- **C2**: `--record ... --frames 20 --start 25 --rate-hz 2 --scenario wildfire-evacuation` and
+  `--start 5 --rate-hz 0.1 --scenario downtown-blaze`; committed without `frames/` (the loader only
+  stores the image references): 68 KB and 28 KB.
+- **P1**: `textures/fx/flame_tongues.png` = OpenGameArt "Animated Fire" `fire1_64.png` (CC0, 10x6
+  frames of 64 px), pinned in `assets.lock.json`; flames and window flames dropped `stretch` to 1
+  (stretch orients the quad along its velocity, which would lay the sprite on its side).
+- **P2**: cement_block `PavingStones125A` (ambientCG), copper `Metal058C` (verdigris, ambientCG),
+  plastic `brown_planks_05` (Poly Haven), wood `WoodSiding009` (ambientCG), eternit `asbestos_sheet_02`
+  (Poly Haven). Poly Haven has no CMU or vinyl siding; none is a perfect match (see gaps).
+- **P4**: hanabi has no pre-warm, so screenshot mode speeds the effect clock (<= 0.2 s per frame)
+  until the longest `prewarm_s` has passed, then restarts the still's settle wait.
+- **P3**: the glow material is now unlit with one vertex colour per window, rewritten each frame.
 
 ## Prerequisites
 

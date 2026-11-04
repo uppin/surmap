@@ -47,6 +47,8 @@
       ],
       "lumens_per_floor": 600000.0,
       "range_m": 70.0
-    }
+    },
+    "glow_variation": 0.35,
+    "glow_flicker_hz": 1.5
   }
 }

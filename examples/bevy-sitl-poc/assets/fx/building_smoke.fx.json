@@ -43,5 +43,6 @@
   "refresh_s": 1.0,
   "shape": "soft_disc",
   "softness": 0.95,
-  "emit_radius_m": 1.0
+  "emit_radius_m": 1.0,
+  "prewarm_s": 25.0
 }
