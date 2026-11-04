@@ -79,6 +79,15 @@ own assets under `/sim/assets/`, and the built page at `/sim/` (`--sim-dist`). T
 scenario with `?scenario=<id>`; natively, `--scenario <id>` loads `scenarios/<id>.json` from
 the asset root (ids are letters, digits and dashes).
 
+For local development `./scripts/dev.sh` serves the page by default and ensures its
+prerequisites before anything starts: `uv` and `yarn` on PATH, the chat UI's
+`node_modules`, the pinned textures, models and HDRI fetched and hash-verified
+(`scripts/fetch_sim_assets.py`), and a page build whose JS/WASM are addressed under
+`/sim/` — rebuilt with `trunk build --public-url /sim/` when the build is missing or
+was made for another prefix, since root-addressed assets 404 under `/sim/` and leave
+a black canvas. `SURMAP_DEV_SIM_DIST` and `SURMAP_DEV_SIM_FETCH_CMD` override the
+page location and the fetch command.
+
 ## Weather, wind and fire
 
 A scenario may carry weather, stands of pines and grass that sway in its wind, and wildfires

@@ -17,6 +17,11 @@
 #   SURMAP_DEV_MODEL         agent model id (default: the agent's own default)
 #   SURMAP_DEV_CM5_PORT      CM5 server port (default 8080)
 #   SURMAP_DEV_STATION_PORT  station server port (default 8081)
+#   SURMAP_DEV_SIM_DIST      sim page build the agent serves at /sim/ (default:
+#                            examples/bevy-sitl-poc/dist; built for /sim/ when missing
+#                            or built for another prefix — needs `trunk`)
+#   SURMAP_DEV_SIM_FETCH_CMD fetches the sim's pinned assets (default:
+#                            `uv run python scripts/fetch_sim_assets.py`)
 #   SURMAP_DEV_STOP_TIMEOUT  seconds a service gets to stop before SIGKILL (default 5)
 #   SURMAP_DEV_<NAME>_CMD    replaces a service's command (NAME: CM5, STATION, AGENT, CHAT)
 set -uo pipefail
@@ -24,7 +29,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 usage() {
-  sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 MODEL="${SURMAP_DEV_MODEL:-}"
@@ -42,6 +47,9 @@ done
 
 CM5_PORT="${SURMAP_DEV_CM5_PORT:-8080}"
 STATION_PORT="${SURMAP_DEV_STATION_PORT:-8081}"
+SIM_DIST="${SURMAP_DEV_SIM_DIST:-$ROOT/examples/bevy-sitl-poc/dist}"
+SIM_FETCH_CMD="${SURMAP_DEV_SIM_FETCH_CMD:-uv run python scripts/fetch_sim_assets.py}"
+SIM_ASSETS="$ROOT/examples/bevy-sitl-poc/assets"
 STOP_TIMEOUT="${SURMAP_DEV_STOP_TIMEOUT:-5}"
 
 AGENT_ARGS="--sam-fake"
@@ -57,7 +65,7 @@ fi
 SERVICES="cm5 station agent chat"
 CMD_cm5="${SURMAP_DEV_CM5_CMD:-exec uv run python -m surmap.survey.cm5_main --host 127.0.0.1 --port $CM5_PORT}"
 CMD_station="${SURMAP_DEV_STATION_CMD:-exec $STATION_RUN python -m surmap.survey.station_main $STATION_ARGS}"
-CMD_agent="${SURMAP_DEV_AGENT_CMD:-exec uv run python -m surmap.agent $AGENT_ARGS}"
+CMD_agent="${SURMAP_DEV_AGENT_CMD:-exec uv run python -m surmap.agent $AGENT_ARGS --sim-dist $SIM_DIST}"
 CMD_chat="${SURMAP_DEV_CHAT_CMD:-cd web/agent-chat && exec yarn dev}"
 
 if [ "$DRY_RUN" = 1 ]; then
@@ -72,9 +80,44 @@ if [ "$WITH_SAM" = 1 ] && [ -z "${HF_TOKEN:-}" ] && ! grep -qs '^HF_TOKEN=' .env
   echo "dev.sh: warning: no HF_TOKEN (shell, .env or huggingface-cli login); facebook/sam3.1 is gated" >&2
 fi
 
-if [ -z "${SURMAP_DEV_CHAT_CMD:-}" ] && [ ! -d web/agent-chat/node_modules ]; then
-  echo "dev.sh: web/agent-chat has no node_modules; run 'yarn local-install' there first" >&2
+if [ -z "${SURMAP_DEV_CM5_CMD:-}" ] || [ -z "${SURMAP_DEV_STATION_CMD:-}" ] || [ -z "${SURMAP_DEV_AGENT_CMD:-}" ]; then
+  command -v uv >/dev/null 2>&1 || {
+    echo "dev.sh: uv not found on PATH; install it (https://docs.astral.sh/uv/) first" >&2
+    exit 1
+  }
+fi
+
+if [ -z "${SURMAP_DEV_CHAT_CMD:-}" ]; then
+  command -v yarn >/dev/null 2>&1 || {
+    echo "dev.sh: yarn not found on PATH; install Node.js and yarn first" >&2
+    exit 1
+  }
+  if [ ! -d web/agent-chat/node_modules ]; then
+    echo "dev.sh: web/agent-chat has no node_modules; run 'yarn local-install' there first" >&2
+    exit 1
+  fi
+fi
+
+if [ ! -d "$SIM_ASSETS" ]; then
+  echo "dev.sh: simulation assets missing: $SIM_ASSETS (the agent serves them under /sim/assets)" >&2
   exit 1
+fi
+# The page's textures, models and HDRI are pinned in assets.lock.json and fetched,
+# never committed; without them the scene loads untextured (asset 404s in the console).
+echo "dev.sh: ensuring the simulation's pinned assets (fetch_sim_assets.py)" >&2
+if ! bash -c "$SIM_FETCH_CMD"; then
+  echo "dev.sh: could not fetch the simulation's pinned assets; check the network and re-run" >&2
+  exit 1
+fi
+# The agent serves the Bevy simulation at /sim/ from $SIM_DIST. A page built without
+# `--public-url /sim/` addresses its JS/WASM from the server root, which 404s under
+# /sim/ and leaves a black canvas — so a missing or foreign-prefix build is (re)built.
+if [ ! -f "$SIM_DIST/index.html" ] || ! grep -q "/sim/" "$SIM_DIST/index.html"; then
+  echo "dev.sh: building the simulation page for /sim/ (trunk build --public-url /sim/)" >&2
+  if ! (cd "$ROOT/examples/bevy-sitl-poc" && trunk build index.html --release --public-url /sim/ --dist "$SIM_DIST"); then
+    echo "dev.sh: could not build the simulation page; install trunk (cargo install trunk) and re-run" >&2
+    exit 1
+  fi
 fi
 
 STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/surmap-dev.XXXXXX")"
