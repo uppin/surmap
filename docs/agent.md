@@ -921,6 +921,10 @@ uv run python -m surmap.agent --sam-fake \
 | `--sim-dist` | none | a `trunk build` output served at `/sim/` |
 | `--bevy-bridge-port` | none | serve the stereo bridge a `?bridge=ws://…` simulation page streams its active drone to; each drone gets its own RTAB-Map session and its own video of the agent's SAM (the station's, else the fake with `--sam-fake`), read back with `drone_map_status` |
 
+The deployed agent on Modal (`surmap-agent`, [modal.md](modal.md)) passes `--sim-assets` and
+`--sim-dist` at the image's copies of the PoC's assets and `trunk build`, so its simulation tools,
+the chat's preview and the `/sim/fleet` link work there; it runs no `--bevy-bridge-port` yet.
+
 **Access code** (`surmap.agent.server.access`). With `SURMAP_AGENT_ACCESS_CODE` set, the agent is
 behind a shared pass code: `POST /auth/session` with `{"code": …}` answers
 `{"token", "expires_in"}` (12 h) and sets the same token as an HttpOnly, Secure, SameSite=Strict
