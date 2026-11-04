@@ -472,3 +472,14 @@ fn a_map_floor_with_an_absolute_texture_is_refused() {
                       "texture": "/etc/passwd.png", "zoom": 17}}"#;
     assert!(SceneManifest::from_json(text).is_err());
 }
+
+#[test]
+fn the_shared_map_floor_fixture_parses_in_the_renderer_too() {
+    // The same golden file the station validates (tests/fixtures/sim_scenario/map-floor.json).
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/sim_scenario/map-floor.json");
+    let text = std::fs::read_to_string(path).expect("shared map-floor fixture is committed");
+    let manifest = SceneManifest::from_json(&text).expect("shared fixture validates in Rust");
+    assert!(manifest.asset_paths().iter().any(|p| p == "library/map-floor/abc123.png"));
+    let floor = manifest.map_floor.expect("fixture carries a floor");
+    assert_eq!(floor.texture, "library/map-floor/abc123.png");
+}

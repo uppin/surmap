@@ -12,6 +12,7 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import Mapping, Sequence
+from math import cos, radians
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -167,6 +168,13 @@ def _validate_map_floor(manifest: Mapping[str, object]) -> None:
     zoom = floor.get("zoom")
     if isinstance(zoom, bool) or not isinstance(zoom, int) or not 0 <= zoom <= 18:
         raise ScenarioInvalid("map_floor zoom must be an integer in 0..18")
+    # Same size cap the renderer applies (scene_manifest.rs MapFloor::validate):
+    # 111 320 m per degree of latitude, longitude scaled by cos(centre latitude).
+    centre_lat = (float(sw[0]) + float(ne[0])) / 2.0
+    north_m = (float(ne[0]) - float(sw[0])) * 111_320.0
+    east_m = (float(ne[1]) - float(sw[1])) * 111_320.0 * cos(radians(centre_lat))
+    if east_m > 1000.0 or north_m > 1000.0:
+        raise ScenarioInvalid("map_floor is at most 1000 m a side")
 
 
 def set_map_floor(
@@ -177,7 +185,13 @@ def set_map_floor(
     texture: str,
     zoom: int,
 ) -> Manifest:
-    """A new manifest whose floor is the map cropped to the `sw`..`ne` GPS bbox."""
+    """A new manifest whose floor is the map cropped to the `sw`..`ne` GPS bbox.
+
+    The floor replaces the preset ground: the `ground` box element is removed,
+    because its opaque top at 0 m would hide the floor plane under it. The
+    renderer gives the floor itself a fixed collider, so nothing loses the
+    ground it stands on.
+    """
     edited: Manifest = copy.deepcopy(dict(manifest))
     edited["map_floor"] = {
         "sw": [sw[0], sw[1]],
@@ -185,6 +199,36 @@ def set_map_floor(
         "texture": texture,
         "zoom": zoom,
     }
+    elements = edited.get("elements")
+    if isinstance(elements, list):
+        edited["elements"] = [
+            e
+            for e in elements
+            if not (isinstance(e, dict) and e.get("kind") == "box" and e.get("id") == "ground")
+        ]
+    validate_manifest(edited)
+    return edited
+
+
+def clear_map_floor(manifest: Mapping[str, object]) -> Manifest:
+    """A new manifest with no map floor; the preset ground box is restored if absent."""
+    edited: Manifest = copy.deepcopy(dict(manifest))
+    edited.pop("map_floor", None)
+    elements = edited.get("elements")
+    items = list(elements) if isinstance(elements, list) else []
+    if not any(isinstance(e, dict) and e.get("id") == "ground" for e in items):
+        items.insert(
+            0,
+            {
+                "kind": "box",
+                "id": "ground",
+                "material": "ground",
+                "size_m": [200.0, 200.0, 0.2],
+                "position_enu": [0.0, 0.0, -0.2],
+                "collider": True,
+            },
+        )
+        edited["elements"] = items
     validate_manifest(edited)
     return edited
 
