@@ -7,7 +7,7 @@
         0.7,
         0.3
       ],
-      3.0,
+      1.2,
       0.0
     ],
     [
@@ -17,7 +17,7 @@
         0.55,
         0.14
       ],
-      2.5,
+      1.0,
       0.95
     ],
     [
@@ -27,7 +27,7 @@
         0.25,
         0.04
       ],
-      1.2,
+      0.48,
       0.75
     ],
     [
@@ -37,7 +37,7 @@
         0.06,
         0.02
       ],
-      0.3,
+      0.12,
       0.0
     ]
   ],
@@ -61,8 +61,14 @@
   "max_particles": 20000,
   "emitter_spacing_m": 1.5,
   "refresh_s": 1.0,
-  "stretch": 1.8,
+  "stretch": 1.0,
   "shape": "soft_disc",
   "softness": 0.7,
-  "emit_radius_m": 0.35
+  "emit_radius_m": 0.35,
+  "flipbook": {
+    "texture": "textures/fx/flame_tongues.png",
+    "columns": 10,
+    "rows": 6,
+    "fps": 30.0
+  }
 }

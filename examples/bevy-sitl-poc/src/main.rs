@@ -12,11 +12,13 @@ mod building;
 mod building_fire;
 mod building_style;
 mod calibration;
+mod close_shots;
 mod fire;
 mod flight;
 mod fx;
 mod fxdef;
 mod look;
+mod prewarm;
 mod record;
 mod rig;
 mod scene_manifest;
@@ -27,6 +29,8 @@ mod ui;
 mod vegetation;
 mod wildfire;
 mod wind;
+#[cfg(test)]
+mod sweep_tests;
 mod wire;
 mod world;
 
@@ -115,6 +119,8 @@ fn main() {
         .init_asset_loader::<actors::FigureLoader>()
         .init_resource::<actors::Behaviour>()
         .init_resource::<fx::SoftDiscs>()
+        .init_resource::<prewarm::Prewarm>()
+        .init_resource::<textures::RoughnessPacking>()
         .init_resource::<vegetation::PendingStands>()
         .init_resource::<vegetation::PineKits>()
         .init_asset::<ManifestAsset>()
@@ -134,7 +140,7 @@ fn main() {
                 commands.insert_resource(recorder);
             }
         })
-        .add_systems(Startup, (start_loading, setup_drone, setup_cameras, setup_overview).chain())
+        .add_systems(Startup, (start_loading, setup_drone, setup_cameras, setup_overview, close_shots::setup_close_shots).chain())
         .add_systems(Update, (setup_ui, setup_button).chain().run_if(move || interactive).run_if(resource_added::<StereoFeeds>))
         .add_systems(
             Update,
@@ -169,9 +175,14 @@ fn main() {
                 wildfire::update_fires,
                 wildfire::rain_around_cameras,
                 actors::animate_figures,
+                actors::attach_visors,
             )
                 .chain()
                 .after(build_world),
+        )
+        .add_systems(
+            Update,
+            (prewarm::prewarm_effects.before(take_shots), close_shots::aim_flame_close, close_shots::aim_person_close),
         )
         .add_systems(FixedUpdate, apply_thrust)
         .run();

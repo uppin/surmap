@@ -27,9 +27,9 @@ renderer), an agent turn on a real socket, native recordings showing the evacuee
 wind veer (275° at 25 s, ≈ 287° at 36.9 s) with no evacuee inside the burnt area over 40–70 s,
 and the planner's review of native stills at t = 10 and t = 60 in two passes. At wrap,
 `behaviour.rs`, `actors.rs` and `scenario_manifest.py` were split below 500 lines and their
-`dead_code` allows removed. Follow-ups: `src/surmap/docs/todo/2026-11-03-figure-facing-cue.md`
-(a front cue so the turn shows) and `2026-11-03-differencing-frame-budget-timing-flake.md`
-(a pre-existing timing test that fails under load).
+`dead_code` allows removed. Follow-ups, both done in the sweep ([2026-11-04-sim-disaster-2-sweep.md](2026-11-04-sim-disaster-2-sweep.md)): a front cue so the turn
+shows (the figure's visor) and a pre-existing timing test that failed under load (now measured in
+process CPU time).
 
 Part of stack `#sim-disaster-2` (2 of 4): `main ← n3 #100 ← n4 #101 ← n5 #104 ← sweep`. Green
 waves: n3 is wave 1 of 3, n4 wave 2, n5 wave 3. This PR needs #100 (the wind and fire models it

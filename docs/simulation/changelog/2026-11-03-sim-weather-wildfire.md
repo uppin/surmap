@@ -21,8 +21,9 @@ Verified by unit tests on both sides, an agent turn on a real socket that builds
 a golden `wildfire-edge` scenario parsed by the renderer, and the planner's review of native
 stills against a visual spec in two rounds: vegetation in the wind, rain and fog, smoke and the
 burnt area passed; the flame front was accepted as a glow, with flame tongues left as a TODO.
-Follow-ups are recorded in `src/surmap/docs/todo/2026-11-03-{flame-tongue-flipbook-sprites,
-per-stand-grass-seed,fire-light-visibility,fire-perimeter-capture-end-to-end,fire-eye-mount-pitch}.md`.
+Follow-ups: flame-tongue flipbooks, per-stand grass seeds, the fire-light A/B and an end-to-end
+fire-perimeter recording were done in the sweep ([2026-11-04-sim-disaster-2-sweep.md](2026-11-04-sim-disaster-2-sweep.md)); the fire-eye mount pitch stays recorded in
+`src/surmap/docs/todo/2026-11-03-fire-eye-mount-pitch.md`.
 
 Part of stack `#sim-disaster-2` (1 of 4): `main ← n3 #100 ← n4 #101 ← n5 #104 ← sweep`. Green
 waves: n3 is wave 1 of 3, n4 wave 2, n5 wave 3. This PR blocks #101 (behaviour trees that drive

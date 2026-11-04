@@ -9,7 +9,10 @@ use std::f32::consts::{PI, TAU};
 use bevy::asset::io::Reader;
 use bevy::asset::{Asset, AssetLoader, LoadContext};
 use bevy::math::{Quat, Vec2, Vec3};
-use bevy::prelude::{Assets, Component, Handle, Query, Res, ResMut, Resource, Transform};
+use bevy::prelude::{
+    Assets, Color, Commands, Component, Cuboid, Entity, Handle, Mesh, Mesh3d, MeshMaterial3d, Name, Query, Res,
+    ResMut, Resource, StandardMaterial, Transform, With, Without,
+};
 use bevy::reflect::TypePath;
 use serde::Deserialize;
 
@@ -49,6 +52,19 @@ pub struct FigureDef {
     pub steps_per_s: f32,
     /// The walking speed `steps_per_s` is quoted at, m/s.
     pub reference_speed_m_s: f32,
+    /// A dark visor on the front of the head, so the heading reads.
+    #[serde(default)]
+    pub visor: Option<Visor>,
+}
+
+/// A box on the figure (`size_m` x, y, z in the figure's frame; `offset_m` from its feet, −z is
+/// its front), solid `colour` (sRGB).
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Visor {
+    pub size_m: [f32; 3],
+    pub offset_m: [f32; 3],
+    pub colour: [f32; 3],
 }
 
 impl FigureDef {
@@ -192,6 +208,16 @@ impl Figure {
         self.runner
             .as_ref()
             .map_or(self.base, |runner| runner.position)
+    }
+
+    /// The figure's ground place in Bevy space (public form of `bevy_base`).
+    pub fn bevy_position(&self) -> Vec3 {
+        self.bevy_base()
+    }
+
+    /// The yaw (Bevy, about +Y) the figure is turning to; its front is −Z rotated by it.
+    pub fn facing_yaw(&self) -> f32 {
+        self.turn.to
     }
 
     /// The figure's place on the ground in Bevy space, before its bob.
@@ -352,6 +378,43 @@ fn tick_once(
     };
     for mut figure in figures.iter_mut() {
         figure.step(&world, yaw_ease_s);
+    }
+}
+
+/// A figure whose visor (if its look declares one) has been put on.
+#[derive(Component)]
+pub struct Visored;
+
+/// Once the figure look has loaded, put its visor on the front of each figure's head.
+pub fn attach_visors(
+    mut commands: Commands,
+    look: Option<Res<FigureLook>>,
+    looks: Res<Assets<FigureAsset>>,
+    figures: Query<Entity, (With<Figure>, Without<Visored>)>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let Some(FigureAsset(def)) = look.and_then(|look| looks.get(&look.0)) else {
+        return;
+    };
+    let Some(visor) = def.visor else {
+        return;
+    };
+    for figure in &figures {
+        let [x, y, z] = visor.size_m;
+        let [r, g, b] = visor.colour;
+        commands.entity(figure).insert(Visored).with_children(|parent| {
+            parent.spawn((
+                Name::new("Visor"),
+                Mesh3d(meshes.add(Cuboid::new(x, y, z))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: Color::srgb(r, g, b),
+                    perceptual_roughness: 0.3,
+                    ..StandardMaterial::default()
+                })),
+                Transform::from_translation(Vec3::from(visor.offset_m)),
+            ));
+        });
     }
 }
 

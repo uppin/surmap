@@ -28,3 +28,5 @@ The fire eye uses the profile's intrinsics (`CalibratedProjection`) and the eye 
 ## When it becomes possible
 
 Now.
+
+**Consent:** deferred by the developer at the `sim-disaster-2` TODO gate (2026-11-04): not carried by the sweep node; stays recorded debt.

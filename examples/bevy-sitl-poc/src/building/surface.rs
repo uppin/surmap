@@ -5,10 +5,11 @@ use std::collections::BTreeMap;
 use bevy::prelude::*;
 
 use crate::scene_manifest::PbrTextureSet;
-use crate::textures::{load_texture_set, tiled_material};
+use crate::textures::{load_texture_set, tiled_material, RoughnessPacking};
 
 pub struct Surfaces<'a> {
     pub assets: &'a AssetServer,
+    packing: &'a RoughnessPacking,
     pub materials: &'a mut Assets<StandardMaterial>,
     /// Every texture a material waits on, so the scene is not ready before it arrives.
     pub pending: &'a mut Vec<UntypedHandle>,
@@ -18,11 +19,13 @@ pub struct Surfaces<'a> {
 impl<'a> Surfaces<'a> {
     pub fn new(
         assets: &'a AssetServer,
+        packing: &'a RoughnessPacking,
         materials: &'a mut Assets<StandardMaterial>,
         pending: &'a mut Vec<UntypedHandle>,
     ) -> Self {
         Self {
             assets,
+            packing,
             materials,
             pending,
             cache: BTreeMap::new(),
@@ -46,7 +49,7 @@ impl<'a> Surfaces<'a> {
         let maps = def
             .base_color
             .as_ref()
-            .map(|_| load_texture_set(self.assets, def));
+            .map(|_| load_texture_set(self.assets, def, self.packing));
         if let Some(maps) = &maps {
             self.pending.extend(
                 maps.base_color

@@ -6,6 +6,9 @@
 //! matching. Every image the asset server loads (manifest textures and
 //! glTF textures alike) gets a box-filtered chain once it arrives.
 
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
 use bevy::asset::AssetEvent;
 use bevy::image::{
     ImageAddressMode, ImageFilterMode, ImageLoaderSettings, ImageSampler, ImageSamplerDescriptor,
@@ -23,6 +26,22 @@ pub struct TextureSetHandles {
     pub normal: Option<Handle<Image>>,
     pub arm: Option<Handle<Image>>,
     pub roughness: Option<Handle<Image>>,
+}
+
+/// The roughness-only maps in flight and the `metallic` of the set each belongs to: once loaded,
+/// each is repacked so its blue channel carries that metalness (a shared file takes the last
+/// set's value).
+#[derive(Resource, Clone, Default)]
+pub struct RoughnessPacking(Arc<Mutex<HashMap<AssetId<Image>, f32>>>);
+
+impl RoughnessPacking {
+    fn register(&self, id: AssetId<Image>, metallic: f32) {
+        self.0.lock().expect("packing registry").insert(id, metallic);
+    }
+
+    fn metallic_of(&self, id: AssetId<Image>) -> Option<f32> {
+        self.0.lock().expect("packing registry").get(&id).copied()
+    }
 }
 
 fn tiled_sampler() -> ImageSampler {
@@ -44,13 +63,21 @@ fn load_map(assets: &AssetServer, path: &str, srgb: bool) -> Handle<Image> {
     })
 }
 
-pub fn load_texture_set(assets: &AssetServer, set: &PbrTextureSet) -> TextureSetHandles {
-    TextureSetHandles {
+pub fn load_texture_set(
+    assets: &AssetServer,
+    set: &PbrTextureSet,
+    packing: &RoughnessPacking,
+) -> TextureSetHandles {
+    let handles = TextureSetHandles {
         base_color: set.base_color.as_deref().map(|p| load_map(assets, p, true)),
         normal: set.normal.as_deref().map(|p| load_map(assets, p, false)),
         arm: set.arm.as_deref().map(|p| load_map(assets, p, false)),
         roughness: set.roughness.as_deref().map(|p| load_map(assets, p, false)),
+    };
+    if let (None, Some(roughness)) = (&handles.arm, &handles.roughness) {
+        packing.register(roughness.id(), set.metallic);
     }
+    handles
 }
 
 /// A manifest material as a `StandardMaterial`, tiled by world size:
@@ -87,14 +114,25 @@ pub fn tiled_material(
             material.perceptual_roughness = 1.0;
         }
         (None, Some(roughness)) => {
-            // Greyscale roughness would read as metal from B: zero it.
+            // The map is repacked on load (`pack_metallic_roughness`): G roughness, B this set's
+            // metalness, so both factors pass the texture through.
             material.metallic_roughness_texture = Some(roughness.clone());
-            material.metallic = 0.0;
+            material.metallic = 1.0;
             material.perceptual_roughness = 1.0;
         }
         (None, None) => {}
     }
     material
+}
+
+/// A glTF metallic-roughness map from a greyscale roughness map (R used) and a preset's scalar
+/// `metallic`: R 255, G the roughness, B `metallic`·255, A 255 — so roughness-only sets keep metal.
+pub fn pack_metallic_roughness(roughness_rgba: &[u8], metallic: f32) -> Vec<u8> {
+    let metal = (metallic.clamp(0.0, 1.0) * 255.0).round() as u8;
+    roughness_rgba
+        .chunks_exact(4)
+        .flat_map(|pixel| [255, pixel[0], metal, 255])
+        .collect()
 }
 
 /// Box-filtered mip chain for a tightly packed RGBA8 image.
@@ -128,7 +166,11 @@ pub fn build_mip_chain(data: &[u8], width: u32, height: u32) -> (Vec<u8>, u32) {
 }
 
 /// Give every asset-server image without mips its chain.
-pub fn generate_mips(mut events: MessageReader<AssetEvent<Image>>, mut images: ResMut<Assets<Image>>) {
+pub fn generate_mips(
+    mut events: MessageReader<AssetEvent<Image>>,
+    mut images: ResMut<Assets<Image>>,
+    packing: Res<RoughnessPacking>,
+) {
     for event in events.read() {
         let AssetEvent::LoadedWithDependencies { id } = event else { continue };
         let Some(image) = images.get_mut(*id) else { continue };
@@ -142,7 +184,8 @@ pub fn generate_mips(mut events: MessageReader<AssetEvent<Image>>, mut images: R
         if data.len() != (size.width * size.height * 4) as usize {
             continue;
         }
-        let (chain, levels) = build_mip_chain(data, size.width, size.height);
+        let packed = packing.metallic_of(*id).map(|metallic| pack_metallic_roughness(data, metallic));
+        let (chain, levels) = build_mip_chain(packed.as_deref().unwrap_or(data), size.width, size.height);
         image.data = Some(chain);
         image.texture_descriptor.mip_level_count = levels;
     }
@@ -167,7 +210,7 @@ mod tests {
 
     #[test]
     fn a_non_square_image_halves_each_side_down_to_one() {
-        let (_, levels) = build_mip_chain(&vec![0; 8 * 2 * 4], 8, 2);
+        let (_, levels) = build_mip_chain(&[0; 8 * 2 * 4], 8, 2);
 
         assert_eq!(levels, 4);
     }

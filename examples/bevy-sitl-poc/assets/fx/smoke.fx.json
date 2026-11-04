@@ -42,5 +42,6 @@
   "emitter_spacing_m": 4.0,
   "refresh_s": 0.5,
   "shape": "soft_disc",
-  "softness": 0.9
+  "softness": 0.9,
+  "prewarm_s": 18.0
 }

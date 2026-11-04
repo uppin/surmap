@@ -274,27 +274,6 @@
       "source": "https://polyhaven.com/a/red_brick_03"
     },
     {
-      "path": "textures/concrete_block_wall_diff_2k.jpg",
-      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/concrete_block_wall/concrete_block_wall_diff_2k.jpg",
-      "sha256": "c9159f6bb8713e00bc844ddf9f4007dc85008fa59e0f5d1ea559da632749cdd1",
-      "license": "CC0-1.0",
-      "source": "https://polyhaven.com/a/concrete_block_wall"
-    },
-    {
-      "path": "textures/concrete_block_wall_nor_gl_2k.jpg",
-      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/concrete_block_wall/concrete_block_wall_nor_gl_2k.jpg",
-      "sha256": "e7f6a5e8a83ac939590eca3a6be4e74dff3d803ddbf472598437bda13f59b951",
-      "license": "CC0-1.0",
-      "source": "https://polyhaven.com/a/concrete_block_wall"
-    },
-    {
-      "path": "textures/concrete_block_wall_arm_2k.jpg",
-      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/concrete_block_wall/concrete_block_wall_arm_2k.jpg",
-      "sha256": "5f5b68651c2af23722e95addec815b17b42e9fe8b41134f854e7609a9883e7f2",
-      "license": "CC0-1.0",
-      "source": "https://polyhaven.com/a/concrete_block_wall"
-    },
-    {
       "path": "textures/clay_plaster_diff_2k.jpg",
       "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/clay_plaster/clay_plaster_diff_2k.jpg",
       "sha256": "e7ed1892b319d8a1ddb8b95242cc8b9d627bd2a558ec107da174a463f3dbc561",
@@ -358,27 +337,6 @@
       "source": "https://polyhaven.com/a/corrugated_iron"
     },
     {
-      "path": "textures/white_planks_clean_diff_2k.jpg",
-      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/white_planks_clean/white_planks_clean_diff_2k.jpg",
-      "sha256": "bc2959b06eb2bd0ff320183be12591afdac2034a23d6c8a0bd540fbf642ea7d8",
-      "license": "CC0-1.0",
-      "source": "https://polyhaven.com/a/white_planks_clean"
-    },
-    {
-      "path": "textures/white_planks_clean_nor_gl_2k.jpg",
-      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/white_planks_clean/white_planks_clean_nor_gl_2k.jpg",
-      "sha256": "b665a00f8e2b05a134a63db407699dd788d3552df966ee5a940ccff6eb4ba415",
-      "license": "CC0-1.0",
-      "source": "https://polyhaven.com/a/white_planks_clean"
-    },
-    {
-      "path": "textures/white_planks_clean_arm_2k.jpg",
-      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/white_planks_clean/white_planks_clean_arm_2k.jpg",
-      "sha256": "a29376780d0c021ef52153776c272c6abbc8e6537520159cffe1c7d1dc91592c",
-      "license": "CC0-1.0",
-      "source": "https://polyhaven.com/a/white_planks_clean"
-    },
-    {
       "path": "textures/sandstone_blocks_08_diff_2k.jpg",
       "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/sandstone_blocks_08/sandstone_blocks_08_diff_2k.jpg",
       "sha256": "da2f453c7c3683f5b01ca8b365ccf81ebce488afab7661adecd83208fc9aec97",
@@ -419,27 +377,6 @@
       "sha256": "33470c06390b0ed2793b8d9a888656bd4f0b31b01e978438760d4ce634f3cd3c",
       "license": "CC0-1.0",
       "source": "https://polyhaven.com/a/dark_planks"
-    },
-    {
-      "path": "textures/weathered_plank_siding_diff_2k.jpg",
-      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/weathered_plank_siding/weathered_plank_siding_diff_2k.jpg",
-      "sha256": "e34b0bd8e5f7c5dafd62001074115be28edf8fa88043650dbafef8c7b34b13e7",
-      "license": "CC0-1.0",
-      "source": "https://polyhaven.com/a/weathered_plank_siding"
-    },
-    {
-      "path": "textures/weathered_plank_siding_nor_gl_2k.jpg",
-      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/weathered_plank_siding/weathered_plank_siding_nor_gl_2k.jpg",
-      "sha256": "e950b30c36fcea80e793116e9c83001c95c39725f4af4c3684fc29491d86d7ae",
-      "license": "CC0-1.0",
-      "source": "https://polyhaven.com/a/weathered_plank_siding"
-    },
-    {
-      "path": "textures/weathered_plank_siding_arm_2k.jpg",
-      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/weathered_plank_siding/weathered_plank_siding_arm_2k.jpg",
-      "sha256": "6b458ca67d5da38e083e182733dc19d8c2a9bb14a84b35b35fb6f9ccaf9a09a3",
-      "license": "CC0-1.0",
-      "source": "https://polyhaven.com/a/weathered_plank_siding"
     },
     {
       "path": "textures/clay_roof_tiles_02_diff_2k.jpg",
@@ -503,27 +440,6 @@
       "sha256": "67e732253e52fd04089ba16c9757ced090c5331144f29600fc8ffeb32aaf5f2b",
       "license": "CC0-1.0",
       "source": "https://polyhaven.com/a/corrugated_iron_03"
-    },
-    {
-      "path": "textures/corrugated_iron_02_diff_2k.jpg",
-      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/corrugated_iron_02/corrugated_iron_02_diff_2k.jpg",
-      "sha256": "1bd2b9900e066d7e6cbacc5093aa4204db71c1bbe13b42a3d8ad23d04fa8075a",
-      "license": "CC0-1.0",
-      "source": "https://polyhaven.com/a/corrugated_iron_02"
-    },
-    {
-      "path": "textures/corrugated_iron_02_nor_gl_2k.jpg",
-      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/corrugated_iron_02/corrugated_iron_02_nor_gl_2k.jpg",
-      "sha256": "a7972360f64fb44beee57750b0ad6bee1f3b64268cd9f649b5e92e1de4de0632",
-      "license": "CC0-1.0",
-      "source": "https://polyhaven.com/a/corrugated_iron_02"
-    },
-    {
-      "path": "textures/corrugated_iron_02_arm_2k.jpg",
-      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/corrugated_iron_02/corrugated_iron_02_arm_2k.jpg",
-      "sha256": "80ae7f8b9ff7521898049cb79b7cfb82a0bb95bf0cba312ffe1d0e5760f45dcb",
-      "license": "CC0-1.0",
-      "source": "https://polyhaven.com/a/corrugated_iron_02"
     },
     {
       "path": "textures/gravel_floor_03_diff_2k.jpg",
@@ -610,30 +526,6 @@
       "source": "https://polyhaven.com/a/grey_roof_01"
     },
     {
-      "path": "textures/Metal047B_2K-JPG_Color.jpg",
-      "url": "https://ambientcg.com/get?file=Metal047B_2K-JPG.zip",
-      "sha256": "1ea54bcbaae9bed8443ce1fbe7d7ddc59b71018ea1a22eaf3e8add6411650694",
-      "license": "CC0-1.0",
-      "source": "https://ambientcg.com/a/Metal047B",
-      "member": "Metal047B_2K-JPG_Color.jpg"
-    },
-    {
-      "path": "textures/Metal047B_2K-JPG_NormalGL.jpg",
-      "url": "https://ambientcg.com/get?file=Metal047B_2K-JPG.zip",
-      "sha256": "8ee062a263a170c4b564045e3a57225822931e3914e1e573e4dfb1ad5fe623ce",
-      "license": "CC0-1.0",
-      "source": "https://ambientcg.com/a/Metal047B",
-      "member": "Metal047B_2K-JPG_NormalGL.jpg"
-    },
-    {
-      "path": "textures/Metal047B_2K-JPG_Roughness.jpg",
-      "url": "https://ambientcg.com/get?file=Metal047B_2K-JPG.zip",
-      "sha256": "b31ec5a2b42a1321a0e77852197e0652194e7478fa62c0b9de1d16c94bc3a581",
-      "license": "CC0-1.0",
-      "source": "https://ambientcg.com/a/Metal047B",
-      "member": "Metal047B_2K-JPG_Roughness.jpg"
-    },
-    {
       "path": "textures/SolarPanel003_2K-JPG_Color.jpg",
       "url": "https://ambientcg.com/get?file=SolarPanel003_2K-JPG.zip",
       "sha256": "22a6b036b251c9598bc608c8df68b61724363173545cccb2e527c3ff72820595",
@@ -680,6 +572,127 @@
       "license": "CC0-1.0",
       "source": "https://ambientcg.com/a/Grass004",
       "member": "Grass004_2K-JPG_Roughness.jpg"
+    },
+    {
+      "path": "textures/fx/flame_tongues.png",
+      "url": "https://opengameart.org/sites/default/files/fire1_64.png",
+      "sha256": "c3dba736f2866e5abd7008f5aae4f548c0a8ebaf61894f75071fe337d2c5b1bc",
+      "license": "CC0-1.0",
+      "source": "https://opengameart.org/content/animated-fire"
+    },
+    {
+      "path": "textures/brown_planks_05_diff_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/brown_planks_05/brown_planks_05_diff_2k.jpg",
+      "sha256": "1d6c8a69eec94d89a071f533dc71f99744c8091eb4c6097eb80c04769d964aca",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/brown_planks_05"
+    },
+    {
+      "path": "textures/brown_planks_05_nor_gl_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/brown_planks_05/brown_planks_05_nor_gl_2k.jpg",
+      "sha256": "dbf17e1e0ae9086330295813280e3bee580063c836811acbbac0a289aae1808d",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/brown_planks_05"
+    },
+    {
+      "path": "textures/brown_planks_05_arm_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/brown_planks_05/brown_planks_05_arm_2k.jpg",
+      "sha256": "38de6a46c565af0cd2dd6b619beca6ba443c494e70fb40efaaf72606b6fd9f2b",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/brown_planks_05"
+    },
+    {
+      "path": "textures/asbestos_sheet_02_diff_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/asbestos_sheet_02/asbestos_sheet_02_diff_2k.jpg",
+      "sha256": "0e31ac81440b35fd769b565f533f1809c48bb6e3bdade915ff6771bde684e60f",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/asbestos_sheet_02"
+    },
+    {
+      "path": "textures/asbestos_sheet_02_nor_gl_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/asbestos_sheet_02/asbestos_sheet_02_nor_gl_2k.jpg",
+      "sha256": "d2dc99bc43f6f72b40e9163a17522f3651b79943b63f89b6699ad0d6318ded8a",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/asbestos_sheet_02"
+    },
+    {
+      "path": "textures/asbestos_sheet_02_arm_2k.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/asbestos_sheet_02/asbestos_sheet_02_arm_2k.jpg",
+      "sha256": "7628ae80eca72e9258f55d0a101e18be982c5cf51fc426105ed6a356196c029c",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/asbestos_sheet_02"
+    },
+    {
+      "path": "textures/PavingStones125A_2K-JPG_Color.jpg",
+      "url": "https://ambientcg.com/get?file=PavingStones125A_2K-JPG.zip",
+      "sha256": "55c1bb46e2fda4b82394e734fa392d1e356f099ffeffdc0ee19abbf4f616cb22",
+      "license": "CC0-1.0",
+      "source": "https://ambientcg.com/a/PavingStones125A",
+      "member": "PavingStones125A_2K-JPG_Color.jpg"
+    },
+    {
+      "path": "textures/PavingStones125A_2K-JPG_NormalGL.jpg",
+      "url": "https://ambientcg.com/get?file=PavingStones125A_2K-JPG.zip",
+      "sha256": "94552115762e828aa7b8a98103724aa06f45c227831114db219d3924e2913f0c",
+      "license": "CC0-1.0",
+      "source": "https://ambientcg.com/a/PavingStones125A",
+      "member": "PavingStones125A_2K-JPG_NormalGL.jpg"
+    },
+    {
+      "path": "textures/PavingStones125A_2K-JPG_Roughness.jpg",
+      "url": "https://ambientcg.com/get?file=PavingStones125A_2K-JPG.zip",
+      "sha256": "f8a2517b9ef3d4d54c53820b4e6d4944bfd584a024322384c4343f7b710a48b3",
+      "license": "CC0-1.0",
+      "source": "https://ambientcg.com/a/PavingStones125A",
+      "member": "PavingStones125A_2K-JPG_Roughness.jpg"
+    },
+    {
+      "path": "textures/Metal058C_2K-JPG_Color.jpg",
+      "url": "https://ambientcg.com/get?file=Metal058C_2K-JPG.zip",
+      "sha256": "be0e8af48979ca04207f1503c6e9292851157229deadb2ad6dfc0df9cbd2a30e",
+      "license": "CC0-1.0",
+      "source": "https://ambientcg.com/a/Metal058C",
+      "member": "Metal058C_2K-JPG_Color.jpg"
+    },
+    {
+      "path": "textures/Metal058C_2K-JPG_NormalGL.jpg",
+      "url": "https://ambientcg.com/get?file=Metal058C_2K-JPG.zip",
+      "sha256": "fedf5dc7f8c043ec503a1977ec40e9cc3b9b3474ba892ec7c6c0a9669a00014a",
+      "license": "CC0-1.0",
+      "source": "https://ambientcg.com/a/Metal058C",
+      "member": "Metal058C_2K-JPG_NormalGL.jpg"
+    },
+    {
+      "path": "textures/Metal058C_2K-JPG_Roughness.jpg",
+      "url": "https://ambientcg.com/get?file=Metal058C_2K-JPG.zip",
+      "sha256": "651592a12ce69ad4e6842d8f0871de11edc43573f4ccfaa23652c053e86bd01d",
+      "license": "CC0-1.0",
+      "source": "https://ambientcg.com/a/Metal058C",
+      "member": "Metal058C_2K-JPG_Roughness.jpg"
+    },
+    {
+      "path": "textures/WoodSiding009_2K-JPG_Color.jpg",
+      "url": "https://ambientcg.com/get?file=WoodSiding009_2K-JPG.zip",
+      "sha256": "a54c4735df8cf6effc0cc2b85dab50f1d228493cc98090970bbb8d11b4844bc3",
+      "license": "CC0-1.0",
+      "source": "https://ambientcg.com/a/WoodSiding009",
+      "member": "WoodSiding009_2K-JPG_Color.jpg"
+    },
+    {
+      "path": "textures/WoodSiding009_2K-JPG_NormalGL.jpg",
+      "url": "https://ambientcg.com/get?file=WoodSiding009_2K-JPG.zip",
+      "sha256": "d1dc5fb165bc915a5345f70b64339f5378b19ef9558198ee1e9cdde5f9519984",
+      "license": "CC0-1.0",
+      "source": "https://ambientcg.com/a/WoodSiding009",
+      "member": "WoodSiding009_2K-JPG_NormalGL.jpg"
+    },
+    {
+      "path": "textures/WoodSiding009_2K-JPG_Roughness.jpg",
+      "url": "https://ambientcg.com/get?file=WoodSiding009_2K-JPG.zip",
+      "sha256": "983c17c21a05e95c0127e6ba02bab4a70d25d6578535452356eac3ef07cf8c69",
+      "license": "CC0-1.0",
+      "source": "https://ambientcg.com/a/WoodSiding009",
+      "member": "WoodSiding009_2K-JPG_Roughness.jpg"
     }
   ]
 }

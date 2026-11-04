@@ -12,6 +12,7 @@ fn gait() -> FigureDef {
         bob_m: 0.03,
         steps_per_s: 2.0,
         reference_speed_m_s: 1.4,
+        visor: None,
     }
 }
 

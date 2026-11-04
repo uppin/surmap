@@ -2,5 +2,22 @@
   "yaw_ease_s": 0.3,
   "bob_m": 0.03,
   "steps_per_s": 2.0,
-  "reference_speed_m_s": 1.4
+  "reference_speed_m_s": 1.4,
+  "visor": {
+    "size_m": [
+      0.18,
+      0.05,
+      0.06
+    ],
+    "offset_m": [
+      0.0,
+      1.63,
+      -0.12
+    ],
+    "colour": [
+      0.05,
+      0.05,
+      0.06
+    ]
+  }
 }

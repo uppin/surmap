@@ -180,7 +180,9 @@ pub struct PeopleCam;
 pub struct Shots {
     overview: Handle<Image>,
     people: Handle<Image>,
-    settled_frames: u32,
+    pub(crate) settled_frames: u32,
+    pub(crate) close_flame: Option<Handle<Image>>,
+    pub(crate) close_person: Option<Handle<Image>>,
     requested: bool,
     captured: u32,
 }
@@ -225,7 +227,7 @@ pub fn setup_overview(mut commands: Commands, mode: Res<RunMode>, mut images: Re
         Transform::default(),
     ));
     photographic(&mut people_camera, Lens::Still);
-    commands.insert_resource(Shots { overview, people, settled_frames: 0, requested: false, captured: 0 });
+    commands.insert_resource(Shots { overview, people, close_flame: None, close_person: None, settled_frames: 0, requested: false, captured: 0 });
 }
 
 /// The people still looks at the people from the south-west, raised. The people walk while the
@@ -353,7 +355,8 @@ pub fn take_shots(
     let burning_building = blaze.as_ref().is_some_and(|b| b.first_fire().is_some());
     let fire_eye = fire_eye.filter(|_| fires.as_ref().is_some_and(|f| f.has_fires()) || burning_building);
     let people_present = !figures.is_empty();
-    if shots.captured == 3 + u32::from(fire_eye.is_some()) + u32::from(people_present) {
+    let flame_close = fires.as_ref().is_some_and(|f| f.has_fires());
+    if shots.captured == 3 + u32::from(fire_eye.is_some()) + u32::from(people_present) * 2 + u32::from(flame_close) {
         exit.write(AppExit::Success);
         return;
     }
@@ -382,6 +385,10 @@ pub fn take_shots(
     }
     if people_present {
         stills.push(("people.png", Screenshot::image(shots.people.clone())));
+        stills.extend(shots.close_person.iter().map(|i| ("person-close.png", Screenshot::image(i.clone()))));
+    }
+    if flame_close {
+        stills.extend(shots.close_flame.iter().map(|i| ("flame-close.png", Screenshot::image(i.clone()))));
     }
     for (name, screenshot) in stills {
         commands.spawn(screenshot).observe(save_to_disk(plan.dir.join(name))).observe(count_capture);

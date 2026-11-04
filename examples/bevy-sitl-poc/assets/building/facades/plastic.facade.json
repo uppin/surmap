@@ -1,10 +1,10 @@
 {
   "material": {
-    "base_color": "textures/white_planks_clean_diff_2k.jpg",
-    "normal": "textures/white_planks_clean_nor_gl_2k.jpg",
-    "arm": "textures/white_planks_clean_arm_2k.jpg",
-    "uv_scale": 0.55,
-    "reflectance": 0.35
+    "uv_scale": 1.0,
+    "reflectance": 0.35,
+    "base_color": "textures/brown_planks_05_diff_2k.jpg",
+    "normal": "textures/brown_planks_05_nor_gl_2k.jpg",
+    "arm": "textures/brown_planks_05_arm_2k.jpg"
   },
   "colourable": true,
   "glazing": {

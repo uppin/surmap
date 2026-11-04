@@ -128,19 +128,31 @@ ignition. Zero wind gives a circle of radius `spread_m_s · τ`. The front is sa
 | `max_particles` | the effect's particle budget |
 | `shape`, `softness` | `quad` (default) or `soft_disc`: a radial-alpha disc generated at startup, `softness` 0 (hard edge) to 1 (0.5) |
 | `round` | 0..1, rounds a quad toward an ellipse (0) |
-| `stretch` | length over width along the velocity (1, a camera-facing quad); rain uses it for streaks |
+| `stretch` | length over width along the velocity (1, a camera-facing quad); rain uses it for streaks. A flipbook effect keeps 1: stretching orients the quad along its velocity and would lay the sprite on its side |
+| `flipbook` | `{"texture", "columns", "rows", "fps"}` — animate each particle through a sprite sheet (`textures/fx/*.png`, pinned in `assets.lock.json`) of `columns` × `rows` frames at `fps`, each particle starting at a phase its lifetime picks; the sheet replaces `shape`. Absent: `shape` is drawn |
+| `prewarm_s` | screenshot mode only: seconds the effect is advanced before a still, so a plume is as old as the scene it is shot in (0; ≥ 0) |
 | `box_m` | rain: the side of the box of air it fills around each viewing camera (60) |
 | `emitter_spacing_m`, `refresh_s` | fire effects: one emitter per this many metres of front (2), re-placed every this many seconds (0.5) |
 | `ground` | flames only — the burnt area: `height_m` above the terrain, `colour`, `roughness`, and the front's glowing rim `glow_width_m`, `glow_colour`, `glow_intensity` |
 | `light` | flames only — one unshadowed point light per fire at the front's centroid: `colour`, `height_m`, `lumens_per_m` of perimeter, `range_m` |
 
-Shipped: `flames` (additive soft discs stretched 1.8×, 1.0→2.6 m, 0.5–0.9 s, rising 2.5 m/s and
-leaning with 0.6 × wind, 16 per metre of front; burnt ground near-black with a 1.5 m orange rim;
-the glow light), `embers` (0.06 m sparks, 2–4 s, rising 3 m/s, falling back at 1 m/s², drifting
-with the wind), `smoke` (alpha soft discs 3→16 m, 12–18 s, rising 1.8 m/s and drifting with the
-wind, so plumes bend downwind), `rain` (streaks 0.015 m wide and 0.7 m long, falling 7 m/s plus
+Shipped: `flames` (additive flame tongues from the `flame_tongues.png` flipbook — OpenGameArt
+"Animated Fire", CC0, 10 × 6 frames of 64 px at 30 fps — upright (`stretch` 1), 1.0→2.6 m,
+0.5–0.9 s, rising 2.5 m/s and leaning with 0.6 × wind, 16 per metre of front, the gradient's HDR
+intensities at most 1.2 so the tongues resolve instead of washing out; burnt ground near-black
+with a 1.5 m orange rim; the glow light), `embers` (0.06 m sparks, 2–4 s, rising 3 m/s, falling
+back at 1 m/s², drifting with the wind), `smoke` (alpha soft discs 3→16 m, 12–18 s, rising
+1.8 m/s and drifting with the wind, so plumes bend downwind; pre-warmed 18 s), `rain` (streaks 0.015 m wide and 0.7 m long, falling 7 m/s plus
 the wind, 141 per second per mm/h in a 60 m box). Rain, smoke, flames and embers render in the
 eye cameras too — they are what a real stereo rig sees; bloom stays on the chase view.
+
+**Pre-warm in stills (`prewarm.rs`).** Hanabi has no pre-warm, so in screenshot mode, once the
+scene is ready and its emitters exist, the one global effect clock (`Time<EffectSimulation>`, not
+the simulation's clock) is sped up — at most 0.2 s of effect time per rendered frame, so emitted
+particles stay a continuous plume rather than clumps — until the longest `prewarm_s` among the
+loaded effects has passed; then it returns to real time and the still's settle wait restarts.
+Effects without a pre-warm (short-lived flames) are in their steady state either way. Shipped
+smokes pre-warm at least their longest lifetime: `smoke` 18 s, `building_smoke` 25 s.
 
 ### Vegetation (`species/<name>.species.json`, Feronia wind)
 
@@ -153,9 +165,12 @@ eye cameras too — they are what a real stereo rig sees; bloom stays on the cha
 | `lod_distance_m` | pines: the detailed mesh up to here, the far one beyond; grass: drawn up to here |
 | `plants_per_unit` | plants per unit of `density_per_100m2` (1; grass clumps are small, so 30) |
 
-Pines are entities on Feronia's wind material with a near and a far mesh. Grass is Feronia's
-GPU-instanced scatter (`bevy_eidolon`): a stand of `n` clumps is scattered over a √n grid by
-Feronia's one global `WorldSeed`, set from the stand's seed. Inside a fire's burnt area, checked
+Pines are entities on Feronia's wind material with a near and a far mesh. Grass is
+GPU-instanced (`bevy_eidolon`) on Feronia's wind material, so it sways: where each clump stands is
+`vegetation::grass_instances(stand, def) -> Vec<Vec2>` (ENU), a pure function of the stand — its
+own `seed`, rectangle and density — and the species' `plants_per_unit`, and each clump's yaw and
+height are drawn from the same seed. The renderer instances exactly these, replacing Feronia's
+global-seed scatter (Feronia only makes the batch), so no global seed decides a stand's grass. Inside a fire's burnt area, checked
 every 0.5 s, pines turn to bare charred trunks and grass instances are dropped. Shipped species:
 `pine` (late-summer dry, 9–15 m, stiff) and `dry_grass` (0.45–0.85 m, full sway).
 
@@ -175,9 +190,13 @@ Rust and Python, and the perimeter line on both sides; a golden `wildfire-edge` 
 by the station is parsed by the renderer's tests. The look was reviewed by the planner against
 a visual spec in two rounds of native stills: wind-swept pines and grass, rain with fog and wet
 surfaces, the smoke plume's drift and the burnt area with charred trunks pass; the flame front
-reads as a saturated glow under the smoke, without resolvable tongues at survey distance
-(`src/surmap/docs/todo/2026-11-03-flame-tongue-flipbook-sprites.md`). Open work:
-`src/surmap/docs/todo/2026-11-03-{flame-tongue-flipbook-sprites,per-stand-grass-seed,fire-light-visibility,fire-perimeter-capture-end-to-end,fire-eye-mount-pitch}.md`.
+first read as a saturated glow without resolvable tongues at survey distance. The sweep
+([changelog/2026-11-04-sim-disaster-2-sweep.md](changelog/2026-11-04-sim-disaster-2-sweep.md)) gave the flames the flipbook tongues, each grass stand its own seed (a sway of
+3.2 mean absolute pixel difference between t = 5 and t = 6), and the fire perimeter an end-to-end
+recording; its light-on / light-off still pairs were indistinguishable in daylight, so the fire
+lights keep their values — they matter at dusk and night only. Open work:
+`src/surmap/docs/todo/2026-11-03-fire-eye-mount-pitch.md`,
+`src/surmap/docs/todo/2026-11-04-flame-flipbook-resolution.md`.
 
 ## Behaviour trees
 
@@ -272,10 +291,11 @@ its yaw eased, and bobs while it walks; standing (`idle`, a finished tree) it do
 | `bob_m` | height of a step's bob (0.03) |
 | `steps_per_s` | steps per second at `reference_speed_m_s`; faster walking steps faster in proportion (2) |
 | `reference_speed_m_s` | the speed `steps_per_s` is quoted at (1.4) |
+| `visor` | optional `{"size_m", "offset_m", "colour"}`: a box on the figure (`size_m` x, y, z in the figure's frame; `offset_m` from its feet, −z its front; solid sRGB `colour`) — shipped 0.18 × 0.05 × 0.06 m, 1.63 m up and 0.12 m forward, near-black |
 
-Each figure's bob has its own phase, derived from its id. The figure itself is the capsule and
-sphere every `person` has; it shows no front, so the turn is not visible yet
-(`src/surmap/docs/todo/2026-11-03-figure-facing-cue.md`).
+Each figure's bob has its own phase, derived from its id. The figure is the capsule and sphere
+every `person` has, plus the visor on the front of its head (`actors::attach_visors`, once the
+look has loaded), so the way it faces and turns reads ([sweep](changelog/2026-11-04-sim-disaster-2-sweep.md)).
 
 ### Presets, ground truth and stills
 
@@ -308,8 +328,8 @@ Native recordings of the preset, read with `load_bevy_capture`, show the evacuee
 then flee, the wind at 275° at 25 s and ≈ 287° at 36.9 s, and no evacuee inside the recorded
 burnt area over 40–70 s. The planner reviewed native stills at t = 10 and t = 60 in two passes:
 `people.png` at t = 60 frames the three evacuees in the grass, and the overview shows the front
-pushed north-east by the veered wind. Open work:
-`src/surmap/docs/todo/2026-11-03-figure-facing-cue.md`.
+pushed north-east by the veered wind. The figure's front cue followed in the sweep
+([changelog/2026-11-04-sim-disaster-2-sweep.md](changelog/2026-11-04-sim-disaster-2-sweep.md)): the close still `person-close.png` shows the visor on the front of the head.
 
 ## Buildings: presets, districts and building fires
 
@@ -334,8 +354,8 @@ through the behaviour runtime's `burning_areas`.
 | `facades/<name>.facade.json` | `material` (a manifest material: textured with `uv_scale`, or solid), `colourable` (whether a building's `facade_colour` multiplies it), `glazing` (the default, below), `burnt` (the charred material) |
 | `roofs/<name>.roof.json` | `material`, `colourable`, `burnt` |
 | `districts/<name>.district.json` | weighted `facades`, `roofs` and `roof_shapes` (`[[name or path, weight], …]`, weights > 0), `facade_colours` / `roof_colours` palettes, `floor_m` (> 0), and optionally `window_ratio` (the glazed share of a facade cell, over the facade's own) and `ground_window_ratio` (the ground floor's — a shopfront) |
-| `look.json` | the numbers no preset owns: `roof_shapes` (`flat`: `parapet_m` 0.6, `parapet_thickness_m` 0.25; `gabled` `pitch_deg` 35, `hipped` and `pyramidal` 30, each `eave_m` 0.3); `shopfront.floors` (1 — how many ground floors take `ground_window_ratio`); `interior` (`inset_m` 0.6, `colour` — the dark box behind the walls); and `fire`: `glow_inset_m` (0.5 — the glow plane behind a burning floor's windows), `soot` (`height_m` 1.5, `colour`, `alpha` 0.85 — the band above a burnt floor's windows) and `light` (`colour`, `lumens_per_floor` 600 000, `range_m` 70 — one point light per burning building at its top burning floor, no shadows) |
-| `fire.json` | the fire's tuning (*The building fire model*, below), `effects` (`window_flames`, `smoke`, `embers` fx paths) and the window glow: `glow_colour` (`[1.0, 0.42, 0.10]`) × `glow_intensity` (3.5) |
+| `look.json` | the numbers no preset owns: `roof_shapes` (`flat`: `parapet_m` 0.6, `parapet_thickness_m` 0.25; `gabled` `pitch_deg` 35, `hipped` and `pyramidal` 30, each `eave_m` 0.3); `shopfront.floors` (1 — how many ground floors take `ground_window_ratio`); `interior` (`inset_m` 0.6, `colour` — the dark box behind the walls); and `fire`: `glow_inset_m` (0.5 — the glow plane behind a burning floor's windows), `soot` (`height_m` 1.5, `colour`, `alpha` 0.85 — the band above a burnt floor's windows), `light` (`colour`, `lumens_per_floor` 600 000, `range_m` 70 — one point light per burning building at its top burning floor, no shadows), `glow_variation` (0.5 — each window's glow is scaled within `1 ± glow_variation`, seeded per window) and `glow_flicker_hz` (1.5 — how fast it flickers) |
+| `fire.json` | the fire's tuning (*The building fire model*, below), `effects` (`window_flames`, `smoke`, `embers` fx paths) and the window glow: `glow_colour` (`[1.0, 0.32, 0.05]`) × `glow_intensity` (0.8) — the glow is unlit, and above about 1 it desaturates, so the brightest windows (× 1.5) stay a saturated orange |
 
 **Glazing** — `kind` `punched` | `curtain_wall` | `none`:
 
@@ -368,8 +388,21 @@ Districts:
 
 A **name** (no `/`) means the shipped file of its kind; a **path**
 (`building/facades/my-red.facade.json`) names any other file of that kind. The textures are 17
-Poly Haven and 3 ambientCG CC0 sets at 2k, pinned in `assets.lock.json` and fetched with the
-rest.
+Poly Haven and 5 ambientCG CC0 sets at 2k, pinned in `assets.lock.json` and fetched with the
+rest: among them `cement_block` takes ambientCG `PavingStones125A`, `copper` the verdigris
+`Metal058C`, `plastic` Poly Haven `brown_planks_05` (lap siding), `wood` ambientCG
+`WoodSiding009` (clapboard) and `eternit` Poly Haven `asbestos_sheet_02` (fibre-cement corrugate).
+Neither source has a CC0 grey CMU or white PVC set
+(`src/surmap/docs/todo/2026-11-04-cmu-and-pvc-textures.md`), and the `uv_scale` of `timber`,
+`roof_tiles` and `slate` is counted from the texture rather than measured
+(`src/surmap/docs/todo/2026-11-04-texture-uv-scale-measured.md`).
+
+**Metalness of roughness-only sets.** ambientCG sets ship a greyscale roughness map and no ARM
+map, and Bevy reads metalness from a metallic-roughness texture's blue channel. On load, such a
+map is repacked by `textures::pack_metallic_roughness(roughness_rgba, metallic) -> rgba` (R 255,
+G the roughness, B the preset's `metallic` · 255, A 255) before its mips are built, and the
+material's `metallic` factor is 1, so a roughness-only set keeps its preset's `metallic` (copper
+0.8). A file shared by two sets takes the last set's value.
 
 ### In the manifest
 
@@ -394,11 +427,14 @@ rest.
   ground, `0 ≤ floor < floors`; `start_s` ≥ 0; `tuning` a `.json` path (default
   `building/fire.json`); ids unique with every element, model and fire id. The renderer
   (`scene_manifest/buildings.rs`, `building_style.rs`, `building.rs`) and the station
-  (`surmap.simulation.building_presets`) apply the same rules, except two the station cannot yet
-  check and the renderer refuses at load: a floor beyond a floor count that comes from the
-  district (`src/surmap/docs/todo/2026-11-04-building-fire-floor-from-district.md`), and a fire
-  in a legacy, `material`-only building
-  (`src/surmap/docs/todo/2026-11-04-legacy-buildings-burn.md`).
+  (`surmap.simulation.building_presets`) apply the same rules. A floor count that comes from the
+  district is checked too: `add_building_fire(manifest, id, *, building, floor, start_s=0,
+  assets_dir=None)`, given `assets_dir`, gives a building without `floors` the
+  `floor(height / floor_m)` of the district holding its centre (later districts win) and refuses
+  a floor past it; the store passes its `assets_dir`, so the `add_building_fire` tool answers
+  `INVALID_ARGUMENT`. A district preset the station cannot read is left to the renderer, which
+  refuses it at load. One rule only the renderer checks: a fire in a legacy, `material`-only
+  building (`src/surmap/docs/todo/2026-11-04-legacy-buildings-burn.md`).
 
 ### The building fire model (`building_fire.rs`, pure, stepped)
 
@@ -432,8 +468,11 @@ pane, glow and soot meshes apart, so a fire changes one floor at a time.
   interior behind, or a curtain wall of glass between spandrel bands and mullions.
 - **Roofs**: `flat` with a parapet; `gabled` (ridge along the long axis), `hipped` and
   `pyramidal` with eaves. Parapets and gable ends take the facade material.
-- **A burning floor**: panes hidden (broken), an emissive glow plane `glow_inset_m` behind every
-  window, `window_flames` at each window (a curtain wall: along the whole band), and the wall
+- **A burning floor**: panes hidden (broken), an unlit glow plane `glow_inset_m` behind every
+  window, each window its own vertex colour rewritten every frame from
+  `FireLook::window_glow(building_seed, window, t_s)` — in `[1 − v, 1 + v]` for `glow_variation`
+  v, seeded per window (FNV-1a of the building id, splitmix64 of the window), flickering at
+  `glow_flicker_hz` — so the panes read as distinct orange windows, not one band; `window_flames` at each window (a curtain wall: along the whole band), and the wall
   band in the facade's `burnt` material. A burnt floor stays charred and gains soot above its
   windows; a fully burnt building's roof turns to the roof's `burnt` material.
 - **Smoke** (`fx/building_smoke.fx.json`) rises from the top burning floor's windows and the
@@ -479,8 +518,12 @@ window flames from dots to tongues, smoke from puffs to a continuous plume, and 
 ignition from 65 s to 364.9 s (`exposure_s` 360, `ignite_distance_m` 4). It then passed: at
 t = 400 the fire has climbed every floor of the tower — orange floor bands under a smooth black
 plume bending downwind; at t = 900 the lower floors are charred and burnt out, the top floors
-burn and the neighbour is alight. Open work:
-`src/surmap/docs/todo/2026-11-04-{building-texture-character,building-window-glow-variation,building-smoke-prewarm-stills,building-fire-floor-from-district,legacy-buildings-burn}.md`.
+burn and the neighbour is alight. The sweep ([changelog/2026-11-04-sim-disaster-2-sweep.md](changelog/2026-11-04-sim-disaster-2-sweep.md)) then gave the facades their
+spec's character with metalness kept, each window its own flickering glow (review round 1:
+`glow_variation` 0.5, colour `[1.0, 0.32, 0.05]`, intensity 0.8 — distinct saturated orange
+panes), pre-warmed smoke in stills, district-resolved floors in the station and a recorded blaze
+end to end. Open work:
+`src/surmap/docs/todo/2026-11-04-{legacy-buildings-burn,cmu-and-pvc-textures,texture-uv-scale-measured}.md`.
 
 ## The stereo rig: one camera profile
 
@@ -518,6 +561,9 @@ BEVY_ASSET_ROOT=$PWD cargo run --release -- --screenshot shots --at 60 --scenari
 BEVY_ASSET_ROOT=$PWD cargo run --release -- --screenshot shots --at 400 --scenario downtown-blaze
 # ...framing one district of the scenario:
 BEVY_ASSET_ROOT=$PWD cargo run --release -- --screenshot shots --at 1 --scenario district-showcase --look-at old-town
+# ...with a wildfire, flame-close.png looks at the front from 8 m outside it, 2 m up; with
+# people, person-close.png stands 4 m in front of the first figure and looks at its head:
+BEVY_ASSET_ROOT=$PWD cargo run --release -- --screenshot shots --at 60 --scenario wildfire-evacuation
 # a stereo capture RTAB-Map can replay (hidden window, GPU readback, progress logged):
 BEVY_ASSET_ROOT=$PWD cargo run --release -- --record cap --frames 90 --start 15.5 --jpeg \
   [--rate-hz 10] [--camera cameras/wide-baseline-pinhole.camera.json]
@@ -529,6 +575,24 @@ capture holds `camera.json`, `calibration.json`, `ground_truth.json` (ENU boxes 
 ground-truth element and model), `frames.jsonl` (each frame's rig pose in ENU), grey8
 frames, `object_tracks.jsonl` (the wind and every person with a behaviour tree), with
 fires `fire_perimeter.jsonl`, and with buildings that can burn `building_fires.jsonl`; `surmap.simulation.bevy_capture.load_bevy_capture` reads it.
+
+`BEVY_ASSET_ROOT=$PWD`, run from `examples/bevy-sitl-poc`, points Bevy's asset server at the
+crate's `assets/`: the scene, presets, fx files, textures and the flame flipbook are all loaded
+from there at runtime, and a binary started outside `cargo run` (or from another directory)
+would otherwise look for `assets/` next to the executable. The close stills (`close_shots.rs`)
+exist because survey-range stills cannot show a flame sprite or a visor; their distances are the
+constants at the top of the file.
+
+**Recorded dynamics fixtures.** `tests/fixtures/bevy_capture_dynamics/{evacuation,blaze}/` are
+real native recordings, committed without `frames/` (the loader only stores the image
+references; 68 KB and 28 KB), that prove `fire_perimeter.jsonl`, `object_tracks.jsonl` and
+`building_fires.jsonl` end to end (`tests/test_sim_disaster_sweep.py`). To re-record, from
+`examples/bevy-sitl-poc`, then delete each `frames/` before copying:
+
+```bash
+BEVY_ASSET_ROOT=$PWD cargo run --release -- --record evacuation --frames 20 --start 25 --rate-hz 2 --scenario wildfire-evacuation
+BEVY_ASSET_ROOT=$PWD cargo run --release -- --record blaze --frames 20 --start 5 --rate-hz 0.1 --scenario downtown-blaze
+```
 
 Verified natively (Metal) throughout; the browser build compiles for `wasm32` but the
 runtime-scene version has not been checked in Chrome yet (visual checkpoint V5,

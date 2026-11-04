@@ -1,10 +1,10 @@
 {
   "material": {
-    "base_color": "textures/weathered_plank_siding_diff_2k.jpg",
-    "normal": "textures/weathered_plank_siding_nor_gl_2k.jpg",
-    "arm": "textures/weathered_plank_siding_arm_2k.jpg",
-    "uv_scale": 0.64,
-    "reflectance": 0.35
+    "uv_scale": 0.95,
+    "reflectance": 0.35,
+    "base_color": "textures/WoodSiding009_2K-JPG_Color.jpg",
+    "normal": "textures/WoodSiding009_2K-JPG_NormalGL.jpg",
+    "roughness": "textures/WoodSiding009_2K-JPG_Roughness.jpg"
   },
   "colourable": true,
   "glazing": {

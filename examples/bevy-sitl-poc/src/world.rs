@@ -26,7 +26,7 @@ use crate::scene_manifest::{
 use crate::rig::{ProfileAsset, RigSource};
 use crate::shots::RunMode;
 use crate::sky::SkySource;
-use crate::textures::{load_texture_set, tiled_material, TextureSetHandles};
+use crate::textures::{load_texture_set, tiled_material, RoughnessPacking, TextureSetHandles};
 use crate::vegetation::{plan_stand, PendingStands};
 use crate::wildfire::Wildfire;
 use crate::wire::GroundTruthObject;
@@ -132,10 +132,10 @@ pub struct Library {
 }
 
 impl Library {
-    fn load(manifest: &SceneManifest, assets: &AssetServer, pending: &mut Vec<UntypedHandle>) -> Self {
+    fn load(manifest: &SceneManifest, assets: &AssetServer, packing: &RoughnessPacking, pending: &mut Vec<UntypedHandle>) -> Self {
         let mut defs = BTreeMap::new();
         for (key, def) in &manifest.materials {
-            let handles = def.base_color.as_ref().map(|_| load_texture_set(assets, def));
+            let handles = def.base_color.as_ref().map(|_| load_texture_set(assets, def, packing));
             if let Some(h) = &handles {
                 pending.extend(h.base_color.iter().chain(&h.normal).chain(&h.arm).chain(&h.roughness).map(|x| x.clone().untyped()));
             }
@@ -171,6 +171,7 @@ pub struct WorldInputs<'w> {
     manifests: Res<'w, Assets<ManifestAsset>>,
     assets: Res<'w, AssetServer>,
     mode: Res<'w, RunMode>,
+    packing: Res<'w, RoughnessPacking>,
 }
 
 pub fn build_world(
@@ -182,12 +183,12 @@ pub fn build_world(
     mut truth: ResMut<GroundTruth>,
     mut stands: ResMut<PendingStands>,
 ) {
-    let WorldInputs { manifests, assets, mode } = inputs;
+    let WorldInputs { manifests, assets, mode, packing } = inputs;
     if state.built {
         return;
     }
     let Some(ManifestAsset(manifest)) = manifests.get(&state.manifest) else { return };
-    let library = Library::load(manifest, &assets, &mut state.pending);
+    let library = Library::load(manifest, &assets, &packing, &mut state.pending);
     let camera = mode.camera.clone().unwrap_or_else(|| manifest.camera.clone());
     let profile: Handle<ProfileAsset> = assets.load(camera);
     state.pending.push(profile.clone().untyped());

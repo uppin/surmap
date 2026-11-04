@@ -38,7 +38,9 @@ golden `downtown-blaze` scenario parsed by the renderer), an agent turn on a rea
 planner's review of native stills: D1 (the four districts) passed in one round; D2 (the blaze at
 t = 15, 120, 400, 900) passed after one round of JSON corrections — orange glow at 3.5, flame
 tongues, a continuous plume, and the neighbour's ignition moved from 65 s to 364.9 s. Follow-ups:
-`src/surmap/docs/todo/2026-11-04-{building-texture-character,building-window-glow-variation,building-smoke-prewarm-stills,building-fire-floor-from-district,legacy-buildings-burn}.md`.
+texture character, per-window glow variation, pre-warmed smoke in stills and district-resolved
+fire floors were done in the sweep ([2026-11-04-sim-disaster-2-sweep.md](2026-11-04-sim-disaster-2-sweep.md)); legacy buildings burning stays recorded in
+`src/surmap/docs/todo/2026-11-04-legacy-buildings-burn.md`.
 
 Part of stack `#sim-disaster-2` (3 of 4): `main ← n3 #100 ← n4 #101 ← n5 #104 ← sweep`. Green
 waves: n3 is wave 1 of 3, n4 wave 2, n5 wave 3. This PR needs #100 (the fire spec, fx loader,

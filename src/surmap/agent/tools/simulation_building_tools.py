@@ -103,6 +103,7 @@ async def add_building_fire_tool(
             building=request.building_id,
             floor=request.floor,
             start_s=request.start_s,
+            assets_dir=tooling.store.assets_dir,
         ),
     )
 

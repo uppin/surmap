@@ -1,11 +1,11 @@
 {
   "material": {
-    "base_color": "textures/Metal047B_2K-JPG_Color.jpg",
-    "normal": "textures/Metal047B_2K-JPG_NormalGL.jpg",
-    "roughness": "textures/Metal047B_2K-JPG_Roughness.jpg",
     "uv_scale": 1.0,
     "reflectance": 0.4,
-    "metallic": 0.8
+    "metallic": 0.8,
+    "base_color": "textures/Metal058C_2K-JPG_Color.jpg",
+    "normal": "textures/Metal058C_2K-JPG_NormalGL.jpg",
+    "roughness": "textures/Metal058C_2K-JPG_Roughness.jpg"
   },
   "colourable": false,
   "burnt": {

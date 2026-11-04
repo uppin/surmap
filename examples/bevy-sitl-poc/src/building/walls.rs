@@ -195,10 +195,12 @@ fn punched(
             [x0 - GLOW_MARGIN_M, x1 + GLOW_MARGIN_M],
             [y0 - GLOW_MARGIN_M, y1 + GLOW_MARGIN_M],
         );
-        out.glow.quad(
+        // One quad per window; its vertex colour is that window's glow scale (`fire_view`).
+        out.glow.quad_coloured(
             face.rect(gs, gt, look.glow_inset_m),
             metres(gs, gt),
             face.normal,
+            [[1.0; 4]; 4],
         );
         let soot_t = [y1, (y1 + look.soot.height_m).min(t0 + floor_m)];
         let [r, g, b] = look.soot.colour;

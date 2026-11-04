@@ -19,7 +19,7 @@ use crate::world::{build_world, ManifestAsset, SceneState};
 
 mod assets;
 mod fire_view;
-mod look;
+pub(crate) mod look;
 mod meshes;
 mod roofs;
 mod spawn;
@@ -34,6 +34,8 @@ pub use fire_view::BuildingBlaze;
 use fire_view::{Kind, Layer};
 use spawn::{spawn_building, Presets};
 use surface::Surfaces;
+
+use crate::textures::RoughnessPacking;
 
 /// The tuning file a scene with a wildfire but no building fire uses.
 const DEFAULT_TUNING: &str = "building/fire.json";
@@ -55,7 +57,11 @@ impl Plugin for BuildingPlugin {
             .init_asset_loader::<LookLoader>()
             .add_systems(
                 Update,
-                (raise_buildings, fire_view::update_building_fires)
+                (
+                    raise_buildings,
+                    fire_view::update_building_fires,
+                    fire_view::flicker_window_glow,
+                )
                     .chain()
                     .after(build_world)
                     .after(crate::actors::tick_behaviours),
@@ -174,6 +180,7 @@ pub struct PresetAssets<'w> {
 pub struct Raising<'w, 's> {
     commands: Commands<'w, 's>,
     assets: Res<'w, AssetServer>,
+    packing: Res<'w, RoughnessPacking>,
     meshes: ResMut<'w, Assets<Mesh>>,
     materials: ResMut<'w, Assets<StandardMaterial>>,
     presets: PresetAssets<'w>,
@@ -395,7 +402,7 @@ fn raise(
         raising.presets.facades.get(handle).map(|f| &f.0.glazing)
     };
     let (punched, curtain) = (glazing_of("plaster"), glazing_of("glass"));
-    let mut surfaces = Surfaces::new(&raising.assets, &mut raising.materials, &mut state.pending);
+    let mut surfaces = Surfaces::new(&raising.assets, &raising.packing, &mut raising.materials, &mut state.pending);
     let mut views = Vec::new();
     for (index, style) in &plan.styled {
         let Element::Building(building) = &manifest.elements[*index] else {

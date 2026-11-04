@@ -3,7 +3,7 @@
     "base_color": "textures/dark_planks_diff_2k.jpg",
     "normal": "textures/dark_planks_nor_gl_2k.jpg",
     "arm": "textures/dark_planks_arm_2k.jpg",
-    "uv_scale": 0.5,
+    "uv_scale": 0.83,
     "reflectance": 0.35
   },
   "colourable": false,
