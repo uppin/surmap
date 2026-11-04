@@ -275,6 +275,15 @@ class ScenarioStore:
             raise ValueError(f"{path} is not a file of the library")
         return self._library.joinpath(*parts[1:])
 
+    def store_floor_texture(self, png: bytes, texture_path: str) -> str:
+        """Write a stitched map-floor PNG under the library; returns its asset path."""
+        relative = texture_path.removeprefix("library/")
+        target = self._library / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.exists():
+            target.write_bytes(png)
+        return texture_path
+
     def asset(self, ref: str) -> StoredAsset:
         with self._connect() as db:
             row = db.execute(
@@ -404,6 +413,17 @@ class ScenarioStore:
                 credits.append(
                     Credit(asset.ref, asset.title, asset.author, asset.licence, asset.page_url)
                 )
+        floor = manifest.get("map_floor")
+        if isinstance(floor, dict) and floor.get("attribution") == "© OpenStreetMap contributors":
+            credits.append(
+                Credit(
+                    "openstreetmap",
+                    "OpenStreetMap map floor",
+                    "OpenStreetMap contributors",
+                    "ODbL",
+                    "https://www.openstreetmap.org/copyright",
+                )
+            )
         return tuple(credits)
 
 
@@ -422,6 +442,9 @@ def referenced_paths(manifest: Manifest) -> Sequence[str]:
                 for k, v in material.items()
                 if k in ("base_color", "normal", "roughness", "arm") and isinstance(v, str)
             ]
+    floor = manifest.get("map_floor")
+    if isinstance(floor, dict) and isinstance(floor.get("texture"), str):
+        paths.append(floor["texture"])
     return paths
 
 

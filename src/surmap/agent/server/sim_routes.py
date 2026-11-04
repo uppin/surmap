@@ -28,6 +28,7 @@ from surmap.simulation.asset_sources import AssetSource
 from surmap.simulation.fleet.controller import FleetTiming
 from surmap.simulation.fleet.perception import PerceptionRegistry
 from surmap.simulation.fleet.registry import FleetRegistry
+from surmap.simulation.map_floor import OsmTileSource
 from surmap.simulation.scenario_bundle import SUFFIX, BundleInvalid, export_bundle, import_bundle
 from surmap.simulation.scenario_store import Scenario, ScenarioStore, UnknownRecord
 
@@ -73,7 +74,11 @@ class SimulationRig:
         object.__setattr__(self, "fleet", FleetRegistry(self.store, timing=self.fleet_timing))
 
     def tooling(self) -> SimulationTooling:
-        return SimulationTooling(store=self.store, sources=self.sources)
+        return SimulationTooling(
+            store=self.store,
+            sources=self.sources,
+            tile_source=OsmTileSource(cache_dir=self.store.library_dir / "tile-cache"),
+        )
 
 
 def _not_found() -> HttpResponse:

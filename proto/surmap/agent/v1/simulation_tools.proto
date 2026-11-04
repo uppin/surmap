@@ -132,6 +132,31 @@ service SimulationTools {
     option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
   }
 
+  // Bases a scenario on the real map: stitches OpenStreetMap tiles cropped to the GPS
+  // bounding box (south-west to north-east corners) into a floor texture the simulation
+  // renders as its ground, centred on the bbox. Positions the other tools take stay ENU
+  // metres from that centre; the response gives the centre and size to convert with.
+  rpc SetMapFloor(SetMapFloorRequest) returns (MapFloorResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 60 on_timeout: DETACH};
+  }
+
+  // Removes a scenario's map floor and restores the preset ground box.
+  rpc ClearMapFloor(ClearMapFloorRequest) returns (ScenarioResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Converts a GPS point (lat/lon) to ENU metres from the scenario's map-floor centre,
+  // so objects can be placed by GPS without doing the conversion yourself. Fails when the
+  // scenario has no map floor.
+  rpc GeoToEnu(GeoToEnuRequest) returns (GeoToEnuResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Converts ENU metres from the scenario's map-floor centre back to a GPS point.
+  rpc EnuToGeo(EnuToGeoRequest) returns (EnuToGeoResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
   // Returns a scenario's latest version: its manifest, credits, and the URL the simulation
   // page opens it at.
   rpc GetScenario(GetScenarioRequest) returns (ScenarioResponse) {
@@ -490,6 +515,64 @@ message AddBuildingFireRequest {
 message RemoveBuildingFireRequest {
   string scenario_id = 1;
   string fire_id = 2;
+}
+
+message SetMapFloorRequest {
+  string scenario_id = 1;
+  // South-west corner: latitude, degrees north.
+  double sw_lat = 2;
+  // South-west corner: longitude, degrees east.
+  double sw_lon = 3;
+  // North-east corner: latitude, degrees north.
+  double ne_lat = 4;
+  // North-east corner: longitude, degrees east.
+  double ne_lon = 5;
+}
+
+message MapFloorResponse {
+  ScenarioInfo scenario = 1;
+  // The bbox centre: the ENU origin every other tool's positions are measured from.
+  double centre_lat = 2;
+  double centre_lon = 3;
+  // The floor's size in metres: east and north.
+  double size_east_m = 4;
+  double size_north_m = 5;
+  // The tile zoom the floor was stitched at.
+  int32 zoom = 6;
+  // The floor texture's path in the simulation's assets.
+  string texture = 7;
+  // Non-fatal problems with the new floor: a re-anchored scenario whose elements kept
+  // their ENU positions, or elements that now lie outside the floor.
+  repeated string warnings = 8;
+}
+
+message ClearMapFloorRequest {
+  string scenario_id = 1;
+}
+
+message GeoToEnuRequest {
+  string scenario_id = 1;
+  // Latitude, degrees north.
+  double lat = 2;
+  // Longitude, degrees east.
+  double lon = 3;
+}
+
+message GeoToEnuResponse {
+  // ENU metres from the floor centre; give this to add_element / add_model.
+  EnuPoint position = 1;
+  // Whether the point lies inside the floor's bounding box.
+  bool inside_floor = 2;
+}
+
+message EnuToGeoRequest {
+  string scenario_id = 1;
+  EnuPoint position = 2;
+}
+
+message EnuToGeoResponse {
+  double lat = 1;
+  double lon = 2;
 }
 
 message GetScenarioRequest {

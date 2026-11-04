@@ -40,8 +40,15 @@ from surmap.agent.tools.simulation_core import (
     scenario_info,
     scenario_url,
 )
+from surmap.agent.tools.simulation_floor import (
+    clear_map_floor_tool,
+    enu_to_geo_tool,
+    geo_to_enu_tool,
+    set_map_floor_tool,
+)
 from surmap.simulation.asset_sources import AssetHit, AssetKind, AssetSource
 from surmap.simulation.licences import check_licence
+from surmap.simulation.map_floor import OsmTileSource, TileSource
 from surmap.simulation.scenario_contents import scene_items, weather_line
 from surmap.simulation.scenario_manifest import (
     add_element,
@@ -76,10 +83,16 @@ _COLLIDERS: Mapping[pb.Collider, str] = {
 
 
 def simulation_tool_handlers(
-    store: ScenarioStore, sources: Mapping[str, AssetSource]
+    store: ScenarioStore,
+    sources: Mapping[str, AssetSource],
+    tile_source: TileSource | None = None,
 ) -> Mapping[str, Handler]:
     """Every `SimulationTools` rpc, by rpc name, as a `(request, ctx)` handler."""
-    tooling = SimulationTooling(store=store, sources=sources)
+    tooling = SimulationTooling(
+        store=store,
+        sources=sources,
+        tile_source=tile_source or OsmTileSource(cache_dir=store.library_dir.parent / "tile-cache"),
+    )
 
     def bind(tool: Callable[[Any, SimulationTooling], Awaitable[Any]]) -> Handler:
         async def serve(request: object, _ctx: object) -> Any:
@@ -107,6 +120,10 @@ def simulation_tool_handlers(
         "StyleBuilding": bind(style_building_tool),
         "AddBuildingFire": bind(add_building_fire_tool),
         "RemoveBuildingFire": bind(remove_building_fire_tool),
+        "SetMapFloor": bind(set_map_floor_tool),
+        "ClearMapFloor": bind(clear_map_floor_tool),
+        "GeoToEnu": bind(geo_to_enu_tool),
+        "EnuToGeo": bind(enu_to_geo_tool),
         "GetScenario": bind(get_scenario),
         "DescribeScenario": bind(describe_scenario),
         "ListScenarios": bind(list_scenarios),

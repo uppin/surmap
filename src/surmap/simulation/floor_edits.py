@@ -66,6 +66,7 @@ def set_map_floor(
     ne: tuple[float, float],
     texture: str,
     zoom: int,
+    attribution: str | None = None,
 ) -> Manifest:
     """A new manifest whose floor is the map cropped to the `sw`..`ne` GPS bbox.
 
@@ -81,6 +82,10 @@ def set_map_floor(
         "texture": texture,
         "zoom": zoom,
     }
+    if attribution:
+        floor_dict = edited["map_floor"]
+        assert isinstance(floor_dict, dict)
+        floor_dict["attribution"] = attribution
     elements = edited.get("elements")
     if isinstance(elements, list):
         removed = [e for e in elements if _is_ground_box(e)]
