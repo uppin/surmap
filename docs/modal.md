@@ -202,8 +202,15 @@ What Modal's edge does to these servers, and how the code meets it:
 - Endpoint URLs are public — the bearer token guards every Connect call; only
   `/health/is_alive` answers without it.
 
-Verified on 2026-11-03 for the CM5 app only (`modal serve`, workspace
+Verified on 2026-11-03 for the CM5 app (`modal serve`, workspace
 `mantas-27062`): token refusal and acceptance, real RTAB-Map scene points, GPS
 anchors and region points over `wss://`, and one survey stream held for 205 s.
-The station app has not run on Modal yet.
+
+Verified on 2026-11-04 for the station app (`modal serve`, workspace
+`ginas-bb`; `mantas-27062` refuses GPU functions without a payment method):
+token refusal and acceptance; `StreamAnalysis` over `wss://` answering every
+frame in order, from SAM 3.1 on `cuda:0`; with `SURMAP_STATION_LABEL=mattress`
+and no client prompt (`--prompt ""`), detections with mask outlines on 6 of 12
+EuRoC frames; an image build log with no pip dependency conflict. The station
+is up about 20 s after its first request once the image is built.
 
