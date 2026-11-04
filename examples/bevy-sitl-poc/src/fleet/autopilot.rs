@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 
 use bevy::math::{Vec2, Vec3};
 
-use super::log::{FleetCommand, FleetLog, OnComplete, Route, DEFAULT_SPEED_M_S};
+use super::log::{FleetCommand, FleetLog, OnComplete, Route, Stamped, DEFAULT_SPEED_M_S};
 
 /// The fixed integration step, from `t = 0`. A command takes effect at the first step at or after
 /// its `at_s`.
@@ -174,9 +174,26 @@ fn horizontal(velocity: [f32; 3]) -> Vec2 {
     Vec2::new(velocity[0], velocity[1])
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The steps this test's thread has taken, for the step-count measurements.
+    static STEPS_TAKEN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many autopilot steps `work` takes on this thread, with its result. Test-only: production
+/// carries no counter.
+#[cfg(test)]
+pub fn counting_steps<R>(work: impl FnOnce() -> R) -> (R, usize) {
+    let before = STEPS_TAKEN.with(std::cell::Cell::get);
+    let result = work();
+    (result, STEPS_TAKEN.with(std::cell::Cell::get) - before)
+}
+
 /// Advances `state` by `dt` toward what `plan` says, within the limits; pops each target it
 /// reaches.
 pub fn step(state: &mut DroneState, plan: &mut Plan, dt: f32) {
+    #[cfg(test)]
+    STEPS_TAKEN.with(|taken| taken.set(taken.get() + 1));
     match state.phase {
         Phase::Docked => {}
         Phase::Climbing => climb(state, plan, dt),
@@ -332,18 +349,22 @@ fn steps_until(t_s: f32) -> usize {
     (t_s / STEP_S + STEP_SLACK).floor().max(0.0) as usize
 }
 
-/// The state of drone `id`, docked on `home` at `t = 0`, after replaying `log` to `t_s`.
+/// The state of drone `id`, docked on `home` at `t = 0`, after replaying `log` to `t_s`. The
+/// definition the incremental `Autopilot` must equal; production advances one instead.
+#[cfg(test)]
 pub fn state_at(home: Home, id: &str, log: &FleetLog, t_s: f32) -> DroneState {
     Autopilot::new(id, home).advance(log, t_s)
 }
 
 /// The phase drone `id` is in when a command stamped `at_s` reaches it: every logged command up to
-/// that moment applied, none after.
+/// that moment applied, none after. The definition `Autopilot::phase_when` must equal; the log
+/// asks its own checker instead.
+#[cfg(test)]
 pub(super) fn phase_when(home: Home, id: &str, log: &FleetLog, at_s: f32) -> Phase {
     let mut pilot = Autopilot::new(id, home);
     let due = due_step(at_s);
-    pilot.run_to(log, due);
-    pilot.apply_due(log, due);
+    pilot.run_to(log.entries(), due);
+    pilot.apply_due(log.entries(), due);
     pilot.state.phase
 }
 
@@ -384,21 +405,34 @@ impl Autopilot {
         if steps < self.steps {
             *self = Self::new(&self.id, self.plan.home);
         }
-        self.run_to(log, steps);
+        self.run_to(log.entries(), steps);
         self.state
     }
 
-    fn run_to(&mut self, log: &FleetLog, steps: usize) {
+    /// The phase this drone is in when a command stamped `at_s` reaches it: every entry of
+    /// `entries` up to that moment applied, none after. It continues from where it last was, so
+    /// the moments asked must not decrease; an earlier one replays from the pad.
+    pub(super) fn phase_when(&mut self, entries: &[Stamped], at_s: f32) -> Phase {
+        let due = due_step(at_s);
+        if due < self.steps {
+            *self = Self::new(&self.id, self.plan.home);
+        }
+        self.run_to(entries, due);
+        self.apply_due(entries, due);
+        self.state.phase
+    }
+
+    fn run_to(&mut self, entries: &[Stamped], steps: usize) {
         while self.steps < steps {
-            self.apply_due(log, self.steps);
+            self.apply_due(entries, self.steps);
             step(&mut self.state, &mut self.plan, STEP_S);
             self.steps += 1;
         }
     }
 
     /// Applies the log's entries that take effect before step `k`.
-    fn apply_due(&mut self, log: &FleetLog, k: usize) {
-        while let Some(entry) = log.entries().get(self.applied).filter(|e| due_step(e.at_s) <= k) {
+    fn apply_due(&mut self, entries: &[Stamped], k: usize) {
+        while let Some(entry) = entries.get(self.applied).filter(|e| due_step(e.at_s) <= k) {
             if entry.command.drone() == self.id {
                 apply(&mut self.state, &mut self.plan, &entry.command);
             }

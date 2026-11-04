@@ -830,7 +830,8 @@ One JSON object per line, in `at_s` order (ties broken by `seq`):
 
 Commands: `launch` (with a route), `set_route`, `detour`, `recall` and `set_active`. A route's
 `on_complete` is `hover` or `return`. `FleetLog::push(at_s, command)` checks each command against
-the drone's phase at `at_s`, replayed from the log so far, and returns the assigned `seq` or a
+the drone's phase at `at_s`, read from a per-drone checker `Autopilot` that has followed the log so
+far (it never replays from `t = 0`), and returns the assigned `seq` or a
 `Refusal`. A command is refused for any of these:
 
 - an unknown drone;
@@ -849,7 +850,17 @@ and refuses a line whose `at_s` is out of order.
 The autopilot uses a fixed step, `STEP_S = 0.05` from `t = 0`, so the result does not depend on
 frame rate. A command takes effect at the first step at or after its `at_s`.
 `state_at(home, id, log, t)` is a pure function. The runtime `Autopilot` advances step by step and
-equals `state_at` at every `t` (a test checks this).
+equals `state_at` at every `t` (a test checks this). `state_at`, `phase_when` and `viewed_pose` are
+the replay-from-the-pad definitions, kept as the test oracle only (`#[cfg(test)]`). An `Autopilot`
+asked for an earlier moment than its last replays from the pad.
+
+The two callers that move forward in time advance instead of replaying: `FleetLog` keeps one
+checker `Autopilot` per drone (`phase_when` continues from its last check, and rewinds if a refused
+command had advanced it past a later accepted one), and the recorder keeps its own
+`ViewedPoses`, one `Autopilot` per drone. It does not read `Fleet.autopilots`, because the live set
+follows `SimClock` while the recorder pins `SimTime` per frame. Recording `n` frames and pushing `k`
+commands therefore cost linear steps. Measured: 6000 frames at 10 Hz over 600 s dropped from
+35 994 000 to 17 996 steps, and 1000 pushes from 5 005 000 to 10 000.
 
 | Phase | Motion |
 |---|---|
@@ -874,7 +885,7 @@ exactly as given, so the agent must plan them around buildings
   phase and its leg, and the UI lists the fleet (id · phase). Keyboard flight drives only the legacy
   drone.
 - Rotors spin whenever a fleet drone is not `Docked`.
-- `record_frames` takes `pose_enu` from `viewed_pose(t)`: the autopilot's pose of the active drone
+- `record_frames` takes `pose_enu` from `ViewedPoses::viewed(t)` (equal to the replayed `viewed_pose(t)`): the autopilot's pose of the active drone
   at `t`, or `SurveyLoop` when there is no fleet. With a fleet, each `frames.jsonl` line carries
   `"drone_id"`, and `CapturedFrame.drone_id` reads it (`None` for older captures).
 - `--fleet-log <path>` replays a log for stills and recordings:
@@ -893,6 +904,10 @@ A sample log is `tests/fixtures/fleet/survey-sortie.fleet.jsonl`.
 stills of `earthquake-fleet` replaying `survey-sortie.fleet.jsonl` at `--at 20` and `--at 40`:
 the chase camera shows the active drone airborne over the block, at a different point of its route
 in each still.
+
+2026-11-04 (#138): `cargo test --locked` 369 passed, 0 ignored: the three characterisation tests
+(cached recorder pose = replay on every frame, every push = a fresh replay's decision, a rewound
+recorder) green before and after, and the two step bounds.
 
 ## The fleet link
 

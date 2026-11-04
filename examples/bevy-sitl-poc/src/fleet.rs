@@ -14,6 +14,8 @@ pub mod stream;
 #[cfg(test)]
 mod tests;
 
+use std::collections::HashMap;
+
 use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::{Collider, RigidBody};
@@ -26,7 +28,9 @@ use crate::wildfire::SimClock;
 use crate::world::{enu, Nests};
 use crate::{attach_drone_parts, Drone, Rotor};
 
-use autopilot::{state_at, Autopilot, DroneState, Home, Phase};
+#[cfg(test)]
+use autopilot::state_at;
+use autopilot::{Autopilot, DroneState, Home, Phase};
 use log::{FleetCommand, FleetLog};
 
 /// A docked drone's body centre stands this far over its pad's deck, m: half the frame's height
@@ -136,16 +140,35 @@ fn pose_of(state: &DroneState) -> FlightPose {
 }
 
 /// The viewed rig pose at `t_s`, purely from time: the active fleet drone's autopilot pose, else
-/// the survey loop's.
+/// the survey loop's. The drone is replayed from its pad; this is the definition `ViewedPoses`
+/// must equal.
+#[cfg(test)]
 pub fn viewed_pose(fleet: Option<&Fleet>, t_s: f32) -> Viewed {
+    viewed_with(fleet, t_s, |home, id, log| state_at(home, id, log, t_s))
+}
+
+/// The viewed pose at `t_s`, the active drone's state coming from `state_of`.
+fn viewed_with(fleet: Option<&Fleet>, t_s: f32, state_of: impl FnOnce(Home, &str, &FleetLog) -> DroneState) -> Viewed {
     let drone = fleet.and_then(|fleet| {
         let id = fleet.active_at(t_s)?;
         let (_, home) = fleet.log.drones().iter().find(|(drone, _)| drone == id)?;
-        Some((id, state_at(*home, id, &fleet.log, t_s)))
+        Some((id, state_of(*home, id, &fleet.log)))
     });
     match drone {
         Some((id, state)) => Viewed { drone_id: Some(id.to_owned()), pose: pose_of(&state) },
         None => Viewed { drone_id: None, pose: SurveyLoop::disaster_block().pose_at(t_s) },
+    }
+}
+
+/// What a recording asks for, frame after frame: one autopilot per drone, advanced to each
+/// frame's moment instead of replayed from `t = 0`. A moment earlier than the last replays.
+#[derive(Debug, Default)]
+pub struct ViewedPoses(HashMap<String, Autopilot>);
+
+impl ViewedPoses {
+    /// The viewed rig pose at `t_s`.
+    pub fn viewed(&mut self, fleet: Option<&Fleet>, t_s: f32) -> Viewed {
+        viewed_with(fleet, t_s, |home, id, log| self.0.entry(id.to_owned()).or_insert_with(|| Autopilot::new(id, home)).advance(log, t_s))
     }
 }
 

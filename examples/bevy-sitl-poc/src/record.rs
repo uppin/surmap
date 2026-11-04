@@ -19,7 +19,7 @@ use crate::vehicle::scene::VehicleActor;
 use crate::building::BuildingBlaze;
 use crate::calibration::CameraProfile;
 use crate::fire;
-use crate::fleet::{viewed_pose, Fleet};
+use crate::fleet::{Fleet, ViewedPoses};
 use crate::wildfire::Wildfire;
 use crate::world::{scene_ready, GroundTruth, PendingModel, SceneState};
 use crate::{wire, StereoFeeds};
@@ -80,11 +80,13 @@ pub struct Recorder {
     started_at: f64,
     last_frame_at: f64,
     stall_warned: bool,
+    /// The viewed drone's pose, frame after frame.
+    poses: ViewedPoses,
 }
 
 impl Recorder {
     pub fn new(plan: RecordPlan) -> Self {
-        Self { plan, frame: 0, wait: FIRST_SETTLE, started: false, requested: false, left: None, right: None, left_rgb: None, lines: Vec::new(), fire_lines: Vec::new(), building_lines: Vec::new(), track_lines: Vec::new(), started_at: 0.0, last_frame_at: 0.0, stall_warned: false }
+        Self { plan, frame: 0, wait: FIRST_SETTLE, started: false, requested: false, left: None, right: None, left_rgb: None, lines: Vec::new(), fire_lines: Vec::new(), building_lines: Vec::new(), track_lines: Vec::new(), started_at: 0.0, last_frame_at: 0.0, stall_warned: false, poses: ViewedPoses::default() }
     }
 }
 
@@ -253,7 +255,7 @@ pub fn record_frames(
         save_rgb(&rec.plan.dir.join(&rgb_ref), pixels, &rig, rec.plan.jpeg);
         rgb_ref
     });
-    let viewed = viewed_pose(fleet.as_deref(), t_s);
+    let viewed = rec.poses.viewed(fleet.as_deref(), t_s);
     let pose_enu = wire::rig_pose_enu(viewed.pose.position, Quat::from_rotation_y(viewed.pose.yaw_rad) * rig.mount_rotation());
     rec.lines.push(frame_line(frame + 1, t_ns, &left_ref, &right_ref, rgb_ref.as_deref(), pose_enu, viewed.drone_id.as_deref()));
     if let Some(fires) = fires.as_ref().filter(|f| f.has_fires()) {

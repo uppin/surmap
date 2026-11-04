@@ -1,12 +1,12 @@
 //! The fleet log: simulation-time-stamped commands that task the simulation's own drones.
 //!
 //! One JSON object per line (`*.fleet.jsonl`), in `at_s` order, ties by `seq`. The same shape is
-//! what the station sends live. A command is checked against its drone's phase at `at_s`, replayed
-//! from the log so far; a command that fails is kept as a `Refusal` and never applied.
+//! what the station sends live. A command is checked against its drone's phase at `at_s`, checked
+//! by a per-drone autopilot that has followed the log so far; a command that fails is kept as a `Refusal` and never applied.
 
 use serde::{Deserialize, Serialize};
 
-use super::autopilot::{phase_when, Home, Phase, MAX_SPEED_M_S, MAX_UP_M, MIN_SPEED_M_S, MIN_UP_M};
+use super::autopilot::{Autopilot, Home, Phase, MAX_SPEED_M_S, MAX_UP_M, MIN_SPEED_M_S, MIN_UP_M};
 
 /// The speed a route flies at when it names none.
 pub const DEFAULT_SPEED_M_S: f32 = 5.0;
@@ -104,17 +104,27 @@ pub enum RefusalReason {
 
 /// The drones a log may task (each with its home pad), the commands it accepted and the ones it
 /// refused.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub struct FleetLog {
     drones: Vec<(String, Home)>,
     entries: Vec<Stamped>,
     refused: Vec<Refusal>,
+    /// One per drone, in `drones` order: advanced as commands are checked, so a check continues
+    /// from the last one instead of replaying from `t = 0`. Not part of the log's identity.
+    checkers: Vec<Autopilot>,
+}
+
+impl PartialEq for FleetLog {
+    fn eq(&self, other: &Self) -> bool {
+        (&self.drones, &self.entries, &self.refused) == (&other.drones, &other.entries, &other.refused)
+    }
 }
 
 impl FleetLog {
     /// An empty log for `drones`, in the order the fleet lists them.
     pub fn new(drones: Vec<(String, Home)>) -> Self {
-        Self { drones, entries: Vec::new(), refused: Vec::new() }
+        let checkers = drones.iter().map(|(id, home)| Autopilot::new(id, *home)).collect();
+        Self { drones, entries: Vec::new(), refused: Vec::new(), checkers }
     }
 
     /// The drones this log may task, with their home pads.
@@ -174,15 +184,15 @@ impl FleetLog {
     }
 
     /// Why `command` cannot be applied at `at_s`, if it cannot.
-    fn check(&self, at_s: f32, command: &FleetCommand) -> Result<(), RefusalReason> {
+    fn check(&mut self, at_s: f32, command: &FleetCommand) -> Result<(), RefusalReason> {
         let id = command.drone();
-        let Some((_, home)) = self.drones.iter().find(|(drone, _)| drone == id) else {
+        let Some(drone) = self.drones.iter().position(|(drone, _)| drone == id) else {
             return Err(RefusalReason::UnknownDrone(id.to_owned()));
         };
         if let Some(last) = self.entries.last().filter(|last| !(at_s >= last.at_s)) {
             return Err(RefusalReason::OutOfOrder { previous_at_s: last.at_s });
         }
-        let phase = phase_when(*home, id, self, at_s);
+        let phase = self.checkers[drone].phase_when(&self.entries, at_s);
         match command {
             FleetCommand::Launch { .. } if phase != Phase::Docked => Err(RefusalReason::NotDocked(phase)),
             FleetCommand::Launch { route, .. } => check_route(route),
