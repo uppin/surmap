@@ -55,3 +55,11 @@ fn the_same_vessel_rocks_the_same_way_every_run() {
     assert_eq!(vessel_motion(sea, BOAT, 12.3, 0.7), vessel_motion(sea, BOAT, 12.3, 0.7));
     assert_ne!(vessel_motion(sea, BOAT, 12.3, 0.7), vessel_motion(sea, BOAT, 12.3, 0.1));
 }
+
+#[test]
+fn a_vessels_hull_sits_its_draft_below_the_surface_and_heaves_with_it() {
+    let swell = VesselMotion { heave_m: 0.25, ..VesselMotion::default() };
+
+    assert_eq!(hull_height_m(0.6, 0.6, VesselMotion::default()), 0.0);
+    assert!((hull_height_m(0.6, 0.6, swell) - 0.25).abs() < 1e-6);
+}

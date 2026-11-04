@@ -23,14 +23,14 @@ PRD: `PRD-2026-11-04-sim-water-vessels.md` · Discovery:
   - [x] Acceptance tests written and failing for the right reason (`tests/test_sim_water_e2e.py`)
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Pin CC0 boat and ship glTF (Kenney *Watercraft Kit*, CC0, or equivalent); `fetch_sim_assets.py` verifies them
-  - [ ] Rust `scene_manifest.rs`: `water` on `box`; vessel classes; validation (start on water, every `move_to`/`follow_path` point on water, no `wander`/`flee_from_fire` in a vessel's tree)
-  - [ ] Rust `sea.rs` (pure): `sea_state(wind)` and `vessel_motion(class, sea, t_s, phase) -> (heave_m, pitch_rad, roll_rad)`
-  - [ ] Rust runtime: vessels driven by n1's `Drive`, held at the water box's top + heave, pitched/rolled; no wheels
-  - [ ] Python `scenario_manifest`: same rules; preset `flood-rescue`; golden fixture parsed by Rust
-  - [ ] Proto/handler: `VehicleElement.class` accepts `boat`/`ship`; `BoxElement` gains `water`; regenerated code; docs table
-  - [ ] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
+- [wf 3] ⏳ `/green` Green — implement until every red test passes · Rust 261/264 green (3 are n2's inherited reds); Python 10/10 green; detector cross-check pending n2's rebase onto n1's Green
+  - [x] Pin CC0 boat and ship glTF (Kenney *Watercraft Kit*, CC0, or equivalent); `fetch_sim_assets.py` verifies them — Quaternius *Boat* (`models/quaternius/boat.glb`) and *Ship* (`models/quaternius/ship.glb`), CC0-1.0 on poly.pizza, sha256-pinned in `assets.lock.json`. Kenney's own download returned 403 to a scripted fetch, so the equivalent CC0 pair was pinned (see *Decisions*)
+  - [x] Rust `scene_manifest.rs`: `water` on `box`; vessel classes; validation (start on water, every `move_to`/`follow_path` point on water, no `wander`/`flee_from_fire` in a vessel's tree) — `scene_manifest/water.rs`
+  - [x] Rust `sea.rs` (pure): `sea_state(wind)` and `vessel_motion(class, sea, t_s, phase) -> (heave_m, pitch_rad, roll_rad)`; plus `hull_height_m` and `phase_of`
+  - [x] Rust runtime: vessels driven by n1's `Drive`, held at the water box's top + heave, pitched/rolled; no wheels — `vehicle/scene.rs` `Float` and `place_vehicles`; `world.rs` finds the surface under each start
+  - [x] Python `scenario_manifest`: same rules; preset `flood-rescue`; golden fixture parsed by Rust — `surmap/simulation/water.py`; `tests/fixtures/sim_scenario/flood-rescue.json`
+  - [x] Proto/handler: `VehicleElement.class` accepts `boat`/`ship`; `BoxElement` gains `water`; regenerated code — the red commit regenerated the bindings and this row adds `water` to the `add_element` box handler (only when true); docs table is wrap work
+  - [x] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown` — ruff format/check, mypy, pytest (2116 passed, 38 skipped) green; `cargo test --locked` 261 passed, 3 failed = n2's inherited reds (`the_shipped_figure_has_a_clip_for_every_pose_in_a_pinned_file`, `every_rig_file_of_the_shipped_figure_is_a_pinned_cc0_model`, `a_pose_that_no_rig_carries_a_clip_for_is_refused_by_name`), left red; wasm32 check exit 0 (one pre-existing dead-code warning in `calibration.rs`)
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (tests + native still of `flood-rescue` reviewed)
   - [ ] `docs/simulation/bevy-simulation.md` — *Vehicles* → vessels and sea state; `docs/agent.md`
@@ -55,8 +55,7 @@ Seam: n1's vehicle classes and spawning, extended by a `Medium::Water` branch an
 **Needs:** n1 — the `vehicle` element, `Drive` kinematics, vehicle spawning and track `kind`, which
 vessels are driven by.
 Edges: `n1 → n3`; nothing from n2.
-**Greenable independently?** no — its runtime and acceptance tests drive n1's `Drive` and vehicle
-spawning; waits on n1's Green row. Pure `sea.rs` and validation tests can be greened earlier.
+**Greenable independently?** on the implementation, yes, as it turned out: every vessel test went green on `pr-2-sim-traffic` @ `9948bf2`, because the `Drive`, vehicle spawn and track `kind` it drives are n1's WIP already in that base. Not yet on the detector cross-check: the scorer's `boat`/`ship` labels live in n1's `detection_eval`, which lands with n1's Green row (`9369631`). The line read "no — waits on n1" before Green; the tree showed otherwise, so it is corrected here.
 
 ### Inherited Dependencies — do not implement here
 
@@ -141,8 +140,8 @@ and a survivor (n2's poses when n2 has landed, a standing person otherwise) wait
 | `src/vehicle/tests.rs` (2) | shipped `boat`/`ship` class files on water with draft and response; a water class without `wave_response` refused |
 | `src/scene_manifest/tests.rs` (5) | the four vessel refusals; golden parses with a water box and two boats |
 
-The e2e and preset tests also pass through n1's `vehicle` kind, so they go green only after n1's Green
-row (this node is wave 2). The pure `sea.rs`, class-file and vessel-rule tests are this node's alone.
+The e2e and preset tests also pass through n1's `vehicle` kind; they went green at Green on the base
+without n1's Green commit, since that kind is already in n1's WIP (see *Stack Context*).
 
 ## Prerequisites
 

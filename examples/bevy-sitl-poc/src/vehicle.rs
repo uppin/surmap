@@ -43,6 +43,11 @@ pub enum Medium {
 }
 
 impl VehicleClass {
+    /// Boats and ships float on water: a `water` box carries them, and no other class may start there.
+    pub fn is_vessel(self) -> bool {
+        matches!(self, Self::Boat | Self::Ship)
+    }
+
     /// The class file, relative to the asset root.
     pub fn file(self) -> String {
         format!("vehicle/{}.vehicle.json", self.kind())
@@ -95,7 +100,8 @@ pub struct VehicleDef {
     /// What the class moves on; vessels float on `water` boxes.
     #[serde(default)]
     pub medium: Medium,
-    /// Vessels: how deep the hull sits below the surface, and how strongly it answers waves.
+    /// Vessels: how deep the hull sits below the surface, and how strongly it answers waves
+    /// (1 for a small boat, 0.1 for a ship); both required on a water class.
     #[serde(default)]
     pub draft_m: Option<f32>,
     #[serde(default)]
@@ -129,6 +135,14 @@ impl VehicleDef {
         }
         if def.carriage_glb.is_some() && !def.carriage_spacing_m.is_some_and(|s| s > 0.0) {
             return Err("carriage_spacing_m must be > 0 when carriage_glb names a carriage".into());
+        }
+        if def.medium == Medium::Water {
+            if !def.draft_m.is_some_and(|d| d > 0.0) {
+                return Err("draft_m must be > 0 for a class that floats on water".into());
+            }
+            if !def.wave_response.is_some_and(|r| r > 0.0) {
+                return Err("wave_response must be > 0 for a class that floats on water".into());
+            }
         }
         for path in std::iter::once(&def.glb).chain(def.carriage_glb.iter()) {
             if !(path.ends_with(".glb") || path.ends_with(".gltf")) {

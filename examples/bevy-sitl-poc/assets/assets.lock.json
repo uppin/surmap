@@ -731,6 +731,20 @@
       "source": "https://poly.pizza/m/JCwr52pnuO"
     },
     {
+      "path": "models/quaternius/boat.glb",
+      "url": "https://static.poly.pizza/c5fe6584-9f6e-46cf-bcf6-95979c7494e4.glb",
+      "sha256": "263e5d46f79e8b37afecd0db9056b22dc33c6456074d260589285d1891192335",
+      "license": "CC0-1.0",
+      "source": "https://poly.pizza/m/5UEl54KsuC"
+    },
+    {
+      "path": "models/quaternius/ship.glb",
+      "url": "https://static.poly.pizza/e05fe724-a3b2-455d-a644-40cfb4bdd11e.glb",
+      "sha256": "b3cfa69180926216867e1060f442c6de8db405d60edd777ad658e1a162f5ae67",
+      "license": "CC0-1.0",
+      "source": "https://poly.pizza/m/mEQj2wZ3GC"
+    },
+    {
       "path": "models/poly-pizza/bus.glb",
       "url": "https://static.poly.pizza/635a02b7-4260-42a5-bd52-987511d6e3e0.glb",
       "sha256": "594f1e515bd1882467f50bbc3588df5009338e2ec8bbc31eee36c85774207a76",

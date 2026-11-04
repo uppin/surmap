@@ -1,0 +1,16 @@
+{
+  "glb": "models/quaternius/ship.glb",
+  "model_yaw_deg": 90.0,
+  "model_scale": 3.9,
+  "length_m": 60.0,
+  "width_m": 20.7,
+  "height_m": 44.9,
+  "wheel_nodes": [],
+  "max_speed_m_s": 7.0,
+  "accel_m_s2": 0.1,
+  "brake_m_s2": 0.08,
+  "turn_rate_deg_s": 2.0,
+  "medium": "water",
+  "draft_m": 4.0,
+  "wave_response": 0.1
+}

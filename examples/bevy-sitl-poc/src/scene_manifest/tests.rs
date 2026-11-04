@@ -497,3 +497,27 @@ fn the_flood_rescue_scenario_the_station_writes_is_a_valid_manifest() {
     assert!(manifest.elements.iter().any(|e| matches!(e, Element::Box(b) if b.water)));
     assert_eq!(boats, 2);
 }
+
+#[test]
+fn a_vessel_floats_on_the_top_of_the_water_under_its_start() {
+    let text = on_floodwater(r#""class": "boat", "position_enu": [0, 10, 0]"#);
+    let manifest = SceneManifest::from_json(&text).expect("a boat on the water is valid");
+    let waters = surfaces(&manifest.elements);
+
+    let top = surface_at(&waters, Vec2::new(0.0, 10.0)).expect("the boat starts on the water");
+
+    assert_eq!(top.top_z_m, 0.6);
+}
+
+#[test]
+fn a_turned_water_box_covers_the_footprint_it_is_turned_to() {
+    let text = with_elements(
+        r#"[{"kind": "box", "id": "floodwater", "material": "concrete", "size_m": [10, 100, 0.6],
+            "position_enu": [0, 50, 0], "yaw_deg": 90, "water": true}]"#,
+    );
+    let manifest = SceneManifest::from_json(&text).expect("a turned water box is valid");
+    let waters = surfaces(&manifest.elements);
+
+    assert!(surface_at(&waters, Vec2::new(30.0, 50.0)).is_some());
+    assert!(surface_at(&waters, Vec2::new(0.0, 80.0)).is_none());
+}

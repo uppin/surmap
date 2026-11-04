@@ -11,6 +11,7 @@
 
 use std::collections::BTreeMap;
 
+use bevy::math::Vec2;
 use bevy::prelude::Transform;
 use serde::Deserialize;
 
@@ -18,6 +19,9 @@ mod buildings;
 mod environment;
 mod nature;
 mod people;
+mod water;
+
+pub use water::{surface_at, surfaces, Surface};
 
 pub use buildings::{BuildingFireDef, DistrictDef};
 pub use environment::{Environment, PbrTextureSet};
@@ -370,7 +374,35 @@ impl SceneManifest {
     /// (`move_to`, `follow_path`), with no `wander` or `flee_from_fire` in their tree; a road or rail
     /// class may not start on water.
     fn validate_vessels(&self) -> Result<(), ManifestError> {
-        // TODO(pr-3): implement
+        let waters = surfaces(&self.elements);
+        for element in &self.elements {
+            let Element::Vehicle(vehicle) = element else {
+                continue;
+            };
+            let refused = |reason: String| ManifestError::Invalid(format!("vehicle {}: {reason}", vehicle.id));
+            let [x, y, _] = vehicle.position_enu;
+            let on_water = surface_at(&waters, Vec2::new(x, y)).is_some();
+            if !vehicle.class.is_vessel() {
+                if on_water {
+                    return Err(refused(format!("a {} cannot start on water, at ({x}, {y})", vehicle.class.kind())));
+                }
+                continue;
+            }
+            if !on_water {
+                return Err(refused(format!("starts at ({x}, {y}), off the water")));
+            }
+            let Some(tree) = &vehicle.behaviour else {
+                continue;
+            };
+            if let Some(node) = water::forbidden_nodes(tree).first() {
+                return Err(refused(format!("{node} is not allowed on water: its points are not known to be on it")));
+            }
+            for point in water::steered_points(tree) {
+                if surface_at(&waters, point).is_none() {
+                    return Err(refused(format!("steers to ({}, {}), off the water", point.x, point.y)));
+                }
+            }
+        }
         Ok(())
     }
 

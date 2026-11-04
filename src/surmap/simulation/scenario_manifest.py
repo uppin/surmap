@@ -56,6 +56,7 @@ from surmap.simulation.manifest_checks import number as _number
 from surmap.simulation.manifest_checks import object_list as _list
 from surmap.simulation.people import earthquake_survivors, validate_person_look
 from surmap.simulation.vehicles import street_traffic, validate_vehicle
+from surmap.simulation.water import flood_rescue, validate_vessels
 
 if TYPE_CHECKING:
     from surmap.simulation.scenario_store import StoredAsset
@@ -216,6 +217,7 @@ def validate_manifest(manifest: Mapping[str, object]) -> None:
     for fire in _list(manifest, "fires"):
         _validate_fire(fire, seen)
     validate_buildings(manifest)
+    validate_vessels(manifest)
 
 
 def element_ids(manifest: Mapping[str, object]) -> list[str]:
@@ -452,9 +454,10 @@ def _evacuation(edge: Manifest) -> Manifest:
 
 def load_presets(assets_dir: Path) -> dict[str, Manifest]:
     """`earthquake-block` (the shipped scene), `empty-lot` (its rig, sky and bare ground),
-    `wildfire-edge` and `flood-street` built from them, `wildfire-evacuation`: the edge with
-    people and a veering wind, `earthquake-survivors`: the block with five people in their poses,
-    and the building presets `district-showcase` and `downtown-blaze`."""
+    `wildfire-edge` and `flood-street` built from them, `flood-rescue`: the flood with two boats
+    on it, `wildfire-evacuation`: the edge with people and a veering wind, `earthquake-survivors`:
+    the block with five people in their poses, and the building presets `district-showcase` and
+    `downtown-blaze`."""
     block: Manifest = json.loads((Path(assets_dir) / "scene.json").read_text(encoding="utf-8"))
     materials = _materials(block)
     lot: Manifest = {
@@ -477,6 +480,7 @@ def load_presets(assets_dir: Path) -> dict[str, Manifest]:
     for manifest in (block, lot):
         validate_manifest(manifest)
     edge = _wildfire_edge(lot)
+    flood_street = _flood_street(block)
     return {
         "earthquake-block": block,
         "empty-lot": lot,
@@ -484,7 +488,8 @@ def load_presets(assets_dir: Path) -> dict[str, Manifest]:
         "downtown-blaze": downtown_blaze(lot),
         "wildfire-edge": edge,
         "wildfire-evacuation": _evacuation(edge),
-        "flood-street": _flood_street(block),
+        "flood-street": flood_street,
+        "flood-rescue": flood_rescue(flood_street),
         "street-traffic": street_traffic(block),
         "earthquake-survivors": earthquake_survivors(block),
     }

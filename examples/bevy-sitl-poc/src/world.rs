@@ -25,11 +25,13 @@ use crate::scene_manifest::{
     PbrTextureSet, Person, SceneManifest, Vehicle,
 };
 use crate::rig::{ProfileAsset, RigSource};
+use crate::scene_manifest::{surface_at, surfaces, Surface};
 use crate::shots::RunMode;
 use crate::sky::SkySource;
 use crate::textures::{load_texture_set, tiled_material, RoughnessPacking, TextureSetHandles};
 use crate::vegetation::{plan_stand, PendingStands};
-use crate::vehicle::scene::{VehicleActor, VehicleClasses};
+use crate::sea::{phase_of, sea_state, SeaState};
+use crate::vehicle::scene::{Float, VehicleActor, VehicleClasses};
 use crate::wildfire::Wildfire;
 use crate::wire::GroundTruthObject;
 
@@ -213,7 +215,18 @@ pub fn build_world(
         state.buildings_ready = false;
         commands.insert_resource(plan);
     }
-    let mut world = Builder { commands: &mut commands, meshes: &mut meshes, materials: &mut materials, library: &library, truth: &mut truth, districts: &manifest.districts };
+    let waters = surfaces(&manifest.elements);
+    let sea = sea_state(manifest.weather.as_ref().map_or(0.0, |weather| weather.wind.speed_m_s));
+    let mut world = Builder {
+        commands: &mut commands,
+        meshes: &mut meshes,
+        materials: &mut materials,
+        library: &library,
+        truth: &mut truth,
+        districts: &manifest.districts,
+        waters: &waters,
+        sea,
+    };
     for element in &manifest.elements {
         world.element(element);
     }
@@ -258,6 +271,9 @@ struct Builder<'a, 'w, 's> {
     library: &'a Library,
     truth: &'a mut GroundTruth,
     districts: &'a [DistrictDef],
+    /// The water boxes vessels float on, and the sea the scene's wind raises over them.
+    waters: &'a [Surface],
+    sea: SeaState,
 }
 
 impl Builder<'_, '_, '_> {
@@ -383,8 +399,13 @@ impl Builder<'_, '_, '_> {
     fn vehicle(&mut self, e: &Vehicle) {
         let [x, y, z] = e.position_enu;
         let turn = Quat::from_rotation_y(bevy_yaw(Vec2::from_angle(e.yaw_deg.to_radians())));
+        let float = e.class.is_vessel().then(|| surface_at(self.waters, Vec2::new(x, y))).flatten().map(|water| Float {
+            surface_top_m: water.top_z_m,
+            sea: self.sea,
+            phase: phase_of(&e.id),
+        });
         self.commands
-            .spawn((VehicleActor::new(e), Visibility::default(), Transform::from_translation(enu(x, y, z)).with_rotation(turn)));
+            .spawn((VehicleActor::new(e, float), Visibility::default(), Transform::from_translation(enu(x, y, z)).with_rotation(turn)));
     }
 
     fn person(&mut self, e: &Person) {
