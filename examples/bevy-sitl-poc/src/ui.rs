@@ -10,8 +10,16 @@ use crate::fleet::autopilot::DroneState;
 use crate::fleet::{fleet_status, ActiveDrone, Fleet};
 use crate::{Drone, Flight, StereoFeeds};
 
+/// The bridge's latest map status line (`fleet::stream::status_line`), shown under the feed
+/// panel; empty until the first status reply arrives.
+#[derive(Resource, Default)]
+pub struct MapStatusLine(pub String);
+
 #[derive(Component)]
 pub(crate) struct StatusText;
+
+#[derive(Component)]
+pub(crate) struct MapStatusText;
 
 #[derive(Component)]
 pub(crate) struct TakeoffButton;
@@ -71,6 +79,12 @@ pub(crate) fn setup_ui(mut commands: Commands, feeds: Res<StereoFeeds>, rig: Res
                     ..default()
                 },
                 TextColor(Color::srgb(0.80, 0.87, 0.94)),
+            ));
+            panel.spawn((
+                MapStatusText,
+                Text::new(""),
+                TextFont { font_size: 11.0, ..default() },
+                TextColor(Color::srgb(0.65, 0.85, 0.70)),
             ));
         });
     commands.spawn((
@@ -141,6 +155,19 @@ pub(crate) fn takeoff_button(
                     "Take off".into()
                 };
             }
+        }
+    }
+}
+
+/// Shows the bridge's latest map status under the feed panel, once one has arrived.
+pub fn update_map_status(
+    line: Option<Res<MapStatusLine>>,
+    mut texts: Query<&mut Text, With<MapStatusText>>,
+) {
+    let Some(line) = line else { return };
+    for mut text in &mut texts {
+        if text.0 != line.0 {
+            text.0 = line.0.clone();
         }
     }
 }

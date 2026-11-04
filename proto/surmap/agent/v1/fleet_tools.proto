@@ -67,6 +67,15 @@ service FleetTools {
   rpc GetFleetLog(GetFleetLogRequest) returns (GetFleetLogResponse) {
     option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
   }
+
+  // Reports each simulated drone's own map and segmentation, as the station's stereo bridge
+  // processed the active drone's stream: frames, posed and lost frames, keyframes, segmented
+  // frames and detections, whether it is the drone being processed now, and its last frame's
+  // simulation time. A drone that never streamed reports zeros. Fails unavailable when no
+  // simulation page streams the scenario to the bridge.
+  rpc DroneMapStatus(DroneMapStatusRequest) returns (DroneMapStatusResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
 }
 
 // What a simulated drone is doing.
@@ -207,4 +216,35 @@ message GetFleetLogResponse {
   int32 session_id = 1;
   // The session's applied commands, one JSON object per line, as --fleet-log reads them.
   string fleet_log_jsonl = 2;
+}
+
+message DroneMapStatusRequest {
+  string scenario_id = 1;
+  // One drone's map only; every drone of the scenario when absent.
+  optional string drone_id = 2;
+}
+
+// One drone's map and segmentation on the station.
+message DroneMapCounts {
+  string drone_id = 1;
+  // Stereo pairs of this drone the bridge processed.
+  int32 frames = 2;
+  // Frames RTAB-Map's odometry posed.
+  int32 posed = 3;
+  // Odometry updates that reported tracking lost.
+  int32 lost = 4;
+  // Keyframes in this drone's map.
+  int32 keyframes = 5;
+  // Left frames segmentation finished, and the detections it found in them.
+  int32 segmented_frames = 6;
+  int32 detections = 7;
+  // Whether this drone's frames are the ones being processed now.
+  bool processing = 8;
+  // Simulation time of its last processed frame, ns; 0 before any.
+  int64 last_t_ns = 9;
+}
+
+message DroneMapStatusResponse {
+  // Every drone asked for, nest by nest in drone order.
+  repeated DroneMapCounts drones = 1;
 }

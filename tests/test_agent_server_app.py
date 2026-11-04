@@ -182,6 +182,17 @@ def test_flags_set_the_port_model_history_and_fake_sam() -> None:
     )
 
 
+def test_the_bevy_bridge_port_flag_sets_the_stereo_bridge_port() -> None:
+    # Given the agent started with the stereo bridge on 8773
+    argv = ["--bevy-bridge-port=8773"]
+
+    # When the command line is read
+    config = config_from_args(argv, environ={})
+
+    # Then the config serves the bridge there
+    assert config == AgentServerConfig(bevy_bridge_port=8773)
+
+
 def test_a_fireworks_model_id_is_taken_whole_from_the_command_line() -> None:
     # Given a Fireworks model id, slashes and all
     argv = [f"--model={FIREWORKS}"]

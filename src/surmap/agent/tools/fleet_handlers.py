@@ -14,6 +14,10 @@ have or a drone the scene does not have; `INVALID_ARGUMENT` for a command the st
 before sending it, its message led by the rule (`no_waypoints: …`); `FAILED_PRECONDITION` with
 the page's own reason when the simulation refuses it; `UNAVAILABLE` when no page is linked;
 `DEADLINE_EXCEEDED` when the page does not answer in time.
+
+`drone_map_status_handler(store, perception)` is `DroneMapStatus`, registered beside them: each
+drone's own map and segmentation on the station's stereo bridge
+(`surmap.simulation.fleet.perception`), `UNAVAILABLE` when no page streams the scenario.
 """
 
 from __future__ import annotations
@@ -51,11 +55,14 @@ from surmap.simulation.fleet.controller import (
 )
 from surmap.simulation.fleet.link import DroneTelemetry, Phase
 from surmap.simulation.fleet.log_store import UnknownSession
+from surmap.simulation.fleet.perception import DroneCounts, PerceptionRegistry
 from surmap.simulation.fleet_nests import Nest, nests_of
 from surmap.simulation.scenario_store import ScenarioStore
 
 __all__ = [
     "CommandRequest",
+    "drone_map_counts",
+    "drone_map_status_handler",
     "drone_phase",
     "drone_statuses",
     "fleet_command",
@@ -262,3 +269,65 @@ def drone_statuses(
                     )
                 )
     return tuple(statuses)
+
+
+def drone_map_status_handler(store: ScenarioStore, perception: PerceptionRegistry) -> Handler:
+    """`DroneMapStatus` as a `(request, ctx)` handler: every drone of the scenario's nests, nest
+    by nest in drone order (or only the drone the request names), with its session's counts from
+    the scenario's connected bridge page, zeros for a drone that never streamed. `NOT_FOUND` for
+    a scenario the store does not have or a drone the scene does not have, `UNAVAILABLE` when no
+    page streams the scenario."""
+
+    async def drone_map_status(
+        request: pb.DroneMapStatusRequest, _ctx: object
+    ) -> pb.DroneMapStatusResponse:
+        nests = await blocking(lambda: nests_of(store.scenario(request.scenario_id).manifest))
+        drone_ids = [drone_id for nest in nests for drone_id in nest.drone_ids]
+        requested = request.drone_id if request.HasField("drone_id") else None
+        if requested is not None and requested not in drone_ids:
+            raise ConnectError(Code.NOT_FOUND, f"{requested} is not a drone of this scene")
+        page = perception.perception(request.scenario_id)
+        if page is None:
+            raise ConnectError(Code.UNAVAILABLE, f"no page streams scenario {request.scenario_id}")
+        by_id = {counts.drone_id: counts for counts in page.counts()}
+        wanted = [requested] if requested is not None else drone_ids
+        return pb.DroneMapStatusResponse(
+            drones=[
+                drone_map_counts(
+                    by_id.get(
+                        drone_id,
+                        DroneCounts(
+                            drone_id=drone_id,
+                            frames=0,
+                            posed=0,
+                            lost=0,
+                            keyframes=0,
+                            dropped=0,
+                            segmented_frames=0,
+                            detections=0,
+                            processing=False,
+                            last_t_ns=None,
+                        ),
+                    )
+                )
+                for drone_id in wanted
+            ]
+        )
+
+    return drone_map_status
+
+
+def drone_map_counts(counts: DroneCounts) -> pb.DroneMapCounts:
+    """A drone session's counts as `drone_map_status` reports them (`last_t_ns` 0 before any
+    frame)."""
+    return pb.DroneMapCounts(
+        drone_id=counts.drone_id,
+        frames=counts.frames,
+        posed=counts.posed,
+        lost=counts.lost,
+        keyframes=counts.keyframes,
+        segmented_frames=counts.segmented_frames,
+        detections=counts.detections,
+        processing=counts.processing,
+        last_t_ns=counts.last_t_ns if counts.last_t_ns is not None else 0,
+    )

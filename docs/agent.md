@@ -89,6 +89,7 @@ leading comment, and argument descriptions are the field comments.
 | `recall_drone` | `FleetTools.RecallDrone` | SYNC · 10 s · FAIL |
 | `set_active_drone` | `FleetTools.SetActiveDrone` | SYNC · 10 s · FAIL |
 | `get_fleet_log` | `FleetTools.GetFleetLog` | SYNC · 10 s · FAIL |
+| `drone_map_status` | `FleetTools.DroneMapStatus` | SYNC · 10 s · FAIL |
 | `start_subagent` | — (`surmap.agent.subagents`) | SYNC · 10 s · FAIL |
 | `message_subagent` | — (`surmap.agent.subagents`) | SYNC · 10 s · FAIL |
 | `message_main_agent` | — (a subagent's only) | SYNC · 10 s · FAIL |
@@ -338,6 +339,7 @@ aircraft are never commanded.
 | `recall_drone` | `scenario_id`, `drone_id` | `FleetCommandResult` |
 | `set_active_drone` | `scenario_id`, `drone_id` | `FleetCommandResult` |
 | `get_fleet_log` | `scenario_id`, `optional session_id` (latest when absent) | `session_id`, `fleet_log_jsonl` (the `--fleet-log` replay file) |
+| `drone_map_status` | `scenario_id`, `optional drone_id` (one drone; every drone when absent) | `repeated DroneMapCounts { drone_id, frames, posed, lost, keyframes, segmented_frames, detections, processing, last_t_ns }` — per-drone map and segmentation counts from the stereo bridge; a drone that never streamed reports zeros, `last_t_ns` 0 before any frame |
 
 Routes are ENU metres on the simulated block: waypoints 5–60 m up within ±500 m, speed
 0.5–8 m/s when given; `on_complete` is `RETURN` (the default) or `HOVER`. Phases are
@@ -354,6 +356,13 @@ that scenario's sessions.
   (`FleetTimeout`, 5 s in the controller). Without a link, only commands a docked drone accepts
   (`launch_drone`, `set_active_drone`) reach the `UNAVAILABLE` answer: validation runs first,
   so `set_route` / `add_detour` / `recall_drone` on a docked drone answer `INVALID_ARGUMENT`.
+- **`drone_map_status`** (`drone_map_status_handler(store, perception)`, registered beside the
+  fleet handlers) reads the stereo bridge, not the fleet link: the scenario's connected
+  `?bridge=` page (`PerceptionRegistry`) holds one RTAB-Map session and segmentation run per
+  drone ([bevy-simulation.md](simulation/bevy-simulation.md), *Live stream*). It answers
+  `NOT_FOUND` for an unknown scenario or a named drone the scene does not have, and
+  `UNAVAILABLE` (`no page streams scenario <id>`) when no page streams the scenario to the
+  bridge. The bridge itself starts only with `--bevy-bridge-port` (see *Running the agent*).
 
 ## SAM station (`surmap.agent.tools.station`, `station_modal`)
 
@@ -818,6 +827,7 @@ uv run python -m surmap.agent --sam-fake \
 | `--sim-dir` | `<cache>/simulation` | simulation store: `simulation.sqlite` and the asset `library/` |
 | `--sim-assets` | `examples/bevy-sitl-poc/assets` | the simulation's own assets; simulation tools are off when absent |
 | `--sim-dist` | none | a `trunk build` output served at `/sim/` |
+| `--bevy-bridge-port` | none | serve the stereo bridge a `?bridge=ws://…` simulation page streams its active drone to; each drone gets its own RTAB-Map session and segmentation run, read back with `drone_map_status` |
 
 **Access code** (`surmap.agent.server.access`). With `SURMAP_AGENT_ACCESS_CODE` set, the agent is
 behind a shared pass code: `POST /auth/session` with `{"code": …}` answers

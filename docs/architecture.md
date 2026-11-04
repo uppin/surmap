@@ -92,7 +92,11 @@ Its output is never fed back as a control signal.
   exception to §1's flight-control line, and it never leaves the
   simulation: nothing here reaches PX4 or a real flight controller. The
   survey pipeline consumes the active drone's feed as it would a
-  recorded session.
+  recorded session: the page streams only the active drone's stereo
+  pairs (`?bridge=`), and the station keeps one RTAB-Map session and
+  one segmentation run per drone — switching the active drone pauses
+  the previous drone's processing and keeps its map, and switching back
+  resumes that same session. Inactive drones keep flying unprocessed.
 - Other simulator options (Isaac Sim, a custom renderer, pure
   rosbag/session replay) and dedicated Machine 3 hardware remain open
   if a different path is needed later.

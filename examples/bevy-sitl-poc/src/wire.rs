@@ -22,7 +22,7 @@ pub struct GroundTruthObject {
 }
 
 /// The header of one stereo pair.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PairHeader {
     pub frame_id: u64,
     pub t_ns: u64,
@@ -31,6 +31,9 @@ pub struct PairHeader {
     /// Rig centre in ENU and the rotation taking the rig's
     /// forward-left-up body frame to ENU, `[x, y, z, qx, qy, qz, qw]`.
     pub pose_enu: [f64; 7],
+    /// The fleet drone whose eyes rendered the pair (`ActiveDrone`); `None` without a fleet,
+    /// which leaves the header byte-identical to the single-drone wire.
+    pub drone_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -39,10 +42,12 @@ struct HelloHeader<'a> {
     kind: &'static str,
     camera: &'a CameraProfile,
     objects: &'a [GroundTruthObject],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    scenario: Option<&'a str>,
 }
 
 #[derive(Serialize)]
-struct PairHeaderJson {
+struct PairHeaderJson<'a> {
     #[serde(rename = "type")]
     kind: &'static str,
     frame_id: u64,
@@ -51,6 +56,8 @@ struct PairHeaderJson {
     height: u32,
     encoding: &'static str,
     pose_enu: [f64; 7],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    drone_id: Option<&'a str>,
 }
 
 fn frame(header_json: String, payloads: &[&[u8]]) -> Vec<u8> {
@@ -68,14 +75,24 @@ fn frame(header_json: String, payloads: &[&[u8]]) -> Vec<u8> {
 /// The session opener: the whole camera profile (the bridge derives
 /// RTAB-Map's calibration from it) and the ground-truth objects.
 pub fn encode_hello(camera: &CameraProfile, objects: &[GroundTruthObject]) -> Vec<u8> {
-    let header = HelloHeader { kind: "hello", camera, objects };
+    encode_hello_with_scenario(camera, objects, None)
+}
+
+/// The session opener of a fleet page, naming the scenario it runs when it has one.
+pub fn encode_hello_with_scenario(
+    camera: &CameraProfile,
+    objects: &[GroundTruthObject],
+    scenario: Option<&str>,
+) -> Vec<u8> {
+    let header = HelloHeader { kind: "hello", camera, objects, scenario };
     frame(
         serde_json::to_string(&header).expect("hello header serializes"),
         &[],
     )
 }
 
-/// One stereo pair; panics if a payload is not `width * height` bytes.
+/// One stereo pair, labelled with its drone when the header names one; panics if a payload is
+/// not `width * height` bytes.
 pub fn encode_pair(header: &PairHeader, left_gray: &[u8], right_gray: &[u8]) -> Vec<u8> {
     let expected = (header.width as usize) * (header.height as usize);
     assert!(
@@ -92,6 +109,7 @@ pub fn encode_pair(header: &PairHeader, left_gray: &[u8], right_gray: &[u8]) -> 
         height: header.height,
         encoding: "gray8",
         pose_enu: header.pose_enu,
+        drone_id: header.drone_id.as_deref(),
     };
     frame(
         serde_json::to_string(&json).expect("pair header serializes"),
@@ -158,6 +176,8 @@ mod tests {
 
     const HELLO_GOLDEN: &[u8] = include_bytes!("../../../tests/fixtures/bevy_sim_wire/hello.bin");
     const PAIR_GOLDEN: &[u8] = include_bytes!("../../../tests/fixtures/bevy_sim_wire/pair.bin");
+    const PAIR_DRONE_GOLDEN: &[u8] =
+        include_bytes!("../../../tests/fixtures/bevy_sim_wire/pair-drone.bin");
 
     fn a_car() -> GroundTruthObject {
         GroundTruthObject {
@@ -175,6 +195,7 @@ mod tests {
             width: 4,
             height: 2,
             pose_enu: [1.0, 3.0, 2.0, 0.0, 0.0, 0.0, 1.0],
+            drone_id: None,
         }
     }
 
@@ -207,6 +228,17 @@ mod tests {
         let message = encode_pair(&a_tiny_pair_header(), &left, &right);
 
         assert_eq!(message, PAIR_GOLDEN);
+    }
+
+    #[test]
+    fn a_pair_from_a_fleet_drone_matches_the_drone_golden_bytes() {
+        let left: Vec<u8> = (0..8).collect();
+        let right: Vec<u8> = (8..16).collect();
+        let header = PairHeader { drone_id: Some("nest-sw-d1".into()), ..a_tiny_pair_header() };
+
+        let message = encode_pair(&header, &left, &right);
+
+        assert_eq!(message, PAIR_DRONE_GOLDEN);
     }
 
     #[test]

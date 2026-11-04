@@ -1,5 +1,6 @@
 """The browser-to-bridge wire format, pinned by the shared goldens."""
 
+import hashlib
 import json
 import struct
 from pathlib import Path
@@ -119,3 +120,94 @@ def test_the_status_reply_is_one_compact_json_text_message() -> None:
         "keyframes": 1,
         "dropped": 0,
     }
+
+
+# ---- a fleet page: the scenario and each pair's drone -----------------------------------------
+
+# The single-drone goldens, pinned: a fleet page's optional fields must leave them unchanged.
+SINGLE_DRONE_GOLDENS = {
+    "hello.bin": "508903f5be271a2d91f0da4cd5109481cef093f04f1657cef63c0170e86d7b20",
+    "pair.bin": "e5b2acc4b5b910e77d3c590129922b3e5ce6aece2f069265d6ba1808b63aeb80",
+}
+
+
+def a_hello_naming(scenario: str) -> bytes:
+    hello = (GOLDENS / "hello.bin").read_bytes()
+    (length,) = struct.unpack_from("<I", hello, 0)
+    header = json.loads(hello[4 : 4 + length])
+    header["scenario"] = scenario
+    return a_message(json.dumps(header, separators=(",", ":")).encode("utf-8"))
+
+
+def test_the_drone_pair_golden_decodes_with_the_drone_that_rendered_it() -> None:
+    # Given nest-sw-d1's 4x2 pair from a fleet page
+    message = (GOLDENS / "pair-drone.bin").read_bytes()
+
+    # When the bridge decodes it
+    decoded = decode_bevy_message(message)
+
+    # Then it is the golden frame, labelled with its drone
+    assert isinstance(decoded, BevyPair)
+    assert (decoded.drone_id, decoded.frame_id, decoded.left_data) == (
+        "nest-sw-d1",
+        7,
+        bytes(range(8)),
+    )
+
+
+def test_a_pair_without_a_drone_id_belongs_to_no_drone() -> None:
+    # Given the single-drone pair golden
+    message = (GOLDENS / "pair.bin").read_bytes()
+
+    # When the bridge decodes it
+    decoded = decode_bevy_message(message)
+
+    # Then it names no drone
+    assert isinstance(decoded, BevyPair)
+    assert decoded.drone_id is None
+
+
+def test_a_fleet_page_s_hello_names_its_scenario() -> None:
+    # Given the golden hello from a page running quake-fleet
+    message = a_hello_naming("quake-fleet")
+
+    # When the bridge decodes it
+    decoded = decode_bevy_message(message)
+
+    # Then it carries the scenario beside the camera profile
+    assert isinstance(decoded, BevyHello)
+    assert (decoded.scenario, decoded.camera) == ("quake-fleet", load_camera_profile(PROFILE))
+
+
+def test_the_single_drone_goldens_stay_byte_identical() -> None:
+    # Given the hello and pair goldens a page without a fleet sends
+    names = sorted(SINGLE_DRONE_GOLDENS)
+
+    # When their bytes are hashed
+    digests = {name: hashlib.sha256((GOLDENS / name).read_bytes()).hexdigest() for name in names}
+
+    # Then they are the bytes pinned before drones were named on the wire
+    assert digests == SINGLE_DRONE_GOLDENS
+
+
+def test_a_drone_s_status_names_it_and_why_its_pair_was_not_processed() -> None:
+    # Given the status of a fifth drone's refused pair
+    status = BridgeStatus(
+        frames=0,
+        posed=0,
+        lost=False,
+        keyframes=0,
+        dropped=0,
+        drone_id="nest-roof-d1",
+        error="drone session limit (4) reached; nest-roof-d1 not processed",
+    )
+
+    # When the bridge encodes its reply
+    text = encode_status(status)
+
+    # Then the single-drone fields come first, then the drone and the reason
+    assert text == (
+        '{"type":"status","frames":0,"posed":0,"lost":false,"keyframes":0,"dropped":0,'
+        '"drone_id":"nest-roof-d1",'
+        '"error":"drone session limit (4) reached; nest-roof-d1 not processed"}'
+    )

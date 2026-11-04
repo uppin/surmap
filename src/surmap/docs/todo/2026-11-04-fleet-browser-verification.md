@@ -23,11 +23,24 @@
    (`--screenshot … --at <t>`): it must show the drones where the browser showed them at the same
    simulation time.
 
-### n5 — the browser stream
+### n5 — the browser stream (PR #121)
 
-n5's browser stream procedure (the `?bridge=` page streaming the active drone's frames) joins
-this record. It is the same kind of run, on the same page, after the same build. n5 adds its
-numbered steps here, and does not open a second file.
+Deferred with the same consent as n3 (developer, 2026-11-04: browser testing after the stack
+is merged). V1 + V3 accepted for the wrap; this procedure is the V4 evidence.
+
+1. `cd examples/bevy-sitl-poc && trunk build index.html --release`.
+2. Start the agent with the streaming RTAB-Map image available:
+   `uv run python -m surmap.agent --sim-dist examples/bevy-sitl-poc/dist --bevy-bridge-port 8773 --sam-fake`.
+3. Open `/sim/?scenario=<earthquake-fleet>&fleet=1&bridge=ws://127.0.0.1:8773` in Chrome.
+4. Through the chat (or `scripts/fleet_link_smoke.py`):
+   1. launch `nest-sw-d1` and `nest-ne-d1`, with `nest-sw-d1` active for 60 s;
+   2. `set_active_drone nest-ne-d1` for 60 s;
+   3. switch back to `nest-sw-d1` for 30 s;
+   4. call `drone_map_status`.
+5. Evidence: screenshots of the status overlay (`MAP <drone> · <n> frames · <k> keyframes ·
+   tracking`) before and after each switch, and the `drone_map_status` output. It must show
+   two drones with keyframes, `processing` on the active one, and `nest-sw-d1`'s frames
+   continuing (not restarting) after the switch back.
 
 ## Why it could not be done now
 
@@ -45,6 +58,12 @@ stack has merged, instead of once per PR.
   both drones docked, a 6-line export.
 - The wasm glue (`fleet/link_wasm.rs`: the socket, the command queue drained into
   `FleetLog::push`, the telemetry timer) has not run in a browser yet.
+- n5 was verified by V1 and V3. V1 covers routing, wire goldens, the loopback bridge with two
+  drones, the status tool, and the real-sidecar e2e (both sessions gain keyframes, the first
+  drone resumes in the same backend). V3 is
+  `cargo check --locked --target wasm32-unknown-unknown` with `fleet/bridge_wasm.rs` compiled in.
+- The wasm stream (`fleet/bridge_wasm.rs`: the `?bridge=` socket, eye `Readback` →
+  `encode_pair` with the active drone id, the status overlay) has not run in a browser yet.
 
 ## When it becomes possible
 

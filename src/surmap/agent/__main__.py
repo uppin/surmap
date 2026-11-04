@@ -34,6 +34,7 @@ from surmap.agent.server.app import (
     build_demo_workspace,
     build_simulation_rig,
     build_station,
+    start_bevy_bridge,
 )
 from surmap.agent.tools.onboard import ONBOARD_OFF
 from surmap.agent.tools.station import DEFAULT_IDLE_TIMEOUT_S, IdleTicker
@@ -87,6 +88,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--sim-dist", type=Path, default=None, help="a `trunk build` output served at /sim/"
+    )
+    parser.add_argument(
+        "--bevy-bridge-port",
+        type=int,
+        default=None,
+        help="serve the stereo bridge a ?bridge= simulation page streams its active drone to",
     )
     parser.add_argument(
         "--station",
@@ -144,6 +151,7 @@ def config_from_args(
         sim_dir=args.sim_dir,
         sim_assets=args.sim_assets,
         sim_dist=args.sim_dist,
+        bevy_bridge_port=args.bevy_bridge_port,
         sketchfab_token=env.get(SKETCHFAB_TOKEN_ENV) or None,
         coral_model_dir=coral_model_dir,
         coral_model=args.coral_model,
@@ -162,22 +170,28 @@ async def serve(config: AgentServerConfig) -> None:
     """Serve the agent on `config.host:config.port` until cancelled; always stop the host."""
     station = build_station(config)
     workspace = build_demo_workspace(config, station)
+    simulation = build_simulation_rig(config)
     description = build_agent_description(
         config,
         workspace=workspace,
         geometry=workspace.geometry,
-        simulation=build_simulation_rig(config),
+        simulation=simulation,
         station=station,
     )
     host = HypercornHost(description, None, host=config.host, port=config.port)
     ticker = IdleTicker(station) if station is not None else None
     ports = await host.start()
+    bridge = (
+        await start_bevy_bridge(config, simulation) if config.bevy_bridge_port is not None else None
+    )
     if ticker is not None:
         ticker.start()
     print(f"survey agent on http://{config.host}:{ports.public}", flush=True)
     try:
         await asyncio.Event().wait()
     finally:
+        if bridge is not None:
+            await bridge.aclose()
         if ticker is not None and station is not None:
             ticker.stop()
             await asyncio.to_thread(station.stop)

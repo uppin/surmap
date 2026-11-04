@@ -8,6 +8,8 @@ the error mapping, request → command conversion and the drone and nest reports
 
 from __future__ import annotations
 
+import asyncio
+import http.client
 import json
 from pathlib import Path
 
@@ -24,6 +26,8 @@ from surmap.agent.contracts import (
 from surmap.agent.proto import fleet_tools_pb2 as pb
 from surmap.agent.tools.fleet_handlers import (
     CommandRequest,
+    drone_map_counts,
+    drone_map_status_handler,
     drone_phase,
     drone_statuses,
     fleet_command,
@@ -50,8 +54,10 @@ from surmap.simulation.fleet.controller import (
     InvalidRule,
 )
 from surmap.simulation.fleet.link import DroneTelemetry, Phase
+from surmap.simulation.fleet.perception import DroneCounts
 from surmap.simulation.fleet_nests import Nest
 from tests.fleet_fakes import Applies, RecordingSleep, Refuses, StaysSilent, drone_frame
+from tests.fleet_perception_fakes import PerceptionRig, a_perception, blocks
 from tests.fleet_tool_fakes import (
     FIXTURES,
     NE_D1,
@@ -408,7 +414,7 @@ def test_every_fleet_tool_is_a_quick_call_that_fails_on_timeout() -> None:
     # When the fleet tools' contracts are built
     contracts = tool_contracts(FLEET_TOOLS)
 
-    # Then there are eight, each run synchronously for up to 10 s and failed past it
+    # Then there are nine, each run synchronously for up to 10 s and failed past it
     assert [c.name for c in contracts] == [
         "list_nests",
         "list_drones",
@@ -418,6 +424,7 @@ def test_every_fleet_tool_is_a_quick_call_that_fails_on_timeout() -> None:
         "recall_drone",
         "set_active_drone",
         "get_fleet_log",
+        "drone_map_status",
     ]
     assert {c.default_execution for c in contracts} == {
         ExecutionPolicy(mode=ExecutionMode.SYNC, timeout_s=10, on_timeout=OnTimeout.FAIL)
@@ -614,3 +621,172 @@ def test_a_drone_in_the_telemetry_is_reported_as_the_page_saw_it() -> None:
         ),
         docked_on_sw_pad("nest-sw-d2"),
     ]
+
+
+# ---- the drone map status ---------------------------------------------------------------------
+
+
+def a_page_streaming_to_the_bridge(station: FleetStation) -> PerceptionRig:
+    """A fleet page for quake-fleet connected to the station's stereo bridge (fake maps)."""
+    return a_perception(station.rig.perception).opened(SCENARIO)
+
+
+async def over_the_server(station: FleetStation, request: pb.DroneMapStatusRequest) -> object:
+    """`DroneMapStatus` called on the running server's registered `FleetTools` service."""
+
+    def post() -> pb.DroneMapStatusResponse:
+        connection = http.client.HTTPConnection(station.address, timeout=10)
+        try:
+            connection.request(
+                "POST",
+                "/surmap.agent.v1.FleetTools/DroneMapStatus",
+                body=request.SerializeToString(),
+                headers={"content-type": "application/proto"},
+            )
+            response = connection.getresponse()
+            body = response.read()
+        finally:
+            connection.close()
+        assert response.status == 200, body.decode("utf-8", "replace")
+        return pb.DroneMapStatusResponse.FromString(body)
+
+    return await asyncio.to_thread(post)
+
+
+def maps_in(status: object) -> list[tuple[str, int, int, int, bool]]:
+    assert isinstance(status, pb.DroneMapStatusResponse)
+    return [
+        (d.drone_id, d.frames, d.keyframes, d.segmented_frames, d.processing) for d in status.drones
+    ]
+
+
+def map_status(drone: str | None = None, scenario: str = SCENARIO) -> pb.DroneMapStatusRequest:
+    request = pb.DroneMapStatusRequest(scenario_id=scenario)
+    if drone is not None:
+        request.drone_id = drone
+    return request
+
+
+async def test_drone_map_status_reports_every_drone(tmp_path: Path) -> None:
+    # Given a page streaming nest-sw-d1's frames, then nest-ne-d1's, to the station's bridge
+    async with a_fleet_station(tmp_path) as station:
+        page = a_page_streaming_to_the_bridge(station)
+        page.streams(*blocks((SW_D1, 3), (NE_D1, 2)))
+
+        # When the agent asks how each drone's map is doing
+        status = await over_the_server(station, map_status())
+
+    # Then every drone of the scene is reported in nest order, nest-ne-d1 the one processed now
+    assert maps_in(status) == [
+        (SW_D1, 3, 3, 3, False),
+        ("nest-sw-d2", 0, 0, 0, False),
+        (NE_D1, 2, 2, 2, True),
+        ("nest-ne-d2", 0, 0, 0, False),
+        ("nest-roof-d1", 0, 0, 0, False),
+    ]
+
+
+async def test_drone_map_status_for_one_drone_reports_only_it(tmp_path: Path) -> None:
+    # Given a page that streamed nest-sw-d1's frames, then nest-ne-d1's
+    async with a_fleet_station(tmp_path) as station:
+        page = a_page_streaming_to_the_bridge(station)
+        page.streams(*blocks((SW_D1, 3), (NE_D1, 2)))
+        tool = drone_map_status_handler(station.rig.store, station.rig.perception)
+
+        # When the agent asks about nest-sw-d1 alone
+        status = await tool(map_status(SW_D1), None)
+
+    # Then only its map is reported
+    assert maps_in(status) == [(SW_D1, 3, 3, 3, False)]
+
+
+async def test_drone_map_status_without_a_streaming_page_is_unavailable(tmp_path: Path) -> None:
+    # Given the station with no page streaming to its bridge
+    async with a_fleet_station(tmp_path) as station:
+        tool = drone_map_status_handler(station.rig.store, station.rig.perception)
+
+        # When the agent asks how the drones' maps are doing
+        with pytest.raises(ConnectError) as raised:
+            await tool(map_status(), None)
+
+    # Then the tool answers unavailable
+    assert raised.value.code == Code.UNAVAILABLE
+
+
+DRONE_MAP_NOT_FOUND: dict[str, tuple[pb.DroneMapStatusRequest, str]] = {
+    "unknown scenario": (map_status(scenario="no-such-scene"), "no-such-scene"),
+    "unknown drone": (map_status("nest-zz-d9"), "nest-zz-d9"),
+}
+
+
+@pytest.mark.parametrize(
+    ("request_", "named"), DRONE_MAP_NOT_FOUND.values(), ids=DRONE_MAP_NOT_FOUND.keys()
+)
+async def test_drone_map_status_for_what_the_scene_lacks_is_not_found(
+    tmp_path: Path, request_: pb.DroneMapStatusRequest, named: str
+) -> None:
+    # Given a page streaming quake-fleet to the bridge
+    async with a_fleet_station(tmp_path) as station:
+        a_page_streaming_to_the_bridge(station)
+        tool = drone_map_status_handler(station.rig.store, station.rig.perception)
+
+        # When the agent names a scenario or drone the station does not have
+        with pytest.raises(ConnectError) as raised:
+            await tool(request_, None)
+
+    # Then the tool answers not found, naming it
+    assert (raised.value.code, named in raised.value.message) == (Code.NOT_FOUND, True)
+
+
+def test_a_drone_s_counts_are_reported_field_for_field() -> None:
+    # Given nest-ne-d1's session counts, it being the drone processed now
+    counts = DroneCounts(
+        drone_id=NE_D1,
+        frames=412,
+        posed=405,
+        lost=7,
+        keyframes=37,
+        dropped=2,
+        segmented_frames=380,
+        detections=91,
+        processing=True,
+        last_t_ns=41_200_000_000,
+    )
+
+    # When they are reported
+    reported = drone_map_counts(counts)
+
+    # Then every count the tool describes is carried over
+    assert reported == pb.DroneMapCounts(
+        drone_id=NE_D1,
+        frames=412,
+        posed=405,
+        lost=7,
+        keyframes=37,
+        segmented_frames=380,
+        detections=91,
+        processing=True,
+        last_t_ns=41_200_000_000,
+    )
+
+
+def test_a_drone_that_has_not_streamed_reports_no_last_frame_time() -> None:
+    # Given a session that has processed nothing yet
+    counts = DroneCounts(
+        drone_id=SW_D1,
+        frames=0,
+        posed=0,
+        lost=0,
+        keyframes=0,
+        dropped=0,
+        segmented_frames=0,
+        detections=0,
+        processing=False,
+        last_t_ns=None,
+    )
+
+    # When it is reported
+    reported = drone_map_counts(counts)
+
+    # Then its last frame time is zero
+    assert reported.last_t_ns == 0

@@ -21,6 +21,7 @@ from surmap.agent.tools.simulation_handlers import SimulationTooling
 from surmap.rpc.http import HttpResponse
 from surmap.simulation.asset_sources import AssetSource
 from surmap.simulation.fleet.controller import FleetRegistry, FleetTiming
+from surmap.simulation.fleet.perception import PerceptionRegistry
 from surmap.simulation.scenario_store import ScenarioStore, UnknownRecord
 
 SIM_PREFIX = "/sim/"
@@ -56,6 +57,9 @@ class SimulationRig:
     """How long a fleet command waits for the linked page's answer."""
     fleet: FleetRegistry = field(init=False)
     """The scenarios' fleet controllers and the `/sim/fleet` links to them."""
+    perception: PerceptionRegistry = field(default_factory=PerceptionRegistry)
+    """The pages streaming to the stereo bridge (`--bevy-bridge-port`), by scenario: each
+    drone's map and segmentation, for `drone_map_status`."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "fleet", FleetRegistry(self.store, timing=self.fleet_timing))
