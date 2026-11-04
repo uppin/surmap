@@ -36,10 +36,15 @@ renderer as a second line of defence.
 
 ## Verification
 
-V1 executed: cargo tests for the collider half-extents, preset-ground hiding, and the
-shared golden fixture — 365 Rust tests green. **Not done: the native screenshot** (needs
-the 66 MB asset fetch + release build); texture orientation follows Bevy's UV convention
-and remains the one manual check, recorded here honestly rather than claimed.
+V1 executed: cargo tests for the collider's world-space bounds (a slab spanning the
+floor, top at 0 m — the earlier rotated-cuboid wall is fixed and its bug-encoding test
+replaced), preset-ground hiding, and the shared golden fixture — 365 Rust tests green.
+Native screenshot executed 2026-11-04 (release build, `--scenario map-floor-shot --at 8`,
+real OSM tiles over Vilnius 54.680–54.684 / 25.270–25.282 at zoom 18): `overview.png`
+shows the map floor readable and correctly oriented (street names legible, not mirrored),
+the placed building on it, and the survivor standing on the floor at its corner; `chase.png`
+shows "© OpenStreetMap contributors" in-frame and the drone over the floor. No wall or
+flicker artifact. The collider's effect is the standing figure plus the world-bounds test.
 
 ## Prerequisites
 
@@ -51,4 +56,4 @@ As #127. **Outcome:** none blocking.
 - [wf 2] ✅ 2026-11-04 `/plan-red` Red — failing Rust tests · red commit `694d86b`
 - [wf 3] ✅ 2026-11-04 `/green` Green — floor collider + ground hiding · green commit `2dbe821`
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
-  - [ ] Verification executed — result recorded (screenshot outstanding, see Verification)
+  - [x] Verification executed — result recorded (cargo tests + native screenshot, see Verification)
