@@ -16,7 +16,6 @@ from surmap.simulation.fleet.controller import (
     FleetController,
     FleetInvalid,
     FleetRefused,
-    FleetRegistry,
     FleetTimeout,
     FleetTiming,
     FleetUnavailable,
@@ -31,6 +30,7 @@ from surmap.simulation.fleet.link import (
     Telemetry,
 )
 from surmap.simulation.fleet.log_store import FleetLogStore, FleetSession
+from surmap.simulation.fleet.registry import FleetRegistry
 
 __all__ = [
     "Applied",

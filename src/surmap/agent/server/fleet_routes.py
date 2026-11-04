@@ -14,8 +14,8 @@ from urllib.parse import parse_qs
 
 from surmap.agent.server.sim_routes import SimulationRig
 from surmap.rpc.description import WebSocketRoute
-from surmap.simulation.fleet.controller import FleetRegistry
 from surmap.simulation.fleet.link import CLOSE_PROTOCOL_ERROR
+from surmap.simulation.fleet.registry import FleetRegistry
 
 __all__ = ["FLEET_PATH", "fleet_websocket_route", "serve_fleet_link"]
 

@@ -20,8 +20,9 @@ from pathlib import Path, PurePosixPath
 from surmap.agent.tools.simulation_handlers import SimulationTooling
 from surmap.rpc.http import HttpResponse
 from surmap.simulation.asset_sources import AssetSource
-from surmap.simulation.fleet.controller import FleetRegistry, FleetTiming
+from surmap.simulation.fleet.controller import FleetTiming
 from surmap.simulation.fleet.perception import PerceptionRegistry
+from surmap.simulation.fleet.registry import FleetRegistry
 from surmap.simulation.scenario_store import ScenarioStore, UnknownRecord
 
 SIM_PREFIX = "/sim/"

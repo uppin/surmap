@@ -9,8 +9,9 @@ from pathlib import Path
 import pytest
 
 from surmap.simulation.fleet.commands import Launch, Route
-from surmap.simulation.fleet.controller import FleetRegistry, FleetUnavailable
+from surmap.simulation.fleet.controller import FleetUnavailable
 from surmap.simulation.fleet.link import CLOSE_ALREADY_LINKED, CLOSE_PROTOCOL_ERROR
+from surmap.simulation.fleet.registry import FleetRegistry
 from surmap.simulation.manifest_checks import object_list
 from surmap.simulation.scenario_store import ScenarioStore
 from tests.fleet_fakes import (

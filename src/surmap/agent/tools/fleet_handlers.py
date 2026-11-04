@@ -48,7 +48,6 @@ from surmap.simulation.fleet.controller import (
     FleetError,
     FleetInvalid,
     FleetRefused,
-    FleetRegistry,
     FleetTimeout,
     FleetUnavailable,
     InvalidRule,
@@ -56,6 +55,7 @@ from surmap.simulation.fleet.controller import (
 from surmap.simulation.fleet.link import DroneTelemetry, Phase
 from surmap.simulation.fleet.log_store import UnknownSession
 from surmap.simulation.fleet.perception import DroneCounts, PerceptionRegistry
+from surmap.simulation.fleet.registry import FleetRegistry
 from surmap.simulation.fleet_nests import Nest, nests_of
 from surmap.simulation.scenario_store import ScenarioStore
 
