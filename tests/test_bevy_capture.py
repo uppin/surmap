@@ -194,3 +194,32 @@ def test_a_capture_without_building_fires_has_none(tmp_path: Path) -> None:
     recorder.finish()
 
     assert load_bevy_capture(tmp_path).building_fires == {}
+
+
+def test_a_capture_recorded_in_colour_names_each_frames_colour_left_image(
+    tmp_path: Path,
+) -> None:
+    # Given a recorded session whose recorder also wrote a colour left image per frame
+    recorder = CaptureRecorder(tmp_path, a_calibration(), objects=(a_car(),))
+    recorder.record_pair(a_pair(1, 1_000_000_000, 0.0))
+    recorder.finish()
+    frames = tmp_path / "frames.jsonl"
+    line = json.loads(frames.read_text(encoding="utf-8"))
+    line["left_rgb_ref"] = "frames/left_rgb/1000000000.jpg"
+    frames.write_text(json.dumps(line) + "\n", encoding="utf-8")
+
+    # When it is loaded
+    capture = load_bevy_capture(tmp_path)
+
+    # Then the frame names its colour image beside the grey eyes
+    assert capture.frames[0].left_rgb_ref == str(tmp_path / "frames/left_rgb/1000000000.jpg")
+
+
+def test_a_grey_only_capture_has_no_colour_images(tmp_path: Path) -> None:
+    recorder = CaptureRecorder(tmp_path, a_calibration(), objects=(a_car(),))
+    recorder.record_pair(a_pair(1, 1_000_000_000, 0.0))
+    recorder.finish()
+
+    capture = load_bevy_capture(tmp_path)
+
+    assert capture.frames[0].left_rgb_ref is None

@@ -30,6 +30,8 @@ mod vegetation;
 mod wildfire;
 mod wind;
 #[cfg(test)]
+mod realism_tests;
+#[cfg(test)]
 mod sweep_tests;
 mod wire;
 mod world;
