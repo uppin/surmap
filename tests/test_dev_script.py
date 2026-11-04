@@ -71,12 +71,21 @@ def is_running(pid: int) -> bool:
     return state.stdout.strip() != "" and not state.stdout.strip().startswith("Z")
 
 
+def a_ready_sim_page(directory: pathlib.Path) -> pathlib.Path:
+    """A sim page build whose page already addresses its assets under `/sim/`."""
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "index.html").write_text('<script type="module" src="/sim/bevy-fake.js"></script>')
+    return directory
+
+
 @pytest.fixture
 def start_dev_stack(tmp_path: pathlib.Path) -> Iterator[Callable[..., DevStack]]:
     started: list[DevStack] = []
 
-    def start(**commands: str) -> DevStack:
-        env = dict(os.environ)
+    def start(env: dict[str, str] | None = None, **commands: str) -> DevStack:
+        env = dict(os.environ) | (env or {})
+        env.setdefault("SURMAP_DEV_SIM_DIST", str(a_ready_sim_page(tmp_path / "sim-dist")))
+        env.setdefault("SURMAP_DEV_SIM_FETCH_CMD", f"echo ok > {tmp_path}/sim-fetch.txt")
         for name in SERVICES:
             command = commands.get(name, a_long_running_service(tmp_path, name))
             env[f"SURMAP_DEV_{name.upper()}_CMD"] = command
@@ -146,10 +155,14 @@ def test_a_service_that_exits_takes_the_rest_down_with_its_status(
     assert "station exited with status 3" in stack.output()
 
 
-def planned_commands(*args: str) -> dict[str, str]:
+def planned_commands(*args: str, env: dict[str, str] | None = None) -> dict[str, str]:
     """`dev.sh --dry-run`: each service's command, keyed by service name."""
     result = subprocess.run(
-        [str(SCRIPT), "--dry-run", *args], capture_output=True, text=True, timeout=DEADLINE_S
+        [str(SCRIPT), "--dry-run", *args],
+        env=dict(os.environ) | (env or {}),
+        capture_output=True,
+        text=True,
+        timeout=DEADLINE_S,
     )
     assert result.returncode == 0, result.stderr
     lines = (line.split(": ", 1) for line in result.stdout.splitlines())
@@ -182,6 +195,148 @@ def test_with_sam_leaves_the_project_environment_and_the_agent_alone() -> None:
     # Then the CM5 is unchanged and the agent, which has no real-SAM option yet, stays fake
     assert "--with" not in commands["cm5"]
     assert "--sam-fake" in commands["agent"]
+
+
+def test_the_agent_serves_the_simulation_page_by_default(tmp_path: pathlib.Path) -> None:
+    # Given a sim page location chosen for the stack
+    sim_dist = tmp_path / "sim-dist"
+
+    # When the stack is planned without options
+    commands = planned_commands(env={"SURMAP_DEV_SIM_DIST": str(sim_dist)})
+
+    # Then the agent serves that page, so `/sim/?scenario=…` opens on its origin
+    assert f"--sim-dist {sim_dist}" in commands["agent"]
+
+
+def a_stub_trunk(bin_dir: pathlib.Path, record: pathlib.Path) -> pathlib.Path:
+    """A fake `trunk` on PATH: records its arguments and writes a `/sim/` page."""
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    trunk = bin_dir / "trunk"
+    trunk.write_text(
+        "#!/usr/bin/env python3\n"
+        "import pathlib, sys\n"
+        f"record = pathlib.Path({str(record)!r})\n"
+        "record.parent.mkdir(parents=True, exist_ok=True)\n"
+        "with record.open('a') as stream:\n"
+        "    stream.write(' '.join(sys.argv[1:]) + '\\n')\n"
+        "args = sys.argv[1:]\n"
+        "dist = pathlib.Path(args[args.index('--dist') + 1])\n"
+        "dist.mkdir(parents=True, exist_ok=True)\n"
+        "(dist / 'index.html').write_text('<script src=\"/sim/bevy-stub.js\"></script>')\n"
+    )
+    trunk.chmod(0o755)
+    return bin_dir
+
+
+def env_with_stub_trunk(tmp_path: pathlib.Path, sim_dist: pathlib.Path) -> dict[str, str]:
+    bin_dir = a_stub_trunk(tmp_path / "bin", tmp_path / "trunk.args")
+    return {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "SURMAP_DEV_SIM_DIST": str(sim_dist),
+    }
+
+
+def test_a_missing_sim_page_is_built_for_the_sim_prefix_before_starting(
+    tmp_path: pathlib.Path, start_dev_stack: Callable[..., DevStack]
+) -> None:
+    # Given no sim page build at the stack's sim page location
+    sim_dist = tmp_path / "missing-sim-dist"
+
+    # When the stack starts
+    stack = start_dev_stack(env=env_with_stub_trunk(tmp_path, sim_dist))
+    eventually(all_services_up(stack), "every service and its child is running")
+    stack.process.send_signal(signal.SIGINT)
+
+    # Then trunk built the page for `/sim/` before the services came up
+    assert stack.process.wait(timeout=DEADLINE_S) == 130
+    assert "--public-url /sim/" in (tmp_path / "trunk.args").read_text()
+    assert "/sim/" in (sim_dist / "index.html").read_text()
+
+
+def test_a_sim_page_built_for_the_root_is_rebuilt_for_the_sim_prefix(
+    tmp_path: pathlib.Path, start_dev_stack: Callable[..., DevStack]
+) -> None:
+    # Given a sim page build that addresses its WASM from the server root
+    sim_dist = tmp_path / "root-sim-dist"
+    sim_dist.mkdir()
+    (sim_dist / "index.html").write_text('<script src="/bevy-root.js"></script>')
+
+    # When the stack starts
+    stack = start_dev_stack(env=env_with_stub_trunk(tmp_path, sim_dist))
+    eventually(all_services_up(stack), "every service and its child is running")
+    stack.process.send_signal(signal.SIGINT)
+
+    # Then the page was rebuilt, because under `/sim/` those root URLs 404
+    assert stack.process.wait(timeout=DEADLINE_S) == 130
+    assert "--public-url /sim/" in (tmp_path / "trunk.args").read_text()
+
+
+def test_a_sim_page_already_built_for_the_sim_prefix_is_not_rebuilt(
+    tmp_path: pathlib.Path, start_dev_stack: Callable[..., DevStack]
+) -> None:
+    # Given a sim page build that already addresses its assets under `/sim/`
+    sim_dist = a_ready_sim_page(tmp_path / "ready-sim-dist")
+
+    # When the stack starts
+    stack = start_dev_stack(env=env_with_stub_trunk(tmp_path, sim_dist))
+    eventually(all_services_up(stack), "every service and its child is running")
+    stack.process.send_signal(signal.SIGINT)
+
+    # Then trunk never ran: the build is left alone
+    assert stack.process.wait(timeout=DEADLINE_S) == 130
+    assert not (tmp_path / "trunk.args").exists()
+
+
+def test_a_sim_page_that_cannot_be_built_stops_the_stack_before_any_service_starts(
+    tmp_path: pathlib.Path,
+) -> None:
+    # Given no sim page build, assets already fetched, and no trunk anywhere on PATH
+    env = dict(os.environ)
+    env["PATH"] = "/usr/bin:/bin"
+    env["SURMAP_DEV_SIM_FETCH_CMD"] = "true"
+    env["SURMAP_DEV_SIM_DIST"] = str(tmp_path / "missing-sim-dist")
+    for name in SERVICES:
+        env[f"SURMAP_DEV_{name.upper()}_CMD"] = a_long_running_service(tmp_path, name)
+
+    # When the stack is started
+    result = subprocess.run(
+        [str(SCRIPT)], env=env, capture_output=True, text=True, timeout=DEADLINE_S
+    )
+
+    # Then it refuses to start, names the missing prerequisite, and starts nothing
+    assert result.returncode != 0
+    assert "trunk" in result.stdout + result.stderr
+    assert list(tmp_path.glob("*.pid")) == []
+
+
+def test_the_pinned_sim_assets_are_fetched_before_the_stack_starts(
+    tmp_path: pathlib.Path, start_dev_stack: Callable[..., DevStack]
+) -> None:
+    # Given a stack whose asset fetch is stubbed to leave a record
+    stack = start_dev_stack()
+
+    # When the services come up
+    eventually(all_services_up(stack), "every service and its child is running")
+    stack.process.send_signal(signal.SIGINT)
+
+    # Then the pinned textures/models were fetched before anything started
+    assert stack.process.wait(timeout=DEADLINE_S) == 130
+    assert (tmp_path / "sim-fetch.txt").read_text().strip() == "ok"
+
+
+def test_a_failed_asset_fetch_stops_the_stack_before_any_service_starts(
+    tmp_path: pathlib.Path, start_dev_stack: Callable[..., DevStack]
+) -> None:
+    # Given an asset fetch that fails (no network, a dead pin, …)
+    stack = start_dev_stack(env={"SURMAP_DEV_SIM_FETCH_CMD": "false"})
+
+    # When the script gives up before starting anything
+    status = stack.process.wait(timeout=DEADLINE_S)
+
+    # Then it exits non-zero and no service was started
+    assert status != 0
+    assert stack.pids() == []
+    assert "fetch" in stack.output()
 
 
 def test_each_output_line_is_labelled_with_its_service(
