@@ -27,7 +27,7 @@ from surmap.agent.runtime.tools import BoundTool, bind_contract_tool, job_tools
 from surmap.agent.server.chat_service import agent_jobs_handlers, chat_handlers
 from surmap.agent.server.hub import ChatHub
 from surmap.agent.services import agent_jobs_module, chat_service_module
-from surmap.agent.tools.port import GalleryEntry
+from surmap.agent.tools.port import CachedRecording, GalleryEntry
 from surmap.agent.tools.workspace import (
     FrameDetections,
     FrameImage,
@@ -285,11 +285,18 @@ class EmptyWorkspace:
         max_frames: int | None,
         fps: float | None,
         onboard_model: str | None,
+        rebuild: bool = False,
     ) -> RunInfo:
         raise KeyError(dataset)
 
     def onboard_models(self) -> Sequence[OnboardModel]:
         return ()
+
+    def cached_runs(self, dataset: str) -> Sequence[CachedRecording]:
+        raise KeyError(dataset)
+
+    def run_cached(self, run_id: str) -> RunInfo:
+        raise KeyError(run_id)
 
     def run(self, run_id: str) -> RunInfo | None:
         return None
@@ -333,6 +340,7 @@ class EmptyWorkspace:
         max_frames: int | None,
         fps: float | None,
         onboard_model: str | None,
+        rebuild: bool = False,
     ) -> RunInfo:
         raise KeyError(dataset)
 

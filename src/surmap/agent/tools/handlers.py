@@ -30,7 +30,9 @@ from surmap.agent.tools.dataset_handlers import (
     _run_message,
     get_dataset,
     list_datasets,
+    list_runs,
     prepare_dataset,
+    run_cached,
     run_rtabmap,
     run_sam_on_dataset,
 )
@@ -69,7 +71,9 @@ __all__ = [
     "list_datasets",
     "list_demos",
     "list_onboard_models",
+    "list_runs",
     "prepare_dataset",
+    "run_cached",
     "run_rtabmap",
     "run_sam_on_dataset",
     "object_summary_message",
@@ -125,6 +129,8 @@ def survey_tool_handlers(workspace: SurveyWorkspace) -> Mapping[str, Handler]:
         "PrepareDataset": bind(prepare_dataset),
         "RunRtabmap": bind(run_rtabmap),
         "RunSamOnDataset": bind(run_sam_on_dataset),
+        "ListRuns": bind(list_runs),
+        "RunCached": bind(run_cached),
     }
 
 
@@ -177,6 +183,7 @@ async def run_demo(request: pb.RunDemoRequest, workspace: SurveyWorkspace) -> pb
             max_frames=request.max_frames if request.HasField("max_frames") else None,
             fps=request.fps if request.HasField("fps") else None,
             onboard_model=request.onboard_model if request.HasField("onboard_model") else None,
+            rebuild=request.rebuild,
         )
     except KeyError as missing:
         raise _not_found(missing) from missing
@@ -192,6 +199,7 @@ async def run_demo(request: pb.RunDemoRequest, workspace: SurveyWorkspace) -> pb
         objects=run.objects,
         status=_RUN_STATUS[run.status],
         onboard_model=run.onboard_model,
+        cached=run.cached,
     )
     onboard = next((m for m in workspace.onboard_models() if m.name == run.onboard_model), None)
     if onboard is not None and run.prompt:

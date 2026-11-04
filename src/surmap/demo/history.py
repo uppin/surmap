@@ -26,6 +26,7 @@ import time
 import uuid
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -132,12 +133,30 @@ CREATE TABLE IF NOT EXISTS run_sources (
     run_id TEXT PRIMARY KEY,
     source_run_id TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS run_cache_keys (
+    run_id TEXT PRIMARY KEY,
+    cache_key TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS events_run ON events (run_id, id);
 CREATE INDEX IF NOT EXISTS frames_run_frame ON frames (run_id, frame_id);
 CREATE INDEX IF NOT EXISTS surface_points_run_frame ON surface_points (run_id, frame_id, id);
 CREATE INDEX IF NOT EXISTS maps_run_frame ON maps (run_id, frame_id, id);
 CREATE INDEX IF NOT EXISTS detections_run_frame ON detections (run_id, frame_id, id);
 """
+
+
+@dataclass(frozen=True)
+class CachedRecording:
+    """One cache key's cached run: its newest complete, journalled build."""
+
+    run_id: str
+    dataset_id: str
+    cache_key: str
+    title: str
+    frames: int
+    created_at: float
+    preview_frame_id: int
+    """Its first recorded frame; 0 when it recorded none."""
 
 
 class RunHistoryStore:
@@ -463,6 +482,50 @@ class RunHistoryStore:
                 (dataset_id,),
             ).fetchone()
         return str(row["run_id"]) if row is not None else None
+
+    def record_cache_key(self, run_id: str, cache_key: str) -> None:
+        """`run_id` is a build with `cache_key`: once complete, it is that key's cached run."""
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT OR REPLACE INTO run_cache_keys VALUES (?, ?)", (run_id, cache_key)
+            )
+
+    def cached_runs(self, dataset_id: str | None = None) -> list[CachedRecording]:
+        """Each cache key's newest complete, journalled recording, newest first.
+
+        Only `dataset_id`'s when given, else every dataset's. A replay is never one.
+        """
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM ("
+                " SELECT runs.run_id, runs.dataset_id, runs.title, runs.created_at,"
+                "  run_cache_keys.cache_key,"
+                "  (SELECT COUNT(*) FROM frames WHERE frames.run_id = runs.run_id) AS frames,"
+                "  (SELECT frame_id FROM frames WHERE frames.run_id = runs.run_id"
+                "   ORDER BY seq LIMIT 1) AS preview_frame_id,"
+                "  ROW_NUMBER() OVER (PARTITION BY runs.dataset_id, run_cache_keys.cache_key"
+                "   ORDER BY runs.created_at DESC, runs.rowid DESC) AS newest"
+                " FROM runs JOIN run_cache_keys ON run_cache_keys.run_id = runs.run_id"
+                " WHERE runs.status = 'completed' AND (? IS NULL OR runs.dataset_id = ?)"
+                "  AND runs.run_id NOT IN (SELECT run_id FROM run_sources)"
+                "  AND EXISTS (SELECT 1 FROM events WHERE events.run_id = runs.run_id)"
+                ") WHERE newest = 1 ORDER BY created_at DESC",
+                (dataset_id, dataset_id),
+            ).fetchall()
+        return [
+            CachedRecording(
+                run_id=str(row["run_id"]),
+                dataset_id=str(row["dataset_id"]),
+                cache_key=str(row["cache_key"]),
+                title=str(row["title"]),
+                frames=int(row["frames"]),
+                created_at=float(row["created_at"]),
+                preview_frame_id=(
+                    int(row["preview_frame_id"]) if row["preview_frame_id"] is not None else 0
+                ),
+            )
+            for row in rows
+        ]
 
     def _journalled(self, run_id: str) -> bool:
         with self._lock:

@@ -16,7 +16,7 @@ import json
 import re
 import threading
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -45,6 +45,7 @@ from surmap.agent.tools.port import (
 from surmap.demo.datasets import DatasetSpec, PreparedDataset, ensure_dataset
 from surmap.demo.events import DemoEvent
 from surmap.demo.gallery import GalleryEntry, dataset_thumbnail, gallery_entries
+from surmap.demo.history import CachedRecording
 from surmap.demo.playback import PlaybackControls
 from surmap.demo.runs import DemoRunHost, _RunEngine
 from surmap.demo.server import DemoPlayer
@@ -55,6 +56,7 @@ __all__ = [
     "OBJECT_FRAME",
     "OBJECT_UP_AXIS",
     "BoxXYXY",
+    "CachedRecording",
     "DemoWorkspace",
     "FrameDetections",
     "FrameImage",
@@ -107,6 +109,19 @@ def _prompt_of(title: str) -> str:
     return prompt if separator else ""
 
 
+def cache_key(sam_prompt: str | None, onboard_model: str | None, max_frames: int | None) -> str:
+    """What a build is cached by: RTAB-Map, its SAM concept, on-board model and frame limit.
+
+    e.g. `rtabmap+sam=car;onboard=ssd;frames=200`; `max_frames` is None for the whole dataset.
+    """
+    return (
+        "rtabmap"
+        + (f"+sam={sam_prompt}" if sam_prompt else "")
+        + (f";onboard={onboard_model}" if onboard_model is not None else "")
+        + (f";frames={max_frames}" if max_frames is not None else "")
+    )
+
+
 def _onboard_model_of(title: str) -> str:
     """The on-board model a run processed its frames with, from its title; empty for none."""
     head, _, _ = title.partition(_SAM_TITLE)
@@ -148,7 +163,15 @@ class DemoWorkspace:
             for dataset_id in self._host.catalog
             if (found := self._host.prepared_scene(dataset_id)) is not None
         }
-        return gallery_entries(self._host.cache_dir, catalog=self._host.catalog, prepared=prepared)
+        runs: dict[str, list[CachedRecording]] = {}
+        for cached in self._host.history_store.cached_runs():
+            runs.setdefault(cached.dataset_id, []).append(cached)
+        return tuple(
+            replace(entry, runs=tuple(runs.get(entry.dataset_id, ())))
+            for entry in gallery_entries(
+                self._host.cache_dir, catalog=self._host.catalog, prepared=prepared
+            )
+        )
 
     def dataset(self, dataset_id: str) -> GalleryEntry | None:
         return next((entry for entry in self.datasets() if entry.dataset_id == dataset_id), None)
@@ -177,6 +200,7 @@ class DemoWorkspace:
         max_frames: int | None,
         fps: float | None,
         onboard_model: str | None,
+        rebuild: bool = False,
     ) -> RunInfo:
         """RTAB-Map only: SAM sources disabled, the RTAB-Map backend forced on."""
         if fps is not None and fps <= 0:
@@ -192,6 +216,7 @@ class DemoWorkspace:
             onboard_model=model,
             overrides={"with_rtabmap": True, "sam_source": None, "sam_streamer": None},
             title_suffix=" · RTAB-Map",
+            rebuild=rebuild,
         )
 
     async def run_sam_on_dataset(
@@ -255,6 +280,7 @@ class DemoWorkspace:
         max_frames: int | None,
         fps: float | None,
         onboard_model: str | None,
+        rebuild: bool = False,
     ) -> RunInfo:
         if fps is not None and fps <= 0:
             raise ValueError("fps must be positive")
@@ -263,8 +289,28 @@ class DemoWorkspace:
         prepared = await asyncio.to_thread(self._prepared, spec)
         sam_prompt = self._host.sam_prompt(dataset, prompt)
         return await self._run_recorded(
-            prepared, sam_prompt, max_frames=max_frames, fps=fps, onboard_model=model
+            prepared,
+            sam_prompt,
+            max_frames=max_frames,
+            fps=fps,
+            onboard_model=model,
+            rebuild=rebuild,
         )
+
+    def cached_runs(self, dataset: str) -> Sequence[CachedRecording]:
+        if dataset not in self._host.catalog:
+            raise KeyError(f"no dataset {dataset!r} in the catalogue")
+        return tuple(self._host.history_store.cached_runs(dataset))
+
+    def run_cached(self, run_id: str) -> RunInfo:
+        row = self._host.history_store.get_run(run_id)
+        cached = (
+            self._host.history_store.cached_runs(str(row["dataset_id"])) if row is not None else []
+        )
+        run = self.run(run_id) if any(found.run_id == run_id for found in cached) else None
+        if run is None:
+            raise KeyError(f"no cached run {run_id!r}; list_runs names the cached runs")
+        return replace(run, cached=True)
 
     async def _run_recorded(
         self,
@@ -276,7 +322,16 @@ class DemoWorkspace:
         onboard_model: str | None,
         overrides: dict[str, Any] | None = None,
         title_suffix: str = "",
+        rebuild: bool = False,
     ) -> RunInfo:
+        dataset_id = prepared.spec.dataset_id
+        if max_frames is not None and max_frames >= len(prepared.timestamps_ns):
+            max_frames = None  # the whole dataset, so it shares the whole dataset's cache
+        key = cache_key(sam_prompt, onboard_model, max_frames)
+        if not rebuild:
+            for cached in self._host.history_store.cached_runs(dataset_id):
+                if cached.cache_key == key and (found := self.run(cached.run_id)) is not None:
+                    return replace(found, cached=True)
         # Built before the run starts, so a model the station cannot run records no run.
         source = self._onboard.source(onboard_model) if onboard_model is not None else None
         run_overrides = {**(overrides or {}), "detection_source": source}
@@ -301,6 +356,7 @@ class DemoWorkspace:
             raise
         if engine is None:
             raise RunBusy("the previous run did not stop in time, so no new run started")
+        self._host.history_store.record_cache_key(engine.run_id, key)
         try:
             await asyncio.to_thread(engine.done.wait)
         except asyncio.CancelledError:

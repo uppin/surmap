@@ -221,6 +221,17 @@ def _dataset_json(entry: GalleryEntry) -> dict[str, object]:
         ),
         "gps_track": [{"lon": point.lon, "lat": point.lat} for point in entry.gps_track],
         "credit": entry.credit,
+        "runs": [
+            {
+                "cache_key": run.cache_key,
+                "run_id": run.run_id,
+                "title": run.title,
+                "frames": run.frames,
+                "created_at": run.created_at,
+                "preview_frame_id": run.preview_frame_id,
+            }
+            for run in entry.runs
+        ],
     }
 
 

@@ -45,6 +45,14 @@ interface DatasetJson {
   gps_centre: { lon: number; lat: number } | null;
   gps_track: { lon: number; lat: number }[];
   credit: string;
+  runs?: {
+    cache_key: string;
+    run_id: string;
+    title: string;
+    frames: number;
+    created_at: number;
+    preview_frame_id: number;
+  }[];
 }
 
 /**
@@ -184,6 +192,14 @@ function datasetView(json: DatasetJson): DatasetView {
     locationLabel: json.location_label,
     gpsCentre: json.gps_centre,
     gpsTrack: json.gps_track,
+    runs: (json.runs ?? []).map((run) => ({
+      cacheKey: run.cache_key,
+      runId: run.run_id,
+      title: run.title,
+      frames: run.frames,
+      createdAt: run.created_at,
+      previewFrameId: run.preview_frame_id,
+    })),
   };
 }
 

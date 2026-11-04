@@ -1,4 +1,4 @@
-import type { DatasetRunMode, DatasetView } from "@/ports";
+import type { DatasetRunMode, DatasetRunView, DatasetView } from "@/ports";
 
 /** An SVG `points` string for a GPS track fitted into a `width`×`height` preview. */
 export function gpsPreviewPoints(
@@ -34,6 +34,18 @@ export function datasetRunPrompt(dataset: DatasetView, mode: DatasetRunMode): st
     return `Run SAM on the dataset "${dataset.id}" (${dataset.title}) looking for "${dataset.defaultPrompt}". Use run_sam_on_dataset, then summarise what it found.`;
   }
   return `Run the dataset "${dataset.id}" (${dataset.title}) with RTAB-Map and SAM looking for "${dataset.defaultPrompt}". Use run_demo, then tell me the run id, frame and object counts.`;
+}
+
+/** The chat message a run's Run button sends: run_cached on that run, nothing rebuilt. */
+export function cachedRunPrompt(dataset: DatasetView, run: DatasetRunView): string {
+  return `Run the cached run "${run.runId}" of the dataset "${dataset.id}" (${dataset.title}, built as ${run.cacheKey}). Use run_cached, then tell me its frame and object counts.`;
+}
+
+/** A run's preview image URL: its recorded frame from the agent server; null when it has none. */
+export function runPreviewUrl(serverUrl: string, run: DatasetRunView, maxSide = 320): string | null {
+  if (run.previewFrameId <= 0) return null;
+  const base = serverUrl.replace(/\/$/, "");
+  return `${base}/frames/${encodeURIComponent(run.runId)}/${run.previewFrameId}.jpg?max_side=${maxSide}`;
 }
 
 /** The thumbnail image URL: the source's own when it publishes one, else the prepared frame. */
