@@ -76,20 +76,49 @@ def test_a_cached_rerun_is_not_persisted_as_another_run(tmp_path: Path) -> None:
         assert recorded["status"] == "completed"
 
 
-def test_the_console_reruns_by_default_and_rebuilds_only_on_request(tmp_path: Path) -> None:
+def a_served_page(tmp_path: Path) -> str:
     server = make_demo_server(
         _prepared_tiny(tmp_path), host="127.0.0.1", port=0, with_rtabmap=False, sam_fake=True
     )
     with serving(server) as base:
         with urllib.request.urlopen(f"{base}/", timeout=5) as response:
-            page = response.read().decode()
+            return response.read().decode()
 
-    # A Rebuild button replaces Restart, and the default is the cached rerun
-    assert 'id="rebuild"' in page and 'id="restart"' not in page
-    assert "&record=0" in page
+
+def the_function(page: str, name: str) -> str:
+    """The source of the page script's top-level function `name`."""
+    start = page.index(f"function {name}(")
+    return page[start : page.index("\n}\n", start)]
+
+
+def test_the_console_opens_without_playing_and_rebuilds_only_on_request(
+    tmp_path: Path,
+) -> None:
+    # When the console page is served
+    page = a_served_page(tmp_path)
+
+    # Then opening a scene starts no stream: it only offers the cached recording
+    opening = the_function(page, "startDefault")
     assert "fillScenes().then(startDefault)" in page
-    # Applying a new SAM prompt is a rebuild: it needs fresh SAM results
+    assert "playCached(" not in opening and "EventSource" not in opening
+    assert "offerCached(scene.cached_run)" in opening
+    # ... a Rebuild button replaces Restart
+    assert 'id="rebuild"' in page and 'id="restart"' not in page
+    # ... and applying a new SAM prompt is a rebuild: it needs fresh SAM results
     assert '<input type="hidden" name="rebuild" value="1">' in page
+
+
+def test_replay_cached_run_plays_the_recording_without_persisting_it(tmp_path: Path) -> None:
+    # When the console page is served
+    page = a_served_page(tmp_path)
+
+    # Then a Replay cached run button, disabled until a recording is offered,
+    # reruns that recording unrecorded
+    assert '<button id="replay-cached" disabled' in page
+    offering = the_function(page, "offerCached")
+    assert "replayCached.disabled = false" in offering
+    assert "$('replay-cached').addEventListener('click', () => playCached(cachedRun))" in page
+    assert "&record=0" in the_function(page, "playCached")
 
 
 def test_a_run_cut_short_by_a_takeover_is_not_a_complete_recording(tmp_path: Path) -> None:
