@@ -25,7 +25,7 @@ fn pin(path: &str) -> Option<serde_json::Value> {
 }
 
 fn a_walker() -> FigureModel {
-    FigureModel { glb: "models/man/Man.glb".into(), scale: 1.0, yaw_deg: 0.0, clip_s: 0.6, coat_tint: false }
+    FigureModel { glb: "models/man/Man.glb".into(), scale: 1.0, yaw_deg: 0.0, clip_s: 0.6, coat_tint: false, rig: None }
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn a_figure_may_wear_a_humanoid_model() {
     )
     .expect("valid");
 
-    assert_eq!(def.model, Some(FigureModel { glb: "models/man/Man.glb".into(), scale: 1.16, yaw_deg: 180.0, clip_s: 0.6, coat_tint: false }));
+    assert_eq!(def.model, Some(FigureModel { glb: "models/man/Man.glb".into(), scale: 1.16, yaw_deg: 180.0, clip_s: 0.6, coat_tint: false, rig: None }));
 }
 
 #[test]

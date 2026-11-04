@@ -203,16 +203,22 @@ class CollapsedBuildingElement(_message.Message):
     def __init__(self, id: _Optional[str] = ..., material: _Optional[str] = ..., footprint_east_m: _Optional[float] = ..., footprint_north_m: _Optional[float] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., yaw_deg: _Optional[float] = ..., seed: _Optional[int] = ...) -> None: ...
 
 class PersonElement(_message.Message):
-    __slots__ = ("id", "position", "coat", "skin")
+    __slots__ = ("id", "position", "coat", "skin", "pose", "height_m", "yaw_deg")
     ID_FIELD_NUMBER: _ClassVar[int]
     POSITION_FIELD_NUMBER: _ClassVar[int]
     COAT_FIELD_NUMBER: _ClassVar[int]
     SKIN_FIELD_NUMBER: _ClassVar[int]
+    POSE_FIELD_NUMBER: _ClassVar[int]
+    HEIGHT_M_FIELD_NUMBER: _ClassVar[int]
+    YAW_DEG_FIELD_NUMBER: _ClassVar[int]
     id: str
     position: EnuPoint
     coat: str
     skin: str
-    def __init__(self, id: _Optional[str] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., coat: _Optional[str] = ..., skin: _Optional[str] = ...) -> None: ...
+    pose: str
+    height_m: float
+    yaw_deg: float
+    def __init__(self, id: _Optional[str] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., coat: _Optional[str] = ..., skin: _Optional[str] = ..., pose: _Optional[str] = ..., height_m: _Optional[float] = ..., yaw_deg: _Optional[float] = ...) -> None: ...
 
 class VegetationElement(_message.Message):
     __slots__ = ("id", "species", "position", "size_east_m", "size_north_m", "density_per_100m2", "seed")

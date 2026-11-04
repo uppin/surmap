@@ -84,9 +84,16 @@ def main() -> None:
         )
         report = score_capture(capture, detect_capture(capture, detector))
         print(_row(name, report, kinds))
+        if report.poses:
+            by_pose = ", ".join(
+                f"{pose} {score.found}/{score.visible}"
+                for pose, score in sorted(report.poses.items())
+            )
+            print(f"|   | by pose: {by_pose} | |")
         out[name] = {
             "kinds": {k: [s.found, s.visible] for k, s in report.kinds.items()},
             "objects": report.objects,
+            "poses": {k: [s.found, s.visible] for k, s in report.poses.items()},
             "false_positives": report.false_positives,
         }
     if args.json:

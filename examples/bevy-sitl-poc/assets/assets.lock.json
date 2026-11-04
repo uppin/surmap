@@ -703,14 +703,6 @@
       "attribution": "Car Concept by Eric Chadwick, Darmstadt Graphics Group GmbH (2024), CC-BY-4.0, via the Khronos glTF-Sample-Assets; Khronos and 3D Commerce logos are Khronos marks"
     },
     {
-      "path": "models/cesium_man/CesiumMan.glb",
-      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/8f492390ddc7a2ae221a1369ef560589cf8c70fb/Models/CesiumMan/glTF-Binary/CesiumMan.glb",
-      "sha256": "b7001eaeea8254bd44773bcd247e78696d94169388fbb2a1800fc69434e777d9",
-      "license": "CC-BY-4.0",
-      "source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/8f492390ddc7a2ae221a1369ef560589cf8c70fb/Models/CesiumMan",
-      "attribution": "Cesium Man by Cesium (2017), CC-BY-4.0, via the Khronos glTF-Sample-Assets; the Cesium logo is a Cesium mark"
-    },
-    {
       "path": "models/quaternius/car.glb",
       "url": "https://static.poly.pizza/59a67a6c-490e-472e-bae6-5a4d2541f1c7.glb",
       "sha256": "bf00f2f0386a25aa310abc0424d22586e46a59ee6c737e6b375c97c9f01bd462",
@@ -745,6 +737,58 @@
       "license": "CC-BY-3.0",
       "source": "https://poly.pizza/m/4CPpvEmrMoF",
       "attribution": "\"Bus\" by Poly by Google (https://poly.pizza/m/4CPpvEmrMoF), CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)"
+    },
+    {
+      "path": "models/person/wave.glb",
+      "url": "https://static.poly.pizza/ba7a1955-ea51-4cb9-a561-188bdef0a6c7.glb",
+      "sha256": "a2212729826b718e59e698211ed3951c22459b48733b1ee6a24fac0abf74dca8",
+      "license": "CC0-1.0",
+      "source": "https://poly.pizza/m/qJ2gsTUBHL",
+      "animations": [
+        "CharacterArmature|Death",
+        "CharacterArmature|Gun_Shoot",
+        "CharacterArmature|HitRecieve",
+        "CharacterArmature|HitRecieve_2",
+        "CharacterArmature|Idle",
+        "CharacterArmature|Idle_Gun",
+        "CharacterArmature|Idle_Gun_Pointing",
+        "CharacterArmature|Idle_Gun_Shoot",
+        "CharacterArmature|Idle_Neutral",
+        "CharacterArmature|Idle_Sword",
+        "CharacterArmature|Interact",
+        "CharacterArmature|Kick_Left",
+        "CharacterArmature|Kick_Right",
+        "CharacterArmature|Punch_Left",
+        "CharacterArmature|Punch_Right",
+        "CharacterArmature|Roll",
+        "CharacterArmature|Run",
+        "CharacterArmature|Run_Back",
+        "CharacterArmature|Run_Left",
+        "CharacterArmature|Run_Right",
+        "CharacterArmature|Run_Shoot",
+        "CharacterArmature|Sword_Slash",
+        "CharacterArmature|Walk",
+        "CharacterArmature|Wave"
+      ]
+    },
+    {
+      "path": "models/person/sit.glb",
+      "url": "https://static.poly.pizza/cf08b740-dd48-443e-9fde-6d3d54abf119.glb",
+      "sha256": "97a4e8c5e93b5c4f68b25e5240f308aa81ff4ae487b750e62f13e02c338d73e8",
+      "license": "CC0-1.0",
+      "source": "https://poly.pizza/m/9kF7eTDbhO",
+      "animations": [
+        "Armature|Death",
+        "Armature|Idle",
+        "Armature|Jump",
+        "Armature|Jump2",
+        "Armature|PickUp",
+        "Armature|Punch",
+        "Armature|Running",
+        "Armature|SitIdle",
+        "Armature|Sitting",
+        "Armature|Walking"
+      ]
     }
   ]
 }

@@ -13,6 +13,7 @@ mod building_fire;
 mod building_style;
 mod calibration;
 mod close_shots;
+mod figure_anim;
 mod fire;
 mod flight;
 mod fx;
@@ -123,6 +124,7 @@ fn main() {
         .init_asset::<vehicle::scene::VehicleAsset>()
         .init_asset_loader::<vehicle::scene::VehicleLoader>()
         .init_resource::<actors::Behaviour>()
+        .init_resource::<actors::rig::Rigs>()
         .init_resource::<fx::SoftDiscs>()
         .init_resource::<prewarm::Prewarm>()
         .init_resource::<textures::RoughnessPacking>()
@@ -187,6 +189,9 @@ fn main() {
                 vehicle::scene::tint_vehicles,
                 vehicle::scene::spin_wheels,
                 vehicle::scene::place_vehicles,
+                actors::rig::prepare_rigs,
+                actors::rig::spawn_rigs,
+                actors::rig::drive_rigs,
             )
                 .chain()
                 .after(build_world),

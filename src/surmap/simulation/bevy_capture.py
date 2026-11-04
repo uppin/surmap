@@ -43,6 +43,9 @@ class BevyCapture:
     # predate them.
     object_kinds: dict[str, str] = field(default_factory=dict)
     object_yaw_deg: dict[int, dict[str, float]] = field(default_factory=dict)
+    # Each frame's person poses (`standing`, `lying`, …, by id), keyed by `t_ns`; only bodies
+    # whose track line carries a `pose`.
+    object_poses: dict[int, dict[str, str]] = field(default_factory=dict)
     # Each frame's burning and burnt floors per building (`(burning, burnt)` by id), keyed by
     # `t_ns`; empty without a `building_fires.jsonl`.
     building_fires: dict[int, dict[str, tuple[tuple[int, ...], tuple[int, ...]]]] = field(
@@ -257,6 +260,7 @@ def load_bevy_capture(root: Path) -> BevyCapture:
     object_tracks, wind, object_kinds, object_yaw_deg = _load_object_tracks(
         root / "object_tracks.jsonl"
     )
+    object_poses = _load_object_poses(root / "object_tracks.jsonl")
     return BevyCapture(
         calibration=calibration,
         objects=tuple(objects),
@@ -267,6 +271,7 @@ def load_bevy_capture(root: Path) -> BevyCapture:
         wind=wind,
         object_kinds=object_kinds,
         object_yaw_deg=object_yaw_deg,
+        object_poses=object_poses,
         building_fires=_load_building_fires(root / "building_fires.jsonl"),
     )
 
@@ -344,6 +349,25 @@ def _load_object_tracks(
         tracks[t_ns] = by_id
         yaw[t_ns] = headings
     return tracks, wind, kinds, yaw
+
+
+def _load_object_poses(path: Path) -> dict[int, dict[str, str]]:
+    """The `pose` each tracked body's line carries, by id, per frame (`t_ns`)."""
+    if not path.is_file():
+        return {}
+    poses: dict[int, dict[str, str]] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        frame = _as_obj(json.loads(line), "object track frame")
+        objects = frame.get("objects")
+        by_id: dict[str, str] = {}
+        for raw in objects if isinstance(objects, list) else []:
+            body = _as_obj(raw, "tracked object")
+            if isinstance(body.get("id"), str) and isinstance(body.get("pose"), str):
+                by_id[str(body["id"])] = str(body["pose"])
+        poses[int(_num(frame, "t_ns", integer=True))] = by_id
+    return poses
 
 
 def _load_fire_perimeters(path: Path) -> dict[int, dict[str, tuple[tuple[float, float], ...]]]:

@@ -407,3 +407,40 @@ fn the_street_traffic_scenario_the_station_writes_is_a_valid_manifest() {
     use crate::vehicle::VehicleClass::{Bus, Car, Train, Truck};
     assert!([Car, Bus, Truck, Train].iter().all(|c| classes.contains(c)), "{classes:?}");
 }
+
+fn with_person(fields: &str) -> String {
+    with_elements(&format!(r#"[{{"kind": "person", "id": "p1", "position_enu": [0, 0, 0], "coat": "concrete", "skin": "concrete", {fields}}}]"#))
+}
+
+#[test]
+fn a_person_taller_than_any_survivor_is_refused() {
+    let refused = SceneManifest::from_json(&with_person(r#""height_m": 3.0"#));
+
+    assert!(matches!(refused, Err(ManifestError::Invalid(reason)) if reason.contains("p1") && reason.contains("height_m")));
+}
+
+#[test]
+fn a_person_rig_override_that_is_not_gltf_is_refused() {
+    let refused = SceneManifest::from_json(&with_person(r#""glb": "models/person.fbx""#));
+
+    assert_eq!(refused, Err(ManifestError::BadAssetPath("models/person.fbx".into())));
+}
+
+#[test]
+fn a_person_rig_override_is_an_asset_the_scene_needs() {
+    let manifest = SceneManifest::from_json(&with_person(r#""glb": "library/polypizza/x1/person.glb""#)).expect("valid");
+
+    assert!(manifest.asset_paths().contains(&"library/polypizza/x1/person.glb".to_owned()));
+}
+
+#[test]
+fn the_survivors_scenario_the_station_writes_is_a_valid_manifest() {
+    use crate::figure_anim::Pose::{Lying, Sitting, Waving};
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/sim_scenario/earthquake-survivors.json");
+    let text = std::fs::read_to_string(path).expect("the station's earthquake-survivors preset");
+
+    let manifest = SceneManifest::from_json(&text).expect("the renderer accepts it");
+
+    let poses: Vec<_> = manifest.elements.iter().filter_map(|e| match e { Element::Person(p) => Some(p.pose), _ => None }).collect();
+    assert!([Lying, Sitting, Waving].iter().all(|p| poses.contains(p)), "{poses:?}");
+}

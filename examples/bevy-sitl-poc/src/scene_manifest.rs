@@ -17,10 +17,12 @@ use serde::Deserialize;
 mod buildings;
 mod environment;
 mod nature;
+mod people;
 
 pub use buildings::{BuildingFireDef, DistrictDef};
 pub use environment::{Environment, PbrTextureSet};
 pub use nature::{FireDef, Vegetation, Weather, WindDef};
+pub use people::Person;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct SceneManifest {
@@ -205,18 +207,6 @@ fn first_row() -> f32 {
     4.2
 }
 
-/// A survivor at an ENU pose (feet at `position_enu`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct Person {
-    pub id: String,
-    pub position_enu: [f32; 3],
-    pub coat: String,
-    pub skin: String,
-    /// What the person does over time; standing still when absent.
-    #[serde(default)]
-    pub behaviour: Option<crate::behaviour::Tree>,
-}
-
 /// A vehicle of a class (`vehicle/<class>.vehicle.json`) at its start pose, driven by its tree.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Vehicle {
@@ -350,6 +340,7 @@ impl SceneManifest {
         manifest.validate_buildings()?;
         manifest.validate_behaviours()?;
         manifest.validate_vehicles()?;
+        manifest.validate_people()?;
         Ok(manifest)
     }
 
@@ -431,6 +422,11 @@ impl SceneManifest {
         for model in &self.models {
             paths.push(model.glb.clone());
         }
+        for element in &self.elements {
+            if let Element::Person(person) = element {
+                paths.extend(person.glb.clone());
+            }
+        }
         paths
     }
 
@@ -460,6 +456,11 @@ fn validate_asset_path(path: &str) -> Result<(), ManifestError> {
         return Err(ManifestError::BadAssetPath(path.to_string()));
     }
     Ok(())
+}
+
+/// A relative glTF asset path: inside `assets/`, ending `.glb` or `.gltf`.
+pub fn is_relative_gltf(path: &str) -> bool {
+    validate_asset_path(path).is_ok() && (path.ends_with(".glb") || path.ends_with(".gltf"))
 }
 
 impl ModelInstance {
