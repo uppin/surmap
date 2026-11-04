@@ -309,7 +309,8 @@ class FleetController:
             case Recall():
                 if phase == "docked":
                     raise FleetInvalid(
-                        InvalidRule.ALREADY_DOCKED, f"{drone} is docked: recall needs a drone that has left its pad"
+                        InvalidRule.ALREADY_DOCKED,
+                        f"{drone} is docked: recall needs a drone that has left its pad",
                     )
             case SetActive():
                 pass

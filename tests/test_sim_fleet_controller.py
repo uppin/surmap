@@ -331,6 +331,72 @@ async def test_a_page_that_unlinks_fails_the_waiting_command_as_no_simulation_co
         await sending
 
 
+async def test_a_drone_just_launched_can_be_tasked_before_telemetry_shows_it_flying(
+    tmp_path: Path,
+) -> None:
+    # Given a linked controller whose last telemetry still has the drone docked
+    controller, link = a_linked_controller(tmp_path)
+    controller.receive(telemetry_of(a_drone(SW_D1, "docked"), at_s=1.0))
+
+    # When the page applies a launch at 2.0 s, and a detour is sent straight after it
+    launching = asyncio.create_task(controller.send(a_launch()))
+    await answer(controller, link, seq=1, at_s=2.0)
+    await launching
+    detouring = asyncio.create_task(controller.send(Detour(SW_D1, ((0.0, 35.0, 18.0),))))
+    await answer(controller, link, seq=2, at_s=2.1)
+
+    # Then the station does not refuse the detour as one for a docked drone
+    assert await detouring == Applied(request=2, seq=2, at_s=2.1)
+
+
+async def test_telemetry_taken_after_a_launch_decides_the_drones_phase_again(
+    tmp_path: Path,
+) -> None:
+    # Given a controller whose page applied a launch at 2.0 s
+    controller, link = a_linked_controller(tmp_path)
+    launching = asyncio.create_task(controller.send(a_launch()))
+    await answer(controller, link, seq=1, at_s=2.0)
+    await launching
+
+    # When telemetry from 2.5 s reports the drone docked again
+    controller.receive(telemetry_of(a_drone(SW_D1, "docked"), at_s=2.5))
+
+    # Then a detour is refused as one for a docked drone
+    with pytest.raises(FleetInvalid) as refused:
+        await controller.send(Detour(SW_D1, ((0.0, 35.0, 18.0),)))
+    assert refused.value.rule is InvalidRule.NOT_FLYING
+
+
+async def test_a_command_applied_after_the_station_gave_up_on_it_is_still_logged(
+    tmp_path: Path,
+) -> None:
+    # Given a linked page whose answer arrives after the ack timeout
+    controller, link = a_linked_controller(tmp_path, FleetTiming(sleep=RecordingSleep()))
+    with pytest.raises(FleetTimeout):
+        await controller.send(a_launch())
+    frame = await link.next_frame()
+
+    # When the page's `applied` finally arrives
+    controller.receive(Applied(frame["request"], 1, 7.0))
+
+    # Then the launch is in the session log, as the page applied it
+    assert controller.session_log() == (Stamped(1, 7.0, a_launch()),)
+
+
+async def test_a_linked_pages_own_drones_are_the_ones_the_station_knows(tmp_path: Path) -> None:
+    # Given a controller whose page says hello with a drone the scenario's nests do not name
+    controller = a_controller(tmp_path)
+    link = RecordingLink()
+    controller.attach(link, SimHello(SCENARIO, 0.0, ("nest-new-d1",)))
+
+    # When that drone is made active and the page applies it
+    sending = asyncio.create_task(controller.send(SetActive("nest-new-d1")))
+    await answer(controller, link, seq=1, at_s=1.0)
+
+    # Then the station sent it, rather than refusing an unknown drone
+    assert await sending == Applied(request=1, seq=1, at_s=1.0)
+
+
 # ---- telemetry --------------------------------------------------------------------------------
 
 
@@ -353,6 +419,21 @@ async def test_the_latest_telemetry_is_what_the_controller_reports(tmp_path: Pat
 
 
 # ---- the registry links pages -----------------------------------------------------------------
+
+
+async def test_a_page_that_links_an_unknown_scenario_is_closed_as_a_protocol_error(
+    tmp_path: Path,
+) -> None:
+    # Given a registry that has no scenario `no-such-scenario`
+    registry = FleetRegistry(a_fleet_store(tmp_path))
+    page = ScriptedSocket()
+    page.say(hello_frame("no-such-scenario"))
+
+    # When a page links it
+    await registry.link("no-such-scenario", page)
+
+    # Then it is closed as a protocol error
+    assert await page.close_code() == CLOSE_PROTOCOL_ERROR
 
 
 def test_the_registry_keeps_one_controller_per_scenario(tmp_path: Path) -> None:

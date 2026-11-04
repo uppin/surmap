@@ -12,12 +12,12 @@ PRD: `PRD-2026-11-04-fleet-link.md` · Discovery: `2026-11-04-fleet-link-initial
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1) · commit 1 `d6fb7dc`
+- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1) · commit 1 `d7048f1`
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ✅ 2026-11-04 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 87 failing (32 acceptance + 55 unit) — commit 2
+- [wf 2] ✅ 2026-11-04 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 87 failing (32 acceptance + 55 unit) — commit 2 `db5b375`
   - [x] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
   - [x] Stubs this node owns (`surmap.simulation.fleet` package, `agent/server/fleet_routes.py`, Rust `fleet/link.rs`, `fleet/link_wasm.rs`)
   - [x] Acceptance tests written and failing for the right reason
@@ -265,7 +265,7 @@ Procedure:
 
 ## Validation Results
 
-**Baseline (`d6fb7dc`: n1 green, n2 red, this node's planning):** `uv run mypy` clean (512
+**Baseline (`d7048f1`: n1 green, n2 red, this node's planning):** `uv run mypy` clean (512
 files), `ruff check --no-cache` / `ruff format --no-cache --check` clean; `uv run pytest -q` 2237
 passed, 1 failed, 38 skipped — the 1 is n2's `test_bevy_capture.py::test_a_fleet_capture_names_the_drone_on_every_frame`
 (inherited); `cargo test --locked` 286 passed, 44 failed — all 44 n2's (`fleet::tests::*`,
@@ -382,12 +382,12 @@ Red-step notes — shapes the tests pin, which `[G]` must honour:
 
 ## Prerequisites
 
-| Item | Verdict |
-|---|---|
-| `todo/2026-11-03-bevy-live-websocket-stream.md` | ⚠ during — same page, different socket. This node adds the `web-sys` WebSocket features and the `?param=` parsing pattern n5 reuses for `?bridge=`; it does not close the todo (n5 does) |
-| `todo/2026-11-03-bevy-visual-checkpoints-v3-v5.md` | ℹ the reason V4 is needed: the browser runtime has no CI check |
-| `todo/2026-11-03-non-agent-clients-on-fake-servers.md` | — unrelated (agent clients) |
-| `code-issues/private-reach-agent-server-hub.md` | — unrelated; the fleet route does not touch `hub.py` |
+| Item | Verdict | Outcome |
+|---|---|---|
+| `todo/2026-11-03-bevy-live-websocket-stream.md` | ⚠ during — same page, different socket. This node adds the `web-sys` WebSocket features and the `?param=` parsing pattern n5 reuses for `?bridge=`; it does not close the todo (n5 does) | ➖ **Unchanged** — `Cargo.toml` gained `WebSocket`, `MessageEvent`, `CloseEvent`, `ErrorEvent`; `link::fleet_enabled` is the `?param=` pattern. Record untouched |
+| `todo/2026-11-03-bevy-visual-checkpoints-v3-v5.md` | ℹ the reason V4 is needed: the browser runtime has no CI check | ➖ **Unchanged** — V4 is `scripts/fleet_link_smoke.py` plus the Chrome procedure; still unrun here. Record untouched |
+| `todo/2026-11-03-non-agent-clients-on-fake-servers.md` | — unrelated (agent clients) | ➖ **Unchanged** |
+| `code-issues/private-reach-agent-server-hub.md` | — unrelated; the fleet route does not touch `hub.py` | ➖ **Unchanged** |
 
 Nothing blocks.
 
