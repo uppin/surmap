@@ -292,6 +292,13 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
 - **Serving** (`surmap.agent.server.sim_routes`): `/sim/assets/scenarios/<id>.json` (latest
   version), `/sim/assets/library/…`, `/sim/assets/…` (the PoC's assets) and, with `--sim-dist`,
   the built page at `/sim/`; the page opens `?scenario=<id>`. One origin, no CORS.
+- **The fleet link** (`surmap.agent.server.fleet_routes`): `/sim/fleet?scenario=<id>` is a
+  WebSocket route in the server's description whenever a `SimulationRig` is configured. A page
+  opened with `?fleet=1` links through it, speaking `fleet/v1`. The route hands the socket to
+  `SimulationRig.fleet` (a `FleetRegistry`), whose per-scenario `FleetController` sends commands
+  and waits for their answers. Applied commands are kept in the scenario store's SQLite file and
+  export as a `--fleet-log`. Messages, checks and close codes:
+  [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *The fleet link*.
 
 ## SAM station (`surmap.agent.tools.station`, `station_modal`)
 

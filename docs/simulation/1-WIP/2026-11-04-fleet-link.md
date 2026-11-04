@@ -32,15 +32,20 @@ PRD: `PRD-2026-11-04-fleet-link.md` · Discovery: `2026-11-04-fleet-link-initial
   - [x] Rust `fleet/link_wasm.rs` (`cfg(target_arch = "wasm32")`): `?fleet=1` → `web_sys::WebSocket` to `/sim/fleet?scenario=<id>`; inbound commands queued, drained into `FleetLog::push` at `SimClock::now()`; `applied`/`refused` sent back; telemetry every 0.5 s; `web-sys` features added
   - [x] `scripts/fleet_link_smoke.py`; `Cargo.toml` description and `index.html` banner say what the link sends
   - [x] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
-- [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
-  - [ ] Verification executed — result recorded (V1 suites; V3 wasm check output; V4 Chrome procedure with the smoke script's log and a screenshot)
-  - [ ] `docs/simulation/bevy-simulation.md` — *The fleet link* (`fleet/v1` messages, `?fleet=1`, the log store, the smoke script)
-  - [ ] `docs/agent.md` — `/sim/fleet` in the server's routes
-  - [ ] `docs/simulation/changelog/2026-11-04-fleet-link.md`
-  - [ ] Validate tests (`/validate-tests`)
-  - [ ] Production readiness validated (`/validate-prod-ready`) — new server route and persistence
-  - [ ] Lint (`ruff --no-cache`), type-check and tests green
-  - [ ] Every TODO row decided
+- [wf 4] ⛔ 2026-11-04 `/pr-wrap` Wrap — validate, clean up, verification, docs · V4 browser run needs the developer — V1 74 pytest + 18 `cargo test link` passed ✅ (full: pytest 2312 passed / 38 skipped, `cargo test --locked` 352 passed), V3 ✅ (wasm check: 9 warnings, none in `fleet/link`); everything else done (split `91f5342`, stable docs written). Options: **a)** run the V4 procedure (the numbered steps in `## Verification`), paste the smoke script's log, the screenshot and the exported `--fleet-log`, and re-run `/pr-wrap` — it resumes at the open TODOs · **b)** accept V1 + V3 for this PR and re-run `/pr-wrap` with that decision — it is recorded under `## Verification`, then the wrap finishes
+  - [x] Rebased, leak check passed (0) — already on `pr-2-drone-fleet` `08d840d`; `origin/pr-2-drone-fleet..HEAD` is this PR's 5 commits only; `HEAD` = `origin/pr-3-drone-fleet`
+  - [x] Changes validated against the plan (1) — every Delta file present; the one change from the plan is the controller suite split into three (step 4)
+  - [ ] Verification executed — result recorded (V1 suites; V3 wasm check output; V4 Chrome procedure with the smoke script's log and a screenshot) — V1 ✅ and V3 ✅ recorded in `## Validation Results`; V4 waits for the developer
+  - [x] `docs/simulation/bevy-simulation.md` — *The fleet link* (`fleet/v1` messages, `?fleet=1`, the log store, the smoke script)
+  - [x] `docs/agent.md` — `/sim/fleet` in the server's routes
+  - [x] `docs/simulation/changelog/2026-11-04-fleet-link.md`
+  - [x] Validate tests (`/validate-tests`) — no anti-pattern; fluent: PR's tests min 8, suites 8.9–9.6 (see `## Validation Results`)
+  - [x] Production readiness validated (`/validate-prod-ready`) — new server route and persistence; no mock, stub, TODO or silent fallback left
+  - [x] File-length gate passed (4) — `tests/test_sim_fleet_controller.py` 0 → 618 split (`91f5342`); no other touched file reaches 500 (stack-shared: `app.py` 449, `main.rs` 447, `sim_routes.py` 109, `description.py` 56, `Cargo.toml` 37)
+  - [x] Final validation (6) — re-validated after the split: same 74 fleet tests, gates green
+  - [x] Lint (`ruff --no-cache`), type-check and tests green
+  - [x] Prerequisites reconciled (7.5) — all four ➖ Unchanged, records untouched
+  - [x] Every TODO row decided — this PR added no open TODOs or code issues
   - [ ] Docs wrapped, 1-WIP deleted, rows carried into the wrap commit and PR body; `gh pr ready`
 
 ## Initial Discovery
@@ -308,6 +313,61 @@ passes.
 **V4 (not run here).** `scripts/fleet_link_smoke.py --help` works; run against a scripted fake page
 over a real `HypercornHost` it flew the whole sortie (6 applied, both drones docked, 6-line
 `--fleet-log` export). The browser run is `[wf 4]`'s.
+
+**Wrap (`[wf 4]`, 2026-11-04, on `91f5342`):**
+
+- **V1 ✅.** `uv run pytest -q tests/test_sim_fleet_link.py tests/test_sim_fleet_controller.py tests/test_sim_fleet_registry.py tests/test_sim_fleet_log_store.py tests/test_sim_fleet_link_e2e.py`:
+  74 passed. `cargo test --locked link`: 18 passed, 334 filtered out. Full suites: `uv run pytest -q`
+  2312 passed, 38 skipped, 0 failed. `cargo test --locked` 352 passed, 0 failed. `mypy` clean (524
+  files). `ruff check --no-cache` and `ruff format --no-cache --check` clean (581 files).
+- **V3 ✅.** `cargo check --locked --target wasm32-unknown-unknown`: `generated 9 warnings` ·
+  `Finished`. The warnings are in `actors.rs` (7), `calibration.rs` and `scene_manifest.rs`, and
+  none is in `fleet/link*`.
+- **V4 not run.** It needs a person at Chrome. The `[wf 4]` row halts on it.
+- **`/validate-tests`.** No skipped, focused, sleeping or branching test. The one `try` is
+  `a_station`'s teardown, not a test body. Waits go through `eventually` or the recording clock.
+  Fluent, scored against `fluent-style.md` § *The score*:
+
+  | Suite (all new in this PR) | Tests | Min / mean | Lost checks |
+  |---|---|---|---|
+  | `test_sim_fleet_controller.py` | 30 | 8 / 9.4 | `a_command_is_sent_only_once_…`: 2 and 4 (an assertion, then the answer, then a second assertion) |
+  | `test_sim_fleet_registry.py` | 8 | 9 / 9.3 | the hang-up teardown after the Then in `a_second_page_…` and `telemetry_a_linked_page_…`: 8 |
+  | `test_sim_fleet_log_store.py` | 5 | 9 / 9.6 | `each_linked_page_…`: 4 (two assertions on two outcomes) |
+  | `test_sim_fleet_link_e2e.py` | 14 | 8 / 8.9 | `an_invalid_command_…`: 2 (a second When); `telemetry_is_…`: 8 (an inline 20-line frame) |
+  | `test_sim_fleet_link.py` | 17 | 9 / 9.5 | — |
+  | `fleet/link/tests.rs` | 18 | 9 / 9.5 | — |
+
+  Every test this PR wrote scores 8 or more, with checks 3 and 9 passing. No suite is below 7.
+- **`/validate-prod-ready`.** No `TODO(pr-3)`, `NotImplementedError`, `todo!()` or mock code is
+  left in `src/surmap/simulation/fleet/`, `agent/server/fleet_routes.py`, `fleet/link.rs` or
+  `fleet/link_wasm.rs`. The `pass` arms in `controller.py` are explicit no-ops in exhaustive
+  `match`es (`SetActive` has no flight check, and a late `hello` is ignored). `dict[str, Any]` in
+  `fleet_routes.py` is the ASGI message boundary, contained behind `_AsgiSocket` (the registry
+  sees only the `SimSocket` protocol), as in `rpc/hosts/hypercorn.py`. A binary frame is decoded
+  with `errors="replace"` so that it fails `fleet/v1` decoding and closes 4400; it is not a
+  silent fallback. `link.rs`'s one `expect` serialises a plain serde struct and cannot fail.
+  `print` appears only in `scripts/fleet_link_smoke.py`, a CLI.
+- **Validate changes (1, 6).** Every Delta file exists. The one change from the plan is that the
+  controller suite is three files (see *Restructuring*).
+- **Prerequisites (7.5).** All four are ➖ Unchanged, and no record was touched.
+- **7.6.** This PR added no open TODOs or code issues.
+
+## Restructuring
+
+`/pr-wrap` step 4: `tests/test_sim_fleet_controller.py` was created here at 618 lines (0 → 618).
+Its suite score was 9.4 (43 tests; the split commit message says 8.9, an estimate made before the per-test scoring), so it was split as it was, by its own section markers. The split is
+mechanical moves only, in `91f5342`:
+
+| File | Lines | Holds |
+|---|---|---|
+| `tests/test_sim_fleet_controller.py` | 618 → 390 | validation before sending, waiting for the answer, telemetry |
+| `tests/test_sim_fleet_registry.py` | new, 152 | one controller per scenario, linking pages, close codes |
+| `tests/test_sim_fleet_log_store.py` | new, 96 | sessions, entry order, export, the shared SQLite file |
+| `tests/fleet_fakes.py` | 259 → 290 | `QUAKE_FLEET`, `THE_SHARED_LAUNCH`, `a_fleet_store`, `a_hello`, now shared with the e2e suite, which dropped its own copies |
+
+The tests were the same 74 and green before and after. The oversized-file record would have been
+added and deleted inside this PR, so none is committed. No stack-shared file this PR touched
+reaches 500 lines, so nothing is left for the `#drone-fleet` sweep node.
 
 Added in Green, not in the red step: the station treats a drone as flying from the page's
 `applied` launch until telemetry stamped at or after it arrives (two tests); a page's `hello`
