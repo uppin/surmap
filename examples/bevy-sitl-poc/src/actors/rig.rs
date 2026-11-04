@@ -109,7 +109,9 @@ pub fn prepare_rigs(
         let root = graph.root;
         let mut clips = Vec::with_capacity(CLIPS.len());
         for clip in CLIPS {
-            let name = rig.clips.name(clip);
+            let Some(name) = rig.clips.name(clip) else {
+                continue;
+            };
             let Some(animation) = gltf.named_animations.get(name) else {
                 warn!("rig {glb} has no animation named {name:?}; the figure stays a capsule");
                 asset.failed = true;

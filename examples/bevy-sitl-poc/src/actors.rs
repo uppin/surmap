@@ -4,6 +4,7 @@
 //! drives `Wildfire::wind`, so vegetation, fire and particles follow it. Every number lives in
 //! `assets/behaviour/person.figure.json`, never here.
 
+use std::collections::HashMap;
 use std::f32::consts::{PI, TAU};
 
 use bevy::asset::io::Reader;
@@ -76,6 +77,10 @@ pub struct FigureDef {
     /// The rigged glTF and its clips; without one the figure is the capsule and the visor.
     #[serde(default)]
     pub rig: Option<crate::figure_anim::RigDef>,
+    /// A rig for a person who holds a pose the primary rig carries no clip for (a sitting person
+    /// on a sit model). Keys are `lying`, `sitting` or `waving`; each validates like `rig`.
+    #[serde(default)]
+    pub pose_rigs: HashMap<Pose, crate::figure_anim::RigDef>,
 }
 
 fn default_body_m() -> [f32; 3] {
@@ -109,6 +114,18 @@ pub struct Visor {
 }
 
 impl FigureDef {
+    /// The rig a person in `pose` is drawn on: the pose's own rig, else the primary rig; its file
+    /// replaced by the person's `rig_glb` when they name one; scaled to their `height_m`.
+    pub fn rig_for(
+        &self,
+        pose: Pose,
+        height_m: Option<f32>,
+        rig_glb: Option<&str>,
+    ) -> Option<crate::figure_anim::RigDef> {
+        // TODO(pr-2): implement
+        todo!("FigureDef::rig_for")
+    }
+
     pub fn from_json(text: &str) -> Result<Self, String> {
         let def: Self = serde_json::from_str(text).map_err(|e| e.to_string())?;
         if def.yaw_ease_s <= 0.0 {

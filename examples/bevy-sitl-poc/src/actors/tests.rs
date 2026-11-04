@@ -16,6 +16,7 @@ fn gait() -> FigureDef {
         model: None,
         body_m: [0.6, 0.6, 1.8],
         rig: None,
+        pose_rigs: Default::default(),
     }
 }
 
@@ -219,14 +220,155 @@ fn a_lying_survivor_without_a_tree_is_tracked_lying_where_they_lie() {
     assert_eq!((body.pose.as_deref(), body.yaw_deg, body.enu), (Some("lying"), 30.0, Vec3::new(-15.0, 31.0, 0.0)));
 }
 
-#[test]
-fn the_shipped_figure_is_rigged_with_every_clip() {
+/// The primary wave rig and a sitting rig, as the shipped figure names them (test fixtures).
+const WAVE_RIG: &str = r#""rig": {"glb": "models/person/wave.glb",
+    "clips": {"idle": "Idle", "walk": "Walk", "run": "Run", "wave": "Wave", "lie": "Death"},
+    "walk_ground_m_s": 1.1, "run_ground_m_s": 2.5, "run_above_m_s": 1.8, "blend_s": 0.3, "standing_height_m": 1.8}"#;
+const SIT_RIG: &str = r#""glb": "models/person/sit.glb",
+    "clips": {"idle": "Idle", "walk": "Walk", "run": "Run", "sit": "SitIdle"},
+    "walk_ground_m_s": 3.8, "run_ground_m_s": 10.3, "run_above_m_s": 7.0, "blend_s": 0.3, "standing_height_m": 5.2"#;
+
+fn figure_with(rig: &str, pose_rigs: &str) -> String {
+    format!(
+        r#"{{"yaw_ease_s": 0.3, "bob_m": 0.03, "steps_per_s": 2, "reference_speed_m_s": 1.4, {rig}, "pose_rigs": {{{pose_rigs}}}}}"#
+    )
+}
+
+fn sitting_figure() -> FigureDef {
+    FigureDef::from_json(&figure_with(WAVE_RIG, &format!(r#""sitting": {{{SIT_RIG}}}"#))).expect("valid figure")
+}
+
+fn shipped_figure() -> FigureDef {
     let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/behaviour/person.figure.json")).expect("figure file");
+    FigureDef::from_json(&text).expect("valid figure")
+}
 
-    let figure = FigureDef::from_json(&text).expect("valid figure");
+/// The asset lock's entry for a rig file, or `Null` when the file is not pinned.
+fn lock_entry(glb: &str) -> serde_json::Value {
+    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/assets.lock.json")).expect("asset lock");
+    let lock: serde_json::Value = serde_json::from_str(&text).expect("json");
+    lock["assets"]
+        .as_array()
+        .and_then(|assets| assets.iter().find(|asset| asset["path"] == glb).cloned())
+        .unwrap_or(serde_json::Value::Null)
+}
 
-    let rig = figure.rig.expect("the shipped figure has a rig");
-    assert!(rig.glb.ends_with(".glb") || rig.glb.ends_with(".gltf"), "{}", rig.glb);
+#[test]
+fn the_shipped_figure_has_a_clip_for_every_pose_in_a_pinned_file() {
+    let figure = shipped_figure();
+
+    for pose in [Pose::Standing, Pose::Lying, Pose::Sitting, Pose::Waving] {
+        let rig = figure.rig_for(pose, None, None).expect("every pose has a rig");
+        let clip = rig.clip_for(pose).expect("every pose names a clip");
+        let animations = lock_entry(&rig.glb)["animations"].clone();
+        assert!(
+            animations.as_array().is_some_and(|names| names.iter().any(|name| name == clip)),
+            "{pose:?}: {clip:?} is not an animation of the pinned {}",
+            rig.glb
+        );
+    }
+}
+
+#[test]
+fn every_rig_file_of_the_shipped_figure_is_a_pinned_cc0_model() {
+    let figure = shipped_figure();
+
+    for pose in [Pose::Standing, Pose::Sitting] {
+        let glb = figure.rig_for(pose, None, None).expect("a rig").glb;
+        let pin = lock_entry(&glb);
+        assert_eq!(pin["license"], "CC0-1.0", "{glb}");
+        assert_eq!(pin["sha256"].as_str().map(str::len), Some(64), "{glb}");
+    }
+}
+
+#[test]
+fn a_sitting_person_is_drawn_on_the_rig_that_names_sitting() {
+    let rig = sitting_figure().rig_for(Pose::Sitting, None, None).expect("a rig");
+
+    assert_eq!(rig.glb, "models/person/sit.glb");
+}
+
+#[test]
+fn a_standing_person_is_drawn_on_the_primary_rig_even_when_a_pose_has_its_own() {
+    let rig = sitting_figure().rig_for(Pose::Standing, None, None).expect("a rig");
+
+    assert_eq!(rig.glb, "models/person/wave.glb");
+}
+
+#[test]
+fn a_lying_person_is_drawn_on_the_primary_rig_when_no_pose_rig_names_lying() {
+    let rig = sitting_figure().rig_for(Pose::Lying, None, None).expect("a rig");
+
+    assert_eq!(rig.glb, "models/person/wave.glb");
+}
+
+#[test]
+fn a_person_with_their_own_glb_is_drawn_on_it_with_the_clips_of_their_pose() {
+    let rig = sitting_figure()
+        .rig_for(Pose::Sitting, None, Some("library/polypizza/x1/person.glb"))
+        .expect("a rig");
+
+    assert_eq!((rig.glb.as_str(), rig.clips.sit.as_deref()), ("library/polypizza/x1/person.glb", Some("SitIdle")));
+}
+
+#[test]
+fn a_person_is_drawn_at_the_pace_of_their_height_on_the_rig_they_are_drawn_with() {
+    // Given a 1.62 m person: the sit rig stands 5.2 m, so it is scaled by 0.3115
+    let rig = sitting_figure().rig_for(Pose::Sitting, Some(1.62), None).expect("a rig");
+
+    assert!((rig.walk_ground_m_s - 3.8 * 1.62 / 5.2).abs() < 1e-4, "{}", rig.walk_ground_m_s);
+}
+
+#[test]
+fn a_sitting_pose_rig_that_names_no_sitting_clip_is_refused_by_name() {
+    let no_sit = SIT_RIG.replace(r#""sit": "SitIdle""#, r#""wave": "Wave""#);
+
+    let refused = FigureDef::from_json(&figure_with(WAVE_RIG, &format!(r#""sitting": {{{no_sit}}}"#))).unwrap_err();
+
+    assert!(refused.contains("sitting"), "{refused}");
+}
+
+#[test]
+fn a_pose_that_no_rig_carries_a_clip_for_is_refused_by_name() {
+    let no_wave = WAVE_RIG.replace(r#""wave": "Wave", "#, "");
+
+    let refused = FigureDef::from_json(&figure_with(&no_wave, "")).unwrap_err();
+
+    assert!(refused.contains("waving"), "{refused}");
+}
+
+#[test]
+fn a_pose_rig_for_standing_is_refused_because_the_primary_rig_carries_standing() {
+    let refused = FigureDef::from_json(&figure_with(WAVE_RIG, &format!(r#""standing": {{{SIT_RIG}}}"#))).unwrap_err();
+
+    assert!(refused.contains("standing"), "{refused}");
+}
+
+#[test]
+fn a_pose_rig_for_a_pose_the_figure_does_not_know_is_refused_by_name() {
+    let refused = FigureDef::from_json(&figure_with(WAVE_RIG, &format!(r#""dancing": {{{SIT_RIG}}}"#))).unwrap_err();
+
+    assert!(refused.contains("dancing"), "{refused}");
+}
+
+#[test]
+fn pose_rigs_without_a_primary_rig_are_refused_by_name() {
+    let text = format!(
+        r#"{{"yaw_ease_s": 0.3, "bob_m": 0.03, "steps_per_s": 2, "reference_speed_m_s": 1.4, "pose_rigs": {{"sitting": {{{SIT_RIG}}}}}}}"#
+    );
+
+    let refused = FigureDef::from_json(&text).unwrap_err();
+
+    assert!(refused.contains("pose_rigs"), "{refused}");
+}
+
+#[test]
+fn a_pose_rig_that_is_not_gltf_is_refused_by_name() {
+    let fbx = SIT_RIG.replace("sit.glb", "sit.fbx");
+
+    let refused = FigureDef::from_json(&figure_with(WAVE_RIG, &format!(r#""sitting": {{{fbx}}}"#))).unwrap_err();
+
+    assert!(refused.contains("sit.fbx"), "{refused}");
 }
 
 #[test]

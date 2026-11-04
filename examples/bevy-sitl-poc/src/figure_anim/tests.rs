@@ -7,9 +7,9 @@ fn a_rig() -> RigDef {
             idle: "Idle".into(),
             walk: "Walk".into(),
             run: "Run".into(),
-            wave: "Wave".into(),
-            sit: "Sit".into(),
-            lie: "Death".into(),
+            wave: Some("Wave".into()),
+            sit: Some("Sit".into()),
+            lie: Some("Death".into()),
         },
         walk_ground_m_s: 1.4,
         run_ground_m_s: 3.5,
@@ -123,4 +123,59 @@ fn a_rig_that_is_not_gltf_is_refused_by_name() {
     let rig = RigDef { glb: "models/person.fbx".into(), ..a_rig() };
 
     assert!(rig.validate().unwrap_err().contains("person.fbx"));
+}
+
+#[test]
+fn a_pose_is_held_as_the_clip_it_names() {
+    assert_eq!(
+        [Pose::Standing, Pose::Lying, Pose::Sitting, Pose::Waving].map(Pose::clip),
+        [Clip::Idle, Clip::Lie, Clip::Sit, Clip::Wave]
+    );
+}
+
+#[test]
+fn a_rig_resolves_each_pose_to_the_clip_it_names_for_it() {
+    let rig = a_rig();
+
+    assert_eq!(
+        [Pose::Standing, Pose::Lying, Pose::Sitting, Pose::Waving].map(|pose| rig.clip_for(pose)),
+        [Some("Idle"), Some("Death"), Some("Sit"), Some("Wave")]
+    );
+}
+
+#[test]
+fn a_rig_that_names_no_sitting_clip_has_none_for_a_sitting_person() {
+    let rig = RigDef { clips: Clips { sit: None, ..a_rig().clips }, ..a_rig() };
+
+    assert_eq!(rig.clip_for(Pose::Sitting), None);
+}
+
+#[test]
+fn a_person_of_their_rigs_own_height_keeps_the_rig_as_it_is() {
+    assert_eq!(a_rig().at_height(None), a_rig());
+}
+
+#[test]
+fn a_person_walks_at_their_own_pace_on_a_rig_scaled_to_their_height() {
+    // Given a 1.62 m person on a rig that stands 1.8 m tall: the rig walks 1.26 m/s at scale 0.9
+    let scaled = a_rig().at_height(Some(1.62));
+
+    // When they walk at the speed their feet cover on that rig
+    let shown = locomotion(&scaled, 1.26, Pose::Standing);
+
+    // Then the walk plays at rate 1, so the feet stay planted
+    assert_eq!(weight_of(&shown, Clip::Walk), 1.0);
+    assert!((rate_of(&shown, Clip::Walk) - 1.0).abs() < 1e-5);
+}
+
+#[test]
+fn a_taller_person_crosses_into_running_at_the_threshold_scaled_to_their_rig() {
+    // Given a 1.62 m person on a rig that stands 1.8 m tall: the threshold is 2.2 × 0.9 = 1.98 m/s
+    let scaled = a_rig().at_height(Some(1.62));
+
+    // When they move at that threshold
+    let shown = locomotion(&scaled, 1.98, Pose::Standing);
+
+    // Then walk and run are shown in equal parts
+    assert!((weight_of(&shown, Clip::Run) - 0.5).abs() < 1e-5, "{shown:?}");
 }

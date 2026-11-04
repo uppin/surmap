@@ -32,7 +32,7 @@ PRD: `PRD-2026-11-04-sim-rigged-people.md` · Discovery:
   - [x] Coat/skin materials on the rig's named slots (`PersonLook`, `GltfMaterialName`); `height_m` scales the rig. Compiles; not exercised; a figure with no rig keeps the capsule
   - [ ] Tracks: `pose` on `Body` and `track_line` is in (key only when present, so vehicle lines are unchanged). Open: a lying person's truth extent is horizontal — the bridge's track reader (`bevy_capture.py` `object_kinds`) is n1's TODO(pr-1) stub
   - [x] Python `scenario_manifest`: `validate_person_look` per person (`pose`, `height_m`, `yaw_deg`, `glb`); preset `earthquake-survivors` (five people; the shipped seven standing survivors give way); golden `tests/fixtures/sim_scenario/earthquake-survivors.json` written from the preset; `test_sim_people_manifest` 12/12 and `test_sim_people_e2e` 2/2 green
-  - [ ] ⛔ Proto `PersonElement` (`pose`, `height_m`, `yaw_deg`; regenerated in the red commit) and handler `_element` green. Halt: `test_a_lying_survivor_is_added_with_their_pose_height_and_facing` adds `survivor-1` to `earthquake-block`, which is `scene.json` (`test_the_shipped_scene_is_the_earthquake_block_preset_and_valid` pins that equality) and already holds `survivor-1`; the add is refused as a duplicate. Either the test's id or the shipped scene has to change — a developer decision. Docs table left for wrap (`docs/agent.md`)
+  - [x] Proto `PersonElement` (`pose`, `height_m`, `yaw_deg`; regenerated in the red commit) and handler `_element` green. The id clash is fixed by `fa7b3f4` (the added survivor is `survivor-9`; the shipped scene is untouched): `test_a_lying_survivor_is_added_with_their_pose_height_and_facing` passes. Docs table left for wrap (`docs/agent.md`)
   - [ ] Gates: `ruff format`, `ruff check --no-cache`, `mypy` green; `uv run pytest -q` 17 red = 16 n1-inherited + 1 blocked above; `cargo test --locked` 27 red = 26 n1-inherited + 1 blocked above; `cargo check --target wasm32-unknown-unknown` ok
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (tests + native stills of `earthquake-survivors` reviewed)
@@ -184,3 +184,13 @@ Deferred-work scan: `2026-11-03-bevy-visual-checkpoints-v3-v5.md` — ℹ unrela
 - A posed person is tracked in `object_tracks.jsonl` even without a tree (`Figure::posed`): a
   survivor lying still is exactly the truth a survey is judged on.
 - `FigureDef` is no longer `Copy` (the rig holds strings); callers clone or borrow.
+- **Requirement change (developer, 2026-11-04, option b): "ship two models: one for sitting, one
+  for waving".** No CC0 human on Poly Pizza carries both a sit clip and a wave clip, so the figure
+  ships two pinned models instead of one rig with every clip. The requirement becomes *every pose
+  has a clip across the primary rig and its pose overrides*: each pose resolves to a clip the
+  primary `rig` or its `pose_rigs` entry names, and that clip is an animation of a pinned CC0 file.
+  Still required: `idle`, `walk` and `run` on every rig. `wave`, `sit` and `lie` become optional
+  in `clips` (a rig names the poses it carries). Test `the_shipped_figure_is_rigged_with_every_clip`
+  is replaced by `the_shipped_figure_has_a_clip_for_every_pose_in_a_pinned_file`; it reads each
+  file's animation names from `assets/assets.lock.json` (`animations`), because CI does not fetch
+  models and must check the same clips.

@@ -9,7 +9,7 @@ use serde::Deserialize;
 use crate::scene_manifest::is_relative_gltf;
 
 /// How a person holds themself when not walking: the poses a survey finds people in.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Pose {
     #[default]
@@ -29,6 +29,16 @@ impl Pose {
             Self::Lying => "lying",
             Self::Sitting => "sitting",
             Self::Waving => "waving",
+        }
+    }
+
+    /// The clip a person holds in this pose (a standing person idles).
+    pub fn clip(self) -> Clip {
+        match self {
+            Self::Standing => Clip::Idle,
+            Self::Lying => Clip::Lie,
+            Self::Sitting => Clip::Sit,
+            Self::Waving => Clip::Wave,
         }
     }
 }
@@ -51,28 +61,33 @@ impl Clip {
     }
 }
 
-/// The rig's clips, by the glTF's animation names.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+/// The rig's clips, by the glTF's animation names. Walk and run and idle every rig carries; a rig
+/// names the poses' clips it has, and each pose needs one in the figure's primary rig or in its
+/// pose rig (`FigureDef::pose_rigs`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Clips {
     pub idle: String,
     pub walk: String,
     pub run: String,
-    pub wave: String,
-    pub sit: String,
-    pub lie: String,
+    #[serde(default)]
+    pub wave: Option<String>,
+    #[serde(default)]
+    pub sit: Option<String>,
+    #[serde(default)]
+    pub lie: Option<String>,
 }
 
 impl Clips {
-    /// The glTF animation name `clip` plays under.
-    pub fn name(&self, clip: Clip) -> &str {
+    /// The glTF animation name `clip` plays under, when the rig names one.
+    pub fn name(&self, clip: Clip) -> Option<&str> {
         match clip {
-            Clip::Idle => &self.idle,
-            Clip::Walk => &self.walk,
-            Clip::Run => &self.run,
-            Clip::Wave => &self.wave,
-            Clip::Sit => &self.sit,
-            Clip::Lie => &self.lie,
+            Clip::Idle => Some(&self.idle),
+            Clip::Walk => Some(&self.walk),
+            Clip::Run => Some(&self.run),
+            Clip::Wave => self.wave.as_deref(),
+            Clip::Sit => self.sit.as_deref(),
+            Clip::Lie => self.lie.as_deref(),
         }
     }
 }
@@ -100,6 +115,19 @@ pub struct RigDef {
 }
 
 impl RigDef {
+    /// The clip a person in `pose` holds on this rig, when the rig names one.
+    pub fn clip_for(&self, pose: Pose) -> Option<&str> {
+        self.clips.name(pose.clip())
+    }
+
+    /// This rig scaled to a person of `height_m` (the rig's own height when `None`): its ground
+    /// speeds and walk-to-run threshold grow with the rig, so the person's feet keep pace with
+    /// their clips. Height and blend are unchanged.
+    pub fn at_height(&self, height_m: Option<f32>) -> Self {
+        // TODO(pr-2): implement
+        todo!("RigDef::at_height")
+    }
+
     /// Every speed, height and blend > 0, `run_ground_m_s` > `walk_ground_m_s`, the glTF a
     /// relative `.glb`/`.gltf` path; the reason names the field.
     pub fn validate(&self) -> Result<(), String> {
