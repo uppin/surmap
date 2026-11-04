@@ -23,6 +23,7 @@ mod prewarm;
 mod record;
 mod rig;
 mod scene_manifest;
+mod sea;
 mod shots;
 mod sky;
 mod textures;

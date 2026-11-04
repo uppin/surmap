@@ -12,6 +12,8 @@ use bevy::reflect::TypePath;
 use super::{wheel_angle, VehicleBody, VehicleClass, VehicleDef};
 use crate::actors::{bevy_yaw, Body};
 use crate::scene_manifest::Vehicle;
+use crate::sea::{hull_height_m, vessel_motion, SeaState};
+use crate::wildfire::SimClock;
 use crate::world::{enu, SceneState};
 
 /// A class file (`assets/vehicle/<class>.vehicle.json`), as loaded.
@@ -42,10 +44,21 @@ impl AssetLoader for VehicleLoader {
 #[derive(Resource)]
 pub struct VehicleClasses(Vec<(VehicleClass, Handle<VehicleAsset>)>);
 
+/// The classes whose files the scene loads: every class a `vehicle` element may name.
+pub fn loaded_classes() -> &'static [VehicleClass] {
+    &[
+        VehicleClass::Car,
+        VehicleClass::Bus,
+        VehicleClass::Truck,
+        VehicleClass::Train,
+        VehicleClass::Boat,
+        VehicleClass::Ship,
+    ]
+}
+
 impl VehicleClasses {
     pub fn load(assets: &AssetServer) -> Self {
-        let classes = [VehicleClass::Car, VehicleClass::Bus, VehicleClass::Truck, VehicleClass::Train];
-        Self(classes.into_iter().map(|class| (class, assets.load(class.file()))).collect())
+        Self(loaded_classes().iter().map(|&class| (class, assets.load(class.file()))).collect())
     }
 
     /// Every class file's handle, for the scene to wait on.
@@ -60,6 +73,14 @@ impl VehicleClasses {
     }
 }
 
+/// A vessel's float: the water's top under it, the sea, and the phase its own swells start from.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Float {
+    pub surface_top_m: f32,
+    pub sea: SeaState,
+    pub phase: f32,
+}
+
 /// A vehicle on its root entity: its tree and motion, ticked with the people at the fixed rate.
 #[derive(Component)]
 pub struct VehicleActor {
@@ -71,22 +92,26 @@ pub struct VehicleActor {
     pub glb: Option<String>,
     pub tint: Option<[f32; 3]>,
     pub tracked: bool,
+    /// Vessels only: the water they float on.
+    pub float: Option<Float>,
     attached: bool,
 }
 
 impl VehicleActor {
-    /// The vehicle at its element's start pose, driven by its tree.
-    pub fn new(element: &Vehicle) -> Self {
+    /// The vehicle at its element's start pose, driven by its tree. A vessel's `float` is the water
+    /// its start lies on; it sits on that water's top, not at the element's height.
+    pub fn new(element: &Vehicle, float: Option<Float>) -> Self {
         let [x, y, z] = element.position_enu;
         Self {
             id: element.id.clone(),
             class: element.class,
             body: VehicleBody::new(element.behaviour.clone(), Vec2::new(x, y), element.yaw_deg.to_radians()),
-            ground_z: z,
+            ground_z: float.map_or(z, |float| float.surface_top_m),
             cars: element.cars,
             glb: element.glb.clone(),
             tint: element.tint,
             tracked: element.ground_truth,
+            float,
             attached: false,
         }
     }
@@ -125,8 +150,10 @@ pub struct Wheel {
 #[derive(Component)]
 pub struct Tinted;
 
-/// Each vehicle's root follows its drive, and each carriage follows the travelled path.
+/// Each vehicle's root follows its drive, and each carriage follows the travelled path. A vessel
+/// also rides the sea: its hull heaves with the swells, and it pitches and rolls with them.
 pub fn place_vehicles(
+    clock: SimClock,
     classes: Option<Res<VehicleClasses>>,
     defs: Res<Assets<VehicleAsset>>,
     actors: Query<&VehicleActor>,
@@ -134,10 +161,19 @@ pub fn place_vehicles(
     mut carriages: Query<(&Carriage, &mut Transform), Without<VehicleActor>>,
 ) {
     let Some(classes) = classes else { return };
+    let now = clock.now();
     for (actor, mut transform) in &mut vehicles {
         let drive = &actor.body.drive;
-        *transform = Transform::from_translation(enu(drive.position.x, drive.position.y, actor.ground_z))
-            .with_rotation(Quat::from_rotation_y(bevy_yaw(Vec2::from_angle(drive.heading_rad))));
+        let mut height = actor.ground_z;
+        let mut heading = Quat::from_rotation_y(bevy_yaw(Vec2::from_angle(drive.heading_rad)));
+        if let (Some(float), Some(def)) = (actor.float, classes.def(actor.class, &defs)) {
+            if let (Some(draft), Some(response)) = (def.draft_m, def.wave_response) {
+                let motion = vessel_motion(float.sea, response, now, float.phase);
+                height = hull_height_m(float.surface_top_m, draft, motion);
+                heading = heading * Quat::from_rotation_x(motion.pitch_rad) * Quat::from_rotation_z(motion.roll_rad);
+            }
+        }
+        *transform = Transform::from_translation(enu(drive.position.x, drive.position.y, height)).with_rotation(heading);
     }
     for (carriage, mut transform) in &mut carriages {
         let Ok(actor) = actors.get(carriage.vehicle) else { continue };
@@ -168,7 +204,9 @@ pub fn attach_vehicles(
         actor.attached = true;
         let turn = Quat::from_rotation_y(def.model_yaw_deg.to_radians());
         // The class's model, and its carriages, are authored at the same scale.
-        let pose = Transform::from_rotation(turn).with_scale(Vec3::splat(def.model_scale));
+        let pose = Transform::from_translation(Vec3::Y * def.keel_below_origin_m)
+            .with_rotation(turn)
+            .with_scale(Vec3::splat(def.model_scale));
         let glb = actor.glb.clone().unwrap_or_else(|| def.glb.clone());
         let model: Handle<Scene> = assets.load(GltfAssetLabel::Scene(0).from_asset(glb));
         if let Some(state) = state.as_mut() {

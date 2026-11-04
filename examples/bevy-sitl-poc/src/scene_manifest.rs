@@ -11,6 +11,7 @@
 
 use std::collections::BTreeMap;
 
+use bevy::math::Vec2;
 use bevy::prelude::Transform;
 use serde::Deserialize;
 
@@ -18,6 +19,9 @@ mod buildings;
 mod environment;
 mod nature;
 mod people;
+mod water;
+
+pub use water::{surface_at, surfaces, Surface};
 
 pub use buildings::{BuildingFireDef, DistrictDef};
 pub use environment::{Environment, PbrTextureSet};
@@ -109,6 +113,9 @@ pub struct BoxElement {
     pub scatter: Option<Scatter>,
     /// Ground-truth kind, when a region query may target this box.
     pub ground_truth: Option<String>,
+    /// A water surface: vessels float on its top.
+    #[serde(default)]
+    pub water: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -341,6 +348,7 @@ impl SceneManifest {
         manifest.validate_behaviours()?;
         manifest.validate_vehicles()?;
         manifest.validate_people()?;
+        manifest.validate_vessels()?;
         Ok(manifest)
     }
 

@@ -225,7 +225,8 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
   districts side by side, no fire) and `downtown-blaze` (a downtown block whose glass tower
   burns on floor 3 from t = 5 s in a 5 m/s westerly, a neighbour 5 m downwind),
   `street-traffic` (the block with cars on the avenue, a bus and a truck on the cross street, a
-  parked car and a six-carriage freight train on a rail line along the west edge) and
+  parked car and a six-carriage freight train on a rail line along the west edge),
+  `flood-rescue` (two rescue boats shuttling along a flooded channel) and
   `earthquake-survivors` (the block with a survivor lying, one sitting on rubble and one waving,
   and two rescuers walking between them).
 - **Weather and fire**: `set_weather` sets rain (mm/h), fog visibility and the one wind (where it
@@ -250,10 +251,11 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
   [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *The figure*. Node kinds, the tick and the recorded tracks:
   [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *Behaviour trees*.
 - **Vehicles**: `add_element` takes a `vehicle` (`VehicleElement`): `id`, `vehicle_class`
-  (`car`, `bus`, `truck` or `train`), a start `position`, `yaw_deg`, `cars` (trains only) and an
+  (`car`, `bus`, `truck`, `train`, `boat` or `ship`), a start `position`, `yaw_deg`, `cars` (trains only) and an
   optional drive as a behaviour tree (`behaviour_json`, the people's nodes; parked when empty).
-  An unknown class, carriages on anything but a train, or an invalid tree is `INVALID_ARGUMENT`
-  with the reason. The behaviour tools take a vehicle's id as a target too. Class files, the
+  An unknown class, carriages on anything but a train, a vessel off a `water: true` box (or a
+  road vehicle on one), or an invalid tree is `INVALID_ARGUMENT` with the reason. A `box` takes
+  `water` to make it a surface vessels float on. The behaviour tools take a vehicle's id as a target too. Class files, the
   driving limits and the recorded tracks:
   [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *Vehicles*.
 - **Buildings and building fires**: preset names follow Overture's `facade_material` /

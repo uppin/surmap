@@ -4,6 +4,7 @@ use super::*;
 use bevy::math::Vec3;
 
 mod nature;
+mod water;
 
 const A_MANIFEST: &str = r#"{
     "version": 1,

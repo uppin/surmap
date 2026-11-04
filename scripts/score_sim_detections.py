@@ -3,7 +3,8 @@
 
 Each profile's CPU twin (fetched by `scripts/fetch_coral_model.py`) runs over the capture's
 left frames — the colour ones when the capture was recorded with `--colour` — and every
-ground-truth `car` / `person` box, and every tracked `car` / `bus` / `truck` / `train`, is
+ground-truth `car` / `person` box, and every tracked `car` / `bus` / `truck` / `train` /
+`boat` / `ship`, is
 projected into each frame (`surmap.simulation.detection_eval`). Printed per profile:
 object-frames each kind present was in view vs. found (a vehicle's `+n` is how many more were
 covered by a detection with another vehicle's label), and false positives by label.

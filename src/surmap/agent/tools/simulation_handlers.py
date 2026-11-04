@@ -230,6 +230,8 @@ def _element(request: pb.AddElementRequest) -> dict[str, object]:
         }
         if box.HasField("ground_truth_kind"):
             element["ground_truth"] = box.ground_truth_kind
+        if box.water:
+            element["water"] = True
         return element
     if which == "building":
         b = request.building

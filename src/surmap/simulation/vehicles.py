@@ -14,7 +14,7 @@ from surmap.simulation.manifest_checks import (
     object_list,
 )
 
-VEHICLE_CLASSES = ("car", "bus", "truck", "train")
+VEHICLE_CLASSES = ("car", "bus", "truck", "train", "boat", "ship")
 GLTF_SUFFIXES = (".glb", ".gltf")
 # The bus model is white; a school bus is yellow, which the on-board detectors read as a bus far
 # more often than white or red (docs/simulation/bevy-simulation.md § On-board detectors).

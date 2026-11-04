@@ -151,7 +151,7 @@ class AddModelRequest(_message.Message):
     def __init__(self, scenario_id: _Optional[str] = ..., asset_ref: _Optional[str] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., yaw_deg: _Optional[float] = ..., scale: _Optional[float] = ..., collider: _Optional[_Union[Collider, str]] = ..., ground_truth_kind: _Optional[str] = ..., element_id: _Optional[str] = ...) -> None: ...
 
 class BoxElement(_message.Message):
-    __slots__ = ("id", "material", "size", "position", "yaw_deg", "collider", "ground_truth_kind")
+    __slots__ = ("id", "material", "size", "position", "yaw_deg", "collider", "ground_truth_kind", "water")
     ID_FIELD_NUMBER: _ClassVar[int]
     MATERIAL_FIELD_NUMBER: _ClassVar[int]
     SIZE_FIELD_NUMBER: _ClassVar[int]
@@ -159,6 +159,7 @@ class BoxElement(_message.Message):
     YAW_DEG_FIELD_NUMBER: _ClassVar[int]
     COLLIDER_FIELD_NUMBER: _ClassVar[int]
     GROUND_TRUTH_KIND_FIELD_NUMBER: _ClassVar[int]
+    WATER_FIELD_NUMBER: _ClassVar[int]
     id: str
     material: str
     size: EnuPoint
@@ -166,7 +167,8 @@ class BoxElement(_message.Message):
     yaw_deg: float
     collider: bool
     ground_truth_kind: str
-    def __init__(self, id: _Optional[str] = ..., material: _Optional[str] = ..., size: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., yaw_deg: _Optional[float] = ..., collider: bool = ..., ground_truth_kind: _Optional[str] = ...) -> None: ...
+    water: bool
+    def __init__(self, id: _Optional[str] = ..., material: _Optional[str] = ..., size: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., position: _Optional[_Union[EnuPoint, _Mapping[str, _Any]]] = ..., yaw_deg: _Optional[float] = ..., collider: bool = ..., ground_truth_kind: _Optional[str] = ..., water: bool = ...) -> None: ...
 
 class BuildingElement(_message.Message):
     __slots__ = ("id", "material", "size", "position", "yaw_deg", "windows")

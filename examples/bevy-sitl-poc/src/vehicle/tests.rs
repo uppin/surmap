@@ -255,3 +255,47 @@ fn carriages_follow_the_locomotive_along_its_track_through_a_bend() {
         assert!(behind <= 14.0 * (k as f32 + 1.0) + 1e-3, "carriage {k} is {behind} m behind");
     }
 }
+
+#[test]
+fn every_shipped_vessel_class_floats_on_water() {
+    for class in ["boat", "ship"] {
+        let path = format!("{}/assets/vehicle/{class}.vehicle.json", env!("CARGO_MANIFEST_DIR"));
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+
+        let def = VehicleDef::from_json(&text).unwrap_or_else(|e| panic!("{path}: {e}"));
+
+        assert_eq!(def.medium, Medium::Water, "{path}");
+        assert!(def.draft_m.is_some() && def.wave_response.is_some(), "{path}");
+    }
+}
+
+#[test]
+fn a_vessel_class_without_a_wave_response_is_refused() {
+    let raft = A_CAR.replace("\"turn_rate_deg_s\": 45.0}", "\"turn_rate_deg_s\": 45.0, \"medium\": \"water\", \"draft_m\": 0.3}");
+
+    assert!(VehicleDef::from_json(&raft).unwrap_err().contains("wave_response"));
+}
+
+#[test]
+fn the_scene_loads_the_class_files_of_the_vessels_too() {
+    let loaded = scene::loaded_classes();
+
+    assert!(loaded.contains(&VehicleClass::Boat) && loaded.contains(&VehicleClass::Ship), "{loaded:?}");
+}
+
+#[test]
+fn a_vessel_class_file_puts_its_keel_at_its_draft_and_its_bow_forward() {
+    // Measured from the class glTF: the ship's lowest hull point is 6.28 m below its origin
+    // (node scale 100 and model_scale 3.9 applied), and its bow, the narrow end, is at -X, which a
+    // model_yaw of 270 turns to the forward (-Z). The boat's bow is at +Z (model_yaw 180) and its
+    // keel 0.016 m below its origin.
+    for (class, keel_m, yaw_deg) in [("boat", 0.016, 180.0), ("ship", 6.28, 270.0)] {
+        let path = format!("{}/assets/vehicle/{class}.vehicle.json", env!("CARGO_MANIFEST_DIR"));
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let json: serde_json::Value = serde_json::from_str(&text).expect("json");
+
+        assert_eq!(json["model_yaw_deg"].as_f64(), Some(yaw_deg), "{class} bow");
+        let keel = json["keel_below_origin_m"].as_f64().unwrap_or_else(|| panic!("{class} keel"));
+        assert!((keel - keel_m).abs() < 0.01, "{class} keel {keel}");
+    }
+}

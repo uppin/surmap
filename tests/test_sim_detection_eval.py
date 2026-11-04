@@ -1,5 +1,6 @@
 """Scoring on-board detections against a simulation capture's ground truth."""
 
+import json
 import math
 from pathlib import Path
 from typing import NamedTuple
@@ -12,6 +13,8 @@ from surmap.simulation.bevy_capture import BevyCapture, CapturedFrame
 from surmap.simulation.bevy_wire import GroundTruthBox
 from surmap.simulation.calibration import StereoCalibrationSpec
 from surmap.simulation.detection_eval import (
+    COCO_LABELS,
+    VEHICLE_FOOTPRINT_M,
     ExpectedObject,
     detect_capture,
     score_capture,
@@ -19,6 +22,7 @@ from surmap.simulation.detection_eval import (
     visible_objects,
 )
 from surmap.types import Detection, Pose, StereoFramePair, Vec3
+from tests.sim_fakes import POC_ASSETS
 
 HALF_SQRT2 = math.sqrt(2.0) / 2.0
 
@@ -414,3 +418,43 @@ def test_a_capture_report_counts_each_persons_object_frames_by_the_pose_they_hol
         "standing": (2, 0),
         "sitting": (2, 1),
     }
+
+
+def test_a_boat_and_a_ship_are_both_kinds_a_boat_label_names() -> None:
+    assert COCO_LABELS["boat"] == frozenset({"boat"})
+    assert COCO_LABELS["ship"] == frozenset({"boat"})
+
+
+def test_the_vessel_footprints_are_the_sizes_their_class_files_declare() -> None:
+    for kind in ("boat", "ship"):
+        text = (POC_ASSETS / "vehicle" / f"{kind}.vehicle.json").read_text(encoding="utf-8")
+        declared = json.loads(text)
+
+        assert VEHICLE_FOOTPRINT_M[kind] == (
+            declared["length_m"],
+            declared["width_m"],
+            declared["height_m"],
+        )
+
+
+def test_a_boat_that_only_has_a_track_is_expected_where_the_track_puts_it() -> None:
+    boat = expected_vehicle("boat", heading_deg=90.0)
+
+    assert (boat.id, boat.kind) == ("boat-1", "boat")
+
+
+def test_a_boat_is_found_by_a_boat_label_but_not_by_a_truck_label() -> None:
+    boat = expected_vehicle("boat", heading_deg=90.0)
+
+    as_truck = score_frame((boat,), (a_detection("truck", boat.box_xyxy),))
+    as_boat = score_frame((boat,), (a_detection("boat", boat.box_xyxy),))
+
+    assert (as_truck.hit_ids, as_boat.hit_ids) == (frozenset(), frozenset({"boat-1"}))
+
+
+def test_a_ship_is_found_by_a_boat_label() -> None:
+    ship = expected_vehicle("ship", heading_deg=90.0, metres=80.0)
+
+    as_boat = score_frame((ship,), (a_detection("boat", ship.box_xyxy),))
+
+    assert as_boat.hit_ids == frozenset({"ship-1"})

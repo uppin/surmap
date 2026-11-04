@@ -26,9 +26,28 @@ pub enum VehicleClass {
     Bus,
     Truck,
     Train,
+    /// A small craft on water: rescue boats, dinghies.
+    Boat,
+    /// A large vessel on water.
+    Ship,
+}
+
+/// What a class moves on.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Medium {
+    #[default]
+    Road,
+    Rail,
+    Water,
 }
 
 impl VehicleClass {
+    /// Boats and ships float on water: a `water` box carries them, and no other class may start there.
+    pub fn is_vessel(self) -> bool {
+        matches!(self, Self::Boat | Self::Ship)
+    }
+
     /// The class file, relative to the asset root.
     pub fn file(self) -> String {
         format!("vehicle/{}.vehicle.json", self.kind())
@@ -41,6 +60,8 @@ impl VehicleClass {
             Self::Bus => "bus",
             Self::Truck => "truck",
             Self::Train => "train",
+            Self::Boat => "boat",
+            Self::Ship => "ship",
         }
     }
 }
@@ -71,11 +92,24 @@ pub struct VehicleDef {
     /// pack whose units are not metres). 1 for a model already in metres.
     #[serde(default = "unit_scale")]
     pub model_scale: f32,
+    /// How far the model's lowest point (its keel) lies below its origin, m after scaling. A
+    /// vessel's origin sits at its waterline's draft, so the model is lifted by this much.
+    #[serde(default)]
+    pub keel_below_origin_m: f32,
     /// Trains: the carriage glTF and the distance between consecutive carriages' centres.
     #[serde(default)]
     pub carriage_glb: Option<String>,
     #[serde(default)]
     pub carriage_spacing_m: Option<f32>,
+    /// What the class moves on; vessels float on `water` boxes.
+    #[serde(default)]
+    pub medium: Medium,
+    /// Vessels: how deep the hull sits below the surface, and how strongly it answers waves
+    /// (1 for a small boat, 0.1 for a ship); both required on a water class.
+    #[serde(default)]
+    pub draft_m: Option<f32>,
+    #[serde(default)]
+    pub wave_response: Option<f32>,
 }
 
 fn unit_scale() -> f32 {
@@ -105,6 +139,14 @@ impl VehicleDef {
         }
         if def.carriage_glb.is_some() && !def.carriage_spacing_m.is_some_and(|s| s > 0.0) {
             return Err("carriage_spacing_m must be > 0 when carriage_glb names a carriage".into());
+        }
+        if def.medium == Medium::Water {
+            if !def.draft_m.is_some_and(|d| d > 0.0) {
+                return Err("draft_m must be > 0 for a class that floats on water".into());
+            }
+            if !def.wave_response.is_some_and(|r| r > 0.0) {
+                return Err("wave_response must be > 0 for a class that floats on water".into());
+            }
         }
         for path in std::iter::once(&def.glb).chain(def.carriage_glb.iter()) {
             if !(path.ends_with(".glb") || path.ends_with(".gltf")) {
