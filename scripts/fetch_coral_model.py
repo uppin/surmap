@@ -6,7 +6,10 @@ downloads the two pinned EfficientDet-Lite0 INT8 artifacts (the
 Edge-TPU-compiled one for CM5 hardware, the CPU twin for CI/local
 proof — see docs/coral-edge-tpu-model-spike.md for why the detector
 is Coral-native rather than a Meta model) plus the COCO labels, and
-verifies each by size + SHA-256.
+verifies each by size + SHA-256. They are downloaded from this repo's
+`fixtures-coral-v1` release, a copy of Google's `google-coral/test_data`
+(whose raw.githubusercontent.com reads timed out in CI); `--upstream`
+downloads them from Google instead, to refresh that release.
 
 Prepared output lands in `tests/fixtures/coral_model/` (git-ignored):
 
@@ -25,7 +28,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = REPO_ROOT / "tests" / "fixtures" / "coral_model"
-BASE_URL = "https://raw.githubusercontent.com/google-coral/test_data/master"
+# The artifacts, hosted on this repo's releases so CI never depends on a third-party raw host.
+RELEASE_URL = "https://github.com/uppin/surmap/releases/download/fixtures-coral-v1"
+UPSTREAM_URL = "https://raw.githubusercontent.com/google-coral/test_data/master"
 
 # (filename, size, sha256) — pinned; the hash, not the host, is trusted.
 # Covers every profile in surmap.detection.profiles.MODEL_PROFILES.
@@ -72,14 +77,14 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def prepare(output: Path) -> Path:
+def prepare(output: Path, base_url: str = RELEASE_URL) -> Path:
     output.mkdir(parents=True, exist_ok=True)
     files = []
     for name, size, sha256 in ARTIFACTS:
         target = output / name
         if not (target.is_file() and target.stat().st_size == size and _sha256(target) == sha256):
             print(f"downloading {name} ({size / 1e6:.2f} MB)")
-            with urllib.request.urlopen(f"{BASE_URL}/{name}", timeout=120) as response:
+            with urllib.request.urlopen(f"{base_url}/{name}", timeout=120) as response:
                 target.write_bytes(response.read())
         if target.stat().st_size != size or _sha256(target) != sha256:
             raise ValueError(f"{name} failed size/SHA-256 verification; refusing to use it")
@@ -98,8 +103,13 @@ def prepare(output: Path) -> Path:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--upstream",
+        action="store_true",
+        help="download from google-coral/test_data instead of this repo's release",
+    )
     args = parser.parse_args(argv)
-    prepare(args.output)
+    prepare(args.output, UPSTREAM_URL if args.upstream else RELEASE_URL)
     return 0
 
 

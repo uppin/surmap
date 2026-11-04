@@ -276,8 +276,8 @@ carry cache keys, so an imported run is never a keyed cache.
 
 ## Map tools and layers (`surmap.agent.tools.map_handlers`, `map_layers`)
 
-`MapTools` edits a display scene in a `MapSceneStore` (in-memory, per
-`scene_id`, `default` when unnamed): placed GLB shapes (`geometry_uri` +
+`MapTools` edits a display scene in a `MapSceneStore` (per `scene_id`, `default` when unnamed;
+saved to `<state-dir>/map-scenes.sqlite` on every change, so a restart shows the map as it was): placed GLB shapes (`geometry_uri` +
 lon/lat position, rotation, scale), the camera, and drawn route paths
 (display only — never a flight plan; to fly a *simulated* drone, use the fleet tools below).
 Every change bumps the scene
@@ -361,8 +361,10 @@ serves them. Mounted when the simulation's assets are found (`--sim-assets`, def
   share the scenario's id namespace, so a taken drone id is refused, and `remove_element` refuses
   a drone id. A pad inside a building or solid box below its top, on water, outside ±500 m / 0–60 m
   up, within 6 m of another nest, or past 8 nests is `INVALID_ARGUMENT` naming the nest and the
-  rule. The rules and the pad: [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md),
-  *Drone nests*.
+  rule. A scenario has no drone of its own, only its nests' drones. The scene-building skill
+  therefore makes a nest mandatory and places one one-drone nest by default, wherever the
+  subagent judges best. The rules and the pad:
+  [docs/simulation/bevy-simulation.md](simulation/bevy-simulation.md), *Drone nests*.
 - **Buildings and building fires**: preset names follow Overture's `facade_material` /
   `roof_material` vocabulary (the map's `overture-buildings` layer; no geometry is imported).
   `list_building_presets` returns the facade, roof and district names — shipped, plus any files
@@ -911,9 +913,10 @@ uv run python -m surmap.agent --sam-fake \
 | `--host` | `127.0.0.1` | bind address — loopback unless you say otherwise; the server has no auth |
 | `--port` | `8780` | `0` picks a free port; the bound one is printed as `survey agent on http://…` |
 | `--model` | `meta:<DEFAULT_AGENT_META_MODEL>` | default model id (`ListModels` lists the rest) |
-| `--history-db` | demo default | demo run history DB |
-| `--conversations-db` | in memory | chat conversations (history, model, replay) in SQLite; survives a restart |
-| `--cache-dir` | demo default | demo scene cache; object GLBs go to `<cache-dir>/agent-geometry` |
+| `--state-dir` | `--cache-dir`, else `$SURMAP_DEMO_CACHE_DIR` or `~/.cache/surmap` | where the agent's state persists, so a restart brings the chat back as it was: `conversations.sqlite`, `map-scenes.sqlite`, `demo-history.db`, `simulation/`, `agent-tool-outputs/`, `agent-geometry/`, `usage.jsonl`; each store's own flag wins. `scripts/dev.sh` uses the gitignored `<repo>/tmp/agent` |
+| `--history-db` | `<state-dir>/demo-history.db` | demo run history DB |
+| `--conversations-db` | `<state-dir>/conversations.sqlite` | chat conversations (history, model, replay) in SQLite |
+| `--cache-dir` | demo default | demo dataset cache (downloads, prepared scenes) |
 | `--sam-fake` | off | fake centred-box SAM; one of it or `--station` is required |
 | `--station` | none | `modal` (the deployed station app; needs `uv sync --extra modal` and a Modal token) or `stub`: SAM runs on the station, which is up on first use and down when idle |
 | `--station-app` | `surmap-station` | the station's deployed Modal app |
@@ -923,10 +926,14 @@ uv run python -m surmap.agent --sam-fake \
 | `--web-dist` | none | a built chat page (`cd web/agent-chat && yarn build` → `dist/`) served at `/` |
 | `--coral-model-dir` | `$SURMAP_CORAL_MODEL_DIR` | prepared Coral model dir (`scripts/fetch_coral_model.py`); without one no on-board model is available |
 | `--coral-model` | `efficientdet-lite0` | on-board model a run uses when the agent names none; `none` for no on-board model |
-| `--sim-dir` | `<cache>/simulation` | simulation store: `simulation.sqlite` and the asset `library/` |
+| `--sim-dir` | `<state-dir>/simulation` | simulation store: `simulation.sqlite` and the asset `library/` |
 | `--sim-assets` | `examples/bevy-sitl-poc/assets` | the simulation's own assets; simulation tools are off when absent |
 | `--sim-dist` | none | a `trunk build` output served at `/sim/` |
 | `--bevy-bridge-port` | none | serve the stereo bridge a `?bridge=ws://…` simulation page streams its active drone to; each drone gets its own RTAB-Map session and its own video of the agent's SAM (the station's, else the fake with `--sam-fake`), read back with `drone_map_status` |
+
+The deployed agent on Modal (`surmap-agent`, [modal.md](modal.md)) passes `--sim-assets` and
+`--sim-dist` at the image's copies of the PoC's assets and `trunk build`, so its simulation tools,
+the chat's preview and the `/sim/fleet` link work there; it runs no `--bevy-bridge-port` yet.
 
 **Access code** (`surmap.agent.server.access`). With `SURMAP_AGENT_ACCESS_CODE` set, the agent is
 behind a shared pass code: `POST /auth/session` with `{"code": …}` answers
@@ -985,9 +992,11 @@ their conversation in the `surmap-conversation-id` header.
   `src/surmap/docs/todo/2026-11-03-agent-tool-image-parts.md`.
 - **`WatchConversation` before the first turn is `NOT_FOUND`** — open the
   watch after the conversation's first `StreamTurn`.
-- Conversations live in memory for the process lifetime, unless `--conversations-db`
-  names a SQLite file: then their history, model and replay survive a restart (on Modal,
-  `/cache/conversations.sqlite` on the agent's Volume). Running turns and jobs never do.
+- Conversations — history, model and replay — are kept in `<state-dir>/conversations.sqlite`
+  (or `--conversations-db`) and survive a restart (on Modal, `/cache/conversations.sqlite` on
+  the agent's Volume); so do the map scene, runs, scenarios and saved tool outputs beside it.
+  Running turns and jobs never do. Only an `AgentServerConfig` built with no state dir (tests,
+  embedders) keeps conversations and the map scene in memory.
 
 ## Server logs (`surmap.agent.event_log`)
 

@@ -19,7 +19,9 @@ from surmap.survey.modal_hosting import (
     AGENT_CONVERSATIONS_DB,
     AGENT_HISTORY_DB,
     AGENT_PORT,
+    AGENT_SIM_ASSETS,
     AGENT_SIM_DIR,
+    AGENT_SIM_PAGE,
     AGENT_WEB_DIST,
     CM5_PORT,
     SAM3_PACKAGE,
@@ -288,3 +290,35 @@ def test_the_agent_app_is_one_cpu_web_server_holding_its_secrets() -> None:
     assert isinstance(web_server.args[0], ast.Name) and web_server.args[0].id == "AGENT_PORT"
     text = AGENT_APP.read_text(encoding="utf-8")
     assert "from_name(AGENT_SECRET)" in text and "from_name(SURVEY_SECRET)" in text
+
+
+def test_the_agent_command_serves_the_simulation_page_and_its_assets_from_the_image() -> None:
+    # Given the command the agent app runs, parsed by the agent's own CLI
+    args = agent_parser().parse_args(agent_command()[3:])
+
+    # Then the simulation rig is on (its assets are where the image puts them) and the built
+    # page is served at /sim/, so the chat's preview and the simulation tools work deployed
+    assert args.sim_assets == Path(AGENT_SIM_ASSETS)
+    assert args.sim_dist == Path(AGENT_SIM_PAGE)
+
+
+def test_the_agent_image_carries_the_built_simulation_page_and_its_assets() -> None:
+    # Given the agent app's image chain
+    steps = image_steps(AGENT_APP)
+
+    # Then it adds the PoC's trunk build and its assets (with the fetched pinned files) at the
+    # paths the agent command names
+    page = steps[step_named(steps, "add_local_dir", "'examples/bevy-sitl-poc/dist'")]
+    assets = steps[step_named(steps, "add_local_dir", "'examples/bevy-sitl-poc/assets'")]
+    assert ast.unparse(page.args[1]) == "AGENT_SIM_PAGE"
+    assert ast.unparse(assets.args[1]) == "AGENT_SIM_ASSETS"
+
+
+def test_the_agent_app_checks_the_simulation_bundle_where_it_is_deployed_only() -> None:
+    # Given the agent app file
+    text = AGENT_APP.read_text(encoding="utf-8")
+
+    # Then the deploy refuses a stale or missing simulation build, and the container (which
+    # imports the same file without the PoC on disk) skips the check
+    assert "if modal.is_local():" in text
+    assert 'check_sim_bundle(Path("examples/bevy-sitl-poc"))' in text

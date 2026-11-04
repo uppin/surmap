@@ -1,5 +1,5 @@
 import { createRouterTransport } from "@connectrpc/connect";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatService, type TurnEvent } from "@/gen/surmap/agent/v1/chat_pb";
 import { AgentJobs } from "@/gen/surmap/agent/v1/jobs_pb";
 import { jobHandle, aConversation } from "@/test-support/turn-events";
@@ -62,7 +62,7 @@ function portOverFakeServer(options: FakeServerOptions = {}) {
       },
     });
   });
-  return { port: createConnectChatPort(transport), received };
+  return { port: createConnectChatPort(transport), received, transport };
 }
 
 async function collect(stream: AsyncIterable<TurnEvent>): Promise<TurnEvent[]> {
@@ -157,5 +157,43 @@ describe("Connect ChatPort", () => {
     const events = await server.port.getConversation("conv-1");
 
     expect(events.map((event) => event.seq)).toEqual([1n, 2n]);
+  });
+
+  describe("the live drone map", () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    /** `fetch` answering `status` with `body`, recording the URL and headers it was asked with. */
+    function stubFetch(status: number, body: unknown = null) {
+      const asked: { url: string; authorization: string | null }[] = [];
+      vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+        asked.push({ url, authorization: new Headers(init?.headers).get("authorization") });
+        return new Response(body === null ? null : JSON.stringify(body), { status });
+      });
+      return asked;
+    }
+
+    it("asks the agent server for the scenario's map, with the session token", async () => {
+      const asked = stubFetch(200, { drone_id: "nest-sw-d1", phase: "cruising", points: 812, png: "iVBOR" });
+      const port = createConnectChatPort(portOverFakeServer().transport, "http://station.test/", () => "tok-1");
+
+      const map = await port.getDroneMap("downtown blaze");
+
+      expect(map).toEqual({ droneId: "nest-sw-d1", phase: "cruising", points: 812, png: "iVBOR" });
+      expect(asked).toEqual([{ url: "http://station.test/sim/map/downtown%20blaze", authorization: "Bearer tok-1" }]);
+    });
+
+    it("has no map while no drone of the scenario flies", async () => {
+      stubFetch(204);
+      const port = createConnectChatPort(portOverFakeServer().transport, "http://station.test");
+
+      expect(await port.getDroneMap("downtown-blaze")).toBeNull();
+    });
+
+    it("fails when the server refuses", async () => {
+      stubFetch(404);
+      const port = createConnectChatPort(portOverFakeServer().transport, "http://station.test");
+
+      await expect(port.getDroneMap("no-such-scene")).rejects.toThrow("404");
+    });
   });
 });

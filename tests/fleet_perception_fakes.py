@@ -21,6 +21,7 @@ from surmap.detection.tracker import TrackedDetection
 from surmap.simulation.bevy_wire import BevyPair, BridgeStatus
 from surmap.simulation.fleet.perception import DetectorChoice, FleetPerception, PerceptionRegistry
 from surmap.slam.stream_protocol import Keypoint, OdomUpdate, Rectification
+from surmap.slam.streaming import MapCloud
 from surmap.survey.sam import RawFrame
 from surmap.types import Pose, StereoFramePair, Vec3
 
@@ -114,9 +115,10 @@ class MapCrashed(RuntimeError):
 
 
 class FakeBackend:
-    """One drone's map: records its frames, poses every one, one keyframe per frame; with
-    `crashes_on`, its `crashes_on`-th frame raises `MapCrashed` instead. Each frame's odometry
-    tracks `keypoints` (rectified pixels), rectified by `rectification`."""
+    """One drone's map: records its frames, poses every one, one keyframe and one map point per
+    frame; with `crashes_on`, its `crashes_on`-th frame raises `MapCrashed` instead. Each frame's
+    odometry tracks `keypoints` (rectified pixels), rectified by `rectification`; with `posing`
+    off, no odometry comes back at all."""
 
     def __init__(
         self,
@@ -124,8 +126,11 @@ class FakeBackend:
         crashes_on: int | None = None,
         keypoints: tuple[Keypoint, ...] = (),
         rectification: Rectification | None = None,
+        posing: bool = True,
     ) -> None:
         self.frames: list[StereoFramePair] = []
+        self.last_pose: Pose | None = None
+        self._posing = posing
         self.keypoints = keypoints
         self._rectification = rectification
         self.closed = False
@@ -153,7 +158,15 @@ class FakeBackend:
         if len(self.frames) + 1 == self._crashes_on:
             raise MapCrashed(f"the map crashed on frame {frame.frame_id}")
         self.frames.append(frame)
-        self._updates.append(a_posed_update(frame.frame_id, self.keypoints))
+        if self._posing:
+            update = a_posed_update(frame.frame_id, self.keypoints)
+            self.last_pose = update.pose
+            self._updates.append(update)
+
+    def map_cloud(self) -> MapCloud:
+        """One grey point per frame, `frame_id` metres along z."""
+        points = np.array([(0.0, 0.0, float(f)) for f in self.frame_ids], np.float32).reshape(-1, 3)
+        return MapCloud(points, np.full((len(points), 3), 160, np.uint8))
 
     def poll_updates(self) -> list[OdomUpdate]:
         updates, self._updates = self._updates, []
@@ -167,7 +180,7 @@ class FakeBackend:
 class RecordingBackends:
     """The backend factory: a new `FakeBackend` per call, remembering the calibration;
     `crash_on` maps the n-th map built (from 1) to the frame of its own it crashes on; every map
-    tracks `keypoints` under `rectification`."""
+    tracks `keypoints` under `rectification`, posing its frames unless `posing` is off."""
 
     def __init__(
         self,
@@ -175,8 +188,10 @@ class RecordingBackends:
         crash_on: Mapping[int, int] | None = None,
         keypoints: tuple[Keypoint, ...] = (),
         rectification: Rectification | None = None,
+        posing: bool = True,
     ) -> None:
         self.built: list[FakeBackend] = []
+        self._posing = posing
         self._keypoints = keypoints
         self._rectification = rectification
         self.calibrations: list[tuple[int, int]] = []
@@ -189,6 +204,7 @@ class RecordingBackends:
             self._crash_on.get(len(self.built) + 1),
             self._keypoints,
             self._rectification,
+            self._posing,
         )
         self.built.append(backend)
         self.calibrations.append((width, height))
@@ -385,11 +401,12 @@ def a_perception(
     crash_on: Mapping[int, int] | None = None,
     keypoints: tuple[Keypoint, ...] = (),
     rectification: Rectification | None = None,
+    posing: bool = True,
 ) -> PerceptionRig:
     """A connection with nothing received yet, recording every drone's capture (`crash_on`,
-    `keypoints`, `rectification`: see `RecordingBackends`)."""
+    `keypoints`, `rectification`, `posing`: see `RecordingBackends`)."""
     events: list[str] = []
-    backends = RecordingBackends(events, crash_on, keypoints, rectification)
+    backends = RecordingBackends(events, crash_on, keypoints, rectification, posing)
     sinks = RecordingSinks(events)
     recorders = RecordingRecorders(events)
     shared = registry if registry is not None else PerceptionRegistry()

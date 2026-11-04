@@ -1,5 +1,6 @@
 """Streaming backend tests with a fake process (no Docker)."""
 
+import gc
 import io
 import json
 import queue
@@ -7,6 +8,7 @@ import struct
 import sys
 import threading
 import time
+import weakref
 from collections.abc import Callable
 from pathlib import Path
 
@@ -745,3 +747,32 @@ def test_odometry_restarts_after_losing_track() -> None:
     params = {argv[i + 1] for i, arg in enumerate(argv) if arg == "--Param"}
     assert "Odom/ResetCountdown=1" in params
     assert "Rtabmap/DetectionRate=2" in params
+
+
+def _written_pairs(fake: FakeProcess, count: int) -> bool:
+    """Waits until the sidecar has been written `count` pairs past its hello."""
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if fake.written.count(b'"type":"pair"') >= count:
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def test_a_pair_sent_to_the_sidecar_is_not_kept_by_the_backend() -> None:
+    # Given a backend that has written two pairs to its sidecar
+    holder: list[FakeProcess] = []
+    backend = _backend(holder)
+    first = _frame(1)
+    sent = weakref.ref(first)
+    backend.process_frame(first)
+    backend.process_frame(_frame(2))
+    assert _written_pairs(holder[0], 2)
+
+    # When the caller lets go of the first pair
+    del first
+    gc.collect()
+
+    # Then nothing in the backend still holds its images
+    assert sent() is None
+    backend.close()

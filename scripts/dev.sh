@@ -16,6 +16,10 @@
 #               streaming RTAB-Map image is made ready first (Docker; built once per source)
 #   --dry-run   print each service's command and exit
 #
+# The agent keeps its state (conversations, map scenes, runs, scenarios, tool outputs) in
+# the gitignored <repo>/tmp/agent, so a restart brings the chat back as it was; downloaded
+# datasets stay in the shared cache (~/.cache/surmap).
+#
 # Environment:
 #   SURMAP_DEV_MODEL         agent model id (default: the agent's own default)
 #   SURMAP_DEV_CM5_PORT      CM5 server port (default 8080)
@@ -36,7 +40,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 usage() {
-  sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 MODEL="${SURMAP_DEV_MODEL:-}"
@@ -63,7 +67,7 @@ STOP_TIMEOUT="${SURMAP_DEV_STOP_TIMEOUT:-5}"
 BRIDGE_PORT="${SURMAP_DEV_BRIDGE_PORT:-8782}"
 RTABMAP_INIT_CMD="${SURMAP_DEV_RTABMAP_INIT_CMD:-uv run python scripts/build_rtabmap_stream.py}"
 
-AGENT_ARGS="--sam-fake"
+AGENT_ARGS="--sam-fake --state-dir $ROOT/tmp/agent"
 [ -n "$MODEL" ] && AGENT_ARGS="$AGENT_ARGS --model $MODEL"
 CHAT_ENV=""
 if [ "$BRIDGE" = 1 ]; then

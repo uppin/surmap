@@ -86,7 +86,9 @@ prerequisites before anything starts: `uv` and `yarn` on PATH, the chat UI's
 `/sim/` — rebuilt with `trunk build --public-url /sim/` when the build is missing or
 was made for another prefix, since root-addressed assets 404 under `/sim/` and leave
 a black canvas. `SURMAP_DEV_SIM_DIST` and `SURMAP_DEV_SIM_FETCH_CMD` override the
-page location and the fetch command.
+page location and the fetch command. That build is trunk's dev profile, for incremental
+rebuilds: `Cargo.toml` builds every dependency (Bevy, Rapier, Hanabi, Feronia) at
+`opt-level = 3` in it and only the PoC's own crate at 1, so the page runs at speed.
 
 ## Controls
 
@@ -835,9 +837,14 @@ models were not fetched there (`aerial_asphalt_01_diff_2k.jpg`, `person/wave.glb
 
 When a scene has nests, each nest's drones spawn docked on its pad (`fleet.rs::spawn_fleet`, one
 body per drone id, tagged `FleetDrone { id }`, kinematic) and the legacy keyboard `Drone` is
-despawned. A kinematic autopilot flies them from a simulation-time-stamped command log. Scenes
-without nests are unchanged: one legacy drone, keyboard flight, and the `survey-loop` for stills
-and recordings.
+despawned. A kinematic autopilot flies them from a simulation-time-stamped command log.
+
+A station scenario (`--scenario` / `?scenario=`) flown live has no legacy drone at all
+(`RunMode::has_legacy_drone`): its nests' drones are its only drones, so a scenario the agent
+builds always holds at least one nest. The agent's scene skill makes a nest mandatory and places
+one one-drone nest by default. Only the shipped `scene.json` and scripted `survey-loop` stills and
+recordings keep the legacy drone, with keyboard flight and the `survey-loop` when there are no
+nests.
 
 ### The fleet log (`fleet/log.rs`)
 
@@ -1052,7 +1059,14 @@ drone**. Only the active drone's frames are processed; the other drones keep fly
   one `VideoAsFrameSamDetector` (one video) per drone session; no frame is kept after `detect`
   returns. The bridge runs each connection's `handle` / `close` off the event loop
   (`asyncio.to_thread`) under a per-connection lock, so a slow map start never stalls the agent
-  server and one connection's messages stay in order. The page and the bridge share one origin through `--sim-dist`; there is no
+  server and one connection's messages stay in order.
+- **Nothing waits on a slow station.** A connection's reader never waits on its session
+  (`serve_connection`): it keeps reading the page's socket into a `BridgeMailbox`, which keeps
+  every hello in order and of the pairs only the newest — a pair still waiting when a newer one
+  arrives is skipped. The page's socket therefore never backs up behind RTAB-Map, and a slow map
+  works on the latest frame instead of a queue of old ones. `StreamingRtabmapBackend` keeps only
+  each sent pair's `(frame_id, t_ns)` for `flush`, never its images, so its memory does not grow
+  with the flight. The page and the bridge share one origin through `--sim-dist`; there is no
   separate `serve_bevy_sim.py`.
 - **The page (`fleet/bridge_wasm.rs`, wasm only).** `?bridge=` opens a binary `WebSocket` and
   sends `hello` (camera profile, ground truth, optional `scenario`) at scene ready. Each
@@ -1125,27 +1139,34 @@ opens the full page.
   viewed fleet drone is `Docked` (or, without a fleet, the keyboard drone is not engaged): the
   chase view with its trackpad PTZ. Airborne, a full-window layer shows the drone's left camera
   at its aspect ratio, letterboxed.
-- **Points on their own frame.** With `?bridge=`, each pair the page sends also keeps its left
-  eye's RGBA pixels in `HeldFrames` (12, by `frame_id`). A `status` reply's `odometry` takes the
-  frame it names (dropping older ones) and the newest becomes `FpvFrame`, drawn with its
-  keypoints as dots placed as fractions of the frame, coloured by depth (`depth_colour`, the demo
-  page's ramp on a 1–60 m log scale). The FPV therefore lags the live camera by RTAB-Map's
-  latency, but a point never sits on another frame. Without a bridge the FPV is the live eye.
+- **The live eye, keypoints while fresh.** The FPV is always the live left eye; it never waits
+  on the station. With `?bridge=`, the newest `status` reply's `odometry` is drawn over it while
+  its frame is at most `FRESH_FRAMES` (2, ≤ 200 ms at 10 Hz) behind the last frame sent
+  (`fresh_keypoints`): one transparent overlay image (`keypoint_overlay`), a 5 px dot per
+  keypoint coloured by depth (`depth_colour`, the demo page's ramp on a 1–60 m log scale). A
+  station that falls behind makes the dots disappear, not the view freeze; in fast motion a dot
+  may sit slightly off the live image.
+- **Only what is seen renders.** `preview_renders` (pure): Overview renders the chase view, FPV
+  the left eye (the chase view no longer renders under the opaque FPV), and a frame whose pair
+  the stream reads back (`PairDue`) both eyes too; otherwise the eyes are off. A readback is
+  copied after the same frame's render, so an eye switched on for that frame is read back with
+  it. The full page and unattended runs keep every camera on.
 - **Locally.** `scripts/dev.sh --bridge` makes the streaming RTAB-Map image ready
   (`scripts/build_rtabmap_stream.py`, once per source hash; a failure stops the stack before any
   service starts), runs the agent with `--bevy-bridge-port $SURMAP_DEV_BRIDGE_PORT` (8782) and
   the chat with `VITE_SURMAP_BRIDGE_URL`; the chat also takes `?bridge=`.
-- **On-board detections, labelled.** The bridge stream also holds each reply's `detections` by
-  frame id (`HeldFrames<Vec<DetectedObject>>`, `fleet::stream::parse_detections`) and attaches
-  them to the `FpvFrame` it builds for that frame, so they sit on the same held frame as its
-  keypoints. Each object is outlined, in the demo's SAM cyan, and gets a label card
-  `<label> #<track> <score>%`: `layout_cards` is the demo page's `layoutCards`
+- **On-board detections, labelled, while fresh.** The newest reply's `detections`
+  (`fleet::stream::parse_detections`) follow the keypoints' rule: drawn over the live eye while
+  their frame is at most `FRESH_FRAMES` behind the last frame sent (`fresh_detections`,
+  `FpvDetections`), gone once stale. Each object is outlined in the demo's SAM cyan and gets a
+  label card `<label> #<track> <score>%`: `layout_cards` is the demo page's `layoutCards`
   (`surmap.demo.view_math`) ported — just above the object when free, else the nearest free
   spot (below, beside, then a 4 px grid), never overlapping another card, inside the image,
   smallest objects first — and a leader with a dot at each end joins card and object. Cards
   are laid out in display pixels (Bevy's default font is monospaced, so a card is sized from
-  its glyph count) and drawn as UI text; boxes and leaders are drawn into the frame's pixels
-  (`draw_detections`). Both are redone when the frame or the image's displayed size changes.
+  its glyph count) and drawn as UI text; boxes and leaders go into the keypoint overlay image
+  (`draw_detections`). `show_overlay` redraws both when the keypoints, the detections or the
+  eye's displayed size change.
 
 ### Verified
 
@@ -1154,13 +1175,52 @@ opens the full page.
 chat's `SimulationPane` / `App` tests pass. V4 — a release `trunk build` served by an agent with
 the bridge and the real streaming sidecar, opened in Chrome in preview mode: landed, only the
 overview; after take-off, the FPV with RTAB-Map's keypoints on the held frame.
+
+2026-11-05 (#152, live eye and render gating): V1 — `tests/test_bevy_bridge_slow_station.py`,
+`tests/test_slam_streaming.py` and `preview::tests` failed before and pass; `cargo test` 402
+passed, `cargo check --target wasm32-unknown-unknown` clean, pytest 2631 passed / 38 skipped.
+V3 — the dev profile's flags: `bevy_pbr` `opt-level=1` → `3`, `bevy_sitl_poc` `1` unchanged.
+V4 in the browser (fly, then stop RTAB-Map: the FPV keeps moving) not yet run.
 2026-11-05 (on-board detections): V1 — `tests/test_fleet_perception.py`,
 `tests/test_bevy_wire.py`, `tests/test_agent_fleet_tools.py` (`set_onboard_model` over the
 server rig) and `preview::tests` / `fleet::stream::tests` pass. V4 — Chrome, preview mode, an
 agent with the bridge, the real sidecar and the Coral fixture models: after `set_onboard_model`
-and a launch, the FPV showed the held frame with its keypoints, outlines, leaders and
+and a launch, the FPV showed the frame with its keypoints, outlines, leaders and
 non-overlapping cards (`ssdlite-mobiledet` found the scene's cars; `ssd-mobilenet-v2` found
 nothing on the same grey frames).
+
+## The chat's live drone map: the demo's Follow view of what the drone builds
+
+Once a drone of the chat's simulation is in the air, a **Live map** pane appears under the
+simulation pane: the RTAB-Map cloud that drone is building, drawn the way the demo page's 3D pane
+draws it with Follow on — from behind and above the drone along its heading, the drone at 3/4 of
+the image height with a yellow arrow, 24 m of scene across (`cloud_view.render_follow_view`, the
+default pose of `CloudViewer`'s Follow framing).
+
+- **Route.** `GET /sim/map/<scenario>` (`sim_routes.drone_map`, CORS like `/datasets`): 200
+  `{"drone_id", "phase", "points", "png"}` (base64 PNG) for the drone the scenario's bridge page
+  streams now (`FleetPerception.drone_map`) while the fleet telemetry has it off the ground; 204
+  while no page streams the scenario, before its first frame, or while that drone is `docked`;
+  404 for an unknown scenario. The pages stream pairs on the ground too, so "flying" comes from
+  telemetry, not from frames arriving. Drawn off the event loop.
+- **The drone's camera.** `DroneSession` keeps its last odometry pose (`map_pose`, else `pose`);
+  `cloud_view.follow_camera` projects its optical axis onto the map's x-z floor, as the demo's
+  `floor_camera` does. Before any pose the view looks from the map's origin along +z. The
+  `StreamingBackend` protocol gains `map_cloud()`; a session reads it under its own lock (the
+  backend's placed-points cache is not thread-safe).
+- **Chat.** `ChatPort.getDroneMap(scenarioId)` (`null` on 204). While a simulation is open,
+  `ChatPage` polls it every second; the first map shows `DroneMapPane` (drone, phase, point count,
+  image), and the pane keeps the last image after the drone lands. A different scenario starts
+  with no pane.
+
+### Verified
+
+2026-11-04: V1 — `tests/test_sim_live_drone_map.py` (renderer, perception, the route over the real
+agent server with a fake fleet page and fake maps) and the chat's `DroneMapPane` / `App` /
+adapter tests pass. A synthetic street rendered through `render_follow_view` was inspected by eye.
+V4 in the browser against the real sidecar was planned (`scripts/dev.sh --bridge`, launch a
+drone, see the pane appear and grow) and skipped at the developer's decision; it has not run.
+
 ## The stereo rig: one camera profile
 
 `cameras/elp-stereo-pinhole.camera.json` (the SurMap ELP rig): 640×480, fx = fy = 381.36,

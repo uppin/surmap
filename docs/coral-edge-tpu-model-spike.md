@@ -37,7 +37,9 @@ be detections.
 ## Fallback taken (recorded deviation from Meta-first)
 
 Google's Coral-native **EfficientDet-Lite0** INT8, from the official
-`google-coral/test_data` artifacts:
+`google-coral/test_data` artifacts. `scripts/fetch_coral_model.py` downloads them from this
+repo's `fixtures-coral-v1` release, an unchanged copy (CI's reads of the raw upstream host
+timed out on about one run in nine); `--upstream` fetches from Google to refresh it:
 
 | Artifact | Bytes | SHA-256 | Role |
 |---|---|---|---|

@@ -9,11 +9,11 @@
 - Wire: the bridge `status` reply gains `detections: [{frame_id, objects: [{label, score, box,
   track_id}]}]` (omitted when empty; goldens unchanged), filled by `DroneSession` from the model
   run on the pair's grey left eye; a failing model finds nothing and leaves the map running.
-- Page: `HeldFrames` is generic; the bridge stream holds detections by frame and attaches them to
-  the `FpvFrame` with its keypoints. The FPV outlines each object and adds a label card
-  `<label> #<track> <score>%` laid out by `layout_cards` (the demo's `layoutCards` ported): near
-  its object, joined by a leader, never overlapping another card, inside the image, in display
-  pixels.
+- Page: the stream keeps the newest reply's detections and, while fresh (`fresh_detections`,
+  the keypoints' `FRESH_FRAMES` rule over the live eye), writes them as `FpvDetections`. The FPV
+  outlines each object in the keypoint overlay and adds a label card `<label> #<track> <score>%`
+  laid out by `layout_cards` (the demo's `layoutCards` ported): near its object, joined by a
+  leader, never overlapping another card, inside the image, in display pixels.
 - Verification: pytest 2618 passed / 38 skipped, cargo test 410, wasm check clean; ruff, mypy
   clean. V4 in Chrome: boxes and non-overlapping cards on the FPV with `ssdlite-mobiledet`
   (`ssd-mobilenet-v2` finds no cars on these grey frames).

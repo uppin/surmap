@@ -249,7 +249,9 @@ class StreamingRtabmapBackend:
         # node_id -> (pose used, map-frame points); a keyframe is
         # re-placed only when its optimized pose actually moves.
         self._placed_cache: dict[int, tuple[Pose, NDArray[np.float32]]] = {}
-        self._frames: list[StereoFramePair] = []
+        # (frame_id, t_ns) of every pair sent, for `flush`; never the pair's images, which would
+        # grow for the whole session.
+        self._frames: list[tuple[int, int]] = []
         self._updates: queue.Queue[MapUpdate] = queue.Queue()
         self._outbox: SidecarOutbox[tuple[StereoFramePair, bytes, bytes]] = SidecarOutbox(
             queue_size
@@ -329,7 +331,7 @@ class StreamingRtabmapBackend:
 
     @property
     def last_input_frame(self) -> int:
-        return self._frames[-1].frame_id if self._frames else 0
+        return self._frames[-1][0] if self._frames else 0
 
     @property
     def last_odom_frame(self) -> int:
@@ -352,7 +354,7 @@ class StreamingRtabmapBackend:
             raise SidecarError(f"streaming sidecar error: {self._error}")
         left = _to_gray8(frame, 0, self._width, self._height)
         right = _to_gray8(frame, 1, self._width, self._height)
-        self._frames.append(frame)
+        self._frames.append((frame.frame_id, frame.t_ns))
         self._outbox.put_pair((frame, left, right))
         with self._state_lock:
             pose = self._odom.get(frame.frame_id)
@@ -574,10 +576,10 @@ class StreamingRtabmapBackend:
         with self._state_lock:
             odom = dict(self._odom)
         results: list[FrameResult] = []
-        for frame in sorted(self._frames, key=lambda f: f.t_ns):
-            pose = odom.get(frame.frame_id)
+        for frame_id, t_ns in sorted(self._frames, key=lambda frame: frame[1]):
+            pose = odom.get(frame_id)
             if pose is not None:
-                results.append(FrameResult(frame.frame_id, frame.t_ns, pose, ()))
+                results.append(FrameResult(frame_id, t_ns, pose, ()))
         if results and cloud:
             last = results[-1]
             results[-1] = FrameResult(last.frame_id, last.t_ns, last.pose, cloud)

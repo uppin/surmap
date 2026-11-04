@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { TurnEvent } from "@/gen/surmap/agent/v1/chat_pb";
 import { aModel, aStation } from "@/test-support/view-items";
 import { aConversation } from "@/test-support/turn-events";
-import type { ChatPort, ModelInfo, StationView, StreamTurnInput } from "@/ports";
+import type { ChatPort, DroneMapView, ModelInfo, StationView, StreamTurnInput } from "@/ports";
 import App from "./App";
 
 interface FakePortOptions {
@@ -19,6 +19,8 @@ interface FakePortOptions {
   station?: StationView | null;
   /** What importing a simulation bundle answers; rejects with this message when a string. */
   imported?: import("@/view-model/simulation").SimulationView | string;
+  /** What each live-map poll answers, in turn; the last one repeats. None: no drone flies. */
+  droneMaps?: (DroneMapView | null)[];
 }
 
 /** A stream with no events that ends when `signal` aborts, as a watch stream does with no job ending. */
@@ -57,7 +59,9 @@ function fakePort(options: FakePortOptions = {}) {
     getConversation: [] as string[],
     station: [] as string[],
     importSimulation: [] as { name: string; into: string | null }[],
+    droneMap: [] as string[],
   };
+  const droneMaps = [...(options.droneMaps ?? [null])];
   let station = options.station ?? null;
   const port: ChatPort = {
     async *streamTurn(input) {
@@ -102,6 +106,10 @@ function fakePort(options: FakePortOptions = {}) {
       if (typeof options.imported === "string") throw new Error(options.imported);
       if (options.imported === undefined) throw new Error("no import expected");
       return options.imported;
+    },
+    async getDroneMap(scenarioId) {
+      asked.droneMap.push(scenarioId);
+      return droneMaps.length > 1 ? (droneMaps.shift() ?? null) : (droneMaps[0] ?? null);
     },
     async getMapScene() {
       return {
@@ -321,6 +329,37 @@ describe("chat page", () => {
       "&bridge=ws%3A%2F%2F127.0.0.1%3A8790",
     );
     window.history.replaceState({}, "", "/");
+  });
+
+  it("shows the map the simulation's drone builds once it flies", async () => {
+    const flying: DroneMapView = { droneId: "nest-sw-d1", phase: "climbing", points: 812, png: "iVBOR" };
+    const { port, asked } = fakePort({ turn: aSimulationCreated("downtown-blaze", "Downtown blaze"), droneMaps: [null, flying] });
+    render(<App port={port} />);
+    const user = userEvent.setup();
+
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "Build a downtown blaze");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByRole("region", { name: "Simulation" });
+    expect(screen.queryByRole("region", { name: "Live map" })).not.toBeInTheDocument();
+
+    const pane = await screen.findByRole("region", { name: "Live map" }, { timeout: 3000 });
+    expect(pane).toHaveTextContent("nest-sw-d1");
+    expect(screen.getByRole("img", { name: "Live map of nest-sw-d1" })).toHaveAttribute("src", "data:image/png;base64,iVBOR");
+    expect(new Set(asked.droneMap)).toEqual(new Set(["downtown-blaze"]));
+  });
+
+  it("keeps the drone's last map once it has landed", async () => {
+    const flying: DroneMapView = { droneId: "nest-sw-d1", phase: "cruising", points: 812, png: "iVBOR" };
+    const { port } = fakePort({ turn: aSimulationCreated("downtown-blaze", "Downtown blaze"), droneMaps: [flying, null] });
+    render(<App port={port} />);
+    const user = userEvent.setup();
+
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "Build a downtown blaze");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByRole("region", { name: "Live map" });
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    expect(screen.getByRole("img", { name: "Live map of nest-sw-d1" })).toBeInTheDocument();
   });
 
   it("imports a bundle into the pane's simulation and shows the version it became", async () => {

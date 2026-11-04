@@ -11,6 +11,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
+
+from surmap.simulation.sim_assets import load_asset_pins
 
 AGENT_APP_NAME = "surmap-agent"
 CM5_APP_NAME = "surmap-cm5-sim"
@@ -30,10 +33,15 @@ AGENT_WEB_DIST = "/opt/surmap/web"
 AGENT_CACHE = "/cache"
 # The agent's persisted state, all under the cache mount (Volume `surmap-agent-cache`), so a
 # container restart keeps it: the demo run history, the chat conversations, the simulation
-# store (`simulation.sqlite` + `library/`). The usage log joins them via `--cache-dir`.
+# store (`simulation.sqlite` + `library/`). The map scenes, tool outputs and usage log join
+# them via `--cache-dir`, which is also the agent's state dir.
 AGENT_HISTORY_DB = f"{AGENT_CACHE}/demo-history.db"
 AGENT_CONVERSATIONS_DB = f"{AGENT_CACHE}/conversations.sqlite"
 AGENT_SIM_DIR = f"{AGENT_CACHE}/simulation"
+# The Bevy simulation the agent serves, baked into the image: the PoC's `assets/` (with its
+# fetched pinned files) and its `trunk build` output, at /sim/.
+AGENT_SIM_ASSETS = "/opt/surmap/sim/assets"
+AGENT_SIM_PAGE = "/opt/surmap/sim/dist"
 
 # Where the CM5 image builds RTAB-Map and its stream tool (scripts/build_rtabmap_native.sh).
 RTABMAP_WORK = "/opt/surmap-rtabmap"
@@ -145,7 +153,49 @@ def agent_command() -> list[str]:
         AGENT_CONVERSATIONS_DB,
         "--sim-dir",
         AGENT_SIM_DIR,
+        "--sim-assets",
+        AGENT_SIM_ASSETS,
+        "--sim-dist",
+        AGENT_SIM_PAGE,
     ]
+
+
+class SimBundleError(RuntimeError):
+    """The simulation the agent's deploy would ship is missing or stale."""
+
+
+# What `trunk build` compiles into the page: a change to any of them means a rebuild.
+_SIM_PAGE_SOURCES = ("index.html", "Cargo.toml", "Cargo.lock")
+
+
+def check_sim_bundle(poc_dir: Path) -> None:
+    """Refuse to deploy the PoC at `poc_dir` unless its `dist/` is a build newer than every page
+    source and every asset pinned in `assets/assets.lock.json` is on disk."""
+    dist = poc_dir / "dist"
+    wasm = sorted(dist.glob("*.wasm"), key=lambda path: path.stat().st_mtime)
+    if not (dist / "index.html").is_file() or not wasm:
+        raise SimBundleError(
+            f"no simulation page in {dist}; build it: "
+            f"(cd {poc_dir} && trunk build index.html --release)"
+        )
+    built_at = wasm[-1].stat().st_mtime
+    sources = [poc_dir / name for name in _SIM_PAGE_SOURCES]
+    sources += [path for path in (poc_dir / "src").rglob("*") if path.is_file()]
+    newer = [path for path in sources if path.is_file() and path.stat().st_mtime > built_at]
+    if newer:
+        newest = max(newer, key=lambda path: path.stat().st_mtime)
+        raise SimBundleError(
+            f"the simulation page in {dist} is older than {newest.relative_to(poc_dir)}; "
+            f"rebuild it: (cd {poc_dir} && trunk build index.html --release)"
+        )
+    assets = poc_dir / "assets"
+    missing = [pin.path for pin in load_asset_pins(assets / "assets.lock.json")]
+    missing = [path for path in missing if not (assets / path).is_file()]
+    if missing:
+        raise SimBundleError(
+            f"{len(missing)} pinned simulation assets are not fetched (first: {missing[0]}); "
+            "fetch them: uv run python scripts/fetch_sim_assets.py"
+        )
 
 
 def station_command(label: str = "object") -> list[str]:

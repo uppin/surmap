@@ -1,4 +1,4 @@
-"""The `surmap.agent.v1.MapTools` handlers over an in-memory `MapSceneStore`.
+"""The `surmap.agent.v1.MapTools` handlers over a `MapSceneStore`, in memory or in SQLite.
 
 One async function per rpc, each taking its decoded request and the store, so
 they test with no model and no server. `map_tool_handlers(store)` binds them by
@@ -13,8 +13,11 @@ non-positive scale, an out-of-range zoom, or a route of fewer than two points.
 
 from __future__ import annotations
 
+import sqlite3
+import threading
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from connectrpc.code import Code
@@ -78,29 +81,101 @@ class _Scene:
     next_id: int = 1
 
 
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS map_scenes (
+    scene_id TEXT PRIMARY KEY,
+    scene BLOB NOT NULL,
+    next_id INTEGER NOT NULL
+);
+"""
+
+
 class MapSceneStore:
-    """Every map scene by id, created on first use. In-memory, process lifetime.
+    """Every map scene by id, created on first use.
+
+    In memory for the process lifetime, or, with `db_path`, saved to SQLite on every change
+    and read back from it, so a restarted agent shows the map as it was.
 
     Layers come from the `MapLayerCatalogue` port (the Overture/OpenStreetMap
     adapter in production, an in-memory one in tests); a fresh scene loads the
     catalogue's default layers, OpenStreetMap among them.
     """
 
-    def __init__(self, catalogue: MapLayerCatalogue | None = None) -> None:
+    def __init__(
+        self, catalogue: MapLayerCatalogue | None = None, *, db_path: Path | None = None
+    ) -> None:
         self.catalogue: MapLayerCatalogue = (
             catalogue if catalogue is not None else OvertureLayerCatalogue()
         )
         self._scenes: dict[str, _Scene] = {}
+        self._db_path = db_path
+        self._lock = threading.Lock()
+        self._db: sqlite3.Connection | None = None
+        if db_path is not None:
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._db = sqlite3.connect(db_path, check_same_thread=False)
+            with self._lock, self._db:
+                self._db.executescript(_SCHEMA)
+
+    @property
+    def db_path(self) -> Path | None:
+        """Where the scenes are saved; None when they live in memory."""
+        return self._db_path
 
     def scene(self, scene_id: str) -> _Scene:
-        """The scene named `scene_id`, fresh (Zurich camera, default layers) when new."""
+        """The scene named `scene_id`: as last saved, or fresh (Zurich camera, default
+        layers) when new."""
         found = self._scenes.get(scene_id)
         if found is None:
-            found = _Scene(
+            found = self._load(scene_id) or _Scene(
                 loaded_layers={spec.id for spec in self.catalogue.layers() if spec.is_default}
             )
             self._scenes[scene_id] = found
         return found
+
+    def changed(self, scene_id: str) -> int:
+        """Bump the scene's revision after a change, save it, and return the new revision."""
+        scene = self.scene(scene_id)
+        scene.revision += 1
+        if self._db is not None:
+            saved = pb.MapScene(
+                scene_id=scene_id,
+                objects=list(scene.objects.values()),
+                camera=scene.camera,
+                routes=list(scene.routes.values()),
+                revision=scene.revision,
+                layers=[pb.MapLayer(id=layer_id) for layer_id in sorted(scene.loaded_layers)],
+            )
+            with self._lock, self._db:
+                self._db.execute(
+                    "INSERT OR REPLACE INTO map_scenes (scene_id, scene, next_id) VALUES (?, ?, ?)",
+                    (scene_id, saved.SerializeToString(), scene.next_id),
+                )
+        return scene.revision
+
+    def close(self) -> None:
+        if self._db is not None:
+            self._db.close()
+
+    def _load(self, scene_id: str) -> _Scene | None:
+        if self._db is None:
+            return None
+        with self._lock:
+            row = self._db.execute(
+                "SELECT scene, next_id FROM map_scenes WHERE scene_id = ?", (scene_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        saved = pb.MapScene()
+        saved.ParseFromString(row[0])
+        return _Scene(
+            objects={placed.id: placed for placed in saved.objects},
+            routes={route.id: route for route in saved.routes},
+            loaded_layers={layer.id for layer in saved.layers},
+            camera=saved.camera,
+            revision=saved.revision,
+            next_id=row[1],
+        )
 
 
 def map_tool_handlers(store: MapSceneStore) -> Mapping[str, Handler]:
@@ -148,7 +223,7 @@ async def add_map_object(
         scale=scale,
     )
     scene.objects[object_id] = placed
-    return pb.MapObjectResponse(object=placed, revision=_bump(scene))
+    return pb.MapObjectResponse(object=placed, revision=store.changed(_scene_id(request)))
 
 
 async def move_map_object(
@@ -170,7 +245,7 @@ async def move_map_object(
     if request.HasField("scale"):
         moved.scale = request.scale
     scene.objects[moved.id] = moved
-    return pb.MapObjectResponse(object=moved, revision=_bump(scene))
+    return pb.MapObjectResponse(object=moved, revision=store.changed(_scene_id(request)))
 
 
 async def remove_map_object(
@@ -180,7 +255,9 @@ async def remove_map_object(
     scene = store.scene(_scene_id(request))
     _object_or_refuse(scene, request.object_id)
     del scene.objects[request.object_id]
-    return pb.RemoveMapObjectResponse(object_id=request.object_id, revision=_bump(scene))
+    return pb.RemoveMapObjectResponse(
+        object_id=request.object_id, revision=store.changed(_scene_id(request))
+    )
 
 
 async def list_map_objects(
@@ -230,7 +307,7 @@ async def navigate_map(
     if request.HasField("bearing_deg"):
         camera.bearing_deg = request.bearing_deg
     scene.camera = camera
-    return pb.NavigateMapResponse(camera=camera, revision=_bump(scene))
+    return pb.NavigateMapResponse(camera=camera, revision=store.changed(_scene_id(request)))
 
 
 async def show_route(request: pb.ShowRouteRequest, store: MapSceneStore) -> pb.MapRouteResponse:
@@ -247,7 +324,7 @@ async def show_route(request: pb.ShowRouteRequest, store: MapSceneStore) -> pb.M
         color=request.color if request.HasField("color") else _DEFAULT_ROUTE_COLOR,
     )
     scene.routes[route_id] = route
-    return pb.MapRouteResponse(route=route, revision=_bump(scene))
+    return pb.MapRouteResponse(route=route, revision=store.changed(_scene_id(request)))
 
 
 async def update_route(request: pb.UpdateRouteRequest, store: MapSceneStore) -> pb.MapRouteResponse:
@@ -267,7 +344,7 @@ async def update_route(request: pb.UpdateRouteRequest, store: MapSceneStore) -> 
     if request.HasField("color"):
         route.color = request.color
     scene.routes[route.id] = route
-    return pb.MapRouteResponse(route=route, revision=_bump(scene))
+    return pb.MapRouteResponse(route=route, revision=store.changed(_scene_id(request)))
 
 
 async def clear_route(request: pb.ClearRouteRequest, store: MapSceneStore) -> pb.ClearRouteResponse:
@@ -275,7 +352,9 @@ async def clear_route(request: pb.ClearRouteRequest, store: MapSceneStore) -> pb
     scene = store.scene(_scene_id(request))
     _route_or_refuse(scene, request.route_id)
     del scene.routes[request.route_id]
-    return pb.ClearRouteResponse(route_id=request.route_id, revision=_bump(scene))
+    return pb.ClearRouteResponse(
+        route_id=request.route_id, revision=store.changed(_scene_id(request))
+    )
 
 
 async def list_map_layers(
@@ -295,7 +374,7 @@ async def load_map_layer(
     revision = scene.revision
     if spec.id not in scene.loaded_layers:
         scene.loaded_layers.add(spec.id)
-        revision = _bump(scene)
+        revision = store.changed(_scene_id(request))
     return pb.MapLayerResponse(layer=_layer_message(spec, loaded=True), revision=revision)
 
 
@@ -308,7 +387,7 @@ async def unload_map_layer(
     revision = scene.revision
     if spec.id in scene.loaded_layers:
         scene.loaded_layers.discard(spec.id)
-        revision = _bump(scene)
+        revision = store.changed(_scene_id(request))
     return pb.MapLayerResponse(layer=_layer_message(spec, loaded=False), revision=revision)
 
 
@@ -347,11 +426,6 @@ def _generated(scene: _Scene, prefix: str) -> str:
     object_id = f"{prefix}_{scene.next_id}"
     scene.next_id += 1
     return object_id
-
-
-def _bump(scene: _Scene) -> int:
-    scene.revision += 1
-    return scene.revision
 
 
 def _object_or_refuse(scene: _Scene, object_id: str) -> pb.MapObject:

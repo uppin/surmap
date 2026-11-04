@@ -17,8 +17,9 @@ tests/fixtures/euroc_v101_rtabmap/
 # Prepared by scripts/fetch_coral_model.py (generated, uncommitted)
 tests/fixtures/coral_model/
 
-# Raw Meta SAM response from scripts/check_meta_sam.py
-tmp/meta-sam-last-response.json
+# Local scratch and dev state: scripts/dev.sh keeps the agent's state in tmp/agent;
+# scripts/check_meta_sam.py writes its raw response here
+tmp/
 
 # Local output of scripts/mission_demo.py
 mission-demo-out/

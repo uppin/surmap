@@ -7,6 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
+import numpy as np
 import pytest
 import websockets
 from PIL import Image
@@ -21,6 +22,7 @@ from surmap.simulation.bevy_wire import (
 )
 from surmap.simulation.camera_profile import profile_sensor_yaml
 from surmap.slam.stream_protocol import OdomUpdate, Rectification
+from surmap.slam.streaming import MapCloud
 from surmap.types import Pose, StereoFramePair, Vec3
 
 GOLDENS = Path(__file__).parent / "fixtures" / "bevy_sim_wire"
@@ -29,7 +31,7 @@ PAIR = (GOLDENS / "pair.bin").read_bytes()
 
 
 class FakeBackend:
-    """The streaming backend seam: records frames, replays scripted odometry."""
+    """The streaming backend seam: records frames, replays scripted odometry, maps nothing."""
 
     def __init__(self) -> None:
         self.frames: list[StereoFramePair] = []
@@ -45,6 +47,9 @@ class FakeBackend:
     def poll_updates(self) -> list[OdomUpdate]:
         updates, self.updates = self.updates, []
         return updates
+
+    def map_cloud(self) -> MapCloud:
+        return MapCloud(np.zeros((0, 3), np.float32), np.zeros((0, 3), np.uint8))
 
     def close(self) -> None:
         self.closed = True

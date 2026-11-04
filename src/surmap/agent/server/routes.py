@@ -6,7 +6,8 @@
   recorded. `?crop=x0,y0,x1,y1` (pixels of the frame) crops it and `?max_side=<px>` downscales
   it. A malformed `crop` or `max_side` is 400.
 - `OPTIONS` on any path — the CORS preflight.
-- With `simulation`, `GET /sim/…` and `POST /sim/import` (`surmap.agent.server.sim_routes`).
+- With `simulation`, `GET /sim/…` and `POST /sim/import` (`surmap.agent.server.sim_routes`);
+  `GET /sim/map/<id>` carries CORS headers, as the chat fetches it.
 - With `web_dist`, `GET /` and `GET /assets/…` — the built chat page.
 - With `gate`, `POST /auth/session` trades the pass code for a session token
   (`surmap.agent.server.access`), and every `GET` but `/health` and the page, and every other
@@ -36,7 +37,9 @@ from surmap.agent.server.access import (
 )
 from surmap.agent.server.sim_routes import (
     IMPORT_PATH,
+    MAP_PREFIX,
     SimulationRig,
+    drone_map,
     import_simulation,
     serve_simulation,
     static_file,
@@ -115,6 +118,14 @@ def agent_http_routes(
         if gate is not None and not _signed_in(gate, request):
             log_event("auth_refused", surface="http", target=request.path)
             return HttpResponse(status=401, body=UNAUTHENTICATED_HINT.encode(), headers=_PLAIN)
+        if simulation is not None and request.path.startswith(MAP_PREFIX):
+            # Drawing the map takes a while; the event loop keeps serving meanwhile.
+            mapped = await asyncio.to_thread(drone_map, simulation, request.path[len(MAP_PREFIX) :])
+            return HttpResponse(
+                status=mapped.status,
+                body=mapped.body,
+                headers={**mapped.headers, **_cors(request, origins)},
+            )
         if simulation is not None:
             served = serve_simulation(simulation, request.path)
             if served is not None:

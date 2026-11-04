@@ -1,13 +1,13 @@
 //! The chat's preview of the simulation (`?view=preview`), pure: one view and nothing else on
 //! the page — the overview (the chase view, with its PTZ) while the viewed drone is on the
-//! ground, its first-person camera once it flies. In the air the FPV shows the frame RTAB-Map
-//! processed with that frame's tracked keypoints: a sent frame is held until its odometry comes
-//! back (`HeldFrames`), so the view may lag the live camera but points never sit on another
-//! frame. When the agent runs an on-board model (`set_onboard_model`), the frame's detections are
-//! outlined on it, each with a label card laid out as the demo page's SAM cards are
-//! (`layout_cards`): near its object, joined by a leader, never overlapping another card.
-
-use std::collections::VecDeque;
+//! ground, its first-person camera once it flies. In the air the FPV is the live left eye, never
+//! waiting on the station: RTAB-Map's keypoints of a recent frame (`fresh_keypoints`) are drawn
+//! over it as one overlay image (`keypoint_overlay`). When the agent runs an on-board model
+//! (`set_onboard_model`), a recent frame's detections (`fresh_detections`) are outlined in that
+//! overlay too, each with a label card laid out as the demo page's SAM cards are
+//! (`layout_cards`): near its object, joined by a leader, never overlapping another card. Only
+//! the cameras the view shows render, plus both eyes in a frame whose pair the stream reads back
+//! (`preview_renders`).
 
 use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
@@ -15,9 +15,9 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
 use crate::calibration::CameraProfile;
 use crate::fleet::autopilot::Phase;
-use crate::fleet::stream::DetectedObject;
+use crate::fleet::stream::{BridgeStreamSet, DetectedObject, FrameDetections, FrameKeypoints};
 use crate::fleet::{ActiveDrone, Fleet};
-use crate::{Flight, StereoFeeds};
+use crate::{ChaseCam, Flight, LeftEye, RightEye, StereoFeeds};
 
 /// How the page shows the simulation.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -86,72 +86,71 @@ pub fn depth_colour(depth_m: f32) -> [u8; 3] {
     [0, 1, 2].map(|k| (a[k] + (b[k] - a[k]) * f).round() as u8)
 }
 
-/// A GPU readback of a BGRA eye (rows padded to `row_bytes`) as tight RGBA rows.
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-pub fn bgra_to_rgba(bgra: &[u8], width: u32, height: u32, row_bytes: u32) -> Vec<u8> {
-    let (w, stride) = (width as usize, row_bytes as usize);
-    let mut out = Vec::with_capacity(w * height as usize * 4);
-    for row in 0..height as usize {
-        for pixel in bgra[row * stride..row * stride + w * 4].chunks_exact(4) {
-            out.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
+/// Which of the preview's cameras render this frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Renders {
+    pub chase: bool,
+    pub left: bool,
+    pub right: bool,
+}
+
+/// The cameras `view` shows, plus both eyes when the stream reads a pair back this frame
+/// (`pair_due`): nothing renders that nobody sees or reads.
+pub fn preview_renders(view: PreviewView, pair_due: bool) -> Renders {
+    Renders {
+        chase: view == PreviewView::Overview,
+        left: view == PreviewView::Fpv || pair_due,
+        right: pair_due,
+    }
+}
+
+/// How many frames the stream may have sent since the one an answer is for, for its keypoints
+/// still to be drawn over the live eye: 200 ms at 10 Hz.
+pub const FRESH_FRAMES: u64 = 2;
+
+/// The keypoints of `answer` while its frame is at most `FRESH_FRAMES` behind `last_sent`, the
+/// last frame the stream sent; none before any answer or once it is stale.
+pub fn fresh_keypoints(answer: Option<&FrameKeypoints>, last_sent: u64) -> Option<&[[f32; 3]]> {
+    answer.filter(|answer| answer.frame_id + FRESH_FRAMES >= last_sent).map(|answer| &answer.keypoints[..])
+}
+
+/// The on-board detections of `found` while its frame is at most `FRESH_FRAMES` behind
+/// `last_sent`, as for keypoints; none before any or once they are stale.
+pub fn fresh_detections(found: Option<&FrameDetections>, last_sent: u64) -> Option<&[DetectedObject]> {
+    found.filter(|found| found.frame_id + FRESH_FRAMES >= last_sent).map(|found| &found.objects[..])
+}
+
+/// The keypoint dot's side, camera pixels.
+const DOT_PX: i64 = 5;
+
+/// `keypoints` (`[u, v, depth_m]`, raw left-camera pixels) as tight RGBA rows of a `width` x
+/// `height` image: an opaque `DOT_PX` square per keypoint in its depth colour, transparent
+/// elsewhere; a dot at the edge is clipped.
+pub fn keypoint_overlay(width: u32, height: u32, keypoints: &[[f32; 3]]) -> Vec<u8> {
+    let (w, h) = (i64::from(width), i64::from(height));
+    let mut rgba = vec![0u8; (w * h * 4) as usize];
+    for [u, v, depth] in keypoints {
+        let [r, g, b] = depth_colour(*depth);
+        let (cx, cy) = (u.floor() as i64, v.floor() as i64);
+        for y in (cy - DOT_PX / 2).max(0)..(cy + DOT_PX / 2 + 1).min(h) {
+            for x in (cx - DOT_PX / 2).max(0)..(cx + DOT_PX / 2 + 1).min(w) {
+                let i = ((y * w + x) * 4) as usize;
+                rgba[i..i + 4].copy_from_slice(&[r, g, b, 255]);
+            }
         }
     }
-    out
+    rgba
 }
 
-/// What the page holds of each sent frame until its odometry comes back — its pixels, or what
-/// the on-board model found on it — oldest first, at most `capacity`.
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-#[derive(Debug, Clone, PartialEq)]
-pub struct HeldFrames<T = Vec<u8>> {
-    capacity: usize,
-    frames: VecDeque<(u64, T)>,
-}
+/// The keypoints drawn over the FPV now: the bridge stream writes them when the fresh answer
+/// changes (empty once it is stale).
+#[derive(Resource, Debug, Clone, Default, PartialEq)]
+pub struct FpvKeypoints(pub Vec<[f32; 3]>);
 
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-impl<T> HeldFrames<T> {
-    /// Holds at most `capacity` frames; holding one more drops the oldest.
-    pub fn new(capacity: usize) -> Self {
-        Self { capacity, frames: VecDeque::new() }
-    }
-
-    /// Holds `pixels`, what the page keeps of the frame sent as `frame_id`.
-    pub fn hold(&mut self, frame_id: u64, pixels: T) {
-        if self.frames.len() == self.capacity {
-            self.frames.pop_front();
-        }
-        self.frames.push_back((frame_id, pixels));
-    }
-
-    /// The pixels of `frame_id`, whose odometry came back; it and every older frame stop being
-    /// held (their odometry, if it ever comes, is stale). `None` when it is not held.
-    pub fn take(&mut self, frame_id: u64) -> Option<T> {
-        let position = self.frames.iter().position(|(id, _)| *id == frame_id)?;
-        let (_, pixels) = self.frames.drain(..=position).last().expect("position is in range");
-        Some(pixels)
-    }
-
-    /// The ids of the frames held, oldest first.
-    #[cfg(test)]
-    pub fn held(&self) -> Vec<u64> {
-        self.frames.iter().map(|(id, _)| *id).collect()
-    }
-}
-
-/// How many sent frames wait for their odometry; RTAB-Map answering later drops the frame.
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-pub const HELD_FRAMES: usize = 12;
-
-/// The FPV frame RTAB-Map processed last, with its keypoints (`[u, v, depth_m]`, raw pixels)
-/// and what the on-board model found on it: the bridge stream writes it once a held frame's
-/// odometry came back.
-#[derive(Resource, Debug, Clone, PartialEq)]
-pub struct FpvFrame {
-    /// The frame's tight RGBA rows, at the camera profile's size.
-    pub rgba: Vec<u8>,
-    pub keypoints: Vec<[f32; 3]>,
-    pub detections: Vec<DetectedObject>,
-}
+/// The on-board detections outlined over the FPV now: the bridge stream writes them when the
+/// fresh detections change (empty once they are stale).
+#[derive(Resource, Debug, Clone, Default, PartialEq)]
+pub struct FpvDetections(pub Vec<DetectedObject>);
 
 /// The colour of a detection's outline, leader and card border: the demo's SAM card cyan.
 pub const DETECTION_COLOUR: [u8; 3] = [34, 211, 238];
@@ -332,54 +331,58 @@ pub fn draw_detections(
     }
 }
 
+/// Set by the bridge stream in a frame whose pair it reads back, so both eyes render that frame.
+#[derive(Resource, Debug, Default)]
+pub struct PairDue(pub bool);
+
 /// The preview's full-window layer over the chase view; shown in FPV.
 #[derive(Component)]
 pub struct PreviewFpv;
 
-/// The FPV image, at the camera's aspect ratio.
-#[derive(Component)]
-pub struct PreviewImage;
-
-/// The layer of keypoint dots over the FPV image.
-#[derive(Component)]
-pub struct PreviewDots;
-
-/// The layer of detection label cards over the FPV image.
-#[derive(Component)]
-pub struct PreviewCards;
-
-/// The image an `FpvFrame` is drawn into.
+/// The keypoint and detection overlay's image, over the live eye.
 #[derive(Resource)]
-struct HeldFeed(Handle<Image>);
+struct Overlay(Handle<Image>);
 
-/// The keypoint dot's side, px.
-const DOT_PX: f32 = 5.0;
+/// The live eye's image node, whose displayed size the label cards are laid out in.
+#[derive(Component)]
+struct PreviewImage;
+
+/// The layer of detection label cards over the live eye.
+#[derive(Component)]
+struct PreviewCards;
+
+/// The view the preview shows this frame (`switch_preview`).
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+struct Shown(PreviewView);
 
 /// The preview's systems; the page spawns none of the full page's UI in this mode.
 pub struct PreviewPlugin;
 
 impl Plugin for PreviewPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, setup_preview.run_if(resource_added::<StereoFeeds>))
-            .add_systems(Update, (switch_preview, show_fpv_frame).after(setup_preview));
+        app.insert_resource(Shown(PreviewView::Overview))
+            .init_resource::<PairDue>()
+            .add_systems(Update, setup_preview.run_if(resource_added::<StereoFeeds>))
+            .add_systems(Update, (switch_preview, show_overlay).after(setup_preview))
+            .add_systems(Update, render_only_what_is_seen.after(switch_preview).after(BridgeStreamSet));
     }
 }
 
-/// The FPV layer: hidden, the live left eye until RTAB-Map's first frame comes back.
+/// The FPV layer, hidden: the live left eye with the keypoint overlay over it.
 fn setup_preview(
     mut commands: Commands,
     feeds: Res<StereoFeeds>,
     rig: Res<CameraProfile>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    let held = images.add(Image::new_fill(
+    let overlay = images.add(Image::new_fill(
         Extent3d { width: rig.width, height: rig.height, depth_or_array_layers: 1 },
         TextureDimension::D2,
-        &[0, 0, 0, 255],
+        &[0, 0, 0, 0],
         TextureFormat::Rgba8UnormSrgb,
         RenderAssetUsages::default(),
     ));
-    commands.insert_resource(HeldFeed(held));
+    commands.insert_resource(Overlay(overlay.clone()));
     commands
         .spawn((
             PreviewFpv,
@@ -413,7 +416,7 @@ fn setup_preview(
                         height: Val::Percent(100.0),
                         ..default()
                     };
-                    image.spawn((PreviewDots, layer()));
+                    image.spawn((ImageNode::new(overlay), layer()));
                     image.spawn((PreviewCards, layer()));
                 });
         });
@@ -425,6 +428,7 @@ fn switch_preview(
     fleet: Option<Res<Fleet>>,
     active: Option<Res<ActiveDrone>>,
     flight: Res<Flight>,
+    mut shown: ResMut<Shown>,
     mut layer: Query<&mut Visibility, With<PreviewFpv>>,
 ) {
     let active_id = active.as_ref().and_then(|a| a.0.as_deref());
@@ -432,79 +436,84 @@ fn switch_preview(
         let id = active_id?;
         fleet.autopilots.iter().find(|pilot| pilot.id() == id).map(|pilot| pilot.state().phase)
     });
-    let shown = match preview_view(phase, flight.engaged) {
+    let view = preview_view(phase, flight.engaged);
+    shown.set_if_neq(Shown(view));
+    let visibility = match view {
         PreviewView::Overview => Visibility::Hidden,
         PreviewView::Fpv => Visibility::Inherited,
     };
-    for mut visibility in &mut layer {
-        visibility.set_if_neq(shown);
+    for mut layer in &mut layer {
+        layer.set_if_neq(visibility);
     }
 }
 
-/// Draws a new `FpvFrame`, and again when the image's displayed size changes: its pixels with
-/// each detection's box and card leader drawn in, into the held image (shown in place of the
-/// live eye from then on); its keypoints as dots placed as fractions of the frame, coloured by
-/// depth; and a label card per detection, laid out in display pixels so cards never overlap at
-/// any preview size.
+/// Switches each preview camera on only when `preview_renders` says it is seen or read back.
+fn render_only_what_is_seen(
+    shown: Res<Shown>,
+    mut due: ResMut<PairDue>,
+    mut cameras: Query<(&mut Camera, Has<ChaseCam>, Has<LeftEye>, Has<RightEye>)>,
+) {
+    let renders = preview_renders(shown.0, due.0);
+    due.0 = false;
+    for (mut camera, chase, left, right) in &mut cameras {
+        let active = if chase {
+            renders.chase
+        } else if left {
+            renders.left
+        } else if right {
+            renders.right
+        } else {
+            continue;
+        };
+        if camera.is_active != active {
+            camera.is_active = active;
+        }
+    }
+}
+
+/// Redraws the overlay whenever the bridge stream changes the keypoints or the detections, or
+/// the live eye's displayed size changes: the keypoints' dots, each detection's outline and its
+/// card's leader into the overlay image (camera pixels), and a label card per detection laid out
+/// in display pixels, so cards never overlap at any preview size.
 #[allow(clippy::too_many_arguments)]
-fn show_fpv_frame(
+fn show_overlay(
     mut commands: Commands,
-    frame: Option<Res<FpvFrame>>,
-    held: Option<Res<HeldFeed>>,
+    keypoints: Option<Res<FpvKeypoints>>,
+    detections: Option<Res<FpvDetections>>,
+    overlay: Option<Res<Overlay>>,
     rig: Option<Res<CameraProfile>>,
     mut images: ResMut<Assets<Image>>,
-    mut image_nodes: Query<(&mut ImageNode, &ComputedNode), With<PreviewImage>>,
-    dots: Query<Entity, With<PreviewDots>>,
+    eye: Query<&ComputedNode, With<PreviewImage>>,
     cards: Query<Entity, With<PreviewCards>>,
     mut shown_at: Local<Vec2>,
 ) {
-    let (Some(frame), Some(held), Some(rig)) = (frame, held, rig) else { return };
-    let Ok((mut node, computed)) = image_nodes.single_mut() else { return };
+    let (Some(overlay), Some(rig)) = (overlay, rig) else { return };
+    let Ok(computed) = eye.single() else { return };
     let display = computed.size() * computed.inverse_scale_factor();
-    if !frame.is_changed() && display == *shown_at {
+    let changed = keypoints.as_ref().is_some_and(|k| k.is_changed())
+        || detections.as_ref().is_some_and(|d| d.is_changed());
+    if !changed && display == *shown_at {
         return;
     }
     *shown_at = display;
+    let objects: &[DetectedObject] = detections.as_ref().map_or(&[], |d| &d.0[..]);
     let scale = if display.x > 0.0 { display.x / rig.width as f32 } else { 1.0 };
-    let items: Vec<CardItem> = frame.detections.iter().map(|object| card_item(object, scale)).collect();
+    let items: Vec<CardItem> = objects.iter().map(|object| card_item(object, scale)).collect();
     let laid = layout_cards(&items, display.x, display.y);
-    if let Some(image) = images.get_mut(&held.0) {
-        let mut rgba = frame.rgba.clone();
-        let boxes: Vec<[f32; 4]> = frame.detections.iter().map(|object| object.box_xyxy).collect();
+    if let Some(image) = images.get_mut(&overlay.0) {
+        let mut rgba = keypoint_overlay(rig.width, rig.height, keypoints.as_ref().map_or(&[], |k| &k.0[..]));
+        let boxes: Vec<[f32; 4]> = objects.iter().map(|object| object.box_xyxy).collect();
         let leaders: Vec<([f32; 2], [f32; 2])> =
             laid.iter().map(|card| (card.from.map(|v| v / scale), card.to.map(|v| v / scale))).collect();
         let line_px = (1.5 / scale).round().max(1.0) as u32;
         draw_detections(&mut rgba, rig.width, rig.height, &boxes, &leaders, line_px);
         image.data = Some(rgba);
     }
-    if node.image != held.0 {
-        node.image = held.0.clone();
-    }
-    if let Ok(layer) = dots.single() {
-        commands.entity(layer).despawn_related::<Children>();
-        commands.entity(layer).with_children(|layer| {
-            for [u, v, depth] in &frame.keypoints {
-                let [r, g, b] = depth_colour(*depth);
-                layer.spawn((
-                    Node {
-                        position_type: PositionType::Absolute,
-                        left: Val::Percent(u / rig.width as f32 * 100.0),
-                        top: Val::Percent(v / rig.height as f32 * 100.0),
-                        width: Val::Px(DOT_PX),
-                        height: Val::Px(DOT_PX),
-                        margin: UiRect { left: Val::Px(-DOT_PX / 2.0), top: Val::Px(-DOT_PX / 2.0), ..default() },
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgb_u8(r, g, b)),
-                ));
-            }
-        });
-    }
     let Ok(layer) = cards.single() else { return };
     let [r, g, b] = DETECTION_COLOUR;
     commands.entity(layer).despawn_related::<Children>();
     commands.entity(layer).with_children(|layer| {
-        for (card, object) in laid.iter().zip(&frame.detections) {
+        for (card, object) in laid.iter().zip(objects) {
             layer
                 .spawn((
                     Node {
@@ -594,54 +603,88 @@ mod tests {
     }
 
     #[test]
-    fn a_padded_bgra_readback_becomes_tight_rgba_rows() {
-        // Two 1-pixel rows, each padded to 8 bytes.
-        let bgra = [1, 2, 3, 4, 0, 0, 0, 0, 5, 6, 7, 8, 0, 0, 0, 0];
-
-        assert_eq!(bgra_to_rgba(&bgra, 1, 2, 8), vec![3, 2, 1, 4, 7, 6, 5, 8]);
+    fn the_overview_renders_only_the_chase_view() {
+        assert_eq!(preview_renders(PreviewView::Overview, false), Renders { chase: true, left: false, right: false });
     }
 
     #[test]
-    fn a_frame_whose_odometry_came_back_is_taken_with_its_pixels() {
-        let mut held = HeldFrames::new(4);
-        held.hold(7, vec![7; 3]);
-        held.hold(8, vec![8; 3]);
-
-        assert_eq!(held.take(7), Some(vec![7; 3]));
-        assert_eq!(held.held(), vec![8]);
+    fn the_fpv_renders_only_the_left_eye_not_the_hidden_chase_view() {
+        assert_eq!(preview_renders(PreviewView::Fpv, false), Renders { chase: false, left: true, right: false });
     }
 
     #[test]
-    fn taking_a_frame_drops_the_older_ones() {
-        let mut held = HeldFrames::new(4);
-        for id in [5, 6, 7] {
-            held.hold(id, vec![id as u8]);
-        }
+    fn a_frame_whose_pair_is_due_also_renders_both_eyes() {
+        assert_eq!(preview_renders(PreviewView::Overview, true), Renders { chase: true, left: true, right: true });
+        assert_eq!(preview_renders(PreviewView::Fpv, true), Renders { chase: false, left: true, right: true });
+    }
 
-        assert_eq!(held.take(6), Some(vec![6]));
-        assert_eq!(held.held(), vec![7]);
-        assert_eq!(held.take(5), None);
+    fn an_answer(frame_id: u64) -> FrameKeypoints {
+        FrameKeypoints { frame_id, keypoints: vec![[3.0, 2.0, 4.0]] }
     }
 
     #[test]
-    fn holding_past_the_capacity_drops_the_oldest_frame() {
-        let mut held = HeldFrames::new(2);
-        for id in [1, 2, 3] {
-            held.hold(id, vec![id as u8]);
-        }
+    fn keypoints_of_a_recent_frame_are_shown_over_the_live_eye() {
+        let answer = an_answer(8);
 
-        assert_eq!(held.held(), vec![2, 3]);
-        assert_eq!(held.take(1), None);
+        assert_eq!(fresh_keypoints(Some(&answer), 8 + FRESH_FRAMES), Some(&answer.keypoints[..]));
     }
 
     #[test]
-    fn what_the_on_board_model_found_is_held_by_frame_like_its_pixels() {
-        let mut held: HeldFrames<Vec<&str>> = HeldFrames::new(4);
-        held.hold(7, vec!["car"]);
-        held.hold(8, vec![]);
+    fn keypoints_of_a_frame_the_station_answered_too_late_are_not_shown() {
+        let answer = an_answer(8);
 
-        assert_eq!(held.take(7), Some(vec!["car"]));
-        assert_eq!(held.held(), vec![8]);
+        assert_eq!(fresh_keypoints(Some(&answer), 9 + FRESH_FRAMES), None);
+    }
+
+    #[test]
+    fn before_any_answer_no_keypoints_are_shown() {
+        assert_eq!(fresh_keypoints(None, 3), None);
+    }
+
+    /// The overlay's RGBA pixel at `(x, y)`.
+    fn pixel(overlay: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
+        let i = ((y * width + x) * 4) as usize;
+        [overlay[i], overlay[i + 1], overlay[i + 2], overlay[i + 3]]
+    }
+
+    #[test]
+    fn the_overlay_is_transparent_away_from_the_keypoints() {
+        let overlay = keypoint_overlay(16, 12, &[[3.0, 2.0, 4.0]]);
+
+        assert_eq!(pixel(&overlay, 16, 12, 9), [0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn a_keypoint_is_an_opaque_dot_in_its_depth_colour() {
+        let overlay = keypoint_overlay(16, 12, &[[6.0, 5.0, 4.0]]);
+        let [r, g, b] = depth_colour(4.0);
+
+        assert_eq!(pixel(&overlay, 16, 6, 5), [r, g, b, 255]);
+        assert_eq!(pixel(&overlay, 16, 8, 7), [r, g, b, 255]);
+        assert_eq!(pixel(&overlay, 16, 9, 5), [0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn a_dot_at_the_frame_edge_is_clipped_to_the_frame() {
+        let overlay = keypoint_overlay(16, 12, &[[0.0, 11.5, 4.0]]);
+
+        assert_eq!(overlay.len(), 16 * 12 * 4);
+        assert_eq!(pixel(&overlay, 16, 0, 11)[3], 255);
+    }
+
+    #[test]
+    fn a_recent_frame_s_detections_are_outlined_over_the_live_eye() {
+        let found = FrameDetections { frame_id: 7, objects: vec![a_car(3, [0.0, 0.0, 1.0, 1.0])] };
+
+        assert_eq!(fresh_detections(Some(&found), 9), Some(&found.objects[..]));
+    }
+
+    #[test]
+    fn detections_older_than_the_fresh_frames_are_not_drawn() {
+        let found = FrameDetections { frame_id: 7, objects: vec![a_car(3, [0.0, 0.0, 1.0, 1.0])] };
+
+        assert_eq!(fresh_detections(Some(&found), 10), None);
+        assert_eq!(fresh_detections(None, 10), None);
     }
 
     fn a_car(track_id: u64, box_xyxy: [f32; 4]) -> DetectedObject {
@@ -720,7 +763,7 @@ mod tests {
         );
     }
 
-    fn pixel(rgba: &[u8], width: u32, x: u32, y: u32) -> [u8; 3] {
+    fn colour_at(rgba: &[u8], width: u32, x: u32, y: u32) -> [u8; 3] {
         let i = ((y * width + x) * 4) as usize;
         [rgba[i], rgba[i + 1], rgba[i + 2]]
     }
@@ -731,9 +774,9 @@ mod tests {
 
         draw_detections(&mut rgba, 20, 20, &[[4.0, 4.0, 15.0, 15.0]], &[], 1);
 
-        assert_eq!(pixel(&rgba, 20, 4, 10), DETECTION_COLOUR);
-        assert_eq!(pixel(&rgba, 20, 10, 15), DETECTION_COLOUR);
-        assert_eq!(pixel(&rgba, 20, 10, 10), [0, 0, 0]);
+        assert_eq!(colour_at(&rgba, 20, 4, 10), DETECTION_COLOUR);
+        assert_eq!(colour_at(&rgba, 20, 10, 15), DETECTION_COLOUR);
+        assert_eq!(colour_at(&rgba, 20, 10, 10), [0, 0, 0]);
     }
 
     #[test]
@@ -742,8 +785,8 @@ mod tests {
 
         draw_detections(&mut rgba, 20, 20, &[], &[([2.0, 10.0], [17.0, 10.0])], 1);
 
-        assert_eq!(pixel(&rgba, 20, 10, 10), DETECTION_COLOUR);
-        assert_eq!(pixel(&rgba, 20, 10, 4), [0, 0, 0]);
+        assert_eq!(colour_at(&rgba, 20, 10, 10), DETECTION_COLOUR);
+        assert_eq!(colour_at(&rgba, 20, 10, 4), [0, 0, 0]);
     }
 
     #[test]
@@ -752,6 +795,6 @@ mod tests {
 
         draw_detections(&mut rgba, 8, 8, &[[-5.0, -5.0, 20.0, 20.0]], &[([-3.0, 4.0], [12.0, 4.0])], 2);
 
-        assert_eq!(pixel(&rgba, 8, 4, 4), DETECTION_COLOUR);
+        assert_eq!(colour_at(&rgba, 8, 4, 4), DETECTION_COLOUR);
     }
 }
