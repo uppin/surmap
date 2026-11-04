@@ -174,3 +174,39 @@ class GetFleetLogResponse(_message.Message):
     session_id: int
     fleet_log_jsonl: str
     def __init__(self, session_id: _Optional[int] = ..., fleet_log_jsonl: _Optional[str] = ...) -> None: ...
+
+class DroneMapStatusRequest(_message.Message):
+    __slots__ = ("scenario_id", "drone_id")
+    SCENARIO_ID_FIELD_NUMBER: _ClassVar[int]
+    DRONE_ID_FIELD_NUMBER: _ClassVar[int]
+    scenario_id: str
+    drone_id: str
+    def __init__(self, scenario_id: _Optional[str] = ..., drone_id: _Optional[str] = ...) -> None: ...
+
+class DroneMapCounts(_message.Message):
+    __slots__ = ("drone_id", "frames", "posed", "lost", "keyframes", "segmented_frames", "detections", "processing", "last_t_ns")
+    DRONE_ID_FIELD_NUMBER: _ClassVar[int]
+    FRAMES_FIELD_NUMBER: _ClassVar[int]
+    POSED_FIELD_NUMBER: _ClassVar[int]
+    LOST_FIELD_NUMBER: _ClassVar[int]
+    KEYFRAMES_FIELD_NUMBER: _ClassVar[int]
+    SEGMENTED_FRAMES_FIELD_NUMBER: _ClassVar[int]
+    DETECTIONS_FIELD_NUMBER: _ClassVar[int]
+    PROCESSING_FIELD_NUMBER: _ClassVar[int]
+    LAST_T_NS_FIELD_NUMBER: _ClassVar[int]
+    drone_id: str
+    frames: int
+    posed: int
+    lost: int
+    keyframes: int
+    segmented_frames: int
+    detections: int
+    processing: bool
+    last_t_ns: int
+    def __init__(self, drone_id: _Optional[str] = ..., frames: _Optional[int] = ..., posed: _Optional[int] = ..., lost: _Optional[int] = ..., keyframes: _Optional[int] = ..., segmented_frames: _Optional[int] = ..., detections: _Optional[int] = ..., processing: bool = ..., last_t_ns: _Optional[int] = ...) -> None: ...
+
+class DroneMapStatusResponse(_message.Message):
+    __slots__ = ("drones",)
+    DRONES_FIELD_NUMBER: _ClassVar[int]
+    drones: _containers.RepeatedCompositeFieldContainer[DroneMapCounts]
+    def __init__(self, drones: _Optional[_Iterable[_Union[DroneMapCounts, _Mapping[str, _Any]]]] = ...) -> None: ...

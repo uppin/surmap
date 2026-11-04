@@ -45,6 +45,16 @@ class PairRecorder(Protocol):
 BackendFactory = Callable[..., StreamingBackend]
 
 
+class BridgeSession(Protocol):
+    """One page connection's state: a wire message in, its status reply out; closed when the
+    page disconnects. `BevyStreamSession` (one drone) and
+    `surmap.simulation.fleet.perception.FleetPerception` (one map per drone) are both one."""
+
+    def handle(self, message: bytes) -> BridgeStatus: ...
+
+    def close(self) -> None: ...
+
+
 def _png(gray: bytes, width: int, height: int) -> bytes:
     buffer = io.BytesIO()
     Image.frombytes("L", (width, height), gray).save(buffer, format="PNG")
@@ -121,8 +131,11 @@ class BevyStreamSession:
 async def serve_bevy_bridge(
     host: str,
     port: int,
-    session_factory: Callable[[], BevyStreamSession],
+    session_factory: Callable[[], BridgeSession],
 ) -> websockets.asyncio.server.Server:
+    """Serves the stereo bridge on `host:port`: one session per connection, each binary
+    message answered with that session's status text, the session closed with the socket."""
+
     async def handler(socket: websockets.asyncio.server.ServerConnection) -> None:
         session = session_factory()
         try:

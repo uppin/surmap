@@ -3,10 +3,13 @@
 //! is what a recording writes. A scene without nests keeps the legacy `Drone` and the survey loop.
 
 pub mod autopilot;
+#[cfg(target_arch = "wasm32")]
+pub mod bridge_wasm;
 pub mod link;
 #[cfg(target_arch = "wasm32")]
 pub mod link_wasm;
 pub mod log;
+pub mod stream;
 
 #[cfg(test)]
 mod tests;

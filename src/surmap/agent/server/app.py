@@ -24,7 +24,7 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
@@ -64,7 +64,7 @@ from surmap.agent.services import (
 )
 from surmap.agent.skills import SkillCatalogue, skill_tools
 from surmap.agent.subagents import SubagentSetup
-from surmap.agent.tools.fleet_handlers import fleet_tool_handlers
+from surmap.agent.tools.fleet_handlers import drone_map_status_handler, fleet_tool_handlers
 from surmap.agent.tools.geometry import GeometryStore
 from surmap.agent.tools.handlers import survey_tool_handlers
 from surmap.agent.tools.map_handlers import MapSceneStore, map_tool_handlers
@@ -210,6 +210,9 @@ class AgentServerConfig:
     """The Bevy simulation's own assets; simulation tools are off when it is missing."""
     sim_dist: Path | None = None
     """A built simulation page to serve at `/sim/`."""
+    bevy_bridge_port: int | None = None
+    """Serve the stereo bridge a `?bridge=` simulation page streams to on this port (each drone
+    into its own streaming RTAB-Map, segmented with the configured SAM); None: no bridge."""
     sketchfab_token: str | None = None
     """`SKETCHFAB_API_TOKEN`: Sketchfab search works without it, downloads do not."""
     coral_model_dir: Path | None = None
@@ -258,6 +261,22 @@ def build_simulation_rig(config: AgentServerConfig) -> SimulationRig | None:
     return SimulationRig(
         store=store, sources=sources, static_assets=config.sim_assets, page_dist=config.sim_dist
     )
+
+
+class Closeable(Protocol):
+    """A running service the agent stops on its way out."""
+
+    async def aclose(self) -> None: ...
+
+
+async def start_bevy_bridge(
+    config: AgentServerConfig, simulation: SimulationRig | None
+) -> Closeable:
+    """The stereo bridge on `config.host:config.bevy_bridge_port`: a `FleetPerception` per page
+    connection over the streaming RTAB-Map factory and the configured SAM detector, registered
+    in `simulation.perception` so `drone_map_status` finds it. Closing it stops serving."""
+    # TODO(pr-5): implement
+    raise NotImplementedError("pr-5: implement")
 
 
 def _cache_root(config: AgentServerConfig) -> Path:
@@ -388,7 +407,10 @@ def build_agent_description(
         else {}
     )
     fleet_handlers: dict[str, Handler] = (
-        dict(fleet_tool_handlers(simulation.store, simulation.fleet))
+        {
+            **fleet_tool_handlers(simulation.store, simulation.fleet),
+            "DroneMapStatus": drone_map_status_handler(simulation.store, simulation.perception),
+        }
         if simulation is not None
         else {}
     )

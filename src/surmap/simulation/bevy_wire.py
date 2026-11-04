@@ -1,7 +1,9 @@
 """Browser-to-bridge wire format for the Bevy stereo stream.
 
 Every message is a little-endian ``u32`` header length, a compact JSON
-header, then (pairs only) the left and right grey8 payloads.
+header, then (pairs only) the left and right grey8 payloads. A fleet page
+names the scenario in its ``hello`` and labels each ``pair`` with the drone
+whose eyes rendered it; without them the message is the single-drone wire.
 """
 
 from __future__ import annotations
@@ -30,6 +32,8 @@ class GroundTruthBox:
 class BevyHello:
     camera: CameraProfile
     objects: tuple[GroundTruthBox, ...]
+    scenario: str | None = None
+    """The scenario a fleet page runs; `None` from a page without one."""
 
 
 @dataclass(frozen=True)
@@ -42,6 +46,8 @@ class BevyPair:
     pose_enu: Pose
     left_data: bytes
     right_data: bytes
+    drone_id: str | None = None
+    """The fleet drone whose eyes rendered the pair; `None` without a fleet."""
 
 
 @dataclass(frozen=True)
@@ -51,20 +57,27 @@ class BridgeStatus:
     lost: bool
     keyframes: int
     dropped: int
+    drone_id: str | None = None
+    """The drone whose map the status describes; absent for a pair without a drone id."""
+    error: str | None = None
+    """Why the pair was not processed (e.g. the drone session limit)."""
 
 
 def encode_status(status: BridgeStatus) -> str:
-    return json.dumps(
-        {
-            "type": "status",
-            "frames": status.frames,
-            "posed": status.posed,
-            "lost": status.lost,
-            "keyframes": status.keyframes,
-            "dropped": status.dropped,
-        },
-        separators=(",", ":"),
-    )
+    """The status text message; `drone_id` and `error` appear only when set."""
+    body: dict[str, object] = {
+        "type": "status",
+        "frames": status.frames,
+        "posed": status.posed,
+        "lost": status.lost,
+        "keyframes": status.keyframes,
+        "dropped": status.dropped,
+    }
+    if status.drone_id is not None:
+        body["drone_id"] = status.drone_id
+    if status.error is not None:
+        body["error"] = status.error
+    return json.dumps(body, separators=(",", ":"))
 
 
 def _obj(value: object, what: str) -> dict[str, object]:
@@ -89,6 +102,12 @@ def _str(obj: dict[str, object], key: str) -> str:
     if not isinstance(value, str):
         raise BevyWireError(f"field {key!r} must be a string")
     return value
+
+
+def _opt_str(obj: dict[str, object], key: str) -> str | None:
+    if key not in obj:
+        return None
+    return _str(obj, key)
 
 
 def _int(obj: dict[str, object], key: str) -> int:
@@ -160,7 +179,7 @@ def _decode_hello(header: dict[str, object]) -> BevyHello:
                 max_enu=_vec3(_req(obj, "max_enu"), "max_enu"),
             )
         )
-    return BevyHello(camera=camera, objects=tuple(objects))
+    return BevyHello(camera=camera, objects=tuple(objects), scenario=_opt_str(header, "scenario"))
 
 
 def _decode_pair(header: dict[str, object], payload: bytes) -> BevyPair:
@@ -185,4 +204,5 @@ def _decode_pair(header: dict[str, object], payload: bytes) -> BevyPair:
         pose_enu=pose,
         left_data=payload[:frame_bytes],
         right_data=payload[frame_bytes : 2 * frame_bytes],
+        drone_id=_opt_str(header, "drone_id"),
     )

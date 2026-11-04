@@ -14,6 +14,10 @@ have or a drone the scene does not have; `INVALID_ARGUMENT` for a command the st
 before sending it, its message led by the rule (`no_waypoints: …`); `FAILED_PRECONDITION` with
 the page's own reason when the simulation refuses it; `UNAVAILABLE` when no page is linked;
 `DEADLINE_EXCEEDED` when the page does not answer in time.
+
+`drone_map_status_handler(store, perception)` is `DroneMapStatus`, registered beside them: each
+drone's own map and segmentation on the station's stereo bridge
+(`surmap.simulation.fleet.perception`), `UNAVAILABLE` when no page streams the scenario.
 """
 
 from __future__ import annotations
@@ -51,11 +55,14 @@ from surmap.simulation.fleet.controller import (
 )
 from surmap.simulation.fleet.link import DroneTelemetry, Phase
 from surmap.simulation.fleet.log_store import UnknownSession
+from surmap.simulation.fleet.perception import DroneCounts, PerceptionRegistry
 from surmap.simulation.fleet_nests import Nest, nests_of
 from surmap.simulation.scenario_store import ScenarioStore
 
 __all__ = [
     "CommandRequest",
+    "drone_map_counts",
+    "drone_map_status_handler",
     "drone_phase",
     "drone_statuses",
     "fleet_command",
@@ -262,3 +269,24 @@ def drone_statuses(
                     )
                 )
     return tuple(statuses)
+
+
+def drone_map_status_handler(store: ScenarioStore, perception: PerceptionRegistry) -> Handler:
+    """`DroneMapStatus` as a `(request, ctx)` handler: every drone of the scenario's nests, nest
+    by nest in drone order (or only the drone the request names), with its session's counts from
+    the scenario's connected bridge page, zeros for a drone that never streamed. `NOT_FOUND` for
+    a scenario the store does not have or a drone the scene does not have, `UNAVAILABLE` when no
+    page streams the scenario."""
+
+    async def drone_map_status(_request: object, _ctx: object) -> Any:
+        # TODO(pr-5): implement
+        raise ConnectError(Code.UNIMPLEMENTED, "pr-5: implement")
+
+    return drone_map_status
+
+
+def drone_map_counts(counts: DroneCounts) -> pb.DroneMapCounts:
+    """A drone session's counts as `drone_map_status` reports them (`last_t_ns` 0 before any
+    frame)."""
+    # TODO(pr-5): implement
+    raise NotImplementedError("pr-5: implement")

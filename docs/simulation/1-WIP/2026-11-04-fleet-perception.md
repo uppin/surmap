@@ -18,12 +18,12 @@ PRD: `PRD-2026-11-04-fleet-perception.md` · Discovery: `2026-11-04-fleet-percep
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ⬜ `/plan-red` Red — acceptance and failing lower-tier tests, committed ·
-  - [ ] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
-  - [ ] Stubs this node owns (`fleet/perception.py`, `PairHeader.drone_id`, `BevyPair.drone_id`, `DroneMapStatus` rpc, Rust `fleet/stream.rs`, `fleet/bridge_wasm.rs`)
-  - [ ] Acceptance tests written and failing for the right reason
-  - [ ] Unit/integration tests written and failing
-  - [ ] Tests committed with the changeset
+- [wf 2] ✅ 2026-11-04 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 24 own tests fail on `NotImplementedError("pr-5: implement")` stubs (22 `test_fleet_perception.py` + 2 `test_fleet_perception_e2e.py`); wire goldens pass (12 passed incl. byte-identical old goldens). Inherited n4 red (52 in `test_agent_fleet_tools.py`) still fails on this stale base — it clears when this branch rebases onto n4's green. `mypy` clean (532 files); `ruff` clean except one pre-existing E501 in predecessor-owned `fleet/controller.py:312`, to re-check after the rebase onto n3's wrapped tip
+  - [x] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
+  - [x] Stubs this node owns (`fleet/perception.py`, `PairHeader.drone_id`, `BevyPair.drone_id`, `DroneMapStatus` rpc, Rust `fleet/stream.rs`, `fleet/bridge_wasm.rs`)
+  - [x] Acceptance tests written and failing for the right reason
+  - [x] Unit/integration tests written and failing
+  - [x] Tests committed with the changeset
 - [wf 3] ⬜ `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) ·
   - [ ] Wire: optional `drone_id` on `pair` (Rust `PairHeader`, `encode_pair`; Python `decode_bevy_message`, `BevyPair`); optional `scenario` on `hello`; `status` gains `drone_id`; `hello.bin`/`pair.bin` byte-identical, new golden `pair-drone.bin`
   - [ ] Python `fleet/perception.py`: `DroneSession` (backend, `SegmentationSink`, counts, optional per-drone `CaptureRecorder`), `FleetPerception` router (get-or-create per drone, `MAX_DRONE_SESSIONS = 4`, idle keeps backend, close finishes all), `PerceptionRegistry` keyed by scenario
