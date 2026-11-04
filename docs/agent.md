@@ -806,6 +806,29 @@ their conversation in the `surmap-conversation-id` header.
   watch after the conversation's first `StreamTurn`.
 - Conversations live in memory for the process lifetime.
 
+## Server logs (`surmap.agent.event_log`)
+
+`python -m surmap.agent` logs INFO to stderr as `<time> <level> <logger> <line>`; on Modal that is
+`modal app logs surmap-agent`. Logger `surmap.agent.events` writes one `event=<name> key=value …`
+line per thing that happened (values with spaces, quotes or `=` are double-quoted):
+
+| Event | Fields |
+|---|---|
+| `turn_started` | `conversation turn model trigger=user\|job` |
+| `tool_started` | `conversation turn tool call` |
+| `tool_finished` | `conversation turn tool call status=succeeded\|failed\|detached duration_ms [error]` |
+| `turn_finished` | `conversation turn reason text_chars tools duration_ms` |
+| `turn_error` | `conversation turn error` |
+| `auth_signin` | `result=ok\|refused` — never the code |
+| `auth_refused` | `surface=rpc\|http target` |
+| `station` | `backend action=start\|stop\|idle_stop state [duration_ms] [error]` |
+
+```bash
+uvx modal app logs <surmap-agent app id> | grep 'event=turn_finished' | grep 'text_chars=0'   # turns that said nothing
+uvx modal app logs <id> | grep 'event=tool_finished' | grep -v 'status=succeeded'             # failed or detached tools
+uvx modal app logs <id> | grep 'event=station'                                                # GPU up / down
+```
+
 ## Chat UI
 
 `web/agent-chat/` is the browser client of `ChatService`
