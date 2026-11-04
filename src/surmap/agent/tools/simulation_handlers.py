@@ -258,13 +258,20 @@ def _element(request: pb.AddElementRequest) -> dict[str, object]:
         }
     if which == "person":
         person = request.person
-        return {
+        person_element: dict[str, object] = {
             "kind": "person",
             "id": person.id,
             "position_enu": _xyz(person.position),
             "coat": person.coat,
             "skin": person.skin or "skin",
         }
+        if person.pose:
+            person_element["pose"] = person.pose
+        if person.HasField("height_m"):
+            person_element["height_m"] = person.height_m
+        if person.HasField("yaw_deg"):
+            person_element["yaw_deg"] = person.yaw_deg
+        return person_element
     if which == "vegetation":
         stand = request.vegetation
         return {

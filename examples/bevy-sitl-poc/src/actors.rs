@@ -10,17 +10,25 @@ use bevy::asset::io::Reader;
 use bevy::asset::{Asset, AssetLoader, LoadContext};
 use bevy::math::{Quat, Vec2, Vec3};
 use bevy::prelude::{
-    Assets, Color, Commands, Component, Cuboid, Entity, Handle, Mesh, Mesh3d, MeshMaterial3d, Name, Query, Res,
-    ResMut, Resource, StandardMaterial, Transform, With, Without,
+    AssetServer, Assets, Children, Color, Commands, Component, Cuboid, Entity, Handle, Has, Mesh, Mesh3d,
+    MeshMaterial3d, Name, On, Query, Res, ResMut, Resource, StandardMaterial, Transform, With, Without,
 };
 use bevy::reflect::TypePath;
 use serde::Deserialize;
 
 use crate::behaviour::{Runner, Tree, World, TICK_HZ};
-use crate::wildfire::SimClock;
+use crate::building::BuildingClock;
+use crate::building_fire::BuildingFires;
+use crate::figure_anim::Pose;
+use crate::fire::FireSpec;
+use crate::scene_manifest::Weather;
+use crate::vehicle::scene::{VehicleActor, VehicleAsset, VehicleClasses};
+use crate::wildfire::{SimClock, Wildfire};
 use crate::wind::WindModel;
 use crate::wire::GroundTruthObject;
 use crate::world::enu;
+
+pub mod rig;
 
 /// Seconds of simulation time per tick.
 const DT: f32 = 1.0 / TICK_HZ;
@@ -127,6 +135,9 @@ impl FigureDef {
         if def.body_m.iter().any(|side| *side <= 0.0) {
             return Err("body_m sides must be > 0".into());
         }
+        if let Some(rig) = &def.rig {
+            rig.validate()?;
+        }
         Ok(def)
     }
 }
@@ -224,13 +235,17 @@ pub fn track_line(t_ns: u64, wind: Vec2, bodies: &[Body]) -> String {
     let objects: Vec<serde_json::Value> = sorted
         .iter()
         .map(|body| {
-            serde_json::json!({
+            let mut object = serde_json::json!({
                 "id": body.id,
                 "enu": [body.enu.x, body.enu.y, body.enu.z],
                 "action": body.action,
                 "kind": body.kind,
                 "yaw_deg": body.yaw_deg,
-            })
+            });
+            if let Some(pose) = &body.pose {
+                object["pose"] = serde_json::json!(pose);
+            }
+            object
         })
         .collect();
     serde_json::json!({"t_ns": t_ns, "wind_enu": [wind.x, wind.y], "objects": objects}).to_string()
@@ -246,6 +261,14 @@ pub struct Figure {
     speed_m_s: f32,
     turn: Turn,
     phase: f32,
+    /// How the person holds themself when not walking.
+    pose: Pose,
+    /// The way a posed person faces, ENU degrees counter-clockwise from east.
+    yaw_deg: f32,
+    /// Body height, m; the rig's own height when absent.
+    pub height_m: Option<f32>,
+    /// A rig for this person instead of the figure's own.
+    pub rig_glb: Option<String>,
 }
 
 impl Figure {
@@ -260,15 +283,47 @@ impl Figure {
             speed_m_s: 0.0,
             turn: Turn::default(),
             phase: phase_of(id),
+            pose: Pose::Standing,
+            yaw_deg: 0.0,
+            height_m: None,
+            rig_glb: None,
         }
     }
 
     /// The figure in `pose`, facing `yaw_deg` (ENU, counter-clockwise from east) while it stands;
     /// a posed person is tracked even without a tree.
-    pub fn posed(self, pose: crate::figure_anim::Pose, yaw_deg: f32) -> Self {
-        // TODO(pr-2): implement
-        let _ = (pose, yaw_deg);
-        todo!("Figure::posed")
+    pub fn posed(mut self, pose: Pose, yaw_deg: f32) -> Self {
+        let facing = bevy_yaw(Vec2::from_angle(yaw_deg.to_radians()));
+        self.pose = pose;
+        self.yaw_deg = yaw_deg;
+        self.turn = Turn {
+            from: facing,
+            to: facing,
+            started_s: 0.0,
+        };
+        self
+    }
+
+    /// How the person holds themself when not walking.
+    pub fn pose(&self) -> Pose {
+        self.pose
+    }
+
+    /// The person's speed over the last tick, m/s.
+    pub fn speed_m_s(&self) -> f32 {
+        self.speed_m_s
+    }
+
+    /// The person's step phase (a fixed fraction of a cycle per id).
+    pub fn phase(&self) -> f32 {
+        self.phase
+    }
+
+    /// The person's height (scales the rig) and a rig override (`glb`) for this person alone.
+    pub fn with_stature(mut self, height_m: Option<f32>, rig_glb: Option<String>) -> Self {
+        self.height_m = height_m;
+        self.rig_glb = rig_glb;
+        self
     }
 
     /// Advance the figure's tree by one tick, and start a turn when its heading changes.
@@ -322,15 +377,20 @@ impl Figure {
 
     /// The figure as a moving body in a track frame; `None` for a person standing still.
     pub fn body(&self) -> Option<Body> {
-        let runner = self.runner.as_ref()?;
+        if self.runner.is_none() && self.pose == Pose::Standing {
+            return None;
+        }
+        let at = self.position();
         Some(Body {
             id: self.id.clone(),
-            enu: Vec3::new(runner.position.x, runner.position.y, self.ground_z),
-            action: runner.action().map(str::to_owned),
+            enu: Vec3::new(at.x, at.y, self.ground_z),
+            action: self
+                .runner
+                .as_ref()
+                .and_then(|runner| runner.action().map(str::to_owned)),
             kind: "person".to_owned(),
-            yaw_deg: enu_yaw_deg(self.turn.to),
-            // TODO(pr-2): implement — the person's pose.
-            pose: None,
+            yaw_deg: if self.runner.is_some() { enu_yaw_deg(self.turn.to) } else { self.yaw_deg },
+            pose: Some(self.pose.name().to_owned()),
         })
     }
 }
@@ -373,6 +433,17 @@ impl AssetLoader for FigureLoader {
 #[derive(Component)]
 pub struct Visored;
 
+/// The capsule, head and visor a figure shows until its rig is ready (then they are hidden).
+#[derive(Component)]
+pub struct StandIn;
+
+/// A person's coat and skin materials: the rig's coat and skin slots take them.
+#[derive(Component, Clone)]
+pub struct PersonLook {
+    pub coat: Handle<StandardMaterial>,
+    pub skin: Handle<StandardMaterial>,
+}
+
 /// Once the figure look has loaded, put its visor on the front of each figure's head.
 pub fn attach_visors(
     mut commands: Commands,
@@ -402,25 +473,31 @@ pub fn attach_visors(
                     ..StandardMaterial::default()
                 })),
                 Transform::from_translation(Vec3::from(visor.offset_m)),
+                StandIn,
             ));
         });
     }
 }
 
-/// Each figure's pose at the simulation's moment: its turn eased, and its step bob.
+/// Each figure's pose at the simulation's moment: its turn eased, and its step bob. A figure whose
+/// rig is shown carries its gait in the clips, so it does not bob.
 pub fn animate_figures(
     clock: SimClock,
     look: Option<Res<FigureLook>>,
     looks: Res<Assets<FigureAsset>>,
-    mut figures: Query<(&Figure, &mut Transform)>,
+    mut figures: Query<(&Figure, &mut Transform, Has<rig::RigShown>)>,
 ) {
     let Some(FigureAsset(gait)) = look.and_then(|look| looks.get(&look.0)) else {
         return;
     };
     let now = clock.now();
-    for (figure, mut transform) in &mut figures {
-        transform.translation =
-            figure.bevy_base() + Vec3::Y * bob(gait, figure.speed_m_s, figure.phase, now);
+    for (figure, mut transform, rig_shown) in &mut figures {
+        let bob_m = if rig_shown {
+            0.0
+        } else {
+            bob(gait, figure.speed_m_s, figure.phase, now)
+        };
+        transform.translation = figure.bevy_base() + Vec3::Y * bob_m;
         transform.rotation = Quat::from_rotation_y(yaw_at(figure.turn, now, gait.yaw_ease_s));
     }
 }

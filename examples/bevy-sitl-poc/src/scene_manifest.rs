@@ -384,14 +384,31 @@ impl SceneManifest {
         Ok(())
     }
 
-    /// Each vehicle: `cars` only on a train, a `glb` override that is a relative glTF path, and a
-    /// tree valid for a body on the ground.
     /// Each person: `height_m` in 0.9–2.2, a `glb` override that is a relative glTF path.
     fn validate_people(&self) -> Result<(), ManifestError> {
-        // TODO(pr-2): implement
+        for element in &self.elements {
+            let Element::Person(person) = element else {
+                continue;
+            };
+            if let Some(height) = person.height_m {
+                if !(PERSON_HEIGHT_M.0..=PERSON_HEIGHT_M.1).contains(&height) {
+                    return Err(ManifestError::Invalid(format!(
+                        "person {}: height_m {height} must be {}–{} m",
+                        person.id, PERSON_HEIGHT_M.0, PERSON_HEIGHT_M.1
+                    )));
+                }
+            }
+            if let Some(glb) = &person.glb {
+                if !is_relative_gltf(glb) {
+                    return Err(ManifestError::BadAssetPath(glb.clone()));
+                }
+            }
+        }
         Ok(())
     }
 
+    /// Each vehicle: `cars` only on a train, a `glb` override that is a relative glTF path, and a
+    /// tree valid for a body on the ground.
     fn validate_vehicles(&self) -> Result<(), ManifestError> {
         use crate::behaviour::Target;
         use crate::vehicle::VehicleClass;
@@ -450,6 +467,11 @@ impl SceneManifest {
         for model in &self.models {
             paths.push(model.glb.clone());
         }
+        for element in &self.elements {
+            if let Element::Person(person) = element {
+                paths.extend(person.glb.clone());
+            }
+        }
         paths
     }
 
@@ -480,6 +502,14 @@ fn validate_asset_path(path: &str) -> Result<(), ManifestError> {
     }
     Ok(())
 }
+
+/// A relative glTF asset path: inside `assets/`, ending `.glb` or `.gltf`.
+pub fn is_relative_gltf(path: &str) -> bool {
+    validate_asset_path(path).is_ok() && (path.ends_with(".glb") || path.ends_with(".gltf"))
+}
+
+/// A person's height range, m (the survivors of a survey: a child to a tall adult).
+const PERSON_HEIGHT_M: (f32, f32) = (0.9, 2.2);
 
 impl ModelInstance {
     /// ENU position → Bevy `(x, z, -y)`; yaw is counter-clockwise from

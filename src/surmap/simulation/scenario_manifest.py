@@ -12,7 +12,7 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import Mapping, Sequence
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from surmap.simulation.behaviour_tree import (
@@ -51,9 +51,11 @@ from surmap.simulation.building_presets import validate_buildings
 from surmap.simulation.building_scenes import district_showcase, downtown_blaze
 from surmap.simulation.manifest_checks import Manifest as Manifest
 from surmap.simulation.manifest_checks import ScenarioInvalid as ScenarioInvalid
+from surmap.simulation.manifest_checks import is_relative_path
 from surmap.simulation.manifest_checks import number as _number
 from surmap.simulation.manifest_checks import object_list as _list
 from surmap.simulation.vehicles import street_traffic, validate_vehicle
+from surmap.simulation.people import earthquake_survivors, validate_person_look
 
 if TYPE_CHECKING:
     from surmap.simulation.scenario_store import StoredAsset
@@ -72,8 +74,7 @@ def _materials(manifest: Mapping[str, object]) -> dict[str, dict[str, object]]:
 def _relative(path: object, what: str) -> str:
     if not isinstance(path, str) or not path:
         raise ScenarioInvalid(f"{what} must be a path")
-    pure = PurePosixPath(path)
-    if pure.is_absolute() or ".." in pure.parts or "" in path.split("/"):
+    if not is_relative_path(path):
         raise ScenarioInvalid(f"{what} {path!r} must stay inside the assets")
     return path
 
@@ -190,8 +191,10 @@ def validate_manifest(manifest: Mapping[str, object]) -> None:
         scatters += isinstance(element.get("scatter"), dict)
         if element.get("kind") == "vegetation":
             _validate_vegetation(element)
-        if element.get("kind") == "person" and element.get("behaviour") is not None:
-            validate_behaviour(element["behaviour"], "object")
+        if element.get("kind") == "person":
+            validate_person_look(element)
+            if element.get("behaviour") is not None:
+                validate_behaviour(element["behaviour"], "object")
         if element.get("kind") == "vehicle":
             validate_vehicle(element)
     if scatters > 1:
@@ -450,7 +453,8 @@ def _evacuation(edge: Manifest) -> Manifest:
 def load_presets(assets_dir: Path) -> dict[str, Manifest]:
     """`earthquake-block` (the shipped scene), `empty-lot` (its rig, sky and bare ground),
     `wildfire-edge` and `flood-street` built from them, `wildfire-evacuation`: the edge with
-    people and a veering wind, and the building presets `district-showcase` and `downtown-blaze`."""
+    people and a veering wind, `earthquake-survivors`: the block with five people in their poses,
+    and the building presets `district-showcase` and `downtown-blaze`."""
     block: Manifest = json.loads((Path(assets_dir) / "scene.json").read_text(encoding="utf-8"))
     materials = _materials(block)
     lot: Manifest = {
@@ -482,4 +486,5 @@ def load_presets(assets_dir: Path) -> dict[str, Manifest]:
         "wildfire-evacuation": _evacuation(edge),
         "flood-street": _flood_street(block),
         "street-traffic": street_traffic(block),
+        "earthquake-survivors": earthquake_survivors(block),
     }

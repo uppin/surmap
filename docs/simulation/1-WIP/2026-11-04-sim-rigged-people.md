@@ -24,16 +24,16 @@ PRD: `PRD-2026-11-04-sim-rigged-people.md` · Discovery:
   - [x] Acceptance tests written and failing for the right reason (`tests/test_sim_people_e2e.py`)
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — implement until every red test passes ·
-  - [ ] Pin a CC0 rigged human glTF with the clips (criteria in *Assets*); `fetch_sim_assets.py` verifies it
-  - [ ] Rust `actors.rs` `FigureDef`: `rig` block (glb, clip names, ground speeds, run threshold, coat/skin material slots, standing height); old files without `rig` still load
-  - [ ] Rust `figure_anim.rs` (pure): `locomotion(def, speed, pose) -> Vec<(Clip, weight, rate)>`, `clip_time(now, phase, rate, duration)`; poses held, locomotion crossfaded over `blend_s`
-  - [ ] Rust runtime: spawn the rig under each `Figure`, build one `AnimationGraph` per rig, seek each player to its clip time every frame; capsule + visor only until the rig is ready (or when it is absent)
-  - [ ] Coat/skin materials applied to the rig's named material slots; `height_m` scales the rig
-  - [ ] Tracks: people carry `pose`; a lying person's truth extent is horizontal
-  - [ ] Python `scenario_manifest`: `pose` ∈ the four, `0.9 ≤ height_m ≤ 2.2`, `glb` relative; preset `earthquake-survivors`; golden fixture parsed by Rust
-  - [ ] Proto `PersonElement` gains `pose`, `height_m`; regenerated code; handler; docs table
-  - [ ] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
+- [wf 3] ⛔ `/green` Green — implement until every red test passes · halted 2026-11-04: 2 owned red tests cannot pass honestly (asset; contract conflict). Owned Rust 19/20 and Python 15/16 green; inherited n1 red left alone (Rust 26, Python 16). Gates: ruff, mypy green; wasm check ok
+  - [ ] ⛔ Pin a CC0 rigged human glTF with the clips (criteria in *Assets*); `fetch_sim_assets.py` verifies it. No pinnable file meets the criteria: CC0 humans sampled from Poly Pizza (Quaternius, Polygonal Mind and others; 33 GLBs downloaded and inspected) — the sit clip and the wave clip never occur in one file (`Man`, `Woman in Tank Top`, `Animated Woman` `9kF7eTDbhO`: sit, no wave; `Animated Woman` `qJ2gsTUBHL`, `Hoodie`, `Adventurer`, `Worker`, `Character Animated`: wave, no sit). Quaternius Animated Men/Women/Ultimate/Universal packs are FBX/Blend or Patreon/itch downloads, not pinnable GLB URLs. No non-CC0 substitute, no `clip` remapping (`Man_Clapping` is not a wave)
+  - [ ] Rust `actors.rs` `FigureDef`: `rig` block — the struct, `rig: Option`, `RigDef::validate` from `FigureDef::from_json` are in; old files without `rig` still load. The shipped `person.figure.json` has no `rig` block yet (waits on the asset), so `the_shipped_figure_is_rigged_with_every_clip` stays red
+  - [x] Rust `figure_anim.rs` (pure): `locomotion`, `clip_time`, `rig_scale`, `RigDef::validate`, `Pose::name`; `figure_anim` 12/12 green. Crossfade band = a quarter of the walk→run gap either side of `run_above_m_s`; sit and lie held, wave looped
+  - [x] Rust runtime (`src/actors/rig.rs`): `prepare_rigs` (one `Gltf` and one `AnimationGraph` per rig asset, incl. a person's `glb`), `spawn_rigs` (under each `Figure`, scaled by `height_m`), `drive_rigs` (weights eased over `blend_s`, every player seeked to `clip_time` from `SimClock`). Capsule, head and visor stand in until `RigShown`. Compiles native and wasm; not exercised at run time (no rig asset)
+  - [x] Coat/skin materials on the rig's named slots (`PersonLook`, `GltfMaterialName`); `height_m` scales the rig. Compiles; not exercised; a figure with no rig keeps the capsule
+  - [ ] Tracks: `pose` on `Body` and `track_line` is in (key only when present, so vehicle lines are unchanged). Open: a lying person's truth extent is horizontal — the bridge's track reader (`bevy_capture.py` `object_kinds`) is n1's TODO(pr-1) stub
+  - [x] Python `scenario_manifest`: `validate_person_look` per person (`pose`, `height_m`, `yaw_deg`, `glb`); preset `earthquake-survivors` (five people; the shipped seven standing survivors give way); golden `tests/fixtures/sim_scenario/earthquake-survivors.json` written from the preset; `test_sim_people_manifest` 12/12 and `test_sim_people_e2e` 2/2 green
+  - [ ] ⛔ Proto `PersonElement` (`pose`, `height_m`, `yaw_deg`; regenerated in the red commit) and handler `_element` green. Halt: `test_a_lying_survivor_is_added_with_their_pose_height_and_facing` adds `survivor-1` to `earthquake-block`, which is `scene.json` (`test_the_shipped_scene_is_the_earthquake_block_preset_and_valid` pins that equality) and already holds `survivor-1`; the add is refused as a duplicate. Either the test's id or the shipped scene has to change — a developer decision. Docs table left for wrap (`docs/agent.md`)
+  - [ ] Gates: `ruff format`, `ruff check --no-cache`, `mypy` green; `uv run pytest -q` 17 red = 16 n1-inherited + 1 blocked above; `cargo test --locked` 27 red = 26 n1-inherited + 1 blocked above; `cargo check --target wasm32-unknown-unknown` ok
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (tests + native stills of `earthquake-survivors` reviewed)
   - [ ] `docs/simulation/bevy-simulation.md` — *The figure* rewritten for the rig and poses; `docs/agent.md` — person fields

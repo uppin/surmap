@@ -4,9 +4,9 @@
 //! so a still at `--at t` and a recording replay identically. Every number lives in the figure's
 //! `rig` block (`assets/behaviour/person.figure.json`), never here.
 
-#![allow(dead_code)]
-
 use serde::Deserialize;
+
+use crate::scene_manifest::is_relative_gltf;
 
 /// How a person holds themself when not walking: the poses a survey finds people in.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -24,8 +24,12 @@ pub enum Pose {
 impl Pose {
     /// The pose's name in tracks and manifests (`lying`, …).
     pub fn name(self) -> &'static str {
-        // TODO(pr-2): implement
-        todo!("Pose::name")
+        match self {
+            Self::Standing => "standing",
+            Self::Lying => "lying",
+            Self::Sitting => "sitting",
+            Self::Waving => "waving",
+        }
     }
 }
 
@@ -40,6 +44,13 @@ pub enum Clip {
     Lie,
 }
 
+impl Clip {
+    /// Whether the clip repeats. A sit or a fall is held on its last frame instead.
+    pub fn looping(self) -> bool {
+        !matches!(self, Self::Sit | Self::Lie)
+    }
+}
+
 /// The rig's clips, by the glTF's animation names.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,6 +61,20 @@ pub struct Clips {
     pub wave: String,
     pub sit: String,
     pub lie: String,
+}
+
+impl Clips {
+    /// The glTF animation name `clip` plays under.
+    pub fn name(&self, clip: Clip) -> &str {
+        match clip {
+            Clip::Idle => &self.idle,
+            Clip::Walk => &self.walk,
+            Clip::Run => &self.run,
+            Clip::Wave => &self.wave,
+            Clip::Sit => &self.sit,
+            Clip::Lie => &self.lie,
+        }
+    }
 }
 
 /// The figure's rigged glTF and how its clips map to motion (`person.figure.json` → `rig`).
@@ -78,8 +103,25 @@ impl RigDef {
     /// Every speed, height and blend > 0, `run_ground_m_s` > `walk_ground_m_s`, the glTF a
     /// relative `.glb`/`.gltf` path; the reason names the field.
     pub fn validate(&self) -> Result<(), String> {
-        // TODO(pr-2): implement
-        todo!("RigDef::validate")
+        let positive = [
+            ("walk_ground_m_s", self.walk_ground_m_s),
+            ("run_ground_m_s", self.run_ground_m_s),
+            ("run_above_m_s", self.run_above_m_s),
+            ("blend_s", self.blend_s),
+            ("standing_height_m", self.standing_height_m),
+        ];
+        for (field, value) in positive {
+            if value.is_nan() || value <= 0.0 {
+                return Err(format!("rig {field} must be > 0"));
+            }
+        }
+        if self.run_ground_m_s <= self.walk_ground_m_s {
+            return Err("rig run_ground_m_s must be greater than walk_ground_m_s".into());
+        }
+        if !is_relative_gltf(&self.glb) {
+            return Err(format!("rig glb {:?} must be a relative .glb or .gltf path", self.glb));
+        }
+        Ok(())
     }
 }
 
@@ -96,24 +138,56 @@ pub struct Weighted {
 /// around the threshold; a posed person who is not moving shows the pose's clip (`lie` and `sit`
 /// held, `wave` looped). Moving always shows locomotion, whatever the pose.
 pub fn locomotion(rig: &RigDef, speed_m_s: f32, pose: Pose) -> Vec<Weighted> {
-    // TODO(pr-2): implement
-    let _ = (rig, speed_m_s, pose);
-    todo!("locomotion")
+    if speed_m_s <= 0.0 {
+        let clip = match pose {
+            Pose::Standing => Clip::Idle,
+            Pose::Lying => Clip::Lie,
+            Pose::Sitting => Clip::Sit,
+            Pose::Waving => Clip::Wave,
+        };
+        return vec![Weighted { clip, weight: 1.0, rate: 1.0 }];
+    }
+    // The crossfade spans a quarter of the gap between the two ground speeds either side of the
+    // threshold, so a walk never starts to blend before its own speed.
+    let half_band = (rig.run_ground_m_s - rig.walk_ground_m_s) / 4.0;
+    let run_weight = ((speed_m_s - (rig.run_above_m_s - half_band)) / (2.0 * half_band)).clamp(0.0, 1.0);
+    vec![
+        Weighted {
+            clip: Clip::Walk,
+            weight: 1.0 - run_weight,
+            rate: speed_m_s / rig.walk_ground_m_s,
+        },
+        Weighted {
+            clip: Clip::Run,
+            weight: run_weight,
+            rate: speed_m_s / rig.run_ground_m_s,
+        },
+    ]
 }
 
 /// Where in a clip of `duration_s` a person is at `now_s`, playing at `rate` from `phase`
 /// (0..1 of a cycle, per person): wrapped when `looping`, held at the end when not.
 pub fn clip_time(now_s: f32, phase: f32, rate: f32, duration_s: f32, looping: bool) -> f32 {
-    // TODO(pr-2): implement
-    let _ = (now_s, phase, rate, duration_s, looping);
-    todo!("clip_time")
+    if duration_s <= 0.0 {
+        return 0.0;
+    }
+    let time = now_s * rate + phase * duration_s;
+    if looping {
+        time.rem_euclid(duration_s)
+    } else {
+        time.clamp(0.0, duration_s)
+    }
 }
 
-/// The uniform scale that makes the rig `height_m` tall; 1 when the person names no height.
+/// The uniform scale that makes the rig `height_m` tall; 1 when the person names no height. Both
+/// heights are heights to the millimetre, so they are read as such before the ratio is taken: a
+/// 1.62 m person on a 1.8 m rig scales by exactly 0.9, where the widened f32 values land on the
+/// neighbouring float.
 pub fn rig_scale(rig: &RigDef, height_m: Option<f32>) -> f32 {
-    // TODO(pr-2): implement
-    let _ = (rig, height_m);
-    todo!("rig_scale")
+    fn millimetres(metres: f32) -> f64 {
+        (f64::from(metres) * 1000.0).round() / 1000.0
+    }
+    height_m.map_or(1.0, |height| (millimetres(height) / millimetres(rig.standing_height_m)) as f32)
 }
 
 #[cfg(test)]
