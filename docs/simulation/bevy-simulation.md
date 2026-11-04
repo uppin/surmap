@@ -976,6 +976,52 @@ uv run python scripts/fleet_link_smoke.py --sim-dist examples/bevy-sitl-poc/dist
 - Chrome run after merge —
   [`src/surmap/docs/todo/2026-11-04-fleet-browser-verification.md`](../../src/surmap/docs/todo/2026-11-04-fleet-browser-verification.md).
 
+## Live stream: the active drone mapped and segmented, one map per drone
+
+A page opened with `?bridge=ws://<station>:8773` streams the **active drone's** stereo pairs to
+the station's bridge, and the station keeps **one RTAB-Map session and one segmentation run per
+drone**. Only the active drone's frames are processed; the other drones keep flying unprocessed.
+
+- **Starting the bridge.** `python -m surmap.agent --bevy-bridge-port 8773` serves the bridge
+  (`surmap.simulation.bevy_bridge.serve_bevy_bridge`) with a `FleetPerception` router per page
+  connection, the streaming RTAB-Map factory and the configured SAM detector (the fake under
+  `--sam-fake`). The page and the bridge share one origin through `--sim-dist`; there is no
+  separate `serve_bevy_sim.py`.
+- **The page (`fleet/bridge_wasm.rs`, wasm only).** `?bridge=` opens a binary `WebSocket` and
+  sends `hello` (camera profile, ground truth, optional `scenario`) at scene ready. Each
+  sim-time tick, `StreamPacer` (`fleet/stream.rs`, pure) sends at the camera's `rate_hz`: it
+  reads back the eyes (`Readback`, as `record.rs` does) and calls `encode_pair` with the active
+  drone's id (`ActiveDrone`). When `bufferedAmount` exceeds four frame sizes the pair is
+  dropped, never queued without bound. A pair without a fleet carries no `drone_id` and stays
+  byte-identical to the old golden (`pair.bin`); `pair-drone.bin` pins the labelled form.
+- **Per-drone sessions (`surmap.simulation.fleet.perception`).** `hello` stores the camera
+  profile and scenario and registers the connection in `PerceptionRegistry[scenario]`. Each
+  `pair` is routed by `drone_id` (`default` when absent) to that drone's `DroneSession` — a
+  backend from the factory, a `SamSegmentationSink` on its left frames (worker thread, queue
+  of 2, drop oldest), an optional per-drone `CaptureRecorder`, and counts. At most
+  `MAX_DRONE_SESSIONS = 4` sessions live per connection; a fifth drone's pairs are answered
+  `error: "drone session limit (4) reached; <id> not processed"` and the first four keep
+  working. A drone whose frames stop is idle with its backend and map alive; when its frames
+  resume they go to the same backend — RTAB-Map resets odometry after the gap and starts a new
+  sub-map in the same graph, which joins on loop closure. Closing the page finishes every
+  session (backends closed, recorders finished, in drone-id order) and unregisters it.
+- **Status.** The bridge replies with a `status` per pair (`frames`, `posed`, `lost`,
+  `keyframes`, `dropped`, `drone_id`); the page shows it under the feed panel as
+  `MAP <drone> · <n> frames · <k> keyframes · tracking`. The agent reads every drone's counts
+  with `drone_map_status` ([docs/agent.md](../agent.md), *Fleet tools*).
+
+### Verified
+
+2026-11-04 (#121): V1 — `tests/test_fleet_perception.py`,
+`tests/test_fleet_perception_e2e.py`, `tests/test_bevy_wire.py` and
+`tests/test_agent_fleet_tools.py` pass; the real-sidecar
+`tests/test_fleet_perception_rtabmap_e2e.py` (CI `rtabmap-e2e`) feeds the committed capture as
+two drones in alternating blocks — both sessions gain keyframes and the first drone's backend
+is the same object with counts continuing after the switch back. V3 —
+`cargo check --locked --target wasm32-unknown-unknown` compiles `fleet/bridge_wasm.rs`. Chrome
+run (V4) after merge —
+[`src/surmap/docs/todo/2026-11-04-fleet-browser-verification.md`](../../src/surmap/docs/todo/2026-11-04-fleet-browser-verification.md).
+
 ## The stereo rig: one camera profile
 
 `cameras/elp-stereo-pinhole.camera.json` (the SurMap ELP rig): 640×480, fx = fy = 381.36,
@@ -1051,9 +1097,9 @@ runtime-scene version has not been checked in Chrome yet (visual checkpoint V5,
 `src/surmap/docs/todo/2026-11-03-bevy-visual-checkpoints-v3-v5.md`).
 
 Browser → RTAB-Map: the wire format (`src/wire.rs`, goldens in
-`tests/fixtures/bevy_sim_wire/`) and the Python bridge (`surmap.simulation.bevy_bridge`)
-exist and are tested; the wasm WebSocket client is not built yet
-(`src/surmap/docs/todo/2026-11-03-bevy-live-websocket-stream.md`).
+`tests/fixtures/bevy_sim_wire/`), the Python bridge (`surmap.simulation.bevy_bridge`) and the
+wasm WebSocket client (`?bridge=`, *Live stream* above) stream the active drone's pairs into
+one RTAB-Map session per drone.
 
 ## What RTAB-Map makes of it (measured)
 
