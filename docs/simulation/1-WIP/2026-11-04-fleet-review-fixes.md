@@ -33,13 +33,12 @@ planned.
   - [ ] F7 `stream_bridge` runs after `fleet::fly_fleet` and `follow_drone_rig`
   - [ ] F8 an unlinked controller validates against the scenario's latest nests
   - [ ] F9 `tests/hang_dump.py` skips a dead weak proxy instead of raising `ReferenceError`
-  - [ ] F10 `ListDronesResponse.sim_t_s` (the linked page's telemetry time; 0 when unlinked); proto + generated code; `docs/agent.md` field table
+  - [ ] F10 `ListDronesResponse.sim_t_s` (the linked page's telemetry time; unset when unlinked); proto + generated code; `docs/agent.md` field table
   - [ ] Gates green; `cargo test --locked`; `cargo check --locked --target wasm32-unknown-unknown`
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded
   - [ ] `docs/simulation/bevy-simulation.md` — *Live stream* / *The fleet link*: the bridge's SAM, off-loop work, per-drone failure isolation, the scenario check
   - [ ] `docs/simulation/changelog/2026-11-04-fleet-review-fixes.md`
-  - [ ] `src/surmap/docs/todo/2026-11-04-fleet-browser-verification.md` — add a step: after a `set_active` switch mid-stream, the first pair after the switch is labelled with the new drone
   - [ ] Validate tests (`/validate-tests`)
   - [ ] Lint (`ruff --no-cache`), type-check and tests green
   - [ ] Every TODO row decided
@@ -125,7 +124,7 @@ added only where a pure seam is needed to reach the defect, and it is named in t
 | F4 | `test_telemetry_from_the_frame_a_launch_lands_in_keeps_the_drone_climbing` (applied `at_s=1.02`, telemetry `sim_t_s=1.02 phase=docked`; then `recall` passes the station check) | the expectation is dropped and the recall is refused `already_docked` |
 | F5 | `test_one_drones_backend_failure_leaves_the_other_drones_streaming` (backend B raises on its 3rd frame; A keeps processing; B's status carries the error; the socket stays open) | the exception closes every session |
 | F6 | `test_a_page_whose_hello_names_another_scenario_is_refused` (link `?scenario=A` with `hello.scenario=B` closes 4400, and A stays unlinked) | it attaches, and A accepts B's drones |
-| F7 | Rust: covered by F2's seam test plus a schedule-order check if one is expressible (e.g. the plugin registers `stream_bridge` in a set ordered after the fleet set, asserted on the `App`'s schedule graph). Otherwise V3: `cargo check --target wasm32-unknown-unknown` with the ordering compiled in, plus the browser TODO step | no ordering exists |
+| F7 | Rust: `the_stream_reads_the_eyes_only_after_the_fleet_flew_and_the_eyes_followed` (a native schedule-order check on the built `Update` schedule, with a probe system in `BridgeStreamSet`) | no ordering exists |
 | F8 | `test_a_nest_added_after_the_first_call_has_drones_the_controller_knows` (call `list_drones`, add a nest, `launch_drone` on the new drone while unlinked answers UNAVAILABLE, not NOT_FOUND) | NOT_FOUND, from the frozen nests |
 | F9 | `test_a_dead_weak_proxy_in_memory_does_not_cut_the_report_short` (prepared patch) | `ReferenceError` |
 | F10 | `test_list_drones_reports_the_pages_simulation_time` (telemetry `sim_t_s=41.5`; `list_drones.sim_t_s == 41.5`; unset when unlinked) | no such field |
@@ -184,9 +183,9 @@ the built `Update` schedule), so the V3 fallback is not needed.
 
 ## Verification
 
-**Method:** V1 fail→pass — the ten reproductions above, red on `main` and green after. F7's
-schedule order is V1 if the `App` graph assertion is expressible, else V3 (the wasm build with the
-ordering), and the browser-verification TODO gains the post-switch labelling step.
+**Method:** V1 fail→pass — the eleven reproduction tests for F1–F10 above, red on `main` and green
+after, F7 included (a native schedule-order test). No browser step: the developer said
+"disregard the browser" (2026-11-04).
 **Command:** `uv run pytest -q tests/test_fleet_perception.py tests/test_fleet_perception_e2e.py tests/test_sim_fleet_controller.py tests/test_sim_fleet_registry.py tests/test_agent_fleet_tools.py tests/test_agent_server_app.py tests/test_hang_dump.py`
 and `cd examples/bevy-sitl-poc && cargo test --locked stream`
 **Before:** each reproduction fails with the cause in the table (recorded in the Red commit).
@@ -196,7 +195,7 @@ and `cd examples/bevy-sitl-poc && cargo test --locked stream`
 
 | Item | Verdict |
 |---|---|
-| `todo/2026-11-04-fleet-browser-verification.md` | ⚠ during — gains the F2/F7 post-switch check (Wrap TODO); stays open for the developer's post-merge run |
+| `todo/2026-11-04-fleet-browser-verification.md` | — not touched: the developer said "disregard the browser" (2026-11-04) |
 | `todo/2026-11-03-agent-cli-sam-flags.md` | ℹ F1 follows the agent's existing SAM choice (station or `--sam-fake`); it does not lift that todo's constraint |
 | `code-issues/oversized-file-world.md`, `…-scenario-manifest.md`, `…-simulation-tools-proto.md` | — out of scope: the Refactor follow-up PR |
 | `todo/2026-11-04-fleet-obstacle-avoidance.md`, `…-fleet-routes-on-chat-map.md` | — unrelated |
