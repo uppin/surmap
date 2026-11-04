@@ -60,6 +60,25 @@ class FrameKeypoints:
 
 
 @dataclass(frozen=True)
+class DetectedObject:
+    """One object the on-board model found: its class, score, box (x0, y0, x1, y1) in raw
+    left-camera pixels, and its tracker's id."""
+
+    label: str
+    score: float
+    box_xyxy: tuple[float, float, float, float]
+    track_id: int
+
+
+@dataclass(frozen=True)
+class FrameDetections:
+    """What the on-board model found on the pair the page sent as `frame_id`."""
+
+    frame_id: int
+    objects: tuple[DetectedObject, ...]
+
+
+@dataclass(frozen=True)
 class BridgeStatus:
     frames: int
     posed: int
@@ -73,6 +92,8 @@ class BridgeStatus:
     odometry: tuple[FrameKeypoints, ...] = ()
     """The odometry that came back while this pair was handled, oldest first: usually an
     earlier pair's, as RTAB-Map answers asynchronously."""
+    detections: tuple[FrameDetections, ...] = ()
+    """What the on-board model the agent chose found on this pair; empty without one."""
 
 
 def encode_status(status: BridgeStatus) -> str:

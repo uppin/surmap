@@ -28,6 +28,7 @@ from typing import Final, Protocol, cast
 import numpy as np
 from PIL import Image
 
+from surmap.detection.source import DetectionSource
 from surmap.simulation.bevy_bridge import BackendFactory, PairRecorder, StreamingBackend
 from surmap.simulation.bevy_wire import (
     BevyHello,
@@ -45,6 +46,7 @@ from surmap.types import StereoFramePair
 
 __all__ = [
     "DEFAULT_DRONE",
+    "DetectorChoice",
     "MAX_DRONE_SESSIONS",
     "SAM_QUEUE_SIZE",
     "DroneCounts",
@@ -65,6 +67,15 @@ DEFAULT_DRONE: Final = "default"
 
 SAM_QUEUE_SIZE: Final = 2
 """Left frames waiting for the detector; a newer frame drops the oldest."""
+
+
+@dataclass(frozen=True)
+class DetectorChoice:
+    """The on-board model the agent chose for a scenario: its name, and how to build a fresh
+    detection source (detector and tracker) running it, one per drone session."""
+
+    model: str
+    build: Callable[[], DetectionSource]
 
 
 class SegmentationSink(Protocol):
@@ -335,6 +346,11 @@ class FleetPerception:
         self._processing = drone_id
         return session.status()
 
+    def use_detector(self, choice: DetectorChoice | None) -> None:
+        """Runs `choice`'s on-board model on every drone session's frames, now and for each
+        session created later; `None` runs none."""
+        raise NotImplementedError
+
     def counts(self) -> tuple[DroneCounts, ...]:
         """Every drone session's counts, in drone-id order."""
         return tuple(
@@ -449,3 +465,12 @@ class PerceptionRegistry:
     def perception(self, scenario_id: str) -> FleetPerception | None:
         """The scenario's connected page; `None` when no page streams it."""
         return self._pages.get(scenario_id)
+
+    def choose_detector(self, scenario_id: str, choice: DetectorChoice | None) -> bool:
+        """Keeps `choice` as the scenario's on-board model and applies it to the scenario's
+        page, and to any page that registers for it later; whether a page streams it now."""
+        raise NotImplementedError
+
+    def detector(self, scenario_id: str) -> str | None:
+        """The on-board model chosen for the scenario; `None` when none is."""
+        raise NotImplementedError

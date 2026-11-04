@@ -31,6 +31,7 @@ from connectrpc.errors import ConnectError
 from surmap.agent.proto import fleet_tools_pb2 as pb
 from surmap.agent.proto import simulation_tools_pb2 as sim_pb
 from surmap.agent.services import Handler
+from surmap.agent.tools.onboard import OnboardModels
 from surmap.agent.tools.simulation_core import blocking
 from surmap.simulation.fleet.commands import (
     Detour,
@@ -70,6 +71,7 @@ __all__ = [
     "fleet_nest",
     "fleet_tool_handlers",
     "flight_route",
+    "set_onboard_model_handler",
 ]
 
 CommandRequest = (
@@ -316,6 +318,19 @@ def drone_map_status_handler(store: ScenarioStore, perception: PerceptionRegistr
         )
 
     return drone_map_status
+
+
+def set_onboard_model_handler(
+    store: ScenarioStore, perception: PerceptionRegistry, onboard: OnboardModels
+) -> Handler:
+    """`SetOnboardModel` as a `(request, ctx)` handler."""
+
+    async def set_onboard_model(
+        request: pb.SetOnboardModelRequest, _ctx: object
+    ) -> pb.SetOnboardModelResponse:
+        raise NotImplementedError
+
+    return set_onboard_model
 
 
 def drone_map_counts(counts: DroneCounts) -> pb.DroneMapCounts:

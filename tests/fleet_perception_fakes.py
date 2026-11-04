@@ -14,8 +14,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
+from numpy.typing import NDArray
+
+from surmap.detection.tracker import TrackedDetection
 from surmap.simulation.bevy_wire import BevyPair, BridgeStatus
-from surmap.simulation.fleet.perception import FleetPerception, PerceptionRegistry
+from surmap.simulation.fleet.perception import DetectorChoice, FleetPerception, PerceptionRegistry
 from surmap.slam.stream_protocol import Keypoint, OdomUpdate, Rectification
 from surmap.survey.sam import RawFrame
 from surmap.types import Pose, StereoFramePair, Vec3
@@ -267,6 +271,56 @@ class RecordingSinks:
             drone: [(f.frame_id, f.channel, f.data) for f in sink.frames]
             for drone, sink in self.by_drone.items()
         }
+
+
+A_CAR = TrackedDetection("car", 0.82, (0.5, 0.0, 3.0, 2.0), track_id=3, frame_id=0)
+"""What a fake on-board detector finds on every frame (its `frame_id` set to the frame's)."""
+
+
+class DetectorFailed(RuntimeError):
+    """An on-board detector failed on a frame."""
+
+
+class FakeDetections:
+    """One drone's on-board detector: records each frame it sees, finds `A_CAR` on it; with
+    `fails`, raises `DetectorFailed` instead."""
+
+    def __init__(self, *, fails: bool = False) -> None:
+        self.frames: list[tuple[int, NDArray[np.uint8]]] = []
+        self._fails = fails
+
+    def detect_tracked(self, frame_id: int, rgb: NDArray[np.uint8]) -> tuple[TrackedDetection, ...]:
+        self.frames.append((frame_id, rgb))
+        if self._fails:
+            raise DetectorFailed(f"the detector failed on frame {frame_id}")
+        return (
+            TrackedDetection(A_CAR.label, A_CAR.score, A_CAR.box_xyxy, A_CAR.track_id, frame_id),
+        )
+
+
+class RecordingDetectors:
+    """An on-board model's source builder: a new `FakeDetections` per call, remembered."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.built: list[FakeDetections] = []
+        self._fail = fail
+
+    def __call__(self) -> FakeDetections:
+        source = FakeDetections(fails=self._fail)
+        self.built.append(source)
+        return source
+
+    def frames_seen(self) -> list[list[int]]:
+        """Each built detector's frame ids, in build order."""
+        return [[frame_id for frame_id, _ in source.frames] for source in self.built]
+
+
+def an_onboard_model(
+    model: str = "ssd-mobilenet-v2", *, fail: bool = False
+) -> tuple[DetectorChoice, RecordingDetectors]:
+    """The choice of on-board `model`, and the fake detectors it builds."""
+    detectors = RecordingDetectors(fail=fail)
+    return DetectorChoice(model, detectors), detectors
 
 
 class FakeRecorder:

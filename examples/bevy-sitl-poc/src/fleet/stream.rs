@@ -161,6 +161,30 @@ fn keypoint(value: &serde_json::Value) -> Option<[f32; 3]> {
     }
 }
 
+/// One object the on-board model found on a frame: its class, score, box `[x0, y0, x1, y1]` in
+/// raw left-camera pixels, and its tracker's id.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DetectedObject {
+    pub label: String,
+    pub score: f32,
+    pub box_xyxy: [f32; 4],
+    pub track_id: u64,
+}
+
+/// What the on-board model found on the frame the page sent as `frame_id`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FrameDetections {
+    pub frame_id: u64,
+    pub objects: Vec<DetectedObject>,
+}
+
+/// The on-board detections a `status` reply carries (`"detections"`), in order; none when it has
+/// no such field. A malformed entry or object is skipped.
+pub fn parse_detections(reply: &serde_json::Value) -> Vec<FrameDetections> {
+    let _ = reply;
+    unimplemented!()
+}
+
 #[cfg(test)]
 mod tests {
     use bevy::ecs::schedule::{InternedSystemSet, IntoSystemSet, Schedules, SystemKey};
@@ -362,6 +386,62 @@ mod tests {
         assert_eq!(
             parse_odometry(&reply),
             vec![FrameKeypoints { frame_id: 4, keypoints: vec![[2.0, 2.0, 3.0]] }]
+        );
+    }
+
+    #[test]
+    fn a_status_reply_s_detections_name_each_frame_and_its_objects() {
+        let reply = serde_json::json!({
+            "type": "status", "frames": 8,
+            "detections": [
+                {"frame_id": 8, "objects": [
+                    {"label": "car", "score": 0.82, "box": [10.0, 20.5, 64.0, 48.0], "track_id": 3}
+                ]}
+            ]
+        });
+
+        assert_eq!(
+            parse_detections(&reply),
+            vec![FrameDetections {
+                frame_id: 8,
+                objects: vec![DetectedObject {
+                    label: "car".into(),
+                    score: 0.82,
+                    box_xyxy: [10.0, 20.5, 64.0, 48.0],
+                    track_id: 3,
+                }],
+            }]
+        );
+    }
+
+    #[test]
+    fn a_status_reply_without_detections_has_none() {
+        assert_eq!(parse_detections(&serde_json::json!({"type": "status", "frames": 1})), vec![]);
+    }
+
+    #[test]
+    fn a_malformed_detection_entry_or_object_is_skipped() {
+        let reply = serde_json::json!({
+            "detections": [
+                {"objects": []},
+                {"frame_id": 4, "objects": [
+                    {"label": "car", "score": 0.5, "box": [1.0, 2.0], "track_id": 1},
+                    {"label": "bus", "score": 0.9, "box": [1.0, 2.0, 3.0, 4.0], "track_id": 2}
+                ]}
+            ]
+        });
+
+        assert_eq!(
+            parse_detections(&reply),
+            vec![FrameDetections {
+                frame_id: 4,
+                objects: vec![DetectedObject {
+                    label: "bus".into(),
+                    score: 0.9,
+                    box_xyxy: [1.0, 2.0, 3.0, 4.0],
+                    track_id: 2,
+                }],
+            }]
         );
     }
 }

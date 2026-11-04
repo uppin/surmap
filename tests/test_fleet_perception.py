@@ -15,7 +15,13 @@ import threading
 import pytest
 from PIL import Image
 
-from surmap.simulation.bevy_wire import BevyWireError, BridgeStatus, FrameKeypoints
+from surmap.simulation.bevy_wire import (
+    BevyWireError,
+    BridgeStatus,
+    DetectedObject,
+    FrameDetections,
+    FrameKeypoints,
+)
 from surmap.simulation.fleet.perception import (
     MAX_DRONE_SESSIONS,
     DroneCounts,
@@ -37,6 +43,7 @@ from tests.fleet_perception_fakes import (
     SW_D2,
     a_pair,
     a_perception,
+    an_onboard_model,
     an_open_perception,
     blocks,
 )
@@ -472,3 +479,153 @@ def test_keypoints_outside_the_frame_are_left_out() -> None:
 
     # Then only the one in the frame is reported
     assert status.odometry == (FrameKeypoints(frame_id=5, keypoints=((1.0, 0.5, 2.5),)),)
+
+
+# ---- the on-board model the agent chose, on the processed frames ------------------------------
+
+THE_CAR_ON = {
+    frame: FrameDetections(
+        frame_id=frame,
+        objects=(DetectedObject("car", 0.82, (0.5, 0.0, 3.0, 2.0), track_id=3),),
+    )
+    for frame in range(1, 8)
+}
+
+
+def test_a_status_carries_its_frame_s_on_board_detections() -> None:
+    # Given a fleet page whose processing runs the on-board model the agent chose
+    rig = an_open_perception()
+    choice, _ = an_onboard_model()
+    rig.perception.use_detector(choice)
+
+    # When nest-sw-d1's frame 5 arrives
+    (status,) = rig.streams(a_pair(5, SW_D1))
+
+    # Then the reply carries the car the model found on frame 5
+    assert status.detections == (THE_CAR_ON[5],)
+
+
+def test_the_on_board_model_sees_the_grey_left_frame_as_rgb() -> None:
+    # Given a page running an on-board model
+    rig = an_open_perception()
+    choice, detectors = an_onboard_model()
+    rig.perception.use_detector(choice)
+
+    # When a 4x2 grey pair arrives
+    rig.streams(a_pair(5, SW_D1))
+
+    # Then the model sees the left eye, its grey level in every colour channel
+    ((frame_id, rgb),) = detectors.built[0].frames
+    assert (frame_id, rgb.shape, rgb[..., 0].tobytes(), rgb[..., 2].tobytes()) == (
+        5,
+        (2, 4, 3),
+        LEFT,
+        LEFT,
+    )
+
+
+def test_without_an_on_board_model_a_status_carries_no_detections() -> None:
+    # Given a page the agent chose no on-board model for
+    rig = an_open_perception()
+
+    # When a frame arrives
+    (status,) = rig.streams(a_pair(5, SW_D1))
+
+    # Then its reply carries no detections
+    assert status.detections == ()
+
+
+def test_each_drone_runs_its_own_copy_of_the_on_board_model() -> None:
+    # Given a page running an on-board model
+    rig = an_open_perception()
+    choice, detectors = an_onboard_model()
+    rig.perception.use_detector(choice)
+
+    # When nest-sw-d1 streams two frames, then nest-ne-d1 one
+    rig.streams(*blocks((SW_D1, 2), (NE_D1, 1)))
+
+    # Then each drone's frames went to a detector (and tracker) of its own
+    assert detectors.frames_seen() == [[1, 2], [3]]
+
+
+def test_a_drone_already_streaming_switches_to_the_chosen_model() -> None:
+    # Given nest-sw-d1 streaming with no on-board model
+    rig = an_open_perception()
+    rig.streams(a_pair(1, SW_D1))
+    choice, _ = an_onboard_model()
+
+    # When the agent chooses one, and the next frame arrives
+    rig.perception.use_detector(choice)
+    (status,) = rig.streams(a_pair(2, SW_D1))
+
+    # Then that frame already carries its detections
+    assert status.detections == (THE_CAR_ON[2],)
+
+
+def test_clearing_the_on_board_model_stops_its_detections() -> None:
+    # Given a page running an on-board model
+    rig = an_open_perception()
+    choice, _ = an_onboard_model()
+    rig.perception.use_detector(choice)
+    rig.streams(a_pair(1, SW_D1))
+
+    # When the agent clears it, and the next frame arrives
+    rig.perception.use_detector(None)
+    (status,) = rig.streams(a_pair(2, SW_D1))
+
+    # Then the reply carries no detections
+    assert status.detections == ()
+
+
+def test_a_failing_on_board_model_leaves_the_map_running() -> None:
+    # Given a page whose on-board model fails on every frame
+    rig = an_open_perception()
+    choice, _ = an_onboard_model(fail=True)
+    rig.perception.use_detector(choice)
+
+    # When two frames arrive
+    statuses = rig.streams(*blocks((SW_D1, 2)))
+
+    # Then both were mapped, with no detections and no session error
+    assert [(s.frames, s.detections, s.error) for s in statuses] == [(1, (), None), (2, (), None)]
+
+
+def test_a_scenario_s_model_choice_reaches_the_page_streaming_it() -> None:
+    # Given a page streaming quake-fleet
+    registry = PerceptionRegistry()
+    rig = a_perception(registry).opened()
+    choice, _ = an_onboard_model()
+
+    # When the agent chooses an on-board model for the scenario
+    streaming = registry.choose_detector(SCENARIO, choice)
+    (status,) = rig.streams(a_pair(5, SW_D1))
+
+    # Then the page streaming it runs the model
+    assert (streaming, status.detections) == (True, (THE_CAR_ON[5],))
+
+
+def test_a_page_that_connects_after_the_choice_runs_the_chosen_model() -> None:
+    # Given the agent chose an on-board model before any page streamed quake-fleet
+    registry = PerceptionRegistry()
+    choice, _ = an_onboard_model()
+    streaming = registry.choose_detector(SCENARIO, choice)
+
+    # When a page for the scenario connects and streams a frame
+    rig = a_perception(registry).opened()
+    (status,) = rig.streams(a_pair(5, SW_D1))
+
+    # Then it runs the model the agent chose
+    assert (streaming, status.detections) == (False, (THE_CAR_ON[5],))
+
+
+def test_the_registry_remembers_which_model_a_scenario_runs() -> None:
+    # Given the agent chose an on-board model for quake-fleet
+    registry = PerceptionRegistry()
+    choice, _ = an_onboard_model("ssdlite-mobiledet")
+    registry.choose_detector(SCENARIO, choice)
+
+    # When it asks which model runs there, and on a scenario it chose nothing for
+    chosen = (registry.detector(SCENARIO), registry.detector("another-scene"))
+
+    # Then the first is the chosen model, the second none
+    assert chosen == ("ssdlite-mobiledet", None)

@@ -76,6 +76,15 @@ service FleetTools {
   rpc DroneMapStatus(DroneMapStatusRequest) returns (DroneMapStatusResponse) {
     option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
   }
+
+  // Chooses the on-board detector model (from list_onboard_models) the station's stereo bridge
+  // runs on the scenario's processed drone frames, or "none" to run none. The choice holds for
+  // the scenario, also for a simulation page that connects later; the simulation preview draws
+  // the model's detections, labelled, on the drone's camera view. Fails invalid for an unknown
+  // model and failed-precondition for one this station has no files for.
+  rpc SetOnboardModel(SetOnboardModelRequest) returns (SetOnboardModelResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
 }
 
 // What a simulated drone is doing.
@@ -253,4 +262,18 @@ message DroneMapCounts {
 message DroneMapStatusResponse {
   // Every drone asked for, nest by nest in drone order.
   repeated DroneMapCounts drones = 1;
+}
+
+message SetOnboardModelRequest {
+  string scenario_id = 1;
+  // An on-board model name from list_onboard_models, or "none" to run no on-board model.
+  string onboard_model = 2;
+}
+
+message SetOnboardModelResponse {
+  // The model the bridge now runs for the scenario; empty for none.
+  string onboard_model = 1;
+  // Whether a simulation page streams the scenario to the bridge now; the choice waits for one
+  // when not.
+  bool streaming = 2;
 }

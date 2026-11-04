@@ -13,6 +13,7 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
 use crate::calibration::CameraProfile;
 use crate::fleet::autopilot::Phase;
+use crate::fleet::stream::DetectedObject;
 use crate::fleet::{ActiveDrone, Fleet};
 use crate::{Flight, StereoFeeds};
 
@@ -96,23 +97,24 @@ pub fn bgra_to_rgba(bgra: &[u8], width: u32, height: u32, row_bytes: u32) -> Vec
     out
 }
 
-/// The sent frames still waiting for their odometry, oldest first, at most `capacity`.
+/// What the page holds of each sent frame until its odometry comes back — its pixels, or what
+/// the on-board model found on it — oldest first, at most `capacity`.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq)]
-pub struct HeldFrames {
+pub struct HeldFrames<T = Vec<u8>> {
     capacity: usize,
-    frames: VecDeque<(u64, Vec<u8>)>,
+    frames: VecDeque<(u64, T)>,
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-impl HeldFrames {
+impl<T> HeldFrames<T> {
     /// Holds at most `capacity` frames; holding one more drops the oldest.
     pub fn new(capacity: usize) -> Self {
         Self { capacity, frames: VecDeque::new() }
     }
 
-    /// Holds `pixels`, the frame sent as `frame_id`.
-    pub fn hold(&mut self, frame_id: u64, pixels: Vec<u8>) {
+    /// Holds `pixels`, what the page keeps of the frame sent as `frame_id`.
+    pub fn hold(&mut self, frame_id: u64, pixels: T) {
         if self.frames.len() == self.capacity {
             self.frames.pop_front();
         }
@@ -121,7 +123,7 @@ impl HeldFrames {
 
     /// The pixels of `frame_id`, whose odometry came back; it and every older frame stop being
     /// held (their odometry, if it ever comes, is stale). `None` when it is not held.
-    pub fn take(&mut self, frame_id: u64) -> Option<Vec<u8>> {
+    pub fn take(&mut self, frame_id: u64) -> Option<T> {
         let position = self.frames.iter().position(|(id, _)| *id == frame_id)?;
         let (_, pixels) = self.frames.drain(..=position).last().expect("position is in range");
         Some(pixels)
@@ -138,13 +140,87 @@ impl HeldFrames {
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 pub const HELD_FRAMES: usize = 12;
 
-/// The FPV frame RTAB-Map processed last, with its keypoints (`[u, v, depth_m]`, raw pixels):
-/// the bridge stream writes it once a held frame's odometry came back.
+/// The FPV frame RTAB-Map processed last, with its keypoints (`[u, v, depth_m]`, raw pixels)
+/// and what the on-board model found on it: the bridge stream writes it once a held frame's
+/// odometry came back.
 #[derive(Resource, Debug, Clone, PartialEq)]
 pub struct FpvFrame {
     /// The frame's tight RGBA rows, at the camera profile's size.
     pub rgba: Vec<u8>,
     pub keypoints: Vec<[f32; 3]>,
+    pub detections: Vec<DetectedObject>,
+}
+
+/// The colour of a detection's outline, leader and card border: the demo's SAM card cyan.
+pub const DETECTION_COLOUR: [u8; 3] = [34, 211, 238];
+/// A card's text size, logical px; Bevy's default font is monospaced, `CHAR_EM` of it per glyph.
+pub const CARD_FONT_PX: f32 = 11.0;
+const CHAR_EM: f32 = 0.6;
+/// A one-line card's height and its text's horizontal padding, px (the demo's cards).
+pub const CARD_HEIGHT_PX: f32 = 19.0;
+const CARD_PADDING_PX: f32 = 6.0;
+/// The image margin a card keeps, the gap between cards (and to their object), and the grid
+/// step of the free spots tried: the demo's `CARD_MARGIN_PX`, `CARD_GAP_PX`, `CARD_GRID_PX`.
+const CARD_MARGIN_PX: f32 = 4.0;
+const CARD_GAP_PX: f32 = 4.0;
+const CARD_GRID_PX: f32 = 4.0;
+
+/// A label card to place, display px: its object's `anchor` (where the leader ends) and box
+/// `[x0, y0, x1, y1]`, and the card's size.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CardItem {
+    pub anchor: [f32; 2],
+    pub bbox: [f32; 4],
+    pub width: f32,
+    pub height: f32,
+}
+
+/// A placed card, display px: its top-left and size, and its leader from the card's edge
+/// (`from`) to its object's anchor (`to`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Card {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub from: [f32; 2],
+    pub to: [f32; 2],
+}
+
+/// The demo page's `layoutCards`: each card as close to its own object as it fits — just above
+/// it when free, else the nearest free spot (below, beside, then a grid) — never overlapping
+/// another card and inside the `width` x `height` image. The smallest objects are placed first:
+/// they have the fewest free spots near them. Cards come back in `items`' order.
+pub fn layout_cards(items: &[CardItem], width: f32, height: f32) -> Vec<Card> {
+    let _ = (items, width, height, CARD_MARGIN_PX, CARD_GAP_PX, CARD_GRID_PX);
+    unimplemented!()
+}
+
+/// A detection's card text: `<label> #<track> <score>%`.
+pub fn card_text(object: &DetectedObject) -> String {
+    let _ = object;
+    unimplemented!()
+}
+
+/// A detection's card to place in display px, its frame-pixel box scaled by `scale` (display px
+/// per frame px); the card is sized to its text.
+pub fn card_item(object: &DetectedObject, scale: f32) -> CardItem {
+    let _ = (object, scale, CHAR_EM, CARD_PADDING_PX);
+    unimplemented!()
+}
+
+/// Draws into tight RGBA rows (`width` x `height`) each box's outline and each leader with a dot
+/// at either end, `line_px` thick, in `DETECTION_COLOUR`; frame pixels throughout.
+pub fn draw_detections(
+    rgba: &mut [u8],
+    width: u32,
+    height: u32,
+    boxes: &[[f32; 4]],
+    leaders: &[([f32; 2], [f32; 2])],
+    line_px: u32,
+) {
+    let _ = (rgba, width, height, boxes, leaders, line_px);
+    unimplemented!()
 }
 
 /// The preview's full-window layer over the chase view; shown in FPV.
@@ -396,5 +472,126 @@ mod tests {
 
         assert_eq!(held.held(), vec![2, 3]);
         assert_eq!(held.take(1), None);
+    }
+
+    #[test]
+    fn what_the_on_board_model_found_is_held_by_frame_like_its_pixels() {
+        let mut held: HeldFrames<Vec<&str>> = HeldFrames::new(4);
+        held.hold(7, vec!["car"]);
+        held.hold(8, vec![]);
+
+        assert_eq!(held.take(7), Some(vec!["car"]));
+        assert_eq!(held.held(), vec![8]);
+    }
+
+    fn a_car(track_id: u64, box_xyxy: [f32; 4]) -> DetectedObject {
+        DetectedObject { label: "car".into(), score: 0.82, box_xyxy, track_id }
+    }
+
+    fn an_item(bbox: [f32; 4]) -> CardItem {
+        let [x0, y0, x1, y1] = bbox;
+        CardItem { anchor: [(x0 + x1) / 2.0, (y0 + y1) / 2.0], bbox, width: 60.0, height: 19.0 }
+    }
+
+    fn overlaps(a: &Card, b: &Card) -> bool {
+        a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+    }
+
+    fn inside(card: &Card, width: f32, height: f32) -> bool {
+        card.x >= 0.0 && card.y >= 0.0 && card.x + card.width <= width && card.y + card.height <= height
+    }
+
+    #[test]
+    fn a_lone_card_sits_just_above_its_object_centred_on_it() {
+        let cards = layout_cards(&[an_item([100.0, 100.0, 140.0, 140.0])], 640.0, 480.0);
+
+        assert_eq!((cards[0].x, cards[0].y), (90.0, 77.0));
+    }
+
+    #[test]
+    fn an_object_at_the_top_edge_has_its_card_just_below_it() {
+        let cards = layout_cards(&[an_item([100.0, 0.0, 140.0, 40.0])], 640.0, 480.0);
+
+        assert_eq!((cards[0].x, cards[0].y), (90.0, 44.0));
+    }
+
+    #[test]
+    fn cards_of_neighbouring_objects_never_overlap() {
+        let items = [
+            an_item([100.0, 100.0, 140.0, 140.0]),
+            an_item([120.0, 102.0, 160.0, 142.0]),
+            an_item([110.0, 98.0, 150.0, 138.0]),
+        ];
+
+        let cards = layout_cards(&items, 640.0, 480.0);
+
+        assert!(!overlaps(&cards[0], &cards[1]), "{cards:?}");
+        assert!(!overlaps(&cards[0], &cards[2]), "{cards:?}");
+        assert!(!overlaps(&cards[1], &cards[2]), "{cards:?}");
+    }
+
+    #[test]
+    fn a_card_stays_inside_the_image_for_an_object_at_its_corner() {
+        let cards = layout_cards(&[an_item([620.0, 0.0, 640.0, 20.0])], 640.0, 480.0);
+
+        assert!(inside(&cards[0], 640.0, 480.0), "{cards:?}");
+    }
+
+    #[test]
+    fn a_leader_joins_the_card_s_nearest_edge_to_its_object() {
+        let cards = layout_cards(&[an_item([100.0, 100.0, 140.0, 140.0])], 640.0, 480.0);
+
+        assert_eq!((cards[0].from, cards[0].to), ([120.0, 96.0], [120.0, 120.0]));
+    }
+
+    #[test]
+    fn a_detection_s_card_names_its_class_track_and_score() {
+        assert_eq!(card_text(&a_car(3, [0.0, 0.0, 1.0, 1.0])), "car #3 82%");
+    }
+
+    #[test]
+    fn a_detection_s_card_item_is_its_box_in_display_pixels_sized_to_its_text() {
+        let item = card_item(&a_car(3, [10.0, 20.0, 50.0, 60.0]), 0.5);
+
+        // "car #3 82%" is ten glyphs of 0.6 x 11 px, plus 6 px padding either side.
+        assert_eq!(
+            item,
+            CardItem { anchor: [15.0, 20.0], bbox: [5.0, 10.0, 25.0, 30.0], width: 78.0, height: 19.0 }
+        );
+    }
+
+    fn pixel(rgba: &[u8], width: u32, x: u32, y: u32) -> [u8; 3] {
+        let i = ((y * width + x) * 4) as usize;
+        [rgba[i], rgba[i + 1], rgba[i + 2]]
+    }
+
+    #[test]
+    fn a_detection_s_box_is_outlined_and_its_inside_left_as_it_was() {
+        let mut rgba = vec![0; 20 * 20 * 4];
+
+        draw_detections(&mut rgba, 20, 20, &[[4.0, 4.0, 15.0, 15.0]], &[], 1);
+
+        assert_eq!(pixel(&rgba, 20, 4, 10), DETECTION_COLOUR);
+        assert_eq!(pixel(&rgba, 20, 10, 15), DETECTION_COLOUR);
+        assert_eq!(pixel(&rgba, 20, 10, 10), [0, 0, 0]);
+    }
+
+    #[test]
+    fn a_leader_is_drawn_from_its_card_to_its_object() {
+        let mut rgba = vec![0; 20 * 20 * 4];
+
+        draw_detections(&mut rgba, 20, 20, &[], &[([2.0, 10.0], [17.0, 10.0])], 1);
+
+        assert_eq!(pixel(&rgba, 20, 10, 10), DETECTION_COLOUR);
+        assert_eq!(pixel(&rgba, 20, 10, 4), [0, 0, 0]);
+    }
+
+    #[test]
+    fn drawing_past_the_frame_s_edge_is_clipped() {
+        let mut rgba = vec![0; 8 * 8 * 4];
+
+        draw_detections(&mut rgba, 8, 8, &[[-5.0, -5.0, 20.0, 20.0]], &[([-3.0, 4.0], [12.0, 4.0])], 2);
+
+        assert_eq!(pixel(&rgba, 8, 4, 4), DETECTION_COLOUR);
     }
 }

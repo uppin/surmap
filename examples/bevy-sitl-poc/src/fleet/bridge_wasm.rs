@@ -211,7 +211,7 @@ fn show_answered_frame(commands: &mut Commands, stream: &mut BridgeStream) {
     let Some(held) = stream.held.as_mut() else { return };
     let answered = arrived
         .into_iter()
-        .filter_map(|frame| held.take(frame.frame_id).map(|rgba| FpvFrame { rgba, keypoints: frame.keypoints }))
+        .filter_map(|frame| held.take(frame.frame_id).map(|rgba| FpvFrame { rgba, keypoints: frame.keypoints, detections: Vec::new() }))
         .last();
     if let Some(frame) = answered {
         commands.insert_resource(frame);
