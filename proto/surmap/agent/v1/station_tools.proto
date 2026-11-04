@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package surmap.agent.v1;
+
+import "surmap/agent/v1/execution.proto";
+
+/*
+The SAM station: the GPU that runs SAM for this agent, brought up on first use and taken down
+when idle. Every rpc here is a model-facing tool (its snake_case name is the tool name, its
+leading comment the description) and the chat page calls the same rpcs for its header
+indicator. Mounted only when the agent runs with a station (`--station`).
+*/
+
+service StationTools {
+  // Reads the SAM station's state: off, queued (waiting for a GPU), starting, ready, stopping or
+  // error, its container count, and how long it has been idle against its idle timeout. Reading
+  // it does not start the GPU or keep it up.
+  rpc GetStationStatus(GetStationStatusRequest) returns (StationStatusResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 10 on_timeout: FAIL};
+  }
+
+  // Starts the SAM station's GPU and returns once it answers. The first SAM call starts it
+  // anyway; call this ahead of a batch of SAM work to take the cold start (about 20 s, longer
+  // while no GPU is free) out of the first call. Detaches to a job after 30 s.
+  rpc StartStation(StartStationRequest) returns (StationStatusResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 30 on_timeout: DETACH};
+  }
+
+  // Stops the SAM station's GPU now, so it stops billing. It also stops by itself once it has
+  // been idle (no SAM frame) for its idle timeout; the next SAM call starts it again.
+  rpc StopStation(StopStationRequest) returns (StationStatusResponse) {
+    option (default_execution) = {mode: SYNC timeout_s: 30 on_timeout: DETACH};
+  }
+}
+
+message GetStationStatusRequest {}
+
+message StartStationRequest {}
+
+message StopStationRequest {}
+
+message StationStatusResponse {
+  StationStatus status = 1;
+}
+
+// Where the SAM station is in its life.
+enum StationState {
+  STATION_STATE_UNSPECIFIED = 0;
+  // No container: it costs nothing; the next SAM call or start brings it up.
+  STATION_STATE_OFF = 1;
+  // A request waits for a GPU to be free.
+  STATION_STATE_QUEUED = 2;
+  // A container is up but has not answered its health check yet.
+  STATION_STATE_STARTING = 3;
+  // Answering: SAM calls run on it.
+  STATION_STATE_READY = 4;
+  // Asked to stop; a container still serves another client's stream.
+  STATION_STATE_STOPPING = 5;
+  // It failed to start, or its host cannot be reached; `detail` says why.
+  STATION_STATE_ERROR = 6;
+}
+
+message StationStatus {
+  StationState state = 1;
+  // One line on the state, e.g. why it errored or what it waits for.
+  string detail = 2;
+  // Live containers.
+  int32 containers = 3;
+  // Seconds without a SAM frame after which the agent stops it.
+  int32 idle_timeout_s = 4;
+  // Seconds since the agent's last SAM frame on it; 0 when it has had none.
+  int32 idle_for_s = 5;
+  // What runs it, e.g. "modal:main/surmap-station" or "stub".
+  string backend = 6;
+}

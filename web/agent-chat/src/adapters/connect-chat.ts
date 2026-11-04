@@ -1,4 +1,4 @@
-import { createClient, type Transport } from "@connectrpc/connect";
+import { Code, ConnectError, createClient, type Transport } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { ChatService } from "@/gen/surmap/agent/v1/chat_pb";
 import { AgentJobs } from "@/gen/surmap/agent/v1/jobs_pb";
@@ -8,7 +8,13 @@ import {
   type GeoPoint,
   type MapScene,
 } from "@/gen/surmap/agent/v1/map_tools_pb";
-import type { ChatPort, DatasetView, MapPointView, MapSceneView } from "@/ports";
+import {
+  StationState,
+  StationTools,
+  type StationStatus,
+  type StationStatusResponse,
+} from "@/gen/surmap/agent/v1/station_tools_pb";
+import type { ChatPort, DatasetView, MapPointView, MapSceneView, StationStateView, StationView } from "@/ports";
 
 /** The header `AgentJobs` calls name their conversation in; each conversation has its own jobs. */
 export const CONVERSATION_HEADER = "surmap-conversation-id";
@@ -45,6 +51,7 @@ export function createConnectChatPort(transport: Transport, baseUrl: string = DE
   const chat = createClient(ChatService, transport);
   const jobs = createClient(AgentJobs, transport);
   const map = createClient(MapTools, transport);
+  const station = createClient(StationTools, transport);
   return {
     streamTurn: (input, signal) =>
       chat.streamTurn(
@@ -95,6 +102,43 @@ export function createConnectChatPort(transport: Transport, baseUrl: string = DE
       const body = (await response.json()) as { datasets: DatasetJson[] };
       return body.datasets.map(datasetView);
     },
+    async getStationStatus() {
+      try {
+        return stationView(await station.getStationStatus({}));
+      } catch (error) {
+        // An agent with no station does not mount StationTools.
+        if (ConnectError.from(error).code === Code.Unimplemented) return null;
+        throw error;
+      }
+    },
+    async startStation() {
+      return stationView(await station.startStation({}));
+    },
+    async stopStation() {
+      return stationView(await station.stopStation({}));
+    },
+  };
+}
+
+const STATION_STATES: Record<StationState, StationStateView> = {
+  [StationState.UNSPECIFIED]: "off",
+  [StationState.OFF]: "off",
+  [StationState.QUEUED]: "queued",
+  [StationState.STARTING]: "starting",
+  [StationState.READY]: "ready",
+  [StationState.STOPPING]: "stopping",
+  [StationState.ERROR]: "error",
+};
+
+function stationView(response: StationStatusResponse): StationView {
+  const status: StationStatus | undefined = response.status;
+  return {
+    state: STATION_STATES[status?.state ?? StationState.UNSPECIFIED],
+    detail: status?.detail ?? "",
+    containers: status?.containers ?? 0,
+    idleTimeoutS: status?.idleTimeoutS ?? 0,
+    idleForS: status?.idleForS ?? 0,
+    backend: status?.backend ?? "",
   };
 }
 

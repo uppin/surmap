@@ -111,6 +111,23 @@ export interface MapSceneView {
   layers: MapLayerView[];
 }
 
+/** Where the SAM station (the GPU SAM runs on) is in its life. */
+export type StationStateView = "off" | "queued" | "starting" | "ready" | "stopping" | "error";
+
+/** The SAM station as `StationTools` reports it. */
+export interface StationView {
+  state: StationStateView;
+  /** One line on the state: what it waits for, or why it errored. */
+  detail: string;
+  containers: number;
+  /** Seconds without a SAM frame after which the agent stops it. */
+  idleTimeoutS: number;
+  /** Seconds since its last SAM frame; 0 when it is not ready. */
+  idleForS: number;
+  /** What runs it, e.g. "modal:main/surmap-station". */
+  backend: string;
+}
+
 /**
  * Everything the chat UI asks of the agent server. Components and the view model never reach the
  * network except through this port; the Connect adapter implements it and tests fake it.
@@ -134,4 +151,10 @@ export interface ChatPort {
   getMapScene(): Promise<MapSceneView>;
   /** Every dataset in the gallery catalogue, in catalogue order. */
   listDatasets(): Promise<DatasetView[]>;
+  /** The SAM station's status; `null` when the agent runs without one. Never starts the GPU. */
+  getStationStatus(): Promise<StationView | null>;
+  /** Starts the SAM station's GPU; resolves once it answers. */
+  startStation(): Promise<StationView>;
+  /** Stops the SAM station's GPU now. */
+  stopStation(): Promise<StationView>;
 }

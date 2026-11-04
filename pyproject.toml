@@ -35,6 +35,10 @@ dependencies = [
 # OpenCV for the calibration sidecar only (`cm5_main --calibration`); the
 # survey path imports no cv2. `uv sync --extra calibration` on the host.
 calibration = ["opencv-python-headless>=4.10"]
+# The Modal SDK for the agent's Modal SAM station (`python -m surmap.agent --station modal`);
+# imported only by `surmap.agent.tools.station_modal.modal_station_function`.
+# `uv sync --extra modal` on the agent host.
+modal = ["modal>=1.6"]
 
 [dependency-groups]
 dev = [
