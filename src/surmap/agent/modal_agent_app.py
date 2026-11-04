@@ -11,9 +11,17 @@ the deployed ``surmap-station`` app (``--station modal``; inside Modal the SDK n
 Secrets: ``surmap-agent`` (``MODEL_API_KEY``, ``SURMAP_AGENT_ACCESS_CODE``) and
 ``surmap-survey`` (the station's bearer token). The demo cache is Volume ``surmap-agent-cache``.
 
-Build the page first, then deploy from the repo root (full steps in ``docs/modal.md``):
+The image also carries the Bevy simulation the agent serves at ``/sim/``: the PoC's
+``trunk build`` and its assets with the fetched pinned files. Deploying refuses a page older
+than its sources or unfetched assets (``check_sim_bundle``); only the deploy checks, since the
+container imports this file without the PoC on disk.
+
+Build the pages and fetch the assets first, then deploy from the repo root (full steps in
+``docs/modal.md``):
 
     (cd web/agent-chat && yarn build)
+    uv run python scripts/fetch_sim_assets.py
+    (cd examples/bevy-sitl-poc && trunk build index.html --release)
     uv run --with modal modal deploy src/surmap/agent/modal_agent_app.py
     uv run --with modal modal app stop surmap-agent
 """
@@ -23,6 +31,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import modal
 
@@ -31,9 +40,12 @@ from surmap.survey.modal_hosting import (
     AGENT_CACHE,
     AGENT_PORT,
     AGENT_SECRET,
+    AGENT_SIM_ASSETS,
+    AGENT_SIM_PAGE,
     AGENT_WEB_DIST,
     SURVEY_SECRET,
     agent_command,
+    check_sim_bundle,
 )
 
 CACHE_VOLUME = "surmap-agent-cache"
@@ -41,14 +53,20 @@ CACHE_VOLUME = "surmap-agent-cache"
 _TIMEOUT_S = int(os.environ.get("SURMAP_MODAL_TIMEOUT", "86400"))
 _SCALEDOWN_S = int(os.environ.get("SURMAP_MODAL_SCALEDOWN_WINDOW", "1200"))
 
+if modal.is_local():
+    check_sim_bundle(Path("examples/bevy-sitl-poc"))
+
 app = modal.App(AGENT_APP_NAME)
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
     # The locked dependencies (uv.lock) with the Modal SDK for the station control, then the
-    # built chat page and surmap itself.
+    # built chat page, the simulation (its page and assets) and surmap itself.
     .uv_sync(extra_options="--no-dev --extra modal")
     .add_local_dir("web/agent-chat/dist", AGENT_WEB_DIST)
+    .add_local_dir("examples/bevy-sitl-poc/assets", AGENT_SIM_ASSETS)
+    # Not a local `dist/assets` link to the assets (PoC README): /sim/assets/ is served from those.
+    .add_local_dir("examples/bevy-sitl-poc/dist", AGENT_SIM_PAGE, ignore=["assets"])
     .add_local_python_source("surmap", ignore=["**/__pycache__"])
 )
 
