@@ -1,7 +1,8 @@
 {
   "glb": "models/quaternius/ship.glb",
-  "model_yaw_deg": 90.0,
+  "model_yaw_deg": 270.0,
   "model_scale": 3.9,
+  "keel_below_origin_m": 6.28,
   "length_m": 60.0,
   "width_m": 20.7,
   "height_m": 44.9,

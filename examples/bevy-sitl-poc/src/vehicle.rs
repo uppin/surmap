@@ -92,6 +92,10 @@ pub struct VehicleDef {
     /// pack whose units are not metres). 1 for a model already in metres.
     #[serde(default = "unit_scale")]
     pub model_scale: f32,
+    /// How far the model's lowest point (its keel) lies below its origin, m after scaling. A
+    /// vessel's origin sits at its waterline's draft, so the model is lifted by this much.
+    #[serde(default)]
+    pub keel_below_origin_m: f32,
     /// Trains: the carriage glTF and the distance between consecutive carriages' centres.
     #[serde(default)]
     pub carriage_glb: Option<String>,

@@ -44,10 +44,21 @@ impl AssetLoader for VehicleLoader {
 #[derive(Resource)]
 pub struct VehicleClasses(Vec<(VehicleClass, Handle<VehicleAsset>)>);
 
+/// The classes whose files the scene loads: every class a `vehicle` element may name.
+pub fn loaded_classes() -> &'static [VehicleClass] {
+    &[
+        VehicleClass::Car,
+        VehicleClass::Bus,
+        VehicleClass::Truck,
+        VehicleClass::Train,
+        VehicleClass::Boat,
+        VehicleClass::Ship,
+    ]
+}
+
 impl VehicleClasses {
     pub fn load(assets: &AssetServer) -> Self {
-        let classes = [VehicleClass::Car, VehicleClass::Bus, VehicleClass::Truck, VehicleClass::Train];
-        Self(classes.into_iter().map(|class| (class, assets.load(class.file()))).collect())
+        Self(loaded_classes().iter().map(|&class| (class, assets.load(class.file()))).collect())
     }
 
     /// Every class file's handle, for the scene to wait on.
@@ -193,7 +204,9 @@ pub fn attach_vehicles(
         actor.attached = true;
         let turn = Quat::from_rotation_y(def.model_yaw_deg.to_radians());
         // The class's model, and its carriages, are authored at the same scale.
-        let pose = Transform::from_rotation(turn).with_scale(Vec3::splat(def.model_scale));
+        let pose = Transform::from_translation(Vec3::Y * def.keel_below_origin_m)
+            .with_rotation(turn)
+            .with_scale(Vec3::splat(def.model_scale));
         let glb = actor.glb.clone().unwrap_or_else(|| def.glb.clone());
         let model: Handle<Scene> = assets.load(GltfAssetLabel::Scene(0).from_asset(glb));
         if let Some(state) = state.as_mut() {
