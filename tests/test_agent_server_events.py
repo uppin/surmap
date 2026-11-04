@@ -13,6 +13,7 @@ from surmap.agent.runtime.events import (
     FinishReason,
     JobUpdate,
     SteerApplied,
+    SubagentMessage,
     TextDelta,
     ToolCallFinished,
     ToolCallStarted,
@@ -219,3 +220,16 @@ def test_a_turn_error_carries_its_message() -> None:
 
     # Then the message is carried as error
     assert mapped.error == chat_pb2.TurnError(message="Meta Responses returned no output text")
+
+
+def test_a_subagent_message_becomes_subagent_message() -> None:
+    # Given a subagent's message to the main agent
+    event = SubagentMessage(subagent_id="sa-1", name="scene-builder", text="Which side burns?")
+
+    # When it is mapped
+    mapped = as_proto(event)
+
+    # Then it carries the subagent and its text
+    assert mapped.subagent_message == chat_pb2.SubagentMessage(
+        subagent_id="sa-1", name="scene-builder", text="Which side burns?"
+    )

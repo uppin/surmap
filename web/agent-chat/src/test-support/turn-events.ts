@@ -141,6 +141,13 @@ export class ConversationScript {
     });
   }
 
+  subagentMessage(subagentId: string, name: string, text: string): this {
+    return this.push({
+      case: "subagentMessage",
+      value: { $typeName: "surmap.agent.v1.SubagentMessage", subagentId, name, text },
+    });
+  }
+
   turnFinished(reason: FinishReason = "stop"): this {
     return this.push({
       case: "turnFinished",

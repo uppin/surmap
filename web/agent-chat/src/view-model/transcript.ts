@@ -71,6 +71,17 @@ export interface SteerItem {
   detachedCallIds: string[];
 }
 
+/** A message a subagent sent the agent; the agent reads it as a notice. */
+export interface SubagentMessageItem {
+  kind: "subagent_message";
+  id: string;
+  turnId: string;
+  subagentId: string;
+  /** The label it was started with, e.g. "scene-builder". */
+  name: string;
+  text: string;
+}
+
 export interface ErrorItem {
   kind: "error";
   id: string;
@@ -85,6 +96,7 @@ export type TranscriptItem =
   | ToolItem
   | JobNoticeItem
   | SteerItem
+  | SubagentMessageItem
   | ErrorItem;
 
 /** The policy as one label, e.g. `"SYNC 30 s → DETACH"` or `"ASYNC"`. */

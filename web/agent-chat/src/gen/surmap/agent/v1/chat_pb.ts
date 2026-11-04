@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file surmap/agent/v1/chat.proto.
  */
 export const file_surmap_agent_v1_chat: GenFile = /*@__PURE__*/
-  fileDesc("ChpzdXJtYXAvYWdlbnQvdjEvY2hhdC5wcm90bxIPc3VybWFwLmFnZW50LnYxIl4KEVN0cmVhbVR1cm5SZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRIMCgR0ZXh0GAIgASgJEhUKCG1vZGVsX2lkGAMgASgJSACIAQFCCwoJX21vZGVsX2lkIjMKGFdhdGNoQ29udmVyc2F0aW9uUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkiNQoMU3RlZXJSZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRIMCgR0ZXh0GAIgASgJIiEKDVN0ZWVyUmVzcG9uc2USEAoIYWNjZXB0ZWQYASABKAgiLAoRQ2FuY2VsVHVyblJlcXVlc3QSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJIicKEkNhbmNlbFR1cm5SZXNwb25zZRIRCgljYW5jZWxsZWQYASABKAgiEwoRTGlzdE1vZGVsc1JlcXVlc3QiYgoJQ2hhdE1vZGVsEgoKAmlkGAEgASgJEhAKCHByb3ZpZGVyGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCRIRCglhdmFpbGFibGUYBCABKAgSDgoGZGV0YWlsGAUgASgJIloKEkxpc3RNb2RlbHNSZXNwb25zZRIqCgZtb2RlbHMYASADKAsyGi5zdXJtYXAuYWdlbnQudjEuQ2hhdE1vZGVsEhgKEGRlZmF1bHRfbW9kZWxfaWQYAiABKAkiMQoWR2V0Q29udmVyc2F0aW9uUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkiXgoXR2V0Q29udmVyc2F0aW9uUmVzcG9uc2USFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEioKBmV2ZW50cxgCIAMoCzIaLnN1cm1hcC5hZ2VudC52MS5UdXJuRXZlbnQiGwoLVXNlck1lc3NhZ2USDAoEdGV4dBgBIAEoCSJ9Cg9Ub29sQ2FsbFN0YXJ0ZWQSDwoHY2FsbF9pZBgBIAEoCRIMCgR0b29sGAIgASgJEhYKDmFyZ3VtZW50c19qc29uGAMgASgJEjMKCWV4ZWN1dGlvbhgEIAEoCzIgLnN1cm1hcC5hZ2VudC52MS5FeGVjdXRpb25Qb2xpY3kiyAIKEFRvb2xDYWxsRmluaXNoZWQSDwoHY2FsbF9pZBgBIAEoCRI4CgZzdGF0dXMYAiABKA4yKC5zdXJtYXAuYWdlbnQudjEuVG9vbENhbGxGaW5pc2hlZC5TdGF0dXMSEwoLcmVzdWx0X2pzb24YAyABKAkSEgoFaW1hZ2UYBCABKAxIAIgBARIXCgptZWRpYV90eXBlGAUgASgJSAGIAQESLAoDam9iGAYgASgLMhouc3VybWFwLmFnZW50LnYxLkpvYkhhbmRsZUgCiAEBIlgKBlN0YXR1cxIWChJTVEFUVVNfVU5TUEVDSUZJRUQQABINCglTVUNDRUVERUQQARIKCgZGQUlMRUQQAhIMCghERVRBQ0hFRBADEg0KCUNBTkNFTExFRBAEQggKBl9pbWFnZUINCgtfbWVkaWFfdHlwZUIGCgRfam9iIjcKDFN0ZWVyQXBwbGllZBIMCgR0ZXh0GAEgASgJEhkKEWRldGFjaGVkX2NhbGxfaWRzGAIgAygJIpYBCgxUdXJuRmluaXNoZWQSNAoGcmVhc29uGAEgASgOMiQuc3VybWFwLmFnZW50LnYxLlR1cm5GaW5pc2hlZC5SZWFzb24iUAoGUmVhc29uEhYKElJFQVNPTl9VTlNQRUNJRklFRBAAEggKBFNUT1AQARIKCgZMRU5HVEgQAhINCglDQU5DRUxMRUQQAxIJCgVFUlJPUhAEIhwKCVR1cm5FcnJvchIPCgdtZXNzYWdlGAEgASgJIuYDCglUdXJuRXZlbnQSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEg8KB3R1cm5faWQYAiABKAkSCwoDc2VxGAMgASgEEhQKCnRleHRfZGVsdGEYCiABKAlIABI9ChF0b29sX2NhbGxfc3RhcnRlZBgLIAEoCzIgLnN1cm1hcC5hZ2VudC52MS5Ub29sQ2FsbFN0YXJ0ZWRIABI/ChJ0b29sX2NhbGxfZmluaXNoZWQYDCABKAsyIS5zdXJtYXAuYWdlbnQudjEuVG9vbENhbGxGaW5pc2hlZEgAEjAKCmpvYl91cGRhdGUYDSABKAsyGi5zdXJtYXAuYWdlbnQudjEuSm9iSGFuZGxlSAASNgoNc3RlZXJfYXBwbGllZBgOIAEoCzIdLnN1cm1hcC5hZ2VudC52MS5TdGVlckFwcGxpZWRIABI2Cg10dXJuX2ZpbmlzaGVkGA8gASgLMh0uc3VybWFwLmFnZW50LnYxLlR1cm5GaW5pc2hlZEgAEisKBWVycm9yGBAgASgLMhouc3VybWFwLmFnZW50LnYxLlR1cm5FcnJvckgAEjQKDHVzZXJfbWVzc2FnZRgRIAEoCzIcLnN1cm1hcC5hZ2VudC52MS5Vc2VyTWVzc2FnZUgAQgcKBWV2ZW50MpcECgtDaGF0U2VydmljZRJOCgpTdHJlYW1UdXJuEiIuc3VybWFwLmFnZW50LnYxLlN0cmVhbVR1cm5SZXF1ZXN0Ghouc3VybWFwLmFnZW50LnYxLlR1cm5FdmVudDABElwKEVdhdGNoQ29udmVyc2F0aW9uEikuc3VybWFwLmFnZW50LnYxLldhdGNoQ29udmVyc2F0aW9uUmVxdWVzdBoaLnN1cm1hcC5hZ2VudC52MS5UdXJuRXZlbnQwARJGCgVTdGVlchIdLnN1cm1hcC5hZ2VudC52MS5TdGVlclJlcXVlc3QaHi5zdXJtYXAuYWdlbnQudjEuU3RlZXJSZXNwb25zZRJVCgpDYW5jZWxUdXJuEiIuc3VybWFwLmFnZW50LnYxLkNhbmNlbFR1cm5SZXF1ZXN0GiMuc3VybWFwLmFnZW50LnYxLkNhbmNlbFR1cm5SZXNwb25zZRJVCgpMaXN0TW9kZWxzEiIuc3VybWFwLmFnZW50LnYxLkxpc3RNb2RlbHNSZXF1ZXN0GiMuc3VybWFwLmFnZW50LnYxLkxpc3RNb2RlbHNSZXNwb25zZRJkCg9HZXRDb252ZXJzYXRpb24SJy5zdXJtYXAuYWdlbnQudjEuR2V0Q29udmVyc2F0aW9uUmVxdWVzdBooLnN1cm1hcC5hZ2VudC52MS5HZXRDb252ZXJzYXRpb25SZXNwb25zZWIGcHJvdG8z", [file_surmap_agent_v1_execution]);
+  fileDesc("ChpzdXJtYXAvYWdlbnQvdjEvY2hhdC5wcm90bxIPc3VybWFwLmFnZW50LnYxIl4KEVN0cmVhbVR1cm5SZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRIMCgR0ZXh0GAIgASgJEhUKCG1vZGVsX2lkGAMgASgJSACIAQFCCwoJX21vZGVsX2lkIjMKGFdhdGNoQ29udmVyc2F0aW9uUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkiNQoMU3RlZXJSZXF1ZXN0EhcKD2NvbnZlcnNhdGlvbl9pZBgBIAEoCRIMCgR0ZXh0GAIgASgJIiEKDVN0ZWVyUmVzcG9uc2USEAoIYWNjZXB0ZWQYASABKAgiLAoRQ2FuY2VsVHVyblJlcXVlc3QSFwoPY29udmVyc2F0aW9uX2lkGAEgASgJIicKEkNhbmNlbFR1cm5SZXNwb25zZRIRCgljYW5jZWxsZWQYASABKAgiEwoRTGlzdE1vZGVsc1JlcXVlc3QiYgoJQ2hhdE1vZGVsEgoKAmlkGAEgASgJEhAKCHByb3ZpZGVyGAIgASgJEhQKDGRpc3BsYXlfbmFtZRgDIAEoCRIRCglhdmFpbGFibGUYBCABKAgSDgoGZGV0YWlsGAUgASgJIloKEkxpc3RNb2RlbHNSZXNwb25zZRIqCgZtb2RlbHMYASADKAsyGi5zdXJtYXAuYWdlbnQudjEuQ2hhdE1vZGVsEhgKEGRlZmF1bHRfbW9kZWxfaWQYAiABKAkiMQoWR2V0Q29udmVyc2F0aW9uUmVxdWVzdBIXCg9jb252ZXJzYXRpb25faWQYASABKAkiXgoXR2V0Q29udmVyc2F0aW9uUmVzcG9uc2USFwoPY29udmVyc2F0aW9uX2lkGAEgASgJEioKBmV2ZW50cxgCIAMoCzIaLnN1cm1hcC5hZ2VudC52MS5UdXJuRXZlbnQiGwoLVXNlck1lc3NhZ2USDAoEdGV4dBgBIAEoCSJ9Cg9Ub29sQ2FsbFN0YXJ0ZWQSDwoHY2FsbF9pZBgBIAEoCRIMCgR0b29sGAIgASgJEhYKDmFyZ3VtZW50c19qc29uGAMgASgJEjMKCWV4ZWN1dGlvbhgEIAEoCzIgLnN1cm1hcC5hZ2VudC52MS5FeGVjdXRpb25Qb2xpY3kiyAIKEFRvb2xDYWxsRmluaXNoZWQSDwoHY2FsbF9pZBgBIAEoCRI4CgZzdGF0dXMYAiABKA4yKC5zdXJtYXAuYWdlbnQudjEuVG9vbENhbGxGaW5pc2hlZC5TdGF0dXMSEwoLcmVzdWx0X2pzb24YAyABKAkSEgoFaW1hZ2UYBCABKAxIAIgBARIXCgptZWRpYV90eXBlGAUgASgJSAGIAQESLAoDam9iGAYgASgLMhouc3VybWFwLmFnZW50LnYxLkpvYkhhbmRsZUgCiAEBIlgKBlN0YXR1cxIWChJTVEFUVVNfVU5TUEVDSUZJRUQQABINCglTVUNDRUVERUQQARIKCgZGQUlMRUQQAhIMCghERVRBQ0hFRBADEg0KCUNBTkNFTExFRBAEQggKBl9pbWFnZUINCgtfbWVkaWFfdHlwZUIGCgRfam9iIjcKDFN0ZWVyQXBwbGllZBIMCgR0ZXh0GAEgASgJEhkKEWRldGFjaGVkX2NhbGxfaWRzGAIgAygJIkIKD1N1YmFnZW50TWVzc2FnZRITCgtzdWJhZ2VudF9pZBgBIAEoCRIMCgRuYW1lGAIgASgJEgwKBHRleHQYAyABKAkilgEKDFR1cm5GaW5pc2hlZBI0CgZyZWFzb24YASABKA4yJC5zdXJtYXAuYWdlbnQudjEuVHVybkZpbmlzaGVkLlJlYXNvbiJQCgZSZWFzb24SFgoSUkVBU09OX1VOU1BFQ0lGSUVEEAASCAoEU1RPUBABEgoKBkxFTkdUSBACEg0KCUNBTkNFTExFRBADEgkKBUVSUk9SEAQiHAoJVHVybkVycm9yEg8KB21lc3NhZ2UYASABKAkipAQKCVR1cm5FdmVudBIXCg9jb252ZXJzYXRpb25faWQYASABKAkSDwoHdHVybl9pZBgCIAEoCRILCgNzZXEYAyABKAQSFAoKdGV4dF9kZWx0YRgKIAEoCUgAEj0KEXRvb2xfY2FsbF9zdGFydGVkGAsgASgLMiAuc3VybWFwLmFnZW50LnYxLlRvb2xDYWxsU3RhcnRlZEgAEj8KEnRvb2xfY2FsbF9maW5pc2hlZBgMIAEoCzIhLnN1cm1hcC5hZ2VudC52MS5Ub29sQ2FsbEZpbmlzaGVkSAASMAoKam9iX3VwZGF0ZRgNIAEoCzIaLnN1cm1hcC5hZ2VudC52MS5Kb2JIYW5kbGVIABI2Cg1zdGVlcl9hcHBsaWVkGA4gASgLMh0uc3VybWFwLmFnZW50LnYxLlN0ZWVyQXBwbGllZEgAEjYKDXR1cm5fZmluaXNoZWQYDyABKAsyHS5zdXJtYXAuYWdlbnQudjEuVHVybkZpbmlzaGVkSAASKwoFZXJyb3IYECABKAsyGi5zdXJtYXAuYWdlbnQudjEuVHVybkVycm9ySAASNAoMdXNlcl9tZXNzYWdlGBEgASgLMhwuc3VybWFwLmFnZW50LnYxLlVzZXJNZXNzYWdlSAASPAoQc3ViYWdlbnRfbWVzc2FnZRgSIAEoCzIgLnN1cm1hcC5hZ2VudC52MS5TdWJhZ2VudE1lc3NhZ2VIAEIHCgVldmVudDKXBAoLQ2hhdFNlcnZpY2USTgoKU3RyZWFtVHVybhIiLnN1cm1hcC5hZ2VudC52MS5TdHJlYW1UdXJuUmVxdWVzdBoaLnN1cm1hcC5hZ2VudC52MS5UdXJuRXZlbnQwARJcChFXYXRjaENvbnZlcnNhdGlvbhIpLnN1cm1hcC5hZ2VudC52MS5XYXRjaENvbnZlcnNhdGlvblJlcXVlc3QaGi5zdXJtYXAuYWdlbnQudjEuVHVybkV2ZW50MAESRgoFU3RlZXISHS5zdXJtYXAuYWdlbnQudjEuU3RlZXJSZXF1ZXN0Gh4uc3VybWFwLmFnZW50LnYxLlN0ZWVyUmVzcG9uc2USVQoKQ2FuY2VsVHVybhIiLnN1cm1hcC5hZ2VudC52MS5DYW5jZWxUdXJuUmVxdWVzdBojLnN1cm1hcC5hZ2VudC52MS5DYW5jZWxUdXJuUmVzcG9uc2USVQoKTGlzdE1vZGVscxIiLnN1cm1hcC5hZ2VudC52MS5MaXN0TW9kZWxzUmVxdWVzdBojLnN1cm1hcC5hZ2VudC52MS5MaXN0TW9kZWxzUmVzcG9uc2USZAoPR2V0Q29udmVyc2F0aW9uEicuc3VybWFwLmFnZW50LnYxLkdldENvbnZlcnNhdGlvblJlcXVlc3QaKC5zdXJtYXAuYWdlbnQudjEuR2V0Q29udmVyc2F0aW9uUmVzcG9uc2ViBnByb3RvMw", [file_surmap_agent_v1_execution]);
 
 /**
  * @generated from message surmap.agent.v1.StreamTurnRequest
@@ -476,6 +476,42 @@ export const SteerAppliedSchema: GenMessage<SteerApplied> = /*@__PURE__*/
   messageDesc(file_surmap_agent_v1_chat, 14);
 
 /**
+ * A subagent the agent started sent it a message; the agent reads it as a notice. A message that
+ * arrives while no turn runs opens a turn of its own.
+ *
+ * @generated from message surmap.agent.v1.SubagentMessage
+ */
+export type SubagentMessage = Message<"surmap.agent.v1.SubagentMessage"> & {
+  /**
+   * The subagent, as start_subagent named it, e.g. "sa-1".
+   *
+   * @generated from field: string subagent_id = 1;
+   */
+  subagentId: string;
+
+  /**
+   * The label it was started with, e.g. "scene-builder".
+   *
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * What it wrote.
+   *
+   * @generated from field: string text = 3;
+   */
+  text: string;
+};
+
+/**
+ * Describes the message surmap.agent.v1.SubagentMessage.
+ * Use `create(SubagentMessageSchema)` to create a new message.
+ */
+export const SubagentMessageSchema: GenMessage<SubagentMessage> = /*@__PURE__*/
+  messageDesc(file_surmap_agent_v1_chat, 15);
+
+/**
  * The turn ended.
  *
  * @generated from message surmap.agent.v1.TurnFinished
@@ -494,7 +530,7 @@ export type TurnFinished = Message<"surmap.agent.v1.TurnFinished"> & {
  * Use `create(TurnFinishedSchema)` to create a new message.
  */
 export const TurnFinishedSchema: GenMessage<TurnFinished> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_chat, 15);
+  messageDesc(file_surmap_agent_v1_chat, 16);
 
 /**
  * Why it ended.
@@ -540,7 +576,7 @@ export enum TurnFinished_Reason {
  * Describes the enum surmap.agent.v1.TurnFinished.Reason.
  */
 export const TurnFinished_ReasonSchema: GenEnum<TurnFinished_Reason> = /*@__PURE__*/
-  enumDesc(file_surmap_agent_v1_chat, 15, 0);
+  enumDesc(file_surmap_agent_v1_chat, 16, 0);
 
 /**
  * Something went wrong in the turn.
@@ -561,7 +597,7 @@ export type TurnError = Message<"surmap.agent.v1.TurnError"> & {
  * Use `create(TurnErrorSchema)` to create a new message.
  */
 export const TurnErrorSchema: GenMessage<TurnError> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_chat, 16);
+  messageDesc(file_surmap_agent_v1_chat, 17);
 
 /**
  * One thing that happened in a turn.
@@ -659,6 +695,14 @@ export type TurnEvent = Message<"surmap.agent.v1.TurnEvent"> & {
      */
     value: UserMessage;
     case: "userMessage";
+  } | {
+    /**
+     * A subagent's message to the agent.
+     *
+     * @generated from field: surmap.agent.v1.SubagentMessage subagent_message = 18;
+     */
+    value: SubagentMessage;
+    case: "subagentMessage";
   } | { case: undefined; value?: undefined };
 };
 
@@ -667,7 +711,7 @@ export type TurnEvent = Message<"surmap.agent.v1.TurnEvent"> & {
  * Use `create(TurnEventSchema)` to create a new message.
  */
 export const TurnEventSchema: GenMessage<TurnEvent> = /*@__PURE__*/
-  messageDesc(file_surmap_agent_v1_chat, 17);
+  messageDesc(file_surmap_agent_v1_chat, 18);
 
 /**
  * @generated from service surmap.agent.v1.ChatService

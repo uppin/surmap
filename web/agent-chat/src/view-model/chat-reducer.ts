@@ -178,6 +178,15 @@ function receiveEvent(state: ChatState, event: TurnEvent, at: number): ChatState
         text: body.value.text,
         detachedCallIds: [...body.value.detachedCallIds],
       });
+    case "subagentMessage":
+      return withItem(next, {
+        kind: "subagent_message",
+        id: `subagent:${event.seq}`,
+        turnId: event.turnId,
+        subagentId: body.value.subagentId,
+        name: body.value.name,
+        text: body.value.text,
+      });
     case "turnFinished":
       return next;
     case "error":
