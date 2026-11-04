@@ -168,6 +168,9 @@ message OnboardModel {
   bool available = 4;
   // Whether a run with no onboard_model uses this model.
   bool is_default = 5;
+  // The object classes it can recognise (COCO), e.g. "person", "car"; it cannot detect anything
+  // else, so debris, buildings and fire are left to SAM.
+  repeated string classes = 6;
 }
 
 message ListOnboardModelsResponse {
@@ -233,6 +236,9 @@ message RunDemoResponse {
   RunInfo.Status status = 4;
   // The on-board detector model that processed its frames; empty when it ran none.
   string onboard_model = 5;
+  // Whether that on-board model has a class for the run's SAM concept; absent when no on-board
+  // model ran. False means only SAM can find the concept.
+  optional bool onboard_recognises_prompt = 6;
 }
 
 message GetRunRequest {

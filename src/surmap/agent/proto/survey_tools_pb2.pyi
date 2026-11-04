@@ -109,18 +109,20 @@ class ListOnboardModelsRequest(_message.Message):
     def __init__(self) -> None: ...
 
 class OnboardModel(_message.Message):
-    __slots__ = ("name", "title", "note", "available", "is_default")
+    __slots__ = ("name", "title", "note", "available", "is_default", "classes")
     NAME_FIELD_NUMBER: _ClassVar[int]
     TITLE_FIELD_NUMBER: _ClassVar[int]
     NOTE_FIELD_NUMBER: _ClassVar[int]
     AVAILABLE_FIELD_NUMBER: _ClassVar[int]
     IS_DEFAULT_FIELD_NUMBER: _ClassVar[int]
+    CLASSES_FIELD_NUMBER: _ClassVar[int]
     name: str
     title: str
     note: str
     available: bool
     is_default: bool
-    def __init__(self, name: _Optional[str] = ..., title: _Optional[str] = ..., note: _Optional[str] = ..., available: bool = ..., is_default: bool = ...) -> None: ...
+    classes: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, name: _Optional[str] = ..., title: _Optional[str] = ..., note: _Optional[str] = ..., available: bool = ..., is_default: bool = ..., classes: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class ListOnboardModelsResponse(_message.Message):
     __slots__ = ("models", "default_model")
@@ -175,18 +177,20 @@ class RunInfo(_message.Message):
     def __init__(self, run_id: _Optional[str] = ..., dataset: _Optional[str] = ..., prompt: _Optional[str] = ..., frames: _Optional[int] = ..., objects: _Optional[int] = ..., status: _Optional[_Union[RunInfo.Status, str]] = ..., onboard_model: _Optional[str] = ...) -> None: ...
 
 class RunDemoResponse(_message.Message):
-    __slots__ = ("run_id", "frames", "objects", "status", "onboard_model")
+    __slots__ = ("run_id", "frames", "objects", "status", "onboard_model", "onboard_recognises_prompt")
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
     FRAMES_FIELD_NUMBER: _ClassVar[int]
     OBJECTS_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     ONBOARD_MODEL_FIELD_NUMBER: _ClassVar[int]
+    ONBOARD_RECOGNISES_PROMPT_FIELD_NUMBER: _ClassVar[int]
     run_id: str
     frames: int
     objects: int
     status: RunInfo.Status
     onboard_model: str
-    def __init__(self, run_id: _Optional[str] = ..., frames: _Optional[int] = ..., objects: _Optional[int] = ..., status: _Optional[_Union[RunInfo.Status, str]] = ..., onboard_model: _Optional[str] = ...) -> None: ...
+    onboard_recognises_prompt: bool
+    def __init__(self, run_id: _Optional[str] = ..., frames: _Optional[int] = ..., objects: _Optional[int] = ..., status: _Optional[_Union[RunInfo.Status, str]] = ..., onboard_model: _Optional[str] = ..., onboard_recognises_prompt: bool = ...) -> None: ...
 
 class GetRunRequest(_message.Message):
     __slots__ = ("run_id",)

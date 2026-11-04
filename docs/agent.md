@@ -114,8 +114,8 @@ in the console) and publishes GLB through a `GeometryStore` (`tools/geometry.py`
 | Tool | Arguments | Result | Default execution |
 |---|---|---|---|
 | `list_demos` | — | every scene: `id`, `title`, `default_prompt`, `prepared`, `cached_run_id` | SYNC · 10 s · FAIL |
-| `list_onboard_models` | — | every on-board (Coral) model: `name`, `title`, `note`, `available` on this station, `is_default`; and `default_model` (`"none"` when runs default to no model) | SYNC · 10 s · FAIL |
-| `run_demo` | `dataset`; `prompt` (scene default); `max_frames` (whole scene); `fps` (native, > 0); `onboard_model` (station default; `"none"` for no on-board model) | the ended run: `run_id`, frames, objects, `status`, `onboard_model` | SYNC · 30 s · DETACH |
+| `list_onboard_models` | — | every on-board (Coral) model: `name`, `title`, `note`, `available` on this station, `is_default`, `classes` (the 80 COCO classes it can recognise); and `default_model` (`"none"` when runs default to no model) | SYNC · 10 s · FAIL |
+| `run_demo` | `dataset`; `prompt` (scene default); `max_frames` (whole scene); `fps` (native, > 0); `onboard_model` (station default; `"none"` for no on-board model) | the ended run: `run_id`, frames, objects, `status`, `onboard_model`, `onboard_recognises_prompt` (absent without an on-board model) | SYNC · 30 s · DETACH |
 | `get_run` | `run_id` | `RunInfo`: dataset, prompt, frames, objects, status, `onboard_model` (empty for none) | SYNC · 10 s · FAIL |
 | `prompt_sam` | `run_id`, `concept`; `frame_ids` or `max_frames` (≤ 8) | per frame: `frame_id`, `t_ns`, detections with ids, label, score, box, mask polygon | SYNC · 60 s · DETACH |
 | `find_objects` | `run_id`; `label`, `near` + `radius_m`, `moving`, `limit` | object summaries, nearest first with `near`, else largest first; no neighbours | SYNC · 15 s · FAIL |
@@ -134,6 +134,11 @@ absent for the station default — and builds its own detection source (fresh tr
 replaces the host's `detection_source` for that run only. A name no profile has is
 `INVALID_ARGUMENT`; a profile the station lacks is `FAILED_PRECONDITION` and records no run. The run
 title carries ` · On-board: <model>` ahead of the SAM part, and `RunInfo.onboard_model` reads it back.
+
+Every profile detects only the 80 COCO classes (`surmap.detection.COCO_CLASSES`): people and
+vehicles, but not debris, buildings, collapsed buildings, boxes or fire, which only SAM finds.
+`run_demo` says so per run: `onboard_recognises_prompt` is whether the on-board model has a class for
+the SAM concept (a trailing plural `s` is ignored, so `cars` matches `car`).
 | `run_sam_on_dataset` | `dataset`; `concept` (dataset default); `max_frames` (≤ 8) | per-frame SAM detections on the dataset itself, no run | SYNC · 60 s · DETACH |
 
 ## Dataset gallery

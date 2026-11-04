@@ -43,6 +43,13 @@ class OnboardModel:
     note: str
     available: bool
     is_default: bool
+    classes: tuple[str, ...] = ()
+    """The object classes it can recognise; it detects nothing else."""
+
+    def recognises(self, concept: str) -> bool:
+        """Whether `concept` (a SAM prompt such as "car" or "cars") is one of its classes."""
+        name = concept.strip().lower()
+        return name in self.classes or (name.endswith("s") and name[:-1] in self.classes)
 
 
 class OnboardUnavailable(RuntimeError):
@@ -77,6 +84,7 @@ class OnboardModels:
                 note=profile.note,
                 available=self._available(profile.name),
                 is_default=profile.name == self.default,
+                classes=profile.classes,
             )
             for profile in MODEL_PROFILES.values()
         )

@@ -267,3 +267,57 @@ def test_a_station_default_that_names_no_profile_is_refused(tmp_path: Path) -> N
     # Given / When / Then a catalogue whose default is not a profile fails at start-up
     with pytest.raises(ValueError, match="yolo-v99"):
         OnboardModels(tmp_path, default="yolo-v99")
+
+
+# --- what an on-board model can recognise ---------------------------------------------------
+
+
+async def test_list_onboard_models_names_the_classes_each_model_can_recognise(
+    tmp_path: Path,
+) -> None:
+    # Given a station with no model files at all
+    with a_tool_rig(tmp_path) as rig:
+        # When the agent lists the on-board models
+        response = await list_onboard_models(pb.ListOnboardModelsRequest(), rig.workspace)
+
+    # Then every model names its COCO classes: people and cars, but no buildings or debris
+    for model in response.models:
+        assert {"person", "car", "truck"} <= set(model.classes)
+        assert not {"building", "debris", "fire", "n/a"} & set(model.classes)
+        assert len(model.classes) == 80
+
+
+async def test_run_demo_says_the_onboard_model_recognises_a_coco_concept(tmp_path: Path) -> None:
+    # Given a station with EfficientDet-Lite0
+    onboard = a_station(tmp_path, RecordingBuilder(), has=(EFFICIENTDET,), default=EFFICIENTDET)
+    with a_tool_rig(tmp_path, onboard=onboard) as rig:
+        # When the agent runs the scene looking for cars
+        response = await run_demo(a_tiny_run(prompt="cars"), rig.workspace)
+
+    # Then the response says the on-board model can recognise them too
+    assert response.onboard_recognises_prompt is True
+
+
+async def test_run_demo_warns_the_onboard_model_cannot_recognise_debris(tmp_path: Path) -> None:
+    # Given a station with EfficientDet-Lite0
+    onboard = a_station(tmp_path, RecordingBuilder(), has=(EFFICIENTDET,), default=EFFICIENTDET)
+    with a_tool_rig(tmp_path, onboard=onboard) as rig:
+        # When the agent runs the scene looking for debris
+        response = await run_demo(a_tiny_run(prompt="debris"), rig.workspace)
+
+    # Then the response says only SAM can find it: the on-board model has no such class
+    assert response.HasField("onboard_recognises_prompt")
+    assert response.onboard_recognises_prompt is False
+
+
+async def test_run_demo_says_nothing_about_recognition_without_an_onboard_model(
+    tmp_path: Path,
+) -> None:
+    # Given a station defaulting to EfficientDet-Lite0
+    onboard = a_station(tmp_path, RecordingBuilder(), has=(EFFICIENTDET,), default=EFFICIENTDET)
+    with a_tool_rig(tmp_path, onboard=onboard) as rig:
+        # When the agent runs the scene looking for cars with no on-board model
+        response = await run_demo(a_tiny_run(prompt="car", onboard_model="none"), rig.workspace)
+
+    # Then there is no on-board verdict to give
+    assert not response.HasField("onboard_recognises_prompt")

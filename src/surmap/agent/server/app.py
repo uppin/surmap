@@ -109,6 +109,8 @@ and run_demo runs both together. Prefer the split tools when the person asks for
 RTAB-Map or only SAM, and name the dataset's licence when you report a dataset. run_demo and \
 run_rtabmap also take an onboard_model: the on-board detector that processes the frames, picked \
 from list_onboard_models, or "none" to run without one; leave it out for the station default. \
+An on-board model recognises only its listed classes (people and vehicles, not debris, buildings \
+or fire); when run_demo says it does not recognise the prompt, only SAM can find it. \
 You also edit \
 the display map: place and move GLB shapes with the map tools, navigate \
 its camera, and draw route paths. Map edits change only what the person sees; routes are drawn \

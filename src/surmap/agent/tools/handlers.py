@@ -160,6 +160,7 @@ async def list_onboard_models(
                 note=model.note,
                 available=model.available,
                 is_default=model.is_default,
+                classes=model.classes,
             )
             for model in models
         ],
@@ -185,13 +186,17 @@ async def run_demo(request: pb.RunDemoRequest, workspace: SurveyWorkspace) -> pb
         raise ConnectError(Code.FAILED_PRECONDITION, str(unavailable)) from unavailable
     except RunBusy as busy:
         raise ConnectError(Code.UNAVAILABLE, str(busy)) from busy
-    return pb.RunDemoResponse(
+    response = pb.RunDemoResponse(
         run_id=run.run_id,
         frames=run.frames,
         objects=run.objects,
         status=_RUN_STATUS[run.status],
         onboard_model=run.onboard_model,
     )
+    onboard = next((m for m in workspace.onboard_models() if m.name == run.onboard_model), None)
+    if onboard is not None and run.prompt:
+        response.onboard_recognises_prompt = onboard.recognises(run.prompt)
+    return response
 
 
 async def get_run(request: pb.GetRunRequest, workspace: SurveyWorkspace) -> pb.GetRunResponse:
