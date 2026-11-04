@@ -389,3 +389,28 @@ def test_a_capture_scores_track_only_vehicles_per_kind_with_their_confusions() -
     assert report.kinds["bus"].as_another_vehicle == 1
     assert report.kinds["train"].visible == 2
     assert report.kinds["car"].as_another_vehicle == 0
+
+
+def test_a_capture_report_counts_each_persons_object_frames_by_the_pose_they_hold() -> None:
+    # Given a standing and a sitting person side by side, over two frames
+    standing = a_box("person", -1.5, 8.0, (0.6, 0.4, 1.8), "standing-1")
+    sitting = a_box("person", 1.5, 8.0, (0.6, 0.4, 1.0), "sitting-1")
+    frames = (a_frame(1, a_north_facing_rig()), a_frame(2, a_north_facing_rig()))
+    poses = {"standing-1": "standing", "sitting-1": "sitting"}
+    capture = BevyCapture(
+        calibration=a_calibration(),
+        objects=(standing, sitting),
+        frames=frames,
+        object_poses={frame.pair.t_ns: poses for frame in frames},
+    )
+    # and only the sitting person found, in the first frame
+    detections = {1: (a_detection("person", expected(sitting).box_xyxy, frame_id=1),)}
+
+    # When the capture is scored
+    report = score_capture(capture, detections)
+
+    # Then each pose's object-frames seen and found are counted
+    assert {pose: (s.visible, s.found) for pose, s in report.poses.items()} == {
+        "standing": (2, 0),
+        "sitting": (2, 1),
+    }

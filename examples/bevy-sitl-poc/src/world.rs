@@ -17,7 +17,7 @@ use bevy_rapier3d::prelude::*;
 
 use std::collections::BTreeMap;
 
-use crate::actors::{self, bevy_yaw, Figure, StandIn};
+use crate::actors::{self, bevy_yaw, Figure};
 use crate::figure_anim::Pose;
 use crate::building;
 use crate::scene_manifest::{
@@ -398,16 +398,12 @@ impl Builder<'_, '_, '_> {
             figure = figure.posed(e.pose, e.yaw_deg);
         }
         let figure = figure.with_stature(e.height_m, e.glb.clone());
-        let look = actors::PersonLook {
-            coat: coat.clone(),
-            skin: skin.clone(),
-        };
         let [x, y, z] = e.position_enu;
         self.commands
-            .spawn((figure, actors::FigureCoat(coat.clone()), look, Visibility::default(), Transform::from_translation(enu(x, y, z))))
+            .spawn((figure, actors::FigureCoat(coat.clone()), actors::FigureSkin(skin.clone()), Visibility::default(), Transform::from_translation(enu(x, y, z))))
             .with_children(|figure| {
-                figure.spawn((Mesh3d(body), MeshMaterial3d(coat), Transform::from_translation(Vec3::Y * 0.72), StandIn, actors::FallbackBody));
-                figure.spawn((Mesh3d(head), MeshMaterial3d(skin), Transform::from_translation(Vec3::Y * 1.62), StandIn, actors::FallbackBody));
+                figure.spawn((Mesh3d(body), MeshMaterial3d(coat), Transform::from_translation(Vec3::Y * 0.72), actors::FallbackBody));
+                figure.spawn((Mesh3d(head), MeshMaterial3d(skin), Transform::from_translation(Vec3::Y * 1.62), actors::FallbackBody));
             });
     }
 }

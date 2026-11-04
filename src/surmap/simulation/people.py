@@ -77,7 +77,7 @@ def earthquake_survivors(block: Manifest) -> Manifest:
     people: list[dict[str, object]] = [
         _person(
             "survivor-lying",
-            (-8.0, 26.0, 0.0),
+            (-3.0, 29.0, 0.0),
             "coat_yellow",
             pose="lying",
             yaw_deg=20.0,
@@ -93,10 +93,10 @@ def earthquake_survivors(block: Manifest) -> Manifest:
         ),
         _person(
             "survivor-waving",
-            (16.0, 83.0, 1.0),
+            (9.0, 83.0, 0.0),
             "coat_yellow",
             pose="waving",
-            yaw_deg=180.0,
+            yaw_deg=-60.0,
             height_m=1.7,
         ),
         {

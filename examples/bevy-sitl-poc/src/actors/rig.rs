@@ -11,7 +11,9 @@ use bevy::gltf::{Gltf, GltfMaterialName};
 use bevy::prelude::*;
 use bevy::scene::{SceneInstanceReady, SceneRoot};
 
-use super::{Figure, FigureAsset, FigureLook, PersonLook, StandIn};
+use super::{FallbackBody, Figure, FigureAsset, FigureCoat, FigureLook, FigureSkin};
+use std::f32::consts::TAU;
+
 use crate::figure_anim::{clip_time, locomotion, rig_scale, Clip, Clips, RigDef};
 use crate::wildfire::SimClock;
 use crate::world::SceneState;
@@ -76,6 +78,14 @@ pub struct RigRoot {
     ready: bool,
 }
 
+/// The model a figure is drawn on and its rig, when that model has one (a rigless model is posed
+/// by `pose_figures`).
+fn rigged(def: &super::FigureDef, figure: &Figure) -> Option<(super::FigureModel, RigDef)> {
+    let model = def.model_for(figure.pose(), figure.height_m, figure.rig_glb.as_deref())?;
+    let rig = model.rig.clone()?;
+    Some((model, rig))
+}
+
 /// Loads each rig glTF in use, and builds its graph once the file has its named clips.
 pub fn prepare_rigs(
     look: Option<Res<FigureLook>>,
@@ -91,14 +101,14 @@ pub fn prepare_rigs(
         return;
     };
     for figure in &figures {
-        let Some(rig) = def.rig_for(figure.pose(), figure.height_m, figure.rig_glb.as_deref()) else {
+        let Some((model, rig)) = rigged(def, figure) else {
             continue;
         };
-        let key = (rig.glb.clone(), rig.clips.clone());
+        let key = (model.glb.clone(), rig.clips.clone());
         if rigs.assets.contains_key(&key) {
             continue;
         }
-        let gltf: Handle<Gltf> = assets.load(rig.glb.clone());
+        let gltf: Handle<Gltf> = assets.load(model.glb.clone());
         scene.pending.push(gltf.clone().untyped());
         rigs.assets.insert(key, RigAsset { gltf, clips: rig.clips, built: None, failed: false });
     }
@@ -148,14 +158,15 @@ pub fn spawn_rigs(
         return;
     };
     for (figure_entity, figure) in &figures {
-        let Some(rig) = def.rig_for(figure.pose(), figure.height_m, figure.rig_glb.as_deref()) else {
+        let Some((model, rig)) = rigged(def, figure) else {
             continue;
         };
-        let key = (rig.glb.clone(), rig.clips.clone());
+        let key = (model.glb.clone(), rig.clips.clone());
         let Some(built) = rigs.assets.get(&key).and_then(|asset| asset.built.as_ref()) else {
             continue;
         };
-        let scale = rig_scale(&rig, figure.height_m);
+        let scale = model.scale * rig_scale(&rig, figure.height_m);
+        let turned = Quat::from_rotation_y(model.yaw_deg.to_radians());
         let root = RigRoot {
             figure: figure_entity,
             def: rig,
@@ -169,7 +180,7 @@ pub fn spawn_rigs(
             parent
                 .spawn((
                     SceneRoot(built.scene.clone()),
-                    Transform::from_scale(Vec3::splat(scale)),
+                    Transform::from_rotation(turned).with_scale(Vec3::splat(scale)),
                     root,
                 ))
                 .observe(on_rig_ready);
@@ -187,9 +198,9 @@ fn on_rig_ready(
     mut players: Query<&mut AnimationPlayer>,
     names: Query<&GltfMaterialName>,
     mut materials: Query<&mut MeshMaterial3d<StandardMaterial>>,
-    looks: Query<&PersonLook>,
-    stand_ins: Query<(), With<StandIn>>,
-    mut visibility: Query<&mut Visibility>,
+    coats: Query<&FigureCoat>,
+    skins: Query<&FigureSkin>,
+    stand_ins: Query<(), With<FallbackBody>>,
 ) {
     let Ok(mut root) = roots.get_mut(ready.entity) else {
         return;
@@ -208,14 +219,13 @@ fn on_rig_ready(
         let Ok(mut material) = materials.get_mut(entity) else {
             continue;
         };
-        let figure_look = looks.get(root.figure).ok();
         if root.def.coat_slots.contains(&name.0) {
-            if let Some(look) = figure_look {
-                material.0 = look.coat.clone();
+            if let Ok(coat) = coats.get(root.figure) {
+                material.0 = coat.0.clone();
             }
         } else if root.def.skin_slots.contains(&name.0) {
-            if let Some(look) = figure_look {
-                material.0 = look.skin.clone();
+            if let Ok(skin) = skins.get(root.figure) {
+                material.0 = skin.0.clone();
             }
         }
     }
@@ -223,9 +233,7 @@ fn on_rig_ready(
     commands.entity(figure).insert(RigShown);
     for entity in children.iter_descendants(figure) {
         if stand_ins.contains(entity) {
-            if let Ok(mut shown) = visibility.get_mut(entity) {
-                *shown = Visibility::Hidden;
-            }
+            commands.entity(entity).despawn();
         }
     }
 }
@@ -272,7 +280,7 @@ pub fn drive_rigs(
             for clip in &root.clips {
                 let index = index_of(clip.clip);
                 let duration = animations.get(&clip.animation).map_or(0.0, AnimationClip::duration);
-                let time = clip_time(now, figure.phase(), rate[index], duration, clip.clip.looping());
+                let time = clip_time(now, figure.phase() / TAU, rate[index], duration, clip.clip.looping());
                 if let Some(active) = player.animation_mut(clip.node) {
                     active.set_weight(weights[index]).set_speed(0.0).seek_to(time);
                 }

@@ -74,25 +74,25 @@ pub struct FigureDef {
     /// whatever way the figure faces.
     #[serde(default = "default_body_m")]
     pub body_m: [f32; 3],
-    /// The rigged glTF and its clips; without one the figure is the capsule and the visor.
+    /// A model for a person who holds a pose the figure's own model carries no clip for (a
+    /// sitting person on a sit model). Keys are `lying`, `sitting` or `waving`; each validates
+    /// like `model` and must carry a `rig`.
     #[serde(default)]
-    pub rig: Option<crate::figure_anim::RigDef>,
-    /// A rig for a person who holds a pose the primary rig carries no clip for (a sitting person
-    /// on a sit model). Keys are `lying`, `sitting` or `waving`; each validates like `rig`.
-    #[serde(default)]
-    pub pose_rigs: HashMap<Pose, crate::figure_anim::RigDef>,
+    pub pose_models: HashMap<Pose, FigureModel>,
 }
 
 fn default_body_m() -> [f32; 3] {
     [0.6, 0.6, 1.8]
 }
 
-/// A humanoid glTF: scaled and turned so it stands on the figure's feet facing its front (-z),
-/// posed from its first animation clip: at `clip_s` standing, played in step while walking.
+/// A humanoid glTF: scaled and turned so it stands on the figure's feet facing its front (-z).
+/// Without a `rig` it is posed from its first animation clip: at `clip_s` standing, played in
+/// step while walking. With one, its named clips play by speed and pose (`figure_anim`).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FigureModel {
     pub glb: String,
+    #[serde(default = "one")]
     pub scale: f32,
     #[serde(default)]
     pub yaw_deg: f32,
@@ -101,6 +101,13 @@ pub struct FigureModel {
     /// Multiply the model's colours by the person's `coat` (a survivor in a hi-vis coverall).
     #[serde(default)]
     pub coat_tint: bool,
+    /// The model's named clips and the speeds they cover; its coat and skin material slots.
+    #[serde(default)]
+    pub rig: Option<crate::figure_anim::RigDef>,
+}
+
+fn one() -> f32 {
+    1.0
 }
 
 /// A box on the figure (`size_m` x, y, z in the figure's frame; `offset_m` from its feet, −z is
@@ -113,20 +120,36 @@ pub struct Visor {
     pub colour: [f32; 3],
 }
 
-impl FigureDef {
-    /// The rig a person in `pose` is drawn on: the pose's own rig, else the primary rig; its file
-    /// replaced by the person's `rig_glb` when they name one; scaled to their `height_m`.
-    pub fn rig_for(
-        &self,
-        pose: Pose,
-        height_m: Option<f32>,
-        rig_glb: Option<&str>,
-    ) -> Option<crate::figure_anim::RigDef> {
-        let mut rig = self.pose_rigs.get(&pose).or(self.rig.as_ref())?.clone();
-        if let Some(glb) = rig_glb {
-            rig.glb = glb.to_owned();
+impl FigureModel {
+    /// The clip a person in `pose` holds on this model, when its rig names one.
+    pub fn clip_for(&self, pose: Pose) -> Option<&str> {
+        self.rig.as_ref().and_then(|rig| rig.clip_for(pose))
+    }
+
+    fn validate(&self, what: &str) -> Result<(), String> {
+        if !crate::scene_manifest::is_relative_gltf(&self.glb) {
+            return Err(format!("{what} glb {:?} must be a .glb/.gltf inside assets/", self.glb));
         }
-        Some(rig.at_height(height_m))
+        if self.scale <= 0.0 {
+            return Err(format!("{what} scale must be > 0"));
+        }
+        if let Some(rig) = &self.rig {
+            rig.validate().map_err(|e| format!("{what}: {e}"))?;
+        }
+        Ok(())
+    }
+}
+
+impl FigureDef {
+    /// The model a person in `pose` is drawn on: the pose's own model, else the figure's; its file
+    /// replaced by the person's `rig_glb` when they name one; its speeds scaled to their `height_m`.
+    pub fn model_for(&self, pose: Pose, height_m: Option<f32>, rig_glb: Option<&str>) -> Option<FigureModel> {
+        let mut model = self.pose_models.get(&pose).or(self.model.as_ref())?.clone();
+        if let Some(glb) = rig_glb {
+            model.glb = glb.to_owned();
+        }
+        model.rig = model.rig.map(|rig| rig.at_height(height_m));
+        Some(model)
     }
 
     pub fn from_json(text: &str) -> Result<Self, String> {
@@ -144,35 +167,29 @@ impl FigureDef {
             return Err("reference_speed_m_s must be > 0".into());
         }
         if let Some(model) = &def.model {
-            let inside = !model.glb.starts_with('/') && model.glb.split('/').all(|part| !part.is_empty() && part != "..");
-            if !inside || !(model.glb.ends_with(".glb") || model.glb.ends_with(".gltf")) {
-                return Err(format!("model glb {:?} must be a .glb/.gltf inside assets/", model.glb));
-            }
-            if model.scale <= 0.0 {
-                return Err("model scale must be > 0".into());
-            }
+            model.validate("model")?;
         }
         if def.body_m.iter().any(|side| *side <= 0.0) {
             return Err("body_m sides must be > 0".into());
         }
-        if let Some(rig) = &def.rig {
-            rig.validate()?;
+        if def.model.is_none() && !def.pose_models.is_empty() {
+            return Err("pose_models needs the figure's own model, which carries standing".into());
         }
-        if def.rig.is_none() && !def.pose_rigs.is_empty() {
-            return Err("pose_rigs needs the figure's own rig, which carries standing".into());
-        }
-        for (pose, rig) in &def.pose_rigs {
+        for (pose, model) in &def.pose_models {
             if *pose == Pose::Standing {
-                return Err("pose_rigs must not name standing: the figure's rig carries it".into());
+                return Err("pose_models must not name standing: the figure's model carries it".into());
             }
-            rig.validate().map_err(|e| format!("pose_rigs {}: {e}", pose.name()))?;
+            model.validate(&format!("pose_models {}", pose.name()))?;
+            if model.rig.is_none() {
+                return Err(format!("pose_models {} needs a rig naming its clips", pose.name()));
+            }
         }
-        if def.rig.is_some() {
-            for pose in [Pose::Standing, Pose::Lying, Pose::Sitting, Pose::Waving] {
-                let named = def.pose_rigs.get(&pose).or(def.rig.as_ref()).and_then(|rig| rig.clip_for(pose));
+        if def.model.as_ref().is_some_and(|model| model.rig.is_some()) {
+            for pose in [Pose::Standing, Pose::Waving, Pose::Lying, Pose::Sitting] {
+                let named = def.pose_models.get(&pose).or(def.model.as_ref()).and_then(|model| model.clip_for(pose));
                 if named.is_none() {
                     return Err(format!(
-                        "no clip for pose {}: name one in rig clips or in pose_rigs.{}",
+                        "no clip for pose {}: name one in the model's rig clips or in pose_models.{}",
                         pose.name(),
                         pose.name()
                     ));
@@ -245,6 +262,29 @@ pub fn person_truth(id: &str, position_enu: [f32; 3], body_m: [f32; 3]) -> Groun
         max_enu: [x + east / 2.0, y + north / 2.0, z + up],
     }
 }
+
+/// The truth box of a person in `pose` facing `yaw_deg` (ENU, counter-clockwise from east): the
+/// standing box, except a lying person, who is as long as the body is tall along the way they lie
+/// (`body_m` up), as wide as the body is, and `LYING_THICKNESS_M` high.
+pub fn posed_person_truth(id: &str, position_enu: [f32; 3], body_m: [f32; 3], pose: Pose, yaw_deg: f32) -> GroundTruthObject {
+    if pose != Pose::Lying {
+        return person_truth(id, position_enu, body_m);
+    }
+    let [x, y, z] = position_enu;
+    let (length, width) = (body_m[2], body_m[0].min(body_m[1]));
+    let (sin, cos) = yaw_deg.to_radians().sin_cos();
+    let east = cos.abs() * length + sin.abs() * width;
+    let north = sin.abs() * length + cos.abs() * width;
+    GroundTruthObject {
+        id: id.to_owned(),
+        kind: "person".into(),
+        min_enu: [x - east / 2.0, y - north / 2.0, z],
+        max_enu: [x + east / 2.0, y + north / 2.0, z + LYING_THICKNESS_M],
+    }
+}
+
+/// How high a person lying on the ground stands, m.
+const LYING_THICKNESS_M: f32 = 0.3;
 
 /// A figure's step phase, a fixed fraction of a cycle per id, so the crowd does not step in unison.
 pub fn phase_of(id: &str) -> f32 {
@@ -474,16 +514,9 @@ impl AssetLoader for FigureLoader {
 #[derive(Component)]
 pub struct Visored;
 
-/// The capsule, head and visor a figure shows until its rig is ready (then they are hidden).
+/// The person's skin material, for a rig whose skin slots take it.
 #[derive(Component)]
-pub struct StandIn;
-
-/// A person's coat and skin materials: the rig's coat and skin slots take them.
-#[derive(Component, Clone)]
-pub struct PersonLook {
-    pub coat: Handle<StandardMaterial>,
-    pub skin: Handle<StandardMaterial>,
-}
+pub struct FigureSkin(pub Handle<StandardMaterial>);
 
 /// Once the figure look has loaded, put its visor on the front of each figure's head.
 pub fn attach_visors(
@@ -514,7 +547,6 @@ pub fn attach_visors(
                     ..StandardMaterial::default()
                 })),
                 Transform::from_translation(Vec3::from(visor.offset_m)),
-                StandIn,
             ));
         });
     }

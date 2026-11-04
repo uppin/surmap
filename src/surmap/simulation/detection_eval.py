@@ -102,6 +102,8 @@ class DetectionReport:
     # Per object id: (frames expected, frames found).
     objects: dict[str, tuple[int, int]] = field(default_factory=dict)
     false_positives: dict[str, int] = field(default_factory=dict)
+    # Person object-frames by the pose the person holds, where the capture's tracks carry it.
+    poses: dict[str, KindScore] = field(default_factory=dict)
     frames: int = 0
 
 
@@ -284,14 +286,22 @@ def score_capture(
         score = score_frame(
             expected, detections.get(frame.pair.frame_id, ()), unresolved=unresolved
         )
+        poses = capture.object_poses.get(frame.pair.t_ns, {})
         for obj in expected:
             seen[obj.id] += 1
             report.kinds[obj.kind].visible += 1
+            by_pose = (
+                report.poses.setdefault(poses[obj.id], KindScore()) if obj.id in poses else None
+            )
+            if by_pose is not None:
+                by_pose.visible += 1
             if obj.id in score.hit_ids:
                 found[obj.id] += 1
                 report.kinds[obj.kind].found += 1
             elif obj.id in score.as_another_vehicle:
                 report.kinds[obj.kind].as_another_vehicle += 1
+            if obj.id in score.hit_ids and by_pose is not None:
+                by_pose.found += 1
         false_positives.update(d.label for d in score.false_positives)
         report.frames += 1
     report.objects = {obj_id: (seen[obj_id], found[obj_id]) for obj_id in sorted(seen)}

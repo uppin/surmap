@@ -2,7 +2,6 @@ use super::*;
 
 fn a_rig() -> RigDef {
     RigDef {
-        glb: "models/person.glb".into(),
         clips: Clips {
             idle: "Idle".into(),
             walk: "Walk".into(),
@@ -116,13 +115,6 @@ fn a_rig_whose_run_covers_less_ground_than_its_walk_is_refused_by_name() {
     let rig = RigDef { run_ground_m_s: 1.0, ..a_rig() };
 
     assert!(rig.validate().unwrap_err().contains("run_ground_m_s"));
-}
-
-#[test]
-fn a_rig_that_is_not_gltf_is_refused_by_name() {
-    let rig = RigDef { glb: "models/person.fbx".into(), ..a_rig() };
-
-    assert!(rig.validate().unwrap_err().contains("person.fbx"));
 }
 
 #[test]

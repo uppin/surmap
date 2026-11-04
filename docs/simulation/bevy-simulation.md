@@ -37,11 +37,12 @@ From Poly Haven (CC0): textures `aerial_asphalt_01`, `rocks_ground_02`,
 `kloofendal_28d_misty_puresky`; and the building presets' textures (17 Poly Haven and 3
 ambientCG sets, CC0). An ambientCG set is one zip, downloaded once per run however many of its
 members are pinned; requests carry a `User-Agent` (ambientCG refuses urllib's default).
-From the Khronos glTF-Sample-Assets, pinned at commit `8f492390`, two CC-BY-4.0 models whose
-pins carry their credit (`attribution` in `assets.lock.json`; a test refuses a CC BY pin
+From the Khronos glTF-Sample-Assets, pinned at commit `8f492390`, one CC-BY-4.0 model whose
+pin carries its credit (`attribution` in `assets.lock.json`; a test refuses a CC BY pin
 without one): **Car Concept** by Eric Chadwick, Darmstadt Graphics Group GmbH (the scene's
-cars) and **Cesium Man** by Cesium (every survivor). Poly Haven has no uncovered car and no
-human, and a Sketchfab download needs a token and gives a signed URL no lock can pin.
+cars). Poly Haven has no uncovered car and no human, and a Sketchfab download needs a token
+and gives a signed URL no lock can pin. The people are two CC0 Quaternius characters from Poly
+Pizza (`models/person/wave.glb`, `sit.glb`), pinned with the animation names the tests read.
 
 From Poly Pizza, one CC-BY-3.0 model, by a developer decision of 2026-11-04 (no CC0 bus can be
 pinned): the bus (`models/poly-pizza/bus.glb`, the `bus` vehicle class), credited as *"Bus" by
@@ -837,6 +838,34 @@ What moved it, and what did not:
   ssdlite).
 - **False positives** did not go down: the profiles still fire on rubble slabs, water and sky
   (`tv`, `airplane`, `bird`, `bench`, `book`); ssdlite-mobiledet is the noisiest.
+
+**Rigged CC0 people (PR #107).** The survivors' Cesium Man gives way to two CC0 Quaternius
+characters (a waving/walking/running/lying one, a sitting one), re-measured on the same pass
+and on the `earthquake-survivors` scenario (`scripts/score_sim_detections.py` now also counts
+person object-frames by pose from the tracks' `pose`). Object-frames found / in view, score 0.3:
+
+| Pass | Profile | People, Cesium Man (#111) | People, rigged CC0 |
+|---|---|---|---|
+| shipped scene, `--record … --frames 75 --rate-hz 1 --start 12 --jpeg --colour` | efficientdet-lite0 | 7/113 | 20/113 |
+| | ssd-mobilenet-v2 | 15/113 | 27/113 |
+| | ssdlite-mobiledet | 38/113 | **65/113** |
+
+| `earthquake-survivors`, `--frames 200 --rate-hz 1 --start 0` (the whole loop) | efficientdet | ssd-mobilenet | ssdlite-mobiledet |
+|---|---|---|---|
+| standing (rescuers, walking) | 0/66 | 0/66 | 18/66 (27 %) |
+| sitting | 7/38 | 5/38 | 18/38 (47 %) |
+| waving | 0/33 | 0/33 | 0/33 |
+| lying | 0/6 | 0/6 | 0/6 |
+
+Three realism iterations on the scenario: (1) the whole figure in the hi-vis coat (shirt and
+trousers) found people *less* (ssdlite standing 4/66 against 11/66 with the shirt only), so only
+the shirt wears it and the model's own skin is kept (a flat library skin read as grey); (2) the
+waving and lying survivors stood half inside a slab and under its lean, so they are moved onto
+open ground (the scene does not test occlusion, so a hidden person still counts as in view);
+(3) the waving survivor faces the route. Waving and lying stay unfound: the loop sees them from
+above at 15-40 px, a raised arm and a body lying on tarmac are not what COCO's person class was
+trained on, and a lying person's truth box is now horizontal (`posed_person_truth`).
+Recorded in `examples/bevy-sitl-poc/docs/todo/2026-11-04-waving-and-lying-people-undetected.md`.
 
 ### Road and rail vehicles (`street-traffic`)
 

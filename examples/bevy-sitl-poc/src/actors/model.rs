@@ -11,7 +11,7 @@ use bevy::prelude::{
 };
 use bevy::scene::{SceneInstanceReady, SceneRoot};
 
-use super::{clip_time, person_truth, Figure, FigureAsset, FigureLook};
+use super::{clip_time, posed_person_truth, Figure, FigureAsset, FigureLook};
 use crate::wildfire::SimClock;
 use crate::world::GroundTruth;
 
@@ -59,10 +59,15 @@ pub fn attach_bodies(
     };
     for (entity, figure, children) in &figures {
         commands.entity(entity).insert(Bodied);
-        truth.0.push(person_truth(&figure.id, figure.feet_enu(), def.body_m));
+        truth.0.push(posed_person_truth(&figure.id, figure.feet_enu(), def.body_m, figure.pose(), figure.yaw_deg));
         let Some(model) = &def.model else {
             continue;
         };
+        // A rigged model is spawned by `rig::spawn_rigs`, which takes the capsule away once the
+        // rig is on screen.
+        if model.rig.is_some() {
+            continue;
+        }
         for child in children.iter().copied().filter(|child| fallback.contains(*child)) {
             commands.entity(child).despawn();
         }

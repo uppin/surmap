@@ -24,16 +24,15 @@ PRD: `PRD-2026-11-04-sim-rigged-people.md` · Discovery:
   - [x] Acceptance tests written and failing for the right reason (`tests/test_sim_people_e2e.py`)
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⛔ `/green` Green — implement until every red test passes · halted 2026-11-04: 2 owned red tests cannot pass honestly (asset; contract conflict). Owned Rust 19/20 and Python 15/16 green; inherited n1 red left alone (Rust 26, Python 16). Gates: ruff, mypy green; wasm check ok
-  - [ ] ⛔ Pin a CC0 rigged human glTF with the clips (criteria in *Assets*); `fetch_sim_assets.py` verifies it. No pinnable file meets the criteria: CC0 humans sampled from Poly Pizza (Quaternius, Polygonal Mind and others; 33 GLBs downloaded and inspected) — the sit clip and the wave clip never occur in one file (`Man`, `Woman in Tank Top`, `Animated Woman` `9kF7eTDbhO`: sit, no wave; `Animated Woman` `qJ2gsTUBHL`, `Hoodie`, `Adventurer`, `Worker`, `Character Animated`: wave, no sit). Quaternius Animated Men/Women/Ultimate/Universal packs are FBX/Blend or Patreon/itch downloads, not pinnable GLB URLs. No non-CC0 substitute, no `clip` remapping (`Man_Clapping` is not a wave)
-  - [ ] Rust `actors.rs` `FigureDef`: `rig` block — the struct, `rig: Option`, `RigDef::validate` from `FigureDef::from_json` are in; old files without `rig` still load. The shipped `person.figure.json` has no `rig` block yet (waits on the asset), so `the_shipped_figure_is_rigged_with_every_clip` stays red
-  - [x] Rust `figure_anim.rs` (pure): `locomotion`, `clip_time`, `rig_scale`, `RigDef::validate`, `Pose::name`; `figure_anim` 12/12 green. Crossfade band = a quarter of the walk→run gap either side of `run_above_m_s`; sit and lie held, wave looped
-  - [x] Rust runtime (`src/actors/rig.rs`): `prepare_rigs` (one `Gltf` and one `AnimationGraph` per rig asset, incl. a person's `glb`), `spawn_rigs` (under each `Figure`, scaled by `height_m`), `drive_rigs` (weights eased over `blend_s`, every player seeked to `clip_time` from `SimClock`). Capsule, head and visor stand in until `RigShown`. Compiles native and wasm; not exercised at run time (no rig asset)
-  - [x] Coat/skin materials on the rig's named slots (`PersonLook`, `GltfMaterialName`); `height_m` scales the rig. Compiles; not exercised; a figure with no rig keeps the capsule
-  - [ ] Tracks: `pose` on `Body` and `track_line` is in (key only when present, so vehicle lines are unchanged). Open: a lying person's truth extent is horizontal — the bridge's track reader (`bevy_capture.py` `object_kinds`) is n1's TODO(pr-1) stub
-  - [x] Python `scenario_manifest`: `validate_person_look` per person (`pose`, `height_m`, `yaw_deg`, `glb`); preset `earthquake-survivors` (five people; the shipped seven standing survivors give way); golden `tests/fixtures/sim_scenario/earthquake-survivors.json` written from the preset; `test_sim_people_manifest` 12/12 and `test_sim_people_e2e` 2/2 green
-  - [x] Proto `PersonElement` (`pose`, `height_m`, `yaw_deg`; regenerated in the red commit) and handler `_element` green. The id clash is fixed by `fa7b3f4` (the added survivor is `survivor-9`; the shipped scene is untouched): `test_a_lying_survivor_is_added_with_their_pose_height_and_facing` passes. Docs table left for wrap (`docs/agent.md`)
-  - [ ] Gates: `ruff format`, `ruff check --no-cache`, `mypy` green; `uv run pytest -q` 17 red = 16 n1-inherited + 1 blocked above; `cargo test --locked` 27 red = 26 n1-inherited + 1 blocked above; `cargo check --target wasm32-unknown-unknown` ok
+- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes · every owned red test green: Rust 249/249, Python 2110 passed; ruff, mypy, wasm check ok; detector bar met on the shipped pass (ssdlite 65/113 against Cesium Man's 38/113), standing and sitting; waving and lying missed after 3 iterations (TODO recorded)
+  - [x] Pin the CC0 humans: `models/person/wave.glb` (Quaternius, idle/walk/run/wave/death as lie) and `sit.glb` (SitIdle), developer option 2b; the lock carries their animation names; Cesium Man's pin and credit dropped
+  - [x] One humanoid concept: n2's `RigDef` merged into main's `FigureModel` (`rig`, `pose_models`, `model_for`); `StandIn`/`PersonLook` removed for `FallbackBody`/`FigureCoat`/`FigureSkin`; shipped `person.figure.json` model block with clips and the sit override; pose validation
+  - [x] Rust `figure_anim.rs` (pure) and runtime `actors/rig.rs`: clips by speed and pose on the sim clock; seen in native stills (waving, sitting, walking)
+  - [x] Tracks: `pose` on `Body`/`track_line`; a lying person's truth box is horizontal (`posed_person_truth`, red test first); Python capture loader reads `pose` (`object_poses`)
+  - [x] Python `scenario_manifest`, preset `earthquake-survivors` (golden regenerated), proto `PersonElement`, handler
+  - [x] Detector cross-check — `scripts/score_sim_detections.py` per-pose breakdown (red test first); both passes recorded and scored, 3 iterations, table in `docs/simulation/bevy-simulation.md`
+  - [x] Waving and lying bar missed: TODO `examples/bevy-sitl-poc/docs/todo/2026-11-04-waving-and-lying-people-undetected.md`
+  - [x] Gates: `ruff format`, `ruff check --no-cache`, `mypy`, `pytest -q`, `cargo test --locked`, wasm check
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (tests + native stills of `earthquake-survivors` reviewed)
   - [ ] `docs/simulation/bevy-simulation.md` — *The figure* rewritten for the rig and poses; `docs/agent.md` — person fields
@@ -168,11 +167,29 @@ pinnable CC0 file meets the criteria, the Green row halts ⛔ with the candidate
 | `src/actors/tests.rs` (4) | track `pose`; posed survivor without a tree tracked; shipped figure has a rig; bad rig refused by `FigureDef::from_json` |
 | `src/scene_manifest/tests.rs` (4) | height range; `glb` override rules and asset path; golden parses with lying/sitting/waving |
 
+- **V3** — deterministic recorded command, result recorded 2026-11-04 (score 0.3, colour):
+  `uv run python scripts/fetch_coral_model.py`, then from `examples/bevy-sitl-poc`
+  `cargo run --release -- [--scenario earthquake-survivors] --record <dir> --frames 75|200 --rate-hz 1
+  --start 12|0 --jpeg --colour` and `uv run python scripts/score_sim_detections.py <dir>`.
+  Shipped pass, people found/in view (Cesium Man of #111 → rigged CC0): efficientdet 7→20/113,
+  ssd-mobilenet 15→27/113, ssdlite 38→65/113. `earthquake-survivors` whole loop, ssdlite: standing
+  18/66, sitting 18/38, waving 0/33, lying 0/6 (other profiles lower). Full table and iterations in
+  `docs/simulation/bevy-simulation.md` § *On-board detectors (measured)*.
+
 ## Prerequisites
 
 Deferred-work scan: `2026-11-03-bevy-visual-checkpoints-v3-v5.md` — ℹ unrelated. Nothing blocks.
 
 ## Decisions & Trade-offs
+
+- **Orchestrator decisions (2026-11-04), recorded as deferred answers:** one humanoid concept
+  (`2026-11-04-one-humanoid-model-concept.md`: n2's rig merged into main's `FigureModel`, main's
+  names win; the shipped-figure assertion of #111 was never Cesium-specific, so no main test
+  changed beyond `rig: None` in literals) and two CC0 models shipped with Cesium Man's pin dropped
+  (`2026-11-04-two-cc0-people-and-cesium-man-dropped.md`).
+- **Detector cross-check (developer, 2026-11-04):** people are scored per pose; a lying person's
+  truth box is horizontal; only the shirt wears the hi-vis coat (whole-body tint found people
+  less); the preset's survivors stand on open ground, as the scene does not test occlusion.
 
 - Players are seeked to simulation time instead of advanced by Bevy's clock: stills and
   recordings must replay; costs a seek per figure per frame (tens of figures — negligible).

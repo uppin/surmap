@@ -21,15 +21,54 @@
     ]
   },
   "model": {
-    "glb": "models/cesium_man/CesiumMan.glb",
-    "scale": 1.16,
+    "glb": "models/person/wave.glb",
+    "scale": 1.0,
     "yaw_deg": 180.0,
-    "clip_s": 0.25,
-    "coat_tint": true
+    "clip_s": 0.0,
+    "coat_tint": false,
+    "rig": {
+      "clips": {
+        "idle": "CharacterArmature|Idle",
+        "walk": "CharacterArmature|Walk",
+        "run": "CharacterArmature|Run",
+        "wave": "CharacterArmature|Wave",
+        "lie": "CharacterArmature|Death"
+      },
+      "walk_ground_m_s": 1.1,
+      "run_ground_m_s": 2.5,
+      "run_above_m_s": 1.8,
+      "blend_s": 0.3,
+      "standing_height_m": 1.8,
+      "coat_slots": [
+        "White"
+      ]
+    }
   },
   "body_m": [
     0.6,
     0.6,
     1.8
-  ]
+  ],
+  "pose_models": {
+    "sitting": {
+      "glb": "models/person/sit.glb",
+      "scale": 0.346,
+      "yaw_deg": 180.0,
+      "clip_s": 0.0,
+      "coat_tint": true,
+      "rig": {
+        "clips": {
+          "idle": "Armature|Idle",
+          "walk": "Armature|Walking",
+          "run": "Armature|Running",
+          "sit": "Armature|SitIdle"
+        },
+        "walk_ground_m_s": 1.3,
+        "run_ground_m_s": 3.6,
+        "run_above_m_s": 2.4,
+        "blend_s": 0.3,
+        "standing_height_m": 1.8
+      }
+    }
+  }
 }

@@ -15,8 +15,7 @@ fn gait() -> FigureDef {
         visor: None,
         model: None,
         body_m: [0.6, 0.6, 1.8],
-        rig: None,
-        pose_rigs: Default::default(),
+        pose_models: Default::default(),
     }
 }
 
@@ -221,16 +220,16 @@ fn a_lying_survivor_without_a_tree_is_tracked_lying_where_they_lie() {
 }
 
 /// The primary wave rig and a sitting rig, as the shipped figure names them (test fixtures).
-const WAVE_RIG: &str = r#""rig": {"glb": "models/person/wave.glb",
+const WAVE_RIG: &str = r#""model": {"glb": "models/person/wave.glb", "rig": {
     "clips": {"idle": "Idle", "walk": "Walk", "run": "Run", "wave": "Wave", "lie": "Death"},
-    "walk_ground_m_s": 1.1, "run_ground_m_s": 2.5, "run_above_m_s": 1.8, "blend_s": 0.3, "standing_height_m": 1.8}"#;
-const SIT_RIG: &str = r#""glb": "models/person/sit.glb",
+    "walk_ground_m_s": 1.1, "run_ground_m_s": 2.5, "run_above_m_s": 1.8, "blend_s": 0.3, "standing_height_m": 1.8}}"#;
+const SIT_RIG: &str = r#""glb": "models/person/sit.glb", "rig": {
     "clips": {"idle": "Idle", "walk": "Walk", "run": "Run", "sit": "SitIdle"},
-    "walk_ground_m_s": 3.8, "run_ground_m_s": 10.3, "run_above_m_s": 7.0, "blend_s": 0.3, "standing_height_m": 5.2"#;
+    "walk_ground_m_s": 3.8, "run_ground_m_s": 10.3, "run_above_m_s": 7.0, "blend_s": 0.3, "standing_height_m": 5.2}"#;
 
 fn figure_with(rig: &str, pose_rigs: &str) -> String {
     format!(
-        r#"{{"yaw_ease_s": 0.3, "bob_m": 0.03, "steps_per_s": 2, "reference_speed_m_s": 1.4, {rig}, "pose_rigs": {{{pose_rigs}}}}}"#
+        r#"{{"yaw_ease_s": 0.3, "bob_m": 0.03, "steps_per_s": 2, "reference_speed_m_s": 1.4, {rig}, "pose_models": {{{pose_rigs}}}}}"#
     )
 }
 
@@ -258,7 +257,7 @@ fn the_shipped_figure_has_a_clip_for_every_pose_in_a_pinned_file() {
     let figure = shipped_figure();
 
     for pose in [Pose::Standing, Pose::Lying, Pose::Sitting, Pose::Waving] {
-        let rig = figure.rig_for(pose, None, None).expect("every pose has a rig");
+        let rig = figure.model_for(pose, None, None).expect("every pose has a rig");
         let clip = rig.clip_for(pose).expect("every pose names a clip");
         let animations = lock_entry(&rig.glb)["animations"].clone();
         assert!(
@@ -274,7 +273,7 @@ fn every_rig_file_of_the_shipped_figure_is_a_pinned_cc0_model() {
     let figure = shipped_figure();
 
     for pose in [Pose::Standing, Pose::Sitting] {
-        let glb = figure.rig_for(pose, None, None).expect("a rig").glb;
+        let glb = figure.model_for(pose, None, None).expect("a rig").glb;
         let pin = lock_entry(&glb);
         assert_eq!(pin["license"], "CC0-1.0", "{glb}");
         assert_eq!(pin["sha256"].as_str().map(str::len), Some(64), "{glb}");
@@ -283,21 +282,21 @@ fn every_rig_file_of_the_shipped_figure_is_a_pinned_cc0_model() {
 
 #[test]
 fn a_sitting_person_is_drawn_on_the_rig_that_names_sitting() {
-    let rig = sitting_figure().rig_for(Pose::Sitting, None, None).expect("a rig");
+    let rig = sitting_figure().model_for(Pose::Sitting, None, None).expect("a rig");
 
     assert_eq!(rig.glb, "models/person/sit.glb");
 }
 
 #[test]
 fn a_standing_person_is_drawn_on_the_primary_rig_even_when_a_pose_has_its_own() {
-    let rig = sitting_figure().rig_for(Pose::Standing, None, None).expect("a rig");
+    let rig = sitting_figure().model_for(Pose::Standing, None, None).expect("a rig");
 
     assert_eq!(rig.glb, "models/person/wave.glb");
 }
 
 #[test]
 fn a_lying_person_is_drawn_on_the_primary_rig_when_no_pose_rig_names_lying() {
-    let rig = sitting_figure().rig_for(Pose::Lying, None, None).expect("a rig");
+    let rig = sitting_figure().model_for(Pose::Lying, None, None).expect("a rig");
 
     assert_eq!(rig.glb, "models/person/wave.glb");
 }
@@ -305,18 +304,18 @@ fn a_lying_person_is_drawn_on_the_primary_rig_when_no_pose_rig_names_lying() {
 #[test]
 fn a_person_with_their_own_glb_is_drawn_on_it_with_the_clips_of_their_pose() {
     let rig = sitting_figure()
-        .rig_for(Pose::Sitting, None, Some("library/polypizza/x1/person.glb"))
+        .model_for(Pose::Sitting, None, Some("library/polypizza/x1/person.glb"))
         .expect("a rig");
 
-    assert_eq!((rig.glb.as_str(), rig.clips.sit.as_deref()), ("library/polypizza/x1/person.glb", Some("SitIdle")));
+    assert_eq!((rig.glb.as_str(), rig.rig.as_ref().and_then(|r| r.clips.sit.as_deref())), ("library/polypizza/x1/person.glb", Some("SitIdle")));
 }
 
 #[test]
 fn a_person_is_drawn_at_the_pace_of_their_height_on_the_rig_they_are_drawn_with() {
     // Given a 1.62 m person: the sit rig stands 5.2 m, so it is scaled by 0.3115
-    let rig = sitting_figure().rig_for(Pose::Sitting, Some(1.62), None).expect("a rig");
+    let rig = sitting_figure().model_for(Pose::Sitting, Some(1.62), None).expect("a rig");
 
-    assert!((rig.walk_ground_m_s - 3.8 * 1.62 / 5.2).abs() < 1e-4, "{}", rig.walk_ground_m_s);
+    assert!((rig.rig.as_ref().expect("rigged").walk_ground_m_s - 3.8 * 1.62 / 5.2).abs() < 1e-4, "{}", rig.rig.as_ref().expect("rigged").walk_ground_m_s);
 }
 
 #[test]
@@ -359,7 +358,7 @@ fn pose_rigs_without_a_primary_rig_are_refused_by_name() {
 
     let refused = FigureDef::from_json(&text).unwrap_err();
 
-    assert!(refused.contains("pose_rigs"), "{refused}");
+    assert!(refused.contains("pose_models"), "{refused}");
 }
 
 #[test]
@@ -374,10 +373,30 @@ fn a_pose_rig_that_is_not_gltf_is_refused_by_name() {
 #[test]
 fn a_rig_that_runs_slower_than_it_walks_is_refused_by_name() {
     let text = r#"{"yaw_ease_s": 0.3, "bob_m": 0.03, "steps_per_s": 2, "reference_speed_m_s": 1.4,
-        "rig": {"glb": "models/person.glb", "clips": {"idle": "Idle", "walk": "Walk", "run": "Run", "wave": "Wave", "sit": "Sit", "lie": "Death"},
-                "walk_ground_m_s": 1.4, "run_ground_m_s": 1.0, "run_above_m_s": 2.0, "blend_s": 0.25, "standing_height_m": 1.8}}"#;
+        "model": {"glb": "models/person.glb", "rig": {"clips": {"idle": "Idle", "walk": "Walk", "run": "Run", "wave": "Wave", "sit": "Sit", "lie": "Death"},
+                "walk_ground_m_s": 1.4, "run_ground_m_s": 1.0, "run_above_m_s": 2.0, "blend_s": 0.25, "standing_height_m": 1.8}}}"#;
 
     let refused = FigureDef::from_json(text).unwrap_err();
 
     assert!(refused.contains("run_ground_m_s"), "{refused}");
+}
+
+#[test]
+fn a_lying_person_is_a_low_box_as_long_as_they_are_tall_along_the_way_they_lie() {
+    // Given a 1.8 m person lying along north (yaw 90) on the ground at z 0.5
+    let truth = posed_person_truth("survivor-1", [-15.0, 31.0, 0.5], [0.6, 0.6, 1.8], Pose::Lying, 90.0);
+
+    let size = [0, 1, 2].map(|axis| (truth.max_enu[axis] - truth.min_enu[axis]).abs());
+
+    assert!((size[0] - 0.6).abs() < 1e-4 && (size[1] - 1.8).abs() < 1e-4, "{size:?}");
+    assert!(size[2] < 0.6 && truth.min_enu[2] == 0.5, "{truth:?}");
+}
+
+#[test]
+fn a_person_who_is_not_lying_keeps_the_standing_box_whatever_their_pose() {
+    let standing = person_truth("survivor-1", [-15.0, 31.0, 0.5], [0.6, 0.6, 1.8]);
+
+    let waving = posed_person_truth("survivor-1", [-15.0, 31.0, 0.5], [0.6, 0.6, 1.8], Pose::Waving, 30.0);
+
+    assert_eq!((waving.min_enu, waving.max_enu), (standing.min_enu, standing.max_enu));
 }

@@ -25,8 +25,8 @@ person poses as exactly `lying, sitting, standing, standing, waving`, so the sev
 ## Decision
 
 Built: `src/surmap/simulation/people.py` `earthquake_survivors` drops the block's `kind: person`
-elements and adds `survivor-lying` (−8, 26), `survivor-sitting` (18, 52, z 1.0), `survivor-waving`
-(16, 83, z 1.0), and `rescuer-1` / `rescuer-2` on a `repeat` of two `follow_path` legs at 1.4 m/s.
+elements and adds `survivor-lying` (−3, 29; first −8, 26), `survivor-sitting` (18, 52, z 1.0), `survivor-waving`
+(9, 83, facing -60 degrees; first 16, 83, z 1.0 — half inside the slab, moved after the detector cross-check), and `rescuer-1` / `rescuer-2` on a `repeat` of two `follow_path` legs at 1.4 m/s.
 Positions are chosen by hand from the footprints in `scene.json`; the rubble heights (z 1.0) are not
 measured. The golden `tests/fixtures/sim_scenario/earthquake-survivors.json` is written from it.
 

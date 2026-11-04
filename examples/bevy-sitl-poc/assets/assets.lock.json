@@ -703,14 +703,6 @@
       "attribution": "Car Concept by Eric Chadwick, Darmstadt Graphics Group GmbH (2024), CC-BY-4.0, via the Khronos glTF-Sample-Assets; Khronos and 3D Commerce logos are Khronos marks"
     },
     {
-      "path": "models/cesium_man/CesiumMan.glb",
-      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/8f492390ddc7a2ae221a1369ef560589cf8c70fb/Models/CesiumMan/glTF-Binary/CesiumMan.glb",
-      "sha256": "b7001eaeea8254bd44773bcd247e78696d94169388fbb2a1800fc69434e777d9",
-      "license": "CC-BY-4.0",
-      "source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/8f492390ddc7a2ae221a1369ef560589cf8c70fb/Models/CesiumMan",
-      "attribution": "Cesium Man by Cesium (2017), CC-BY-4.0, via the Khronos glTF-Sample-Assets; the Cesium logo is a Cesium mark"
-    },
-    {
       "path": "models/quaternius/car.glb",
       "url": "https://static.poly.pizza/59a67a6c-490e-472e-bae6-5a4d2541f1c7.glb",
       "sha256": "bf00f2f0386a25aa310abc0424d22586e46a59ee6c737e6b375c97c9f01bd462",

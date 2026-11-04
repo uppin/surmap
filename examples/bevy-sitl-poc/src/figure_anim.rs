@@ -6,8 +6,6 @@
 
 use serde::Deserialize;
 
-use crate::scene_manifest::is_relative_gltf;
-
 /// How a person holds themself when not walking: the poses a survey finds people in.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -92,11 +90,12 @@ impl Clips {
     }
 }
 
-/// The figure's rigged glTF and how its clips map to motion (`person.figure.json` → `rig`).
+/// How a figure model's clips map to motion (`person.figure.json` → `model.rig`): the clip names in
+/// the model's glTF and the speeds they cover. A model without one is the degenerate case, posed
+/// from its first clip.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RigDef {
-    pub glb: String,
     pub clips: Clips,
     /// Ground covered per second by the walk and run clips at rate 1 (no foot slide).
     pub walk_ground_m_s: f32,
@@ -132,8 +131,8 @@ impl RigDef {
         scaled
     }
 
-    /// Every speed, height and blend > 0, `run_ground_m_s` > `walk_ground_m_s`, the glTF a
-    /// relative `.glb`/`.gltf` path; the reason names the field.
+    /// Every speed, height and blend > 0 and `run_ground_m_s` > `walk_ground_m_s`; the reason
+    /// names the field.
     pub fn validate(&self) -> Result<(), String> {
         let positive = [
             ("walk_ground_m_s", self.walk_ground_m_s),
@@ -149,9 +148,6 @@ impl RigDef {
         }
         if self.run_ground_m_s <= self.walk_ground_m_s {
             return Err("rig run_ground_m_s must be greater than walk_ground_m_s".into());
-        }
-        if !is_relative_gltf(&self.glb) {
-            return Err(format!("rig glb {:?} must be a relative .glb or .gltf path", self.glb));
         }
         Ok(())
     }
