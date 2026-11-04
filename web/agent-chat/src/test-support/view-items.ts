@@ -1,4 +1,4 @@
-import type { ModelInfo } from "@/ports";
+import type { ModelInfo, StationView } from "@/ports";
 import type { JobView } from "@/view-model/jobs";
 import type { ToolItem } from "@/view-model/transcript";
 import { SYNC_30_THEN_DETACH } from "./turn-events";
@@ -60,3 +60,16 @@ export const ONE_PIXEL_PNG = Uint8Array.from(
   ),
   (char) => char.charCodeAt(0),
 );
+
+/** A station status as the server reports it; off, with a five-minute idle timeout, by default. */
+export function aStation(overrides: Partial<StationView> = {}): StationView {
+  return {
+    state: "off",
+    detail: "",
+    containers: 0,
+    idleTimeoutS: 300,
+    idleForS: 0,
+    backend: "modal:ginas-bb/surmap-station",
+    ...overrides,
+  };
+}

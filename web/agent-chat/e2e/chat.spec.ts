@@ -201,3 +201,26 @@ test("a reloaded page still receives job-event turns on its new watch stream", a
 
   await expect(chat.conversation()).toContainText("The demo finished after the reload.");
 });
+
+test("the header shows the SAM station off, Start brings it up and Stop takes it down", async ({ page }) => {
+  const server = await stubServer({ station: { state: "off" } });
+  const chat = new ChatPage(page);
+  await chat.open(server.url);
+
+  await expect(chat.station()).toHaveText("SAM · off");
+  await chat.startStation();
+  await expect(chat.station()).toHaveText("SAM · ready");
+  await chat.stopStation();
+  await expect(chat.station()).toHaveText("SAM · off");
+
+  expect(server.received.station).toEqual(["start", "stop"]);
+});
+
+test("an agent with no SAM station shows no station in the header", async ({ page }) => {
+  const server = await stubServer({});
+  const chat = new ChatPage(page);
+  await chat.open(server.url);
+
+  await expect(page.getByRole("combobox", { name: "Model" })).toBeVisible();
+  await expect(chat.station()).toHaveCount(0);
+});

@@ -24,9 +24,11 @@ from surmap.agent.server.app import (
     AgentServerConfig,
     build_agent_description,
     build_demo_workspace,
+    build_station,
     default_model_factory,
 )
 from surmap.agent.services import Handler
+from surmap.agent.tools.station import StationState
 from surmap.rpc.hosts.in_memory import InMemoryHost
 from surmap.usage import BudgetExceeded, UsageLedger
 from tests import fake_meta, fake_ollama
@@ -42,6 +44,7 @@ from tests.agent_server_fakes import (
     NoGlbs,
     turn_event,
 )
+from tests.agent_station_fakes import FakeModalFunction
 from tests.agent_tool_fakes import a_tool_rig
 from tests.fake_fireworks import (
     FAKE_FIREWORKS_KEY,
@@ -555,3 +558,84 @@ def test_an_agent_told_coral_model_none_runs_no_onboard_model_by_default(tmp_pat
 
     # Then no model is the default, so a run with no choice runs none
     assert not any(model.is_default for model in workspace.onboard_models())
+
+
+def test_an_agent_has_no_station_unless_told_to() -> None:
+    # Given the agent's default command line
+    config = config_from_args([], environ={})
+
+    # Then it builds no station
+    assert build_station(config) is None
+
+
+def test_the_station_flags_choose_the_backend_app_and_idle_timeout() -> None:
+    # Given a command line naming a Modal station with a one-minute idle timeout
+    config = config_from_args(
+        ["--station=modal", "--station-app=surmap-station-test", "--station-idle-s=60"],
+        environ={},
+    )
+
+    # Then the config carries them, with the survey token from nowhere yet
+    assert (config.station, config.station_app, config.station_idle_s) == (
+        "modal",
+        "surmap-station-test",
+        60,
+    )
+
+
+def test_a_stub_station_honours_the_configured_idle_timeout() -> None:
+    # Given an agent told to run a stub station that idles out after a minute
+    config = config_from_args(["--station=stub", "--station-idle-s=60"], environ={})
+
+    # When its station is built
+    station = build_station(config)
+
+    # Then it is the stub, off, with that timeout
+    assert station is not None
+    status = station.status()
+    assert (status.backend, status.state, status.idle_timeout_s) == ("stub", StationState.OFF, 60)
+
+
+def test_a_modal_station_reaches_the_configured_app_with_the_survey_token() -> None:
+    # Given an agent told to run the Modal station, with the survey token in its environment
+    config = config_from_args(
+        ["--station=modal", "--station-env=main"], environ={"SURMAP_SURVEY_TOKEN": "t0k3n"}
+    )
+    looked_up: list[tuple[str, str | None]] = []
+
+    def modal_function(app: str, environment: str | None) -> FakeModalFunction:
+        looked_up.append((app, environment))
+        return FakeModalFunction()
+
+    # When its station is built
+    station = build_station(config, modal_function=modal_function)
+
+    # Then it looked up the station app's function in that environment, and names it
+    assert looked_up == [("surmap-station", "main")]
+    assert station is not None and station.status().backend == "modal:main/surmap-station"
+
+
+def test_an_agent_with_a_station_runs_sam_there_without_the_fake(tmp_path: Path) -> None:
+    # Given an agent with a stub station and no --sam-fake
+    config = AgentServerConfig(cache_dir=tmp_path, station="stub")
+    station = build_station(config)
+
+    # When its workspace is built over that station
+    workspace = build_demo_workspace(config, station=station)
+
+    # Then it is built (SAM runs through the station), and the station is still off
+    assert workspace is not None
+    assert station is not None and station.status().state == StationState.OFF
+
+
+def test_an_agent_with_neither_a_station_nor_the_fake_sam_refuses_to_start(
+    tmp_path: Path,
+) -> None:
+    # Given an agent with no SAM at all
+    config = AgentServerConfig(cache_dir=tmp_path)
+
+    # When its workspace is built
+    # Then it refuses, naming both ways to give it one
+    with pytest.raises(ValueError, match="--station") as refusal:
+        build_demo_workspace(config)
+    assert "--sam-fake" in str(refusal.value)

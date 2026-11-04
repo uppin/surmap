@@ -4,6 +4,19 @@ import type { Locator, Page } from "@playwright/test";
 export class ChatPage {
   constructor(private readonly page: Page) {}
 
+  /** The header's SAM station indicator. */
+  station(): Locator {
+    return this.page.getByRole("status", { name: "SAM station" });
+  }
+
+  async startStation(): Promise<void> {
+    await this.page.getByRole("button", { name: "Start SAM" }).click();
+  }
+
+  async stopStation(): Promise<void> {
+    await this.page.getByRole("button", { name: "Stop SAM" }).click();
+  }
+
   /** Opens the chat on the stub server, in a named conversation so reloads find it again. */
   async open(serverUrl: string, conversationId = "e2e-1"): Promise<void> {
     const query = new URLSearchParams({ server: serverUrl, conversation: conversationId });

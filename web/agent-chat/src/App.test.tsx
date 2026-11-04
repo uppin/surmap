@@ -3,9 +3,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { TurnEvent } from "@/gen/surmap/agent/v1/chat_pb";
-import { aModel } from "@/test-support/view-items";
+import { aModel, aStation } from "@/test-support/view-items";
 import { aConversation } from "@/test-support/turn-events";
-import type { ChatPort, ModelInfo, StreamTurnInput } from "@/ports";
+import type { ChatPort, ModelInfo, StationView, StreamTurnInput } from "@/ports";
 import App from "./App";
 
 interface FakePortOptions {
@@ -15,6 +15,8 @@ interface FakePortOptions {
   /** The events the next turn streams. */
   turn?: TurnEvent[];
   datasets?: import("@/ports").DatasetView[];
+  /** The SAM station's status, or `null` when the server has none (the default). */
+  station?: StationView | null;
 }
 
 /** A stream with no events that ends when `signal` aborts, as a watch stream does with no job ending. */
@@ -35,7 +37,9 @@ function fakePort(options: FakePortOptions = {}) {
     streamTurn: [] as StreamTurnInput[],
     watch: [] as string[],
     getConversation: [] as string[],
+    station: [] as string[],
   };
+  let station = options.station ?? null;
   const port: ChatPort = {
     async *streamTurn(input) {
       asked.streamTurn.push(input);
@@ -60,6 +64,19 @@ function fakePort(options: FakePortOptions = {}) {
     },
     async listDatasets() {
       return options.datasets ?? [];
+    },
+    async getStationStatus() {
+      return station;
+    },
+    async startStation() {
+      asked.station.push("start");
+      station = aStation({ state: "ready", containers: 1 });
+      return station;
+    },
+    async stopStation() {
+      asked.station.push("stop");
+      station = aStation({ state: "off" });
+      return station;
     },
     async getMapScene() {
       return {
@@ -95,6 +112,45 @@ describe("chat page", () => {
     render(<App port={port} />);
 
     expect(await screen.findByRole("combobox", { name: "Model" })).toHaveValue("ollama:qwen3");
+  });
+
+  it("shows the SAM station's state in the header", async () => {
+    const { port } = fakePort({ station: aStation({ state: "off" }) });
+
+    render(<App port={port} />);
+
+    expect(await screen.findByRole("status", { name: "SAM station" })).toHaveTextContent("SAM · off");
+  });
+
+  it("shows no SAM station when the server has none", async () => {
+    const { port } = fakePort({ station: null });
+
+    render(<App port={port} />);
+
+    await screen.findByRole("combobox", { name: "Model" });
+    expect(screen.queryByRole("status", { name: "SAM station" })).toBeNull();
+  });
+
+  it("starts the SAM station from the header and shows it come up", async () => {
+    const { port, asked } = fakePort({ station: aStation({ state: "off" }) });
+    render(<App port={port} />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Start SAM" }));
+
+    expect(asked.station).toEqual(["start"]);
+    expect(await screen.findByRole("status", { name: "SAM station" })).toHaveTextContent("SAM · ready");
+  });
+
+  it("stops the SAM station from the header", async () => {
+    const { port, asked } = fakePort({ station: aStation({ state: "ready", containers: 1 }) });
+    render(<App port={port} />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Stop SAM" }));
+
+    expect(asked.station).toEqual(["stop"]);
+    expect(await screen.findByRole("status", { name: "SAM station" })).toHaveTextContent("SAM · off");
   });
 
   it("opens the dataset gallery as its own searchable screen", async () => {
