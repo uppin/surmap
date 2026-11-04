@@ -12,26 +12,26 @@ PRD: `PRD-2026-11-04-fleet-link.md` · Discovery: `2026-11-04-fleet-link-initial
 
 ## Workflow
 
-- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1) · commit 1 `d7048f1`
+- [wf 1] ✅ 2026-11-04 `/plan-pr-stack` Plan — PRD, changeset, initial discovery · these files (`/plan-pr-stack` pass 1) · commit 1 `524a7d3`
   - [x] Record initial discovery
   - [x] Cross-check `src/surmap/docs/todo/` and `src/surmap/docs/code-issues/`
   - [x] Create/update PRD documentation
   - [x] Create changeset
-- [wf 2] ✅ 2026-11-04 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 87 failing (32 acceptance + 55 unit) — commit 2 `db5b375`
+- [wf 2] ✅ 2026-11-04 `/plan-red` Red — acceptance and failing lower-tier tests, committed · 87 failing (32 acceptance + 55 unit) — commit 2 `bb17128`
   - [x] Build and baseline healthy (`uv run mypy`, `uv run pytest -q`, `cargo test --locked`)
   - [x] Stubs this node owns (`surmap.simulation.fleet` package, `agent/server/fleet_routes.py`, Rust `fleet/link.rs`, `fleet/link_wasm.rs`)
   - [x] Acceptance tests written and failing for the right reason
   - [x] Unit/integration tests written and failing
   - [x] Tests committed with the changeset
-- [wf 3] ⬜ `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) ·
-  - [ ] Goldens `tests/fixtures/fleet_link/{hello,command,applied,refused,telemetry}.json`; Rust `fleet/link.rs` codec and Python `fleet/link.py` codec both round-trip them
-  - [ ] Python `fleet/commands.py`: typed commands (`Launch`, `SetRoute`, `Detour`, `Recall`, `SetActive`, `Route`) whose JSON equals n2's `tests/fixtures/fleet/commands.json`
-  - [ ] Python `fleet/controller.py`: `FleetController` (station-side checks mirroring n2's refusals, request ids, 5 s ack timeout, latest telemetry, applied log) and `FleetRegistry` (scenario → controller; one link per scenario)
-  - [ ] Python `fleet/log_store.py`: `fleet_sessions` + `fleet_log` tables in the scenario store's SQLite file; `export_jsonl(session)` in n2's `--fleet-log` format
-  - [ ] Agent server: `WebSocketRoute("/sim/fleet", …)` in the description when a `SimulationRig` is configured; `SimulationRig.fleet: FleetRegistry`
-  - [ ] Rust `fleet/link_wasm.rs` (`cfg(target_arch = "wasm32")`): `?fleet=1` → `web_sys::WebSocket` to `/sim/fleet?scenario=<id>`; inbound commands queued, drained into `FleetLog::push` at `SimClock::now()`; `applied`/`refused` sent back; telemetry every 0.5 s; `web-sys` features added
-  - [ ] `scripts/fleet_link_smoke.py`; `Cargo.toml` description and `index.html` banner say what the link sends
-  - [ ] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
+- [wf 3] ✅ 2026-11-04 `/green` Green — implement until every red test passes (`[G]` on Sonnet only — see Stack Context) · 87/87 red tests green + 5 added @ `a3ae0a5`/`c7ac8e1`; pytest 2312 passed / 38 skipped / 0 failed, `cargo test --locked` 352 passed, mypy/ruff clean, wasm check passes with `link_wasm` compiled in
+  - [x] Goldens `tests/fixtures/fleet_link/{hello,command,applied,refused,telemetry}.json`; Rust `fleet/link.rs` codec and Python `fleet/link.py` codec both round-trip them
+  - [x] Python `fleet/commands.py`: typed commands (`Launch`, `SetRoute`, `Detour`, `Recall`, `SetActive`, `Route`) whose JSON equals n2's `tests/fixtures/fleet/commands.json`
+  - [x] Python `fleet/controller.py`: `FleetController` (station-side checks mirroring n2's refusals, request ids, 5 s ack timeout, latest telemetry, applied log) and `FleetRegistry` (scenario → controller; one link per scenario)
+  - [x] Python `fleet/log_store.py`: `fleet_sessions` + `fleet_log` tables in the scenario store's SQLite file; `export_jsonl(session)` in n2's `--fleet-log` format
+  - [x] Agent server: `WebSocketRoute("/sim/fleet", …)` in the description when a `SimulationRig` is configured; `SimulationRig.fleet: FleetRegistry`
+  - [x] Rust `fleet/link_wasm.rs` (`cfg(target_arch = "wasm32")`): `?fleet=1` → `web_sys::WebSocket` to `/sim/fleet?scenario=<id>`; inbound commands queued, drained into `FleetLog::push` at `SimClock::now()`; `applied`/`refused` sent back; telemetry every 0.5 s; `web-sys` features added
+  - [x] `scripts/fleet_link_smoke.py`; `Cargo.toml` description and `index.html` banner say what the link sends
+  - [x] Gates green; `cargo test --locked`; `cargo check --target wasm32-unknown-unknown`
 - [wf 4] ⬜ `/pr-wrap` Wrap — validate, clean up, verification, docs ·
   - [ ] Verification executed — result recorded (V1 suites; V3 wasm check output; V4 Chrome procedure with the smoke script's log and a screenshot)
   - [ ] `docs/simulation/bevy-simulation.md` — *The fleet link* (`fleet/v1` messages, `?fleet=1`, the log store, the smoke script)
@@ -265,7 +265,7 @@ Procedure:
 
 ## Validation Results
 
-**Baseline (`d7048f1`: n1 green, n2 red, this node's planning):** `uv run mypy` clean (512
+**Baseline (`524a7d3`: n1 green, n2 red, this node's planning):** `uv run mypy` clean (512
 files), `ruff check --no-cache` / `ruff format --no-cache --check` clean; `uv run pytest -q` 2237
 passed, 1 failed, 38 skipped — the 1 is n2's `test_bevy_capture.py::test_a_fleet_capture_names_the_drone_on_every_frame`
 (inherited); `cargo test --locked` 286 passed, 44 failed — all 44 n2's (`fleet::tests::*`,
@@ -290,6 +290,31 @@ upgrade with HTTP 500, or through `FleetController`); Rust — `todo!("pr-3: imp
 panics in n2's `FleetLog::from_jsonl` (`TODO(pr-2)`); it passes once n2 is green (and needs
 `from_jsonl` to accept the seq gap 1 → 3 a live refusal leaves). No test is blocked on n1 (green
 in this tree). Wave unchanged.
+
+**Green tree (rebased onto n2's wrapped tip `08d840d`):** `uv run pytest -q` 2312 passed, 38
+skipped, 0 failed (the 87 red tests green, 5 added); `uv run mypy` clean (522 files); `ruff check
+--no-cache` / `ruff format --no-cache --check` clean; `cargo test --locked` 352 passed, 0 failed
+(the 18 `link` tests among them; `the_station_export_is_a_valid_fleet_log` passes, so n2's
+`FleetLog::from_jsonl` accepts the seq gap 1 → 3 and nothing is owed to n2).
+
+**V3 after-output** (`cargo check --locked --target wasm32-unknown-unknown`, `link_wasm.rs`
+compiled in and wired into `main.rs` behind `cfg(target_arch = "wasm32")`):
+`warning: bevy-sitl-poc (bin "bevy-sitl-poc") generated 9 warnings` ·
+``Finished `dev` profile [optimized + debuginfo] target(s) in 2.97s`` (no warning names
+`fleet/link`). The 47-warning before-count was n2's stubs unused; the new `web-sys` features
+(`WebSocket`, `MessageEvent`, `CloseEvent`, `ErrorEvent`) do not change `Cargo.lock`, so `--locked`
+passes.
+
+**V4 (not run here).** `scripts/fleet_link_smoke.py --help` works; run against a scripted fake page
+over a real `HypercornHost` it flew the whole sortie (6 applied, both drones docked, 6-line
+`--fleet-log` export). The browser run is `[wf 4]`'s.
+
+Added in Green, not in the red step: the station treats a drone as flying from the page's
+`applied` launch until telemetry stamped at or after it arrives (two tests); a page's `hello`
+drone list is the known-drone set while it is linked (one); a late `applied` after a timeout is
+still logged (one); a link for an unknown scenario closes with 4400 (one). Refusal words beyond the
+three the red step pinned (`no waypoints`, speed, height, out of order, already docked) are the
+renderer's own text, untested.
 
 Tests (87 = 32 acceptance + 55 unit):
 
