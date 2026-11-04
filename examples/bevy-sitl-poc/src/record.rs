@@ -13,7 +13,9 @@ use bevy::render::gpu_readback::{Readback, ReadbackComplete};
 use image::{codecs::jpeg::JpegEncoder, GrayImage};
 
 use crate::calibration::CameraProfile;
+use crate::fire;
 use crate::flight::SurveyLoop;
+use crate::wildfire::Wildfire;
 use crate::world::{scene_ready, GroundTruth, PendingModel, SceneState};
 use crate::{wire, StereoFeeds};
 
@@ -59,6 +61,8 @@ pub struct Recorder {
     left: Option<Vec<u8>>,
     right: Option<Vec<u8>>,
     lines: Vec<String>,
+    /// `fire_perimeter.jsonl`: one line per frame while the scene has fires.
+    fire_lines: Vec<String>,
     /// Wall-clock seconds at the start and at the last written frame.
     started_at: f64,
     last_frame_at: f64,
@@ -67,7 +71,7 @@ pub struct Recorder {
 
 impl Recorder {
     pub fn new(plan: RecordPlan) -> Self {
-        Self { plan, frame: 0, wait: FIRST_SETTLE, started: false, requested: false, left: None, right: None, lines: Vec::new(), started_at: 0.0, last_frame_at: 0.0, stall_warned: false }
+        Self { plan, frame: 0, wait: FIRST_SETTLE, started: false, requested: false, left: None, right: None, lines: Vec::new(), fire_lines: Vec::new(), started_at: 0.0, last_frame_at: 0.0, stall_warned: false }
     }
 }
 
@@ -104,7 +108,7 @@ fn save(path: &Path, pixels: Vec<u8>, rig: &CameraProfile, jpeg: bool) {
     }
 }
 
-fn write_capture_files(plan: &RecordPlan, rig: &CameraProfile, truth: &GroundTruth, lines: &[String]) {
+fn write_capture_files(plan: &RecordPlan, rig: &CameraProfile, truth: &GroundTruth, lines: &[String], fire_lines: &[String]) {
     // The exact profile the eyes rendered with: RTAB-Map's calibration is derived from it.
     std::fs::write(plan.dir.join("camera.json"), serde_json::to_string_pretty(rig).expect("json")).expect("camera.json");
     let calibration = serde_json::json!({
@@ -115,6 +119,9 @@ fn write_capture_files(plan: &RecordPlan, rig: &CameraProfile, truth: &GroundTru
     });
     std::fs::write(plan.dir.join("calibration.json"), serde_json::to_string_pretty(&calibration).expect("json")).expect("calibration.json");
     std::fs::write(plan.dir.join("ground_truth.json"), serde_json::to_string_pretty(&truth.0).expect("json")).expect("ground_truth.json");
+    if !fire_lines.is_empty() {
+        std::fs::write(plan.dir.join("fire_perimeter.jsonl"), fire_lines.iter().map(|l| format!("{l}\n")).collect::<String>()).expect("fire_perimeter.jsonl");
+    }
     let mut frames = std::fs::File::create(plan.dir.join("frames.jsonl")).expect("frames.jsonl");
     for line in lines {
         writeln!(frames, "{line}").expect("frames.jsonl line");
@@ -132,6 +139,7 @@ pub fn record_frames(
     feeds: Option<Res<StereoFeeds>>,
     rig: Option<Res<CameraProfile>>,
     truth: Res<GroundTruth>,
+    fires: Option<Res<Wildfire>>,
     clock: Res<Time<Real>>,
     mut exit: MessageWriter<AppExit>,
 ) {
@@ -161,7 +169,7 @@ pub fn record_frames(
         rec.stall_warned = true;
     }
     if rec.frame == rec.plan.frames {
-        write_capture_files(&rec.plan, &rig, &truth, &rec.lines);
+        write_capture_files(&rec.plan, &rig, &truth, &rec.lines, &rec.fire_lines);
         info!("recorded {} frames into {}", rec.frame, rec.plan.dir.display());
         exit.write(AppExit::Success);
         return;
@@ -193,6 +201,9 @@ pub fn record_frames(
         serde_json::json!({"frame_id": frame + 1, "t_ns": t_ns, "left_ref": left_ref, "right_ref": right_ref, "pose_enu": pose_enu})
             .to_string(),
     );
+    if let Some(fires) = fires.as_ref().filter(|f| f.has_fires()) {
+        rec.fire_lines.push(fire::perimeter_line(t_ns, &fires.fronts(t_s)));
+    }
     rec.frame += 1;
     rec.last_frame_at = now;
     rec.stall_warned = false;

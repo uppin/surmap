@@ -14,6 +14,10 @@ use std::collections::BTreeMap;
 use bevy::prelude::Transform;
 use serde::Deserialize;
 
+mod nature;
+
+pub use nature::{FireDef, Vegetation, Weather, WindDef};
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct SceneManifest {
     pub version: u32,
@@ -26,6 +30,10 @@ pub struct SceneManifest {
     pub models: Vec<ModelInstance>,
     #[serde(default)]
     pub elements: Vec<Element>,
+    #[serde(default)]
+    pub weather: Option<Weather>,
+    #[serde(default)]
+    pub fires: Vec<FireDef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -96,6 +104,7 @@ pub enum Element {
     CollapsedBuilding(CollapsedBuilding),
     Building(Building),
     Person(Person),
+    Vegetation(Vegetation),
 }
 
 impl Element {
@@ -105,6 +114,7 @@ impl Element {
             Self::CollapsedBuilding(e) => &e.id,
             Self::Building(e) => &e.id,
             Self::Person(e) => &e.id,
+            Self::Vegetation(e) => &e.id,
         }
     }
 
@@ -122,6 +132,7 @@ impl Element {
                 keys
             }
             Self::Person(e) => vec![e.coat.as_str(), e.skin.as_str()],
+            Self::Vegetation(_) => vec![],
         }
     }
 }
@@ -275,6 +286,8 @@ pub enum ManifestError {
     BadAssetPath(String),
     UnknownMaterial(String),
     MoreThanOneScatter,
+    /// A value out of its range (e.g. a fire that cannot spread).
+    Invalid(String),
 }
 
 impl SceneManifest {
@@ -287,7 +300,12 @@ impl SceneManifest {
             return Err(ManifestError::UnsupportedVersion(manifest.version));
         }
         let mut seen = std::collections::BTreeSet::new();
-        let ids = manifest.models.iter().map(|m| m.id.as_str()).chain(manifest.elements.iter().map(Element::id));
+        let ids = manifest
+            .models
+            .iter()
+            .map(|m| m.id.as_str())
+            .chain(manifest.elements.iter().map(Element::id))
+            .chain(manifest.fires.iter().map(|f| f.id.as_str()));
         for id in ids {
             if !seen.insert(id.to_owned()) {
                 return Err(ManifestError::DuplicateId(id.to_owned()));
@@ -298,7 +316,11 @@ impl SceneManifest {
                 return Err(ManifestError::UnknownMaterial(key.to_owned()));
             }
         }
-        let scatters = manifest.elements.iter().filter(|e| matches!(e, Element::Box(b) if b.scatter.is_some())).count();
+        let scatters = manifest
+            .elements
+            .iter()
+            .filter(|e| matches!(e, Element::Box(b) if b.scatter.is_some()))
+            .count();
         if scatters > 1 {
             return Err(ManifestError::MoreThanOneScatter);
         }
@@ -313,11 +335,27 @@ impl SceneManifest {
                 return Err(ManifestError::BadAssetPath(model.glb.clone()));
             }
         }
+        manifest.validate_weather_fire_vegetation()?;
         Ok(manifest)
     }
 
     fn referenced_paths(&self) -> Vec<String> {
         let mut paths = vec![self.camera.clone()];
+        if let Some(weather) = &self.weather {
+            paths.push(weather.rain_fx.clone());
+        }
+        for fire in &self.fires {
+            paths.extend([
+                fire.effects.flames.clone(),
+                fire.effects.embers.clone(),
+                fire.effects.smoke.clone(),
+            ]);
+        }
+        for element in &self.elements {
+            if let Element::Vegetation(stand) = element {
+                paths.push(stand.species.clone());
+            }
+        }
         if let Some(hdri) = &self.environment.hdri {
             paths.push(hdri.clone());
         }
@@ -349,6 +387,14 @@ impl SceneManifest {
     }
 }
 
+fn expect_suffix(path: &str, suffix: &str) -> Result<(), ManifestError> {
+    if path.ends_with(suffix) {
+        Ok(())
+    } else {
+        Err(ManifestError::BadAssetPath(path.to_owned()))
+    }
+}
+
 fn validate_asset_path(path: &str) -> Result<(), ManifestError> {
     if path.is_empty()
         || path.starts_with('/')
@@ -374,225 +420,4 @@ impl ModelInstance {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use bevy::math::Vec3;
-
-    const A_MANIFEST: &str = r#"{
-        "version": 1,
-        "camera": "cameras/rig.camera.json",
-        "environment": {"hdri": "hdri/sky.hdr", "sun_illuminance_lux": 100000.0,
-                        "sun_elevation_deg": 38.0, "sun_azimuth_deg": 135.0,
-                        "fog_visibility_m": 450.0},
-        "materials": {"asphalt": {"base_color": "textures/asphalt_color.jpg",
-                                  "normal": "textures/asphalt_normal.png",
-                                  "arm": "textures/asphalt_arm.png", "uv_scale": 0.25}},
-        "models": [
-            {"id": "car-1", "glb": "models/car.glb", "position_enu": [3.0, 12.0, 0.0],
-             "yaw_deg": 90.0, "collider": "box", "ground_truth": true, "kind": "car"},
-            {"id": "rubble-1", "glb": "models/rubble.glb", "position_enu": [-4.0, 30.0, 0.0],
-             "scale": 2.0, "collider": "trimesh"}
-        ]
-    }"#;
-
-    fn with_models(models: &str) -> String {
-        format!(
-            r#"{{"version": 1, "camera": "cameras/rig.camera.json", "environment": {{"hdri": null, "sun_illuminance_lux": 1.0,
-                "sun_elevation_deg": 1.0, "sun_azimuth_deg": 1.0, "fog_visibility_m": 1.0}},
-                "models": {models}}}"#
-        )
-    }
-
-    fn a_valid_manifest() -> SceneManifest {
-        SceneManifest::from_json(A_MANIFEST).expect("valid manifest")
-    }
-
-    #[test]
-    fn a_manifest_lists_its_models_with_their_defaults() {
-        let manifest = a_valid_manifest();
-
-        let rubble = &manifest.models[1];
-        assert_eq!(manifest.models.len(), 2);
-        assert_eq!(
-            (rubble.id.as_str(), rubble.scale, rubble.yaw_deg),
-            ("rubble-1", 2.0, 0.0)
-        );
-        assert_eq!(rubble.collider, ColliderKind::Trimesh);
-        assert!(!rubble.ground_truth);
-    }
-
-    #[test]
-    fn a_manifest_parses_its_arm_map_and_model_kinds() {
-        let manifest = a_valid_manifest();
-
-        let asphalt = &manifest.materials["asphalt"];
-        assert_eq!(asphalt.arm.as_deref(), Some("textures/asphalt_arm.png"));
-        assert_eq!(manifest.models[0].kind, "car");
-        assert_eq!(manifest.models[1].kind, "model");
-    }
-
-    #[test]
-    fn a_manifest_names_every_asset_it_needs_once() {
-        let manifest = a_valid_manifest();
-
-        assert_eq!(
-            manifest.asset_paths(),
-            vec![
-                "cameras/rig.camera.json",
-                "hdri/sky.hdr",
-                "models/car.glb",
-                "models/rubble.glb",
-                "textures/asphalt_arm.png",
-                "textures/asphalt_color.jpg",
-                "textures/asphalt_normal.png",
-            ]
-        );
-    }
-
-    #[test]
-    fn a_future_manifest_version_is_refused() {
-        let text = A_MANIFEST.replacen("\"version\": 1", "\"version\": 2", 1);
-
-        assert_eq!(
-            SceneManifest::from_json(&text),
-            Err(ManifestError::UnsupportedVersion(2))
-        );
-    }
-
-    #[test]
-    fn two_models_with_one_id_are_refused() {
-        let twice = r#"[{"id": "car", "glb": "models/a.glb", "position_enu": [0,0,0], "collider": "none"},
-                        {"id": "car", "glb": "models/b.glb", "position_enu": [1,0,0], "collider": "none"}]"#;
-
-        assert_eq!(
-            SceneManifest::from_json(&with_models(twice)),
-            Err(ManifestError::DuplicateId("car".into()))
-        );
-    }
-
-    #[test]
-    fn a_path_escaping_the_assets_directory_is_refused() {
-        let escaping =
-            r#"[{"id": "x", "glb": "../secret.glb", "position_enu": [0,0,0], "collider": "none"}]"#;
-
-        assert_eq!(
-            SceneManifest::from_json(&with_models(escaping)),
-            Err(ManifestError::BadAssetPath("../secret.glb".into()))
-        );
-    }
-
-    #[test]
-    fn a_model_that_is_not_gltf_is_refused() {
-        let obj =
-            r#"[{"id": "x", "glb": "models/x.obj", "position_enu": [0,0,0], "collider": "none"}]"#;
-
-        assert_eq!(
-            SceneManifest::from_json(&with_models(obj)),
-            Err(ManifestError::BadAssetPath("models/x.obj".into()))
-        );
-    }
-
-    #[test]
-    fn an_instance_north_of_the_origin_sits_down_bevy_minus_z() {
-        let car = &a_valid_manifest().models[0];
-
-        let transform = car.bevy_transform();
-
-        assert!(transform
-            .translation
-            .abs_diff_eq(Vec3::new(3.0, 0.0, -12.0), 1e-5));
-    }
-
-    #[test]
-    fn a_ninety_degree_yaw_turns_east_into_north() {
-        let car = &a_valid_manifest().models[0];
-
-        let east_after_yaw = car.bevy_transform().rotation * Vec3::X;
-
-        assert!(
-            east_after_yaw.abs_diff_eq(Vec3::NEG_Z, 1e-5),
-            "{east_after_yaw:?}"
-        );
-    }
-
-    #[test]
-    fn the_shipped_scene_manifest_is_valid() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/scene.json");
-        let text = std::fs::read_to_string(path).expect("assets/scene.json is committed");
-
-        let manifest = SceneManifest::from_json(&text).expect("shipped manifest validates");
-
-        assert!(
-            manifest.models.iter().any(|m| m.ground_truth),
-            "a ground-truth object exists"
-        );
-    }
-
-    fn with_elements(elements: &str) -> String {
-        format!(
-            r#"{{"version": 1, "camera": "cameras/rig.camera.json", "environment": {{"hdri": null, "sun_illuminance_lux": 1.0,
-                "sun_elevation_deg": 1.0, "sun_azimuth_deg": 1.0, "fog_visibility_m": 1.0}},
-                "materials": {{"concrete": {{"color": [0.5, 0.5, 0.5]}}}},
-                "elements": {elements}}}"#
-        )
-    }
-
-    #[test]
-    fn every_element_kind_is_declared_in_json() {
-        let text = with_elements(
-            r#"[{"kind": "box", "id": "pad", "material": "concrete", "size_m": [8, 8, 0.07], "position_enu": [0, 0, 0]},
-                {"kind": "collapsed_building", "id": "c1", "material": "concrete", "footprint_m": [12, 10], "position_enu": [-16, 30, 0], "seed": 3},
-                {"kind": "building", "id": "b1", "material": "concrete", "size_m": [12, 12, 15], "position_enu": [80, 0, 0], "windows": {"material": "concrete"}},
-                {"kind": "person", "id": "p1", "position_enu": [-3.5, 16, 0], "coat": "concrete", "skin": "concrete"}]"#,
-        );
-
-        let manifest = SceneManifest::from_json(&text).expect("valid elements");
-
-        let ids: Vec<&str> = manifest.elements.iter().map(Element::id).collect();
-        assert_eq!(ids, vec!["pad", "c1", "b1", "p1"]);
-        assert!(matches!(&manifest.elements[1], Element::CollapsedBuilding(c) if c.slabs == 4 && c.rubble == 25));
-    }
-
-    #[test]
-    fn an_element_naming_an_undeclared_material_is_refused() {
-        let text = with_elements(r#"[{"kind": "box", "id": "pad", "material": "marble", "size_m": [1, 1, 1], "position_enu": [0, 0, 0]}]"#);
-
-        assert_eq!(SceneManifest::from_json(&text), Err(ManifestError::UnknownMaterial("marble".into())));
-    }
-
-    #[test]
-    fn an_element_and_a_model_cannot_share_an_id() {
-        let text = with_elements(r#"[{"kind": "box", "id": "car-1", "material": "concrete", "size_m": [1, 1, 1], "position_enu": [0, 0, 0]}]"#)
-            .replacen("\"elements\"", "\"models\": [{\"id\": \"car-1\", \"glb\": \"models/car.glb\", \"position_enu\": [0,0,0], \"collider\": \"none\"}], \"elements\"", 1);
-
-        assert_eq!(SceneManifest::from_json(&text), Err(ManifestError::DuplicateId("car-1".into())));
-    }
-
-    #[test]
-    fn a_scene_scatters_debris_over_one_box_at_most() {
-        let scattered = r#"{"kind": "box", "id": "IDX", "material": "concrete", "size_m": [1, 1, 1], "position_enu": [0, 0, 0], "scatter": {"material": "concrete", "density": 28}}"#;
-        let text = with_elements(&format!("[{}, {}]", scattered.replace("IDX", "a"), scattered.replace("IDX", "b")));
-
-        assert_eq!(SceneManifest::from_json(&text), Err(ManifestError::MoreThanOneScatter));
-    }
-
-    #[test]
-    fn a_solid_material_needs_no_texture_and_names_no_asset_file() {
-        let manifest = SceneManifest::from_json(&with_elements("[]")).expect("valid");
-
-        assert_eq!(manifest.materials["concrete"].base_color, None);
-        assert_eq!(manifest.asset_paths(), vec!["cameras/rig.camera.json"]);
-    }
-
-
-    #[test]
-    fn a_scenario_written_by_the_station_store_is_a_valid_manifest() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/sim_scenario/wreck-on-the-avenue.json");
-        let text = std::fs::read_to_string(path).expect("the station store's scenario fixture");
-
-        let manifest = SceneManifest::from_json(&text).expect("the renderer accepts the store's scenario");
-
-        assert!(manifest.models.iter().any(|m| m.glb == "library/sketchfab/3f1c0a/model.glb"));
-    }
-
-}
+mod tests;

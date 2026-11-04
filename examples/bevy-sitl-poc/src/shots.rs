@@ -144,6 +144,17 @@ pub fn fly_scripted(
 #[derive(Component)]
 pub struct OverviewCam;
 
+/// The review still of what the rig sees of a fire (screenshot mode only).
+#[derive(Component)]
+pub struct FireEyeCam;
+
+#[derive(Resource)]
+pub struct FireEyeFeed(pub Handle<Image>);
+
+/// Where the fire eye stands relative to the ignition: south, in metres, and its altitude.
+const FIRE_EYE_SOUTH_M: f32 = 40.0;
+const FIRE_EYE_ALTITUDE_M: f32 = 15.0;
+
 #[derive(Resource)]
 pub struct Shots {
     overview: Handle<Image>,
@@ -185,6 +196,34 @@ pub fn setup_overview(mut commands: Commands, mode: Res<RunMode>, mut images: Re
     commands.insert_resource(Shots { overview, settled_frames: 0, requested: false, captured: 0 });
 }
 
+type OverviewNotEye = (With<OverviewCam>, Without<FireEyeCam>);
+type EyeNotOverview = (With<FireEyeCam>, Without<OverviewCam>);
+
+/// With a fire in the scene the review still looks at it: from the south of the ignition,
+/// raised, towards the downwind side. Re-aimed once, when the manifest has built.
+pub fn aim_overview_at_fire(
+    fires: Option<Res<crate::wildfire::Wildfire>>,
+    mut overview: Query<&mut Transform, OverviewNotEye>,
+    mut eye: Query<(&mut Transform, &mut Camera), EyeNotOverview>,
+    mut aimed: Local<bool>,
+) {
+    let Some(ignition) = fires.as_ref().and_then(|f| f.first_ignition()) else {
+        return;
+    };
+    if *aimed {
+        return;
+    }
+    let (Ok(mut view), Ok((mut eye_at, mut eye_camera))) = (overview.single_mut(), eye.single_mut()) else {
+        return;
+    };
+    *aimed = true;
+    *view = Transform::from_translation(enu(ignition.x - 6.0, ignition.y - 48.0, 24.0))
+        .looking_at(enu(ignition.x + 14.0, ignition.y, 0.0), Vec3::Y);
+    *eye_at = Transform::from_translation(enu(ignition.x, ignition.y - FIRE_EYE_SOUTH_M, FIRE_EYE_ALTITUDE_M))
+        .looking_at(enu(ignition.x, ignition.y, 0.0), Vec3::Y);
+    eye_camera.is_active = true;
+}
+
 /// Frames to wait after everything loaded: mips upload, shadows and TAA settle.
 const SETTLE_FRAMES: u32 = 90;
 
@@ -197,6 +236,8 @@ pub fn take_shots(
     assets: Res<AssetServer>,
     pending: Query<(), With<PendingModel>>,
     feeds: Option<Res<StereoFeeds>>,
+    fire_eye: Option<Res<FireEyeFeed>>,
+    fires: Option<Res<crate::wildfire::Wildfire>>,
     mut exit: MessageWriter<AppExit>,
 ) {
     let (Some(plan), Some(mut shots), Some(scene)) = (mode.screenshot.as_ref(), shots, scene) else { return };
@@ -206,7 +247,8 @@ pub fn take_shots(
         return;
     }
     let Some(feeds) = feeds else { return };
-    if shots.captured == 3 {
+    let fire_eye = fire_eye.filter(|_| fires.as_ref().is_some_and(|f| f.has_fires()));
+    if shots.captured == 3 + u32::from(fire_eye.is_some()) {
         exit.write(AppExit::Success);
         return;
     }
@@ -225,11 +267,15 @@ pub fn take_shots(
         return;
     }
     std::fs::create_dir_all(&plan.dir).expect("screenshot directory");
-    for (name, screenshot) in [
+    let mut stills = vec![
         ("chase.png", Screenshot::primary_window()),
         ("left.png", Screenshot::image(feeds.left.clone())),
         ("overview.png", Screenshot::image(shots.overview.clone())),
-    ] {
+    ];
+    if let Some(feed) = &fire_eye {
+        stills.push(("fire-eye.png", Screenshot::image(feed.0.clone())));
+    }
+    for (name, screenshot) in stills {
         commands.spawn(screenshot).observe(save_to_disk(plan.dir.join(name))).observe(count_capture);
     }
     shots.requested = true;

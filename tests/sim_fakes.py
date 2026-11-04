@@ -128,3 +128,34 @@ def element_ids(manifest: Mapping[str, object]) -> list[str]:
         assert isinstance(element_id, str)
         ids.append(element_id)
     return ids
+
+
+def _dict(value: object) -> dict[str, object]:
+    assert isinstance(value, dict)
+    return {str(k): v for k, v in value.items()}
+
+
+def _dicts(manifest: Mapping[str, object], key: str) -> list[dict[str, object]]:
+    items = manifest.get(key, [])
+    assert isinstance(items, list)
+    return [_dict(item) for item in items]
+
+
+def fire_ids(manifest: Mapping[str, object]) -> list[str]:
+    """The ids of a manifest's fires, in order."""
+    return [str(fire["id"]) for fire in _dicts(manifest, "fires")]
+
+
+def vegetation_species(manifest: Mapping[str, object]) -> set[str]:
+    """The species files a manifest's vegetation stands name."""
+    return {
+        str(e["species"]) for e in _dicts(manifest, "elements") if e.get("kind") == "vegetation"
+    }
+
+
+def weather_of(manifest: Mapping[str, object]) -> dict[str, object]:
+    return _dict(manifest.get("weather"))
+
+
+def wind_of(manifest: Mapping[str, object]) -> dict[str, object]:
+    return _dict(weather_of(manifest).get("wind"))

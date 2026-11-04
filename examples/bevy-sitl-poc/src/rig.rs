@@ -9,7 +9,7 @@ use bevy::prelude::*;
 
 use crate::calibration::{CalibratedProjection, CameraModel, CameraProfile};
 use crate::look::{photographic, Lens};
-use crate::shots::shot_target;
+use crate::shots::{shot_target, FireEyeCam, FireEyeFeed, RunMode};
 use crate::world::SceneState;
 use crate::{LeftEye, RightEye, StereoFeeds};
 
@@ -59,6 +59,7 @@ pub fn spawn_rig(
     existing: Option<Res<CameraProfile>>,
     mut images: ResMut<Assets<Image>>,
     mut scene: Option<ResMut<SceneState>>,
+    mode: Res<RunMode>,
 ) {
     let (Some(source), None) = (source, existing) else { return };
     let Some(ProfileAsset(profile)) = profiles.get(&source.0) else { return };
@@ -86,6 +87,19 @@ pub fn spawn_rig(
             eye.insert(LeftEye);
         }
         photographic(&mut eye, Lens::Still);
+    }
+    if mode.screenshot.is_some() {
+        // Review stills only: a third eye the fire scenes aim at the fire (inactive until then).
+        let fire_eye = shot_target(&mut images, profile.width, profile.height);
+        let mut eye = commands.spawn((
+            FireEyeCam,
+            Camera { order: 3, is_active: false, ..default() },
+            RenderTarget::Image(fire_eye.clone().into()),
+            Projection::custom(CalibratedProjection::of(profile, NEAR_M, FAR_M)),
+            Transform::default(),
+        ));
+        photographic(&mut eye, Lens::Still);
+        commands.insert_resource(FireEyeFeed(fire_eye));
     }
     commands.insert_resource(StereoFeeds { left, right });
     commands.insert_resource(profile.clone());
