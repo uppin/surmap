@@ -105,3 +105,96 @@ async def test_the_agent_places_a_building_on_the_map_floor_by_gps(tmp_path: obj
     assert isinstance(elements, list)
     depot = next(e for e in elements if isinstance(e, dict) and e.get("id") == "depot")
     assert depot["position_enu"][0] > 0 and depot["position_enu"][1] > 0
+
+
+async def test_geo_to_enu_converts_through_the_tool_not_the_test(tmp_path: object) -> None:
+    # Given a floored scenario
+    from pathlib import Path
+
+    from surmap.agent.proto import simulation_tools_pb2 as pb
+    from surmap.agent.tools.simulation_handlers import simulation_tool_handlers
+    from surmap.simulation.scenario_store import ScenarioStore
+
+    assert isinstance(tmp_path, Path)
+    store = ScenarioStore(
+        db_path=tmp_path / "simulation.sqlite",
+        library_dir=tmp_path / "library",
+        presets=load_presets(POC_ASSETS),
+    )
+    tools = dict(simulation_tool_handlers(store, {}, tile_source=InMemoryTileSource()))
+    created = await tools["CreateScenario"](
+        pb.CreateScenarioRequest(name="Vilnius yard", preset="empty-lot"), None
+    )
+    await tools["SetMapFloor"](
+        pb.SetMapFloorRequest(
+            scenario_id=created.scenario.id,
+            sw_lat=VILNIUS.sw_lat, sw_lon=VILNIUS.sw_lon,
+            ne_lat=VILNIUS.ne_lat, ne_lon=VILNIUS.ne_lon,
+        ),
+        None,
+    )
+
+    # When the agent converts a GPS point through the tool
+    converted = await tools["GeoToEnu"](
+        pb.GeoToEnuRequest(scenario_id=created.scenario.id, lat=54.0008, lon=25.0015), None
+    )
+
+    # Then it gets ENU metres from the floor centre and an inside-floor flag
+    assert isinstance(converted, pb.GeoToEnuResponse)
+    assert converted.position.east == pytest.approx(32.7, abs=0.5)
+    assert converted.position.north == pytest.approx(33.4, abs=0.5)
+    assert converted.inside_floor is True
+
+    # And the reverse conversion lands back on the GPS point
+    back = await tools["EnuToGeo"](
+        pb.EnuToGeoRequest(
+            scenario_id=created.scenario.id,
+            position=pb.EnuPoint(east=converted.position.east, north=converted.position.north, up=0.0),
+        ),
+        None,
+    )
+    assert back.lat == pytest.approx(54.0008, abs=1e-5)
+    assert back.lon == pytest.approx(25.0015, abs=1e-5)
+
+
+async def test_clear_map_floor_tool_removes_the_floor_and_restores_ground(tmp_path: object) -> None:
+    # Given a floored scenario (as above, via the tool helper below)
+    tools, store, scenario_id = await _floored_scenario(tmp_path)
+
+    # When the agent clears the floor
+    from surmap.agent.proto import simulation_tools_pb2 as pb
+
+    await tools["ClearMapFloor"](pb.ClearMapFloorRequest(scenario_id=scenario_id), None)
+
+    # Then the manifest has no floor and the ground box is back
+    manifest = store.scenario(scenario_id).manifest
+    assert "map_floor" not in manifest
+    assert "ground" in [e.get("id") for e in manifest["elements"] if isinstance(e, dict)]
+
+
+async def _floored_scenario(tmp_path: object) -> tuple[dict[str, object], object, str]:
+    from pathlib import Path
+
+    from surmap.agent.proto import simulation_tools_pb2 as pb
+    from surmap.agent.tools.simulation_handlers import simulation_tool_handlers
+    from surmap.simulation.scenario_store import ScenarioStore
+
+    assert isinstance(tmp_path, Path)
+    store = ScenarioStore(
+        db_path=tmp_path / "simulation.sqlite",
+        library_dir=tmp_path / "library",
+        presets=load_presets(POC_ASSETS),
+    )
+    tools = dict(simulation_tool_handlers(store, {}, tile_source=InMemoryTileSource()))
+    created = await tools["CreateScenario"](
+        pb.CreateScenarioRequest(name="Vilnius yard", preset="empty-lot"), None
+    )
+    await tools["SetMapFloor"](
+        pb.SetMapFloorRequest(
+            scenario_id=created.scenario.id,
+            sw_lat=VILNIUS.sw_lat, sw_lon=VILNIUS.sw_lon,
+            ne_lat=VILNIUS.ne_lat, ne_lon=VILNIUS.ne_lon,
+        ),
+        None,
+    )
+    return tools, store, created.scenario.id
