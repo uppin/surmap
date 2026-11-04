@@ -12,9 +12,18 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
 from langchain_core.messages.tool import ToolCall
 
 from surmap.simulation.map_floor import InMemoryTileSource
+
+
+class OsmLikeTiles(InMemoryTileSource):
+    """Fake tiles that carry OpenStreetMap's attribution, as the real source does."""
+
+    attribution = "© OpenStreetMap contributors"
+
+
 from surmap.simulation.scenario_manifest import validate_manifest
 from tests.agent_fakes import ScriptedChatModel, answer, calling, tool_call
 from tests.sim_fakes import element_ids
@@ -72,7 +81,7 @@ def an_agent_building_on_a_map_floor() -> ScriptedChatModel:
 async def test_an_agent_turn_builds_on_a_map_floor_the_station_serves(tmp_path: Path) -> None:
     # Given the station with an agent scripted to base a scene on a GPS bbox
     model = an_agent_building_on_a_map_floor()
-    async with a_station(tmp_path, model, tile_source=InMemoryTileSource()) as station:
+    async with a_station(tmp_path, model, tile_source=OsmLikeTiles()) as station:
         # When the agent takes its turn, and the page then asks for the scenario
         await asyncio.to_thread(
             station.turn, "Base a yard scene on this map area, depot at the GPS point"
@@ -91,6 +100,12 @@ async def test_an_agent_turn_builds_on_a_map_floor_the_station_serves(tmp_path: 
     assert manifest["map_floor"]["sw"] == [54.0, 25.0]
     assert "ground" not in element_ids(manifest)
     assert "depot" in element_ids(manifest)
+    depot = next(e for e in manifest["elements"] if e["id"] == "depot")
+    # The depot sits at the ENU geo_to_enu reports for the GPS target (54.0008, 25.0015)
+    # from the floor centre — not merely somewhere in the scene
+    assert depot["position_enu"][0] == pytest.approx(TARGET_EAST, abs=0.5)
+    assert depot["position_enu"][1] == pytest.approx(TARGET_NORTH, abs=0.5)
+    assert model.calls == 6  # create, set_map_floor, geo_to_enu, add_element, get, answer
     assert tex_status == 200
     assert tex_body[:8] == b"\x89PNG\r\n\x1a\n"
     credits = station.store.scenario("vilnius-yard").credits

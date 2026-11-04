@@ -69,10 +69,10 @@ class SimulationRig:
     fleet: FleetRegistry = field(init=False)
     """The scenarios' fleet controllers and the `/sim/fleet` links to them."""
     perception: PerceptionRegistry = field(default_factory=PerceptionRegistry)
-    tile_source: TileSource | None = None
-    """The map-floor tile source; the disk-cached OSM source when unset (tests inject a fake)."""
     """The pages streaming to the stereo bridge (`--bevy-bridge-port`), by scenario: each
     drone's map and segmentation, for `drone_map_status`."""
+    tile_source: TileSource | None = None
+    """The map-floor tile source; the disk-cached OSM source when unset (tests inject a fake)."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "fleet", FleetRegistry(self.store, timing=self.fleet_timing))
@@ -82,7 +82,7 @@ class SimulationRig:
             store=self.store,
             sources=self.sources,
             tile_source=self.tile_source
-            or OsmTileSource(cache_dir=self.store.library_dir / "tile-cache"),
+            or OsmTileSource(cache_dir=self.store.library_dir.parent / "tile-cache"),
         )
 
 
