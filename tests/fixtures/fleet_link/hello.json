@@ -1,0 +1,1 @@
+{"type":"hello","protocol":"fleet/v1","scenario":"quake-fleet","sim_t_s":0.0,"drones":["nest-sw-d1","nest-sw-d2","nest-ne-d1","nest-ne-d2","nest-roof-d1"]}

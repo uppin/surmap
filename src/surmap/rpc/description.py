@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Generic, Protocol, TypeVar
+from typing import Generic, Protocol, TypeVar
 
 from google.protobuf.descriptor import ServiceDescriptor
 
@@ -39,8 +39,11 @@ class HttpRoute(Generic[C]):
 
 @dataclass(frozen=True)
 class WebSocketRoute(Generic[C]):
+    """Exact `path` → an ASGI WebSocket app `(scope, receive, send)` built from the context when
+    mounted."""
+
     path: str
-    handler: Callable[[C], Callable[[Any], Awaitable[None]]]
+    handler: Callable[[C], Callable[..., Awaitable[None]]]
 
 
 @dataclass(frozen=True)

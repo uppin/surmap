@@ -1,0 +1,1 @@
+{"type":"telemetry","sim_t_s":41.5,"active":"nest-sw-d1","drones":[{"id":"nest-sw-d1","phase":"cruising","enu":[-20.0,12.5,15.0],"yaw_deg":90.0,"speed_m_s":6.0,"targets_left":2},{"id":"nest-sw-d2","phase":"docked","enu":[-40.0,-20.0,0.0],"yaw_deg":45.0,"speed_m_s":0.0,"targets_left":0}]}
