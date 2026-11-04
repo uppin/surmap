@@ -33,6 +33,7 @@ PROTOS = (
     "map_tools",
     "simulation_tools",
     "station_tools",
+    "fleet_tools",
 )
 PROTO_PACKAGE_DIR = "surmap/agent/v1"
 OUT = ROOT / "src/surmap/agent/proto"

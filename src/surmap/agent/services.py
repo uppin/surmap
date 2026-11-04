@@ -1,4 +1,4 @@
-"""`ServiceModule`s for the survey agent's three services.
+"""`ServiceModule`s for the survey agent's services.
 
 Handlers are supplied by rpc name in connect-python's shapes (`(request, ctx)` for unary and
 server-streaming rpcs). Every rpc without a handler answers `UNIMPLEMENTED`, so a module mounts
@@ -17,6 +17,7 @@ from google.protobuf.descriptor import MethodDescriptor, ServiceDescriptor
 
 from surmap.agent.proto import (
     chat_pb2,
+    fleet_tools_pb2,
     jobs_pb2,
     map_tools_pb2,
     simulation_tools_pb2,
@@ -30,6 +31,7 @@ __all__ = [
     "Handler",
     "agent_jobs_module",
     "chat_service_module",
+    "fleet_module",
     "map_tools_module",
     "simulation_tools_module",
     "survey_tools_module",
@@ -56,6 +58,11 @@ def simulation_tools_module(handlers: Mapping[str, Handler]) -> ServiceModule[An
 def station_tools_module(handlers: Mapping[str, Handler]) -> ServiceModule[Any]:
     """The module mounting `surmap.agent.v1.StationTools`."""
     return _module(station_tools_pb2.DESCRIPTOR.services_by_name["StationTools"], handlers)
+
+
+def fleet_module(handlers: Mapping[str, Handler]) -> ServiceModule[Any]:
+    """The module mounting `surmap.agent.v1.FleetTools`."""
+    return _module(fleet_tools_pb2.DESCRIPTOR.services_by_name["FleetTools"], handlers)
 
 
 def agent_jobs_module(handlers: Mapping[str, Handler]) -> ServiceModule[Any]:
