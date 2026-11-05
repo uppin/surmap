@@ -3,6 +3,7 @@
 import hashlib
 import io
 import json
+import re
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -274,11 +275,11 @@ def test_the_page_never_copies_the_assets_directory_into_the_bundle() -> None:
     # Given the page the trunk build ships
     page = (POC / "index.html").read_text(encoding="utf-8")
 
-    # When it is checked for a bundle copy of the runtime assets
-    copied = "assets/" in page
+    # When its trunk directives (what trunk copies or compiles into dist/) are read
+    directives = re.findall(r"<[^>]*\bdata-trunk\b[^>]*>", page)
 
-    # Then the assets stay beside the bundle, fetched at runtime
-    assert not copied
+    # Then none of them brings the assets in: they stay beside the bundle, fetched at runtime
+    assert [d for d in directives if "assets" in d] == []
 
 
 def test_no_rust_source_embeds_the_assets_directory_outside_tests() -> None:
