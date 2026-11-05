@@ -216,6 +216,7 @@ uvx modal secret create surmap-agent MODEL_API_KEY="$MODEL_API_KEY" SURMAP_AGENT
 (cd web/agent-chat && yarn build)
 uv run python scripts/fetch_sim_assets.py                          # the sim's pinned CC0 assets
 (cd examples/bevy-sitl-poc && trunk build index.html --release)    # the sim page (WASM)
+uv run python scripts/sim_notices.py                              # its THIRD_PARTY_LICENSES.md
 uv run --with modal modal deploy src/surmap/agent/modal_agent_app.py
 # open https://<workspace>--surmap-agent-serve.<region>.modal.run/?code=<the access code>
 ```
@@ -223,7 +224,8 @@ uv run --with modal modal deploy src/surmap/agent/modal_agent_app.py
 The deploy refuses (`modal_hosting.check_sim_bundle`) a simulation page whose `.wasm` is older
 than any of the PoC's `src/`, `index.html`, `Cargo.toml` or `Cargo.lock`, and an assets dir
 missing a file pinned in `assets.lock.json`, naming the command that fixes it — so a deploy
-ships the latest WASM. A fresh checkout touches the sources, so it asks for a rebuild.
+ships the latest WASM. It also refuses either page without its `THIRD_PARTY_LICENSES.md`
+(`check_chat_bundle` for the chat build). A fresh checkout touches the sources, so it asks for a rebuild.
 
 Inside Modal the SDK needs no token, so `--station modal` finds the deployed station by name.
 Verified on 2026-11-04 (`ginas-bb`): the page and `/health` open; an rpc, a frame and a wrong code

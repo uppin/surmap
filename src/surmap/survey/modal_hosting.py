@@ -161,8 +161,11 @@ def agent_command() -> list[str]:
 
 
 class SimBundleError(RuntimeError):
-    """The simulation the agent's deploy would ship is missing or stale."""
+    """A page the agent's deploy would ship (the simulation or the chat) is missing or stale."""
 
+
+# The notices of the third-party code a page bundles, written beside its index.html.
+THIRD_PARTY_LICENSES = "THIRD_PARTY_LICENSES.md"
 
 # What `trunk build` compiles into the page: a change to any of them means a rebuild.
 _SIM_PAGE_SOURCES = ("index.html", "Cargo.toml", "Cargo.lock")
@@ -195,6 +198,22 @@ def check_sim_bundle(poc_dir: Path) -> None:
         raise SimBundleError(
             f"{len(missing)} pinned simulation assets are not fetched (first: {missing[0]}); "
             "fetch them: uv run python scripts/fetch_sim_assets.py"
+        )
+    if not (dist / THIRD_PARTY_LICENSES).is_file():
+        raise SimBundleError(
+            f"no {THIRD_PARTY_LICENSES} in {dist}: the page would ship its crates without their "
+            "notices; write it after the build: uv run python scripts/sim_notices.py"
+        )
+
+
+def check_chat_bundle(dist: Path) -> None:
+    """Refuse to deploy the chat page in `dist` unless it is built with its licence file."""
+    if not (dist / "index.html").is_file():
+        raise SimBundleError(f"no chat page in {dist}; build it: (cd web/agent-chat && yarn build)")
+    if not (dist / THIRD_PARTY_LICENSES).is_file():
+        raise SimBundleError(
+            f"no {THIRD_PARTY_LICENSES} in {dist}: the build predates its licence file; "
+            "rebuild it: (cd web/agent-chat && yarn build)"
         )
 
 

@@ -51,6 +51,12 @@ Poly by Google, https://poly.pizza/m/4CPpvEmrMoF, CC BY 3.0
 authored at 157 × 50 × 49 units, not metres, so its class file scales it by `model_scale` 0.07 to
 11.0 × 3.5 × 3.4 m.
 
+A CC BY pin also carries `title` and `author`, and these are what the screen credits. The
+station's `ScenarioStore` credits every CC BY pin that a scenario shows, either as a model
+`glb` or as the model of a vehicle class it drives. The chat's simulation pane lists those
+credits. The standalone page lists every pin's `attribution` under the view, and links the
+bundle's `THIRD_PARTY_LICENSES.md` (`scripts/sim_notices.py`, run after `trunk build`).
+
 ## Look
 
 Target: a real-looking block the morning after an earthquake — low sun through dust haze,

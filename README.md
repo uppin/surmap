@@ -317,8 +317,6 @@ credits: [HACKATHON.md](HACKATHON.md); dependency licences:
 ## Licence
 
 SurMap is licensed under the [Apache License 2.0](LICENSE); see
-[NOTICE](NOTICE). There are two exceptions. `examples/bevy-sitl-poc/` is
-dual-licensed MIT OR Apache-2.0. The ETH3D frames in
-`tests/fixtures/eth3d_cables2/` are third-party test data, licensed
-for non-commercial research use only and not covered by the Apache
-License.
+[NOTICE](NOTICE). The one exception is `examples/bevy-sitl-poc/`, which is
+dual-licensed MIT OR Apache-2.0. Third-party licences are recorded in
+[docs/third-party-licences.md](docs/third-party-licences.md).

@@ -7,10 +7,7 @@ Exceptions inside this repository:
 
 - examples/bevy-sitl-poc/ is dual-licensed MIT OR Apache-2.0, as its
   Cargo.toml declares.
-- tests/fixtures/eth3d_cables2/ holds downscaled frames from the ETH3D
-  SLAM dataset (Schöps et al., CVPR 2017). ETH3D provides them for
-  non-commercial research use only; they are test data and are NOT
-  covered by the Apache License. See that directory's README.md.
 
 Third-party dependencies, datasets, models and assets keep their own
-licences. They are listed in docs/third-party-licences.md and HACKATHON.md.
+licences. The chat page and the simulation page each ship a
+THIRD_PARTY_LICENSES.md with the notices of the code they bundle. They are listed in docs/third-party-licences.md and HACKATHON.md.

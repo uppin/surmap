@@ -700,7 +700,9 @@
       "sha256": "c272098089d78c5cd9fd9f24ff50ee8acf8d932c55f2d55fc10adb6c8998966b",
       "license": "CC-BY-4.0",
       "source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/8f492390ddc7a2ae221a1369ef560589cf8c70fb/Models/CarConcept",
-      "attribution": "Car Concept by Eric Chadwick, Darmstadt Graphics Group GmbH (2024), CC-BY-4.0, via the Khronos glTF-Sample-Assets; Khronos and 3D Commerce logos are Khronos marks"
+      "attribution": "Car Concept by Eric Chadwick, Darmstadt Graphics Group GmbH (2024), CC-BY-4.0, via the Khronos glTF-Sample-Assets; Khronos and 3D Commerce logos are Khronos marks",
+      "title": "Car Concept",
+      "author": "Eric Chadwick, Darmstadt Graphics Group GmbH"
     },
     {
       "path": "models/quaternius/car.glb",
@@ -750,7 +752,9 @@
       "sha256": "594f1e515bd1882467f50bbc3588df5009338e2ec8bbc31eee36c85774207a76",
       "license": "CC-BY-3.0",
       "source": "https://poly.pizza/m/4CPpvEmrMoF",
-      "attribution": "\"Bus\" by Poly by Google (https://poly.pizza/m/4CPpvEmrMoF), CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)"
+      "attribution": "\"Bus\" by Poly by Google (https://poly.pizza/m/4CPpvEmrMoF), CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)",
+      "title": "Bus",
+      "author": "Poly by Google"
     },
     {
       "path": "models/person/wave.glb",

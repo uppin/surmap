@@ -15,13 +15,18 @@ None of the dependencies is strong copyleft (GPL, AGPL), so none of
 them restricts SurMap's own licence. The obligations that remain:
 
 - **Notices.** MIT, BSD, ISC and Zlib require their copyright
-  notices when the code is redistributed. This matters for the Bevy
-  WASM bundle and the agent-chat production build, because both
-  include third-party code. Neither build generates a notice file yet.
+  notices when the code is redistributed. Both shipped bundles carry them
+  in a `THIRD_PARTY_LICENSES.md` next to their `index.html`:
+  - The agent-chat build writes its file through Vite's `build.license`.
+  - The Bevy WASM bundle's file is written by `scripts/sim_notices.py` after
+    `trunk build`. It reads `cargo metadata`, so it covers the crates linked for
+    `wasm32-unknown-unknown` and quotes each distinct licence text once.
+  - The Modal deploy refuses either page without its file
+    (`check_chat_bundle`, `check_sim_bundle`).
 - **MPL-2.0** (certifi, pathspec, and parts of orjson and tqdm) is
   file-level copyleft. It is met as long as SurMap uses these
   packages unmodified from PyPI.
-- **Restricted data and weights** (ETH3D, KITTI, NTU VIRAL, SAM 3.1)
+- **Restricted data and weights** (KITTI, NTU VIRAL, SAM 3.1)
   are covered in their own sections below.
 
 ## Python (`uv.lock`)
@@ -98,14 +103,17 @@ not redistribute them.
 
 | Item | Licence | In the repo? |
 |---|---|---|
-| ETH3D `cables_2` | Non-commercial research use | **Yes.** Ten downscaled pairs in `tests/fixtures/eth3d_cables2/`. This is the one committed item that is not under an open licence. It is excluded in `NOTICE`. |
 | KITTI raw | CC BY-NC-SA 3.0 | No. Downloaded on demand |
 | NTU VIRAL | CC BY-NC-SA 4.0 | No. Downloaded on demand |
 | EuRoC MAV, LADI v2, Boreal Forest Fire | CC BY 4.0 or research terms | No. Downloaded on demand |
-| NOAA emergency imagery, Poly Haven, ambientCG, OpenGameArt fire | CC0-1.0 | No. Fetched and SHA-256 pinned |
+| NOAA emergency imagery, Poly Haven, ambientCG, OpenGameArt fire, Poly Pizza (Quaternius) | CC0-1.0 | No. Fetched and SHA-256 pinned |
+| *Car Concept* by Eric Chadwick, Darmstadt Graphics Group GmbH (Khronos glTF-Sample-Assets) | CC-BY-4.0 | No. Fetched and pinned. The pin carries the credit, which shows on the `/sim/` page and in the chat's simulation pane for every scenario that shows the model |
+| *Bus* by Poly by Google (Poly Pizza) | CC-BY-3.0 | No. Fetched and pinned, credited like *Car Concept* |
 | Sketchfab models picked by the agent | CC0 or CC BY (licence gate refuses NC/ND/SA) | No. Stored in the station library |
 | `tests/fixtures/bevy_sim_*`, `sitl_capture_tiny`, Gazebo materials | Rendered by this repository's simulations | Yes. Apache-2.0 with the rest of the repo |
+| `tests/fixtures/plane_stereo` | Rendered by `scripts/render_plane_stereo_fixture.py` from Poly Haven `rocks_ground_02` (CC0-1.0) | Yes. Apache-2.0 with the rest of the repo |
 
-The ETH3D fixture and the NC-licensed dev-console scenes restrict
-commercial use of those test assets only. They do not restrict
+The NC-licensed dev-console scenes restrict commercial use of those
+scenes only. ETH3D frames were committed as a test fixture until
+2026-11-05, when they were replaced; they remain in the git history. They do not restrict
 SurMap's code.

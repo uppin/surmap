@@ -1,0 +1,124 @@
+{
+ "source": "scripts/render_plane_stereo_fixture.py over Poly Haven rocks_ground_02 (CC0-1.0)",
+ "image_width": 640,
+ "image_height": 480,
+ "fx": 381.36,
+ "fy": 381.36,
+ "cx": 320.0,
+ "cy": 240.0,
+ "right_cx": 330.0,
+ "right_cy": 252.0,
+ "baseline_m": 0.07,
+ "frames": [
+  {
+   "index": 0,
+   "left": "left_000.jpg",
+   "right": "right_000.jpg",
+   "plane_normal": [
+    0.0,
+    -0.258819045,
+    -0.965925826
+   ],
+   "plane_offset_m": -0.434666622
+  },
+  {
+   "index": 1,
+   "left": "left_001.jpg",
+   "right": "right_001.jpg",
+   "plane_normal": [
+    0.0,
+    -0.250380004,
+    -0.96814764
+   ],
+   "plane_offset_m": -0.440507176
+  },
+  {
+   "index": 2,
+   "left": "left_002.jpg",
+   "right": "right_002.jpg",
+   "plane_normal": [
+    0.0,
+    -0.241921896,
+    -0.970295726
+   ],
+   "plane_offset_m": -0.446336034
+  },
+  {
+   "index": 3,
+   "left": "left_003.jpg",
+   "right": "right_003.jpg",
+   "plane_normal": [
+    0.0,
+    -0.233445364,
+    -0.97236992
+   ],
+   "plane_offset_m": -0.452152013
+  },
+  {
+   "index": 4,
+   "left": "left_004.jpg",
+   "right": "right_004.jpg",
+   "plane_normal": [
+    0.0,
+    -0.224951054,
+    -0.974370065
+   ],
+   "plane_offset_m": -0.45795393
+  },
+  {
+   "index": 5,
+   "left": "left_005.jpg",
+   "right": "right_005.jpg",
+   "plane_normal": [
+    0.0,
+    -0.216439614,
+    -0.976296007
+   ],
+   "plane_offset_m": -0.463740603
+  },
+  {
+   "index": 6,
+   "left": "left_006.jpg",
+   "right": "right_006.jpg",
+   "plane_normal": [
+    0.0,
+    -0.207911691,
+    -0.978147601
+   ],
+   "plane_offset_m": -0.469510848
+  },
+  {
+   "index": 7,
+   "left": "left_007.jpg",
+   "right": "right_007.jpg",
+   "plane_normal": [
+    0.0,
+    -0.199367934,
+    -0.979924705
+   ],
+   "plane_offset_m": -0.475263482
+  },
+  {
+   "index": 8,
+   "left": "left_008.jpg",
+   "right": "right_008.jpg",
+   "plane_normal": [
+    0.0,
+    -0.190808995,
+    -0.981627183
+   ],
+   "plane_offset_m": -0.48099732
+  },
+  {
+   "index": 9,
+   "left": "left_009.jpg",
+   "right": "right_009.jpg",
+   "plane_normal": [
+    0.0,
+    -0.182235525,
+    -0.983254908
+   ],
+   "plane_offset_m": -0.486711179
+  }
+ ]
+}

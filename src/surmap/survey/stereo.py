@@ -200,8 +200,12 @@ class StereoReconstructor:
         scale = max(1, left_gray.shape[1] // self._match_width_px)
         small_left = left_gray[::scale, ::scale]
         small_right = right_gray[::scale, ::scale]
+        # A right principal point `offset` px further along puts the scene there too: moving the
+        # right content back by it lines the two principal points up.
         offset_x, offset_y = self._alignment_offset
-        aligned_right = _shift_image(small_right, round(offset_x / scale), round(offset_y / scale))
+        aligned_right = _shift_image(
+            small_right, -round(offset_x / scale), -round(offset_y / scale)
+        )
 
         disparity = _disparity_map(small_left, aligned_right, self._max_disparity)
         # Reverse disparity (right -> left), computed in flipped coordinates

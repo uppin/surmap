@@ -112,7 +112,6 @@ detector ([docs/coral-edge-tpu-model-spike.md](docs/coral-edge-tpu-model-spike.m
 | NOAA Emergency Response Imagery (NOAA NGS) | 28 January 2025 aerial imagery of the Eaton and Palisades fires, CC0-1.0 | `scripts/download_disaster_data.py noaa` | NOAA's own GeoTIFF tiles only (not the Maxar imagery), picked by fire area or bbox, cached outside the repo, not re-hosted |
 | KITTI raw (KIT, TTI) | Driving stereo dataset, CC BY-NC-SA 3.0 | Dev-console scene `kitti-2011-09-26-drive-0009`, KITTI tracking parser | Converted locally, not re-hosted, credited on the page |
 | NTU VIRAL (NTU Singapore) | UAV dataset, CC BY-NC-SA 4.0 | Dev-console scene `ntu-viral-sbs-01` | Stereo extrinsics recalibrated from the authors' checkerboard pairs |
-| ETH3D `cables_2` | Stereo SLAM sequence | Ten downscaled pairs in `tests/fixtures/eth3d_cables2` (research-use terms in the fixture README) | Test data only |
 | VisDrone, Purdue moving-object clips | Video with boxes | Parsers in `surmap.moving.snippets` | Moving-area pipeline tests |
 
 Stereo depth (`surmap.survey.stereo`: SAD block matching, parabolic

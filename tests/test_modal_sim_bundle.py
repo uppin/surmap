@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from surmap.survey.modal_hosting import SimBundleError, check_sim_bundle
+from surmap.survey.modal_hosting import SimBundleError, check_chat_bundle, check_sim_bundle
 
 BUILT_AT = 1_800_000_000.0
 EDITED_AFTER = BUILT_AT + 60
@@ -34,6 +34,10 @@ class PocDir:
     def built(self) -> PocDir:
         self._write("dist/index.html", at=BUILT_AT)
         self._write("dist/bevy-sitl-poc_bg.wasm", at=BUILT_AT)
+        return self
+
+    def licensed(self) -> PocDir:
+        self._write("dist/THIRD_PARTY_LICENSES.md", at=BUILT_AT)
         return self
 
     def edited(self, relative: str) -> PocDir:
@@ -63,8 +67,8 @@ def poc(tmp_path: Path) -> PocDir:
 def test_a_page_built_after_its_sources_with_every_pinned_asset_fetched_is_shipped(
     poc: PocDir,
 ) -> None:
-    # Given a build newer than every source and every pinned asset on disk
-    poc.built().fetched()
+    # Given a build newer than every source, its licence file, and every pinned asset on disk
+    poc.built().licensed().fetched()
 
     # Then the preflight lets the deploy go ahead
     check_sim_bundle(poc.root)
@@ -106,3 +110,48 @@ def test_a_pinned_asset_never_fetched_is_refused_with_the_fetch_command(poc: Poc
         SimBundleError, match=r"textures/asphalt_2k\.jpg.*scripts/fetch_sim_assets\.py"
     ):
         check_sim_bundle(poc.root)
+
+
+def test_a_page_without_its_third_party_licences_is_refused_with_the_notices_command(
+    poc: PocDir,
+) -> None:
+    # Given a current build with every asset fetched but no third-party licence file
+    poc.built().fetched()
+
+    # Then the deploy stops and says how to write the notices
+    with pytest.raises(SimBundleError, match=r"THIRD_PARTY_LICENSES\.md.*scripts/sim_notices\.py"):
+        check_sim_bundle(poc.root)
+
+
+def a_chat_dist(tmp_path: Path, *files: str) -> Path:
+    dist = tmp_path / "agent-chat" / "dist"
+    dist.mkdir(parents=True)
+    for name in files:
+        (dist / name).write_text("", encoding="utf-8")
+    return dist
+
+
+def test_a_chat_build_with_its_third_party_licences_is_shipped(tmp_path: Path) -> None:
+    # Given a chat build that wrote its licence file
+    dist = a_chat_dist(tmp_path, "index.html", "THIRD_PARTY_LICENSES.md")
+
+    # Then the preflight lets the deploy go ahead
+    check_chat_bundle(dist)
+
+
+def test_a_chat_build_without_its_third_party_licences_is_refused(tmp_path: Path) -> None:
+    # Given a chat build from before the build wrote its licence file
+    dist = a_chat_dist(tmp_path, "index.html")
+
+    # Then the deploy stops and says to rebuild the page
+    with pytest.raises(SimBundleError, match=r"THIRD_PARTY_LICENSES\.md.*yarn build"):
+        check_chat_bundle(dist)
+
+
+def test_a_chat_page_never_built_is_refused_with_the_build_command(tmp_path: Path) -> None:
+    # Given no chat build at all
+    dist = tmp_path / "agent-chat" / "dist"
+
+    # Then the deploy stops and says how to build the page
+    with pytest.raises(SimBundleError, match="yarn build"):
+        check_chat_bundle(dist)

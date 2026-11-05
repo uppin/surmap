@@ -10,6 +10,9 @@ export default defineConfig({
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
   build: {
+    // The notices of every bundled package (MIT, BSD and ISC ask for them wherever the code is
+    // redistributed), beside index.html; the Modal deploy refuses a build without it.
+    license: { fileName: "THIRD_PARTY_LICENSES.md" },
     rolldownOptions: {
       output: {
         // three.js is loaded lazily for the GLB preview. Its scene core, its WebGL renderer and
