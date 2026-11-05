@@ -307,6 +307,12 @@ The agent chat web front end (Vite, React, shadcn/ui) lives in
 Out of scope by design: navigation, path planning, flight-controller
 interfaces, and drone tasking.
 
+## Team
+
+- Ginas Baladinskas ([@JazzGinas](https://github.com/JazzGinas))
+- Mantas Indrašius ([@uppin](https://github.com/uppin),
+  [@mantasindrasius](https://github.com/mantasindrasius))
+
 ## Credits
 
 SurMap builds on RTAB-Map, PX4, Gazebo, ROS 2, ConnectRPC, Coral
