@@ -7,6 +7,8 @@ name = "surmap"
 version = "0.1.0"
 description = "Passive drone survey: stereo + RTAB-Map static map + on-board object detection/tracking, fused into a GPS-anchored semantic map"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.11"
 dependencies = [
     "ai-edge-litert>=2.3.0",
