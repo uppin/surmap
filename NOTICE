@@ -1,0 +1,16 @@
+SurMap
+Copyright 2026 The SurMap Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Exceptions inside this repository:
+
+- examples/bevy-sitl-poc/ is dual-licensed MIT OR Apache-2.0, as its
+  Cargo.toml declares.
+- tests/fixtures/eth3d_cables2/ holds downscaled frames from the ETH3D
+  SLAM dataset (Schöps et al., CVPR 2017). ETH3D provides them for
+  non-commercial research use only; they are test data and are NOT
+  covered by the Apache License. See that directory's README.md.
+
+Third-party dependencies, datasets, models and assets keep their own
+licences. They are listed in docs/third-party-licences.md and HACKATHON.md.

@@ -6,6 +6,7 @@
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Tests: pytest](https://img.shields.io/badge/tests-pytest-blue)](tests/)
 [![Typed: mypy strict](https://img.shields.io/badge/typed-mypy%20strict-blue)](pyproject.toml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 SurMap is a civilian disaster-response mapping payload. Carried over an
 affected area, it builds a GPS-anchored 3D semantic map from stereo
@@ -46,6 +47,42 @@ is refused. The only non-Meta learned stage is on-board detection: no
 Meta model compiles to the Coral Edge TPU
 ([spike](docs/coral-edge-tpu-model-spike.md)). Endpoints and code
 paths: [HACKATHON.md](HACKATHON.md).
+
+## Setup
+
+| Tool | Needed for | Install |
+|---|---|---|
+| [uv](https://docs.astral.sh/uv/) (brings Python 3.11+) | Everything | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| Node.js ≥ 20.19 and yarn 1 | Agent chat UI (`web/agent-chat`) | `corepack enable` |
+| Rust stable, `wasm32-unknown-unknown`, [trunk](https://trunkrs.dev/) | Bevy simulation page that the agent serves at `/sim/` | `rustup target add wasm32-unknown-unknown && cargo install trunk` |
+| Docker | RTAB-Map (live mission, dev console, `dev.sh --bridge`) | Docker Desktop or Engine |
+| A model: `MODEL_API_KEY` or [Ollama](https://ollama.com/) | The survey agent and the live paths | `.env`, see below |
+
+```bash
+git clone https://github.com/uppin/surmap.git && cd surmap
+uv sync --group dev                   # project-local .venv from uv.lock
+cp .env.example .env                  # fill in only the keys you use
+(cd web/agent-chat && yarn install --frozen-lockfile)   # public npm
+#   or `yarn local-install` behind a private registry (web/agent-chat/README.md)
+```
+
+Then start the whole local stack (CM5 `:8080`, station `:8081`, survey
+agent `:8780`, chat UI at the `[chat] Local:` URL) with one command:
+
+```bash
+scripts/dev.sh                        # agent on Muse Wonder: MODEL_API_KEY in .env
+scripts/dev.sh --model ollama:llama3.2   # or a local Ollama model, no key
+scripts/dev.sh --with-sam             # station runs SAM 3.1 on the Mac GPU (HF_TOKEN)
+scripts/dev.sh --bridge               # simulation drone camera → streaming RTAB-Map (Docker)
+scripts/dev.sh --dry-run              # print each service's command
+```
+
+On first run `dev.sh` fetches the simulation's pinned CC0 assets and
+builds the simulation page with trunk. Each later run rebuilds the page
+only when its source changes. Ctrl-C stops every service.
+`scripts/dev.sh --help` lists the ports and the `SURMAP_DEV_*` overrides.
+To try SurMap with none of these tools, run the offline mission demo
+below. It needs only `uv sync`.
 
 ## Quickstart
 
@@ -110,6 +147,40 @@ on the video, rewinds and replays every recorded run, rebuilds a run's
 RTAB-Map without rerunning SAM, and exports or imports runs as
 `.surmaprun` files. Full feature list and flags:
 [docs/dev-console.md](docs/dev-console.md).
+
+To run it with real RTAB-Map, SAM 3.1 segmentation, and 3D object
+surfaces, you need Docker running, `HF_TOKEN` in `.env` with access
+granted to the gated
+[`facebook/sam3.1`](https://huggingface.co/facebook/sam3.1)
+checkpoint, and a CUDA GPU or an Apple-silicon Mac. PyTorch and Meta's
+`sam3` package are not project dependencies, so `uv run --with`
+layers them on for the run and leaves `.venv` and `uv.lock` unchanged:
+
+```bash
+uv run python scripts/build_rtabmap_stream.py   # once: streaming RTAB-Map image
+
+# NVIDIA GPU: SAM 3.1 video mode in 16-frame windows
+uv run --with torch --with torchvision --with 'setuptools<81' \
+    --with git+https://github.com/facebookresearch/sam3.git \
+    python scripts/demo.py --sam-device cuda:0
+
+# Apple silicon: SAM 3.1 image model per frame (~2.4 s each), so play at its pace
+uv run --with torch --with torchvision --with 'setuptools<81' \
+    --with git+https://github.com/facebookresearch/sam3.git \
+    python scripts/demo.py --sam-device mps --fps 0.35 --frames 120
+
+# then open http://127.0.0.1:8765/ and press Rebuild
+```
+
+The first time you pick a scene, its dataset downloads (1–4 GB) into
+`~/.cache/surmap/demo-datasets`. A scene with no recording waits for
+**Rebuild**, which runs RTAB-Map and SAM live and records the run. After
+that, opening the scene replays its cached run. Each scene has a
+default concept (`box`, `car`, or `person`); change it with the page's
+SAM prompt or `--sam-label`. You can also choose a scene up front with
+`--dataset kitti-2011-09-26-drive-0009`. To try the page without a GPU,
+use `--sam-fake` for a stand-in segmenter. Without Docker, use
+`--no-rtabmap`.
 
 ## Architecture
 
@@ -240,4 +311,14 @@ interfaces, and drone tasking.
 
 SurMap builds on RTAB-Map, PX4, Gazebo, ROS 2, ConnectRPC, Coral
 detectors, and open datasets. Provenance, licences, and third-party
-credits: [HACKATHON.md](HACKATHON.md).
+credits: [HACKATHON.md](HACKATHON.md); dependency licences:
+[docs/third-party-licences.md](docs/third-party-licences.md).
+
+## Licence
+
+SurMap is licensed under the [Apache License 2.0](LICENSE); see
+[NOTICE](NOTICE). There are two exceptions. `examples/bevy-sitl-poc/` is
+dual-licensed MIT OR Apache-2.0. The ETH3D frames in
+`tests/fixtures/eth3d_cables2/` are third-party test data, licensed
+for non-commercial research use only and not covered by the Apache
+License.
