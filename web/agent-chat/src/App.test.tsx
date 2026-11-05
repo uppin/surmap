@@ -7,6 +7,25 @@ import { aModel, aStation } from "@/test-support/view-items";
 import { aConversation } from "@/test-support/turn-events";
 import type { ChatPort, DroneMapView, ModelInfo, StationView, StreamTurnInput } from "@/ports";
 import App from "./App";
+import type { SessionStatus } from "./adapters/session";
+
+async function anUngatedAgent(): Promise<SessionStatus> {
+  return { gated: false, signedIn: true };
+}
+
+function aGatedAgent({ signedIn = false } = {}): () => Promise<SessionStatus> {
+  return async () => ({ gated: true, signedIn });
+}
+
+/** A sign-in that takes only `code`, recording every code it was given. */
+function aSignIn(code: string) {
+  const tried: string[] = [];
+  const signIn = async (value: string) => {
+    tried.push(value);
+    if (value !== code) throw new Error("the agent refused the access code (401)");
+  };
+  return { signIn, tried };
+}
 
 interface FakePortOptions {
   models?: ModelInfo[];
@@ -139,7 +158,7 @@ describe("chat page", () => {
     const { port } = fakePort();
     const signedIn: string[] = [];
 
-    render(<App port={port} signIn={async (code) => void signedIn.push(code)} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} signIn={async (code) => void signedIn.push(code)} />);
 
     await screen.findByRole("combobox", { name: "Model" });
     expect(signedIn).toEqual(["correct-horse"]);
@@ -151,7 +170,7 @@ describe("chat page", () => {
     const { port } = fakePort();
     const signedIn: string[] = [];
 
-    render(<App port={port} signIn={async (code) => void signedIn.push(code)} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} signIn={async (code) => void signedIn.push(code)} />);
 
     await screen.findByRole("combobox", { name: "Model" });
     expect(signedIn).toEqual([]);
@@ -165,15 +184,16 @@ describe("chat page", () => {
       ],
     });
 
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
 
-    expect(await screen.findByRole("combobox", { name: "Model" })).toHaveValue("ollama:qwen3");
+    const picker = await screen.findByRole("combobox", { name: "Model" });
+    await waitFor(() => expect(picker).toHaveValue("ollama:qwen3"));
   });
 
   it("shows the SAM station's state in the header", async () => {
     const { port } = fakePort({ station: aStation({ state: "off" }) });
 
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
 
     expect(await screen.findByRole("status", { name: "SAM station" })).toHaveTextContent("SAM · off");
   });
@@ -181,7 +201,7 @@ describe("chat page", () => {
   it("shows no SAM station when the server has none", async () => {
     const { port } = fakePort({ station: null });
 
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
 
     await screen.findByRole("combobox", { name: "Model" });
     expect(screen.queryByRole("status", { name: "SAM station" })).toBeNull();
@@ -189,7 +209,7 @@ describe("chat page", () => {
 
   it("starts the SAM station from the header and shows it come up", async () => {
     const { port, asked } = fakePort({ station: aStation({ state: "off" }) });
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole("button", { name: "Start SAM" }));
@@ -200,7 +220,7 @@ describe("chat page", () => {
 
   it("stops the SAM station from the header", async () => {
     const { port, asked } = fakePort({ station: aStation({ state: "ready", containers: 1 }) });
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
     const user = userEvent.setup();
 
     await user.click(await screen.findByRole("button", { name: "Stop SAM" }));
@@ -234,7 +254,7 @@ describe("chat page", () => {
         },
       ],
     });
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
     const user = userEvent.setup();
 
     // The chat screen has no gallery cards
@@ -256,10 +276,10 @@ describe("chat page", () => {
     const { port, asked } = fakePort({
       turn: aConversation("conv-9").userMessage("Hello").textDelta("Hi there.").turnFinished("stop").build(),
     });
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByRole("textbox", { name: "Message" }), "Hello");
+    await user.type(await screen.findByRole("textbox", { name: "Message" }), "Hello");
     await user.click(screen.getByRole("button", { name: "Send" }));
 
     expect(await screen.findByText("Hi there.")).toBeInTheDocument();
@@ -287,10 +307,10 @@ describe("chat page", () => {
         .turnFinished("stop")
         .build(),
     });
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByRole("textbox", { name: "Message" }), "Build a downtown blaze");
+    await user.type(await screen.findByRole("textbox", { name: "Message" }), "Build a downtown blaze");
     await user.click(screen.getByRole("button", { name: "Send" }));
 
     const pane = await screen.findByRole("region", { name: "Simulation" });
@@ -305,39 +325,40 @@ describe("chat page", () => {
     expect(screen.getByRole("region", { name: "Tasks" })).toBeInTheDocument();
   });
 
-  it("streams the simulation preview to the bridge the chat was opened with", async () => {
-    window.history.replaceState({}, "", "/?bridge=ws://127.0.0.1:8790");
-    const created = JSON.stringify({
-      scenario: { id: "downtown-blaze", name: "Downtown blaze", version: 1, credits: [], url: "/sim/?scenario=downtown-blaze" },
-    });
-    const { port } = fakePort({
-      turn: aConversation("conv-9")
-        .userMessage("Build a downtown blaze")
-        .toolStarted("call-1", "create_scenario")
-        .toolSucceeded("call-1", { resultJson: created })
-        .turnFinished("stop")
-        .build(),
-    });
-    render(<App port={port} />);
+  it("streams the simulation preview to the bridge the page is configured with", async () => {
+    const { port } = fakePort({ turn: aSimulationCreated("downtown-blaze", "Downtown blaze") });
+    render(<App port={port} sessionStatus={anUngatedAgent} bridgeUrl="ws://127.0.0.1:8790" />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByRole("textbox", { name: "Message" }), "Build a downtown blaze");
+    await user.type(await screen.findByRole("textbox", { name: "Message" }), "Build a downtown blaze");
     await user.click(screen.getByRole("button", { name: "Send" }));
 
     await screen.findByRole("region", { name: "Simulation" });
     expect(screen.getByTitle("Simulation: Downtown blaze").getAttribute("src")).toContain(
       "&bridge=ws%3A%2F%2F127.0.0.1%3A8790",
     );
-    window.history.replaceState({}, "", "/");
+  });
+
+  it("never streams to a bridge a link names in its URL", async () => {
+    window.history.replaceState({}, "", "/?conversation=conv-9&bridge=wss://attacker.example/steal");
+    const { port } = fakePort({ turn: aSimulationCreated("downtown-blaze", "Downtown blaze") });
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByRole("textbox", { name: "Message" }), "Build a downtown blaze");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await screen.findByRole("region", { name: "Simulation" });
+    expect(screen.getByTitle("Simulation: Downtown blaze").getAttribute("src")).not.toContain("bridge=");
   });
 
   it("shows the map the simulation's drone builds once it flies", async () => {
     const flying: DroneMapView = { droneId: "nest-sw-d1", phase: "climbing", points: 812, png: "iVBOR" };
     const { port, asked } = fakePort({ turn: aSimulationCreated("downtown-blaze", "Downtown blaze"), droneMaps: [null, flying] });
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByRole("textbox", { name: "Message" }), "Build a downtown blaze");
+    await user.type(await screen.findByRole("textbox", { name: "Message" }), "Build a downtown blaze");
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByRole("region", { name: "Simulation" });
     expect(screen.queryByRole("region", { name: "Live map" })).not.toBeInTheDocument();
@@ -351,10 +372,10 @@ describe("chat page", () => {
   it("keeps the drone's last map once it has landed", async () => {
     const flying: DroneMapView = { droneId: "nest-sw-d1", phase: "cruising", points: 812, png: "iVBOR" };
     const { port } = fakePort({ turn: aSimulationCreated("downtown-blaze", "Downtown blaze"), droneMaps: [flying, null] });
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByRole("textbox", { name: "Message" }), "Build a downtown blaze");
+    await user.type(await screen.findByRole("textbox", { name: "Message" }), "Build a downtown blaze");
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByRole("region", { name: "Live map" });
     await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -367,9 +388,9 @@ describe("chat page", () => {
       turn: aSimulationCreated("downtown-blaze", "Downtown blaze"),
       imported: { id: "downtown-blaze", name: "Downtown blaze", version: 2, url: "/sim/?scenario=downtown-blaze", credits: [] },
     });
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
     const user = userEvent.setup();
-    await user.type(screen.getByRole("textbox", { name: "Message" }), "Build a downtown blaze");
+    await user.type(await screen.findByRole("textbox", { name: "Message" }), "Build a downtown blaze");
     await user.click(screen.getByRole("button", { name: "Send" }));
     const pane = await screen.findByRole("region", { name: "Simulation" });
 
@@ -384,9 +405,9 @@ describe("chat page", () => {
       turn: aSimulationCreated("downtown-blaze", "Downtown blaze"),
       imported: "not a SurMap scenario bundle",
     });
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
     const user = userEvent.setup();
-    await user.type(screen.getByRole("textbox", { name: "Message" }), "Build a downtown blaze");
+    await user.type(await screen.findByRole("textbox", { name: "Message" }), "Build a downtown blaze");
     await user.click(screen.getByRole("button", { name: "Send" }));
     const pane = await screen.findByRole("region", { name: "Simulation" });
 
@@ -400,10 +421,10 @@ describe("chat page", () => {
     const { port } = fakePort({
       turn: aConversation("conv-9").userMessage("Hello").textDelta("Hi there.").turnFinished("stop").build(),
     });
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByRole("textbox", { name: "Message" }), "Hello");
+    await user.type(await screen.findByRole("textbox", { name: "Message" }), "Hello");
     await user.click(screen.getByRole("button", { name: "Send" }));
 
     expect(await screen.findByText("Hi there.")).toBeInTheDocument();
@@ -412,12 +433,12 @@ describe("chat page", () => {
 
   it("opens the watch stream only once the server knows the conversation", async () => {
     const { port, asked } = fakePort({ history: null, turn: aConversation("conv-9").turnFinished().build() });
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
     const user = userEvent.setup();
     await screen.findByRole("combobox", { name: "Model" });
     expect(asked.watch).toEqual([]);
 
-    await user.type(screen.getByRole("textbox", { name: "Message" }), "Hello");
+    await user.type(await screen.findByRole("textbox", { name: "Message" }), "Hello");
     await user.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => expect(asked.watch).toEqual(["conv-9"]));
@@ -426,10 +447,11 @@ describe("chat page", () => {
   it("names a new conversation in the URL when the URL names none", async () => {
     window.history.replaceState({}, "", "/?server=http://agent.test");
     const { port, asked } = fakePort({ turn: aConversation().turnFinished().build() });
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
     const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Open chat" }));
 
-    await user.type(screen.getByRole("textbox", { name: "Message" }), "Hello");
+    await user.type(await screen.findByRole("textbox", { name: "Message" }), "Hello");
     await user.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(asked.streamTurn).toHaveLength(1));
 
@@ -441,7 +463,7 @@ describe("chat page", () => {
 
   it("names the model in use in the URL", async () => {
     const { port } = fakePort({ models: TWO_MODELS });
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
     const user = userEvent.setup();
     await screen.findByRole("combobox", { name: "Model" });
     await waitFor(() => expect(urlParam("model")).toBe("meta:muse-spark"));
@@ -454,17 +476,18 @@ describe("chat page", () => {
   it("keeps the conversation and its chosen model across a reload", async () => {
     window.history.replaceState({}, "", "/");
     const before = fakePort({ models: TWO_MODELS });
-    const beforeReload = render(<App port={before.port} />);
+    const beforeReload = render(<App port={before.port} sessionStatus={anUngatedAgent} />);
     const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Open chat" }));
     await screen.findByRole("option", { name: /Kimi K3/ });
     await user.selectOptions(screen.getByRole("combobox", { name: "Model" }), "fireworks:kimi-k3");
     const conversationId = urlParam("conversation");
     beforeReload.unmount();
 
     const after = fakePort({ models: TWO_MODELS, turn: aConversation().turnFinished().build() });
-    render(<App port={after.port} />);
+    render(<App port={after.port} sessionStatus={anUngatedAgent} />);
     await screen.findByRole("option", { name: /Kimi K3/ });
-    await user.type(screen.getByRole("textbox", { name: "Message" }), "Still there?");
+    await user.type(await screen.findByRole("textbox", { name: "Message" }), "Still there?");
     await user.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(after.asked.streamTurn).toHaveLength(1));
 
@@ -475,10 +498,110 @@ describe("chat page", () => {
     window.history.replaceState({}, "", "/?conversation=conv-9&model=ollama:gone");
     const { port } = fakePort({ models: TWO_MODELS });
 
-    render(<App port={port} />);
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
 
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("meta:muse-spark"));
     expect(urlParam("model")).toBe("meta:muse-spark");
+  });
+});
+
+describe("landing page", () => {
+  beforeEach(() => {
+    window.history.replaceState({}, "", "/");
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("opens on a landing page that links to the source repository", async () => {
+    const { port } = fakePort();
+
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
+
+    expect(await screen.findByRole("link", { name: /GitHub/ })).toHaveAttribute("href", "https://github.com/uppin/surmap");
+    expect(screen.queryByRole("textbox", { name: "Message" })).not.toBeInTheDocument();
+  });
+
+  it("opens the chat in a new conversation from the landing page", async () => {
+    const { port } = fakePort();
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: "Open chat" }));
+
+    expect(await screen.findByRole("textbox", { name: "Message" })).toBeInTheDocument();
+    expect(urlParam("conversation")).toMatch(/.+/);
+  });
+
+  it("leaves the URL naming no conversation while on the landing page", async () => {
+    const { port } = fakePort();
+
+    render(<App port={port} sessionStatus={anUngatedAgent} />);
+
+    await screen.findByRole("button", { name: "Open chat" });
+    expect(urlParam("conversation")).toBeNull();
+  });
+
+  it("asks a gated agent's pass code and opens the chat once it is right", async () => {
+    const { port } = fakePort();
+    const access = aSignIn("correct-horse");
+    render(<App port={port} sessionStatus={aGatedAgent()} signIn={access.signIn} />);
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByLabelText("Pass code"), "correct-horse");
+    await user.click(screen.getByRole("button", { name: "Enter chat" }));
+
+    expect(await screen.findByRole("textbox", { name: "Message" })).toBeInTheDocument();
+    expect(access.tried).toEqual(["correct-horse"]);
+  });
+
+  it("says a wrong pass code was refused and stays on the landing page", async () => {
+    const { port } = fakePort();
+    const access = aSignIn("correct-horse");
+    render(<App port={port} sessionStatus={aGatedAgent()} signIn={access.signIn} />);
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByLabelText("Pass code"), "guess");
+    await user.click(screen.getByRole("button", { name: "Enter chat" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("refused");
+    expect(screen.queryByRole("textbox", { name: "Message" })).not.toBeInTheDocument();
+  });
+
+  it("asks no pass code of a tab that is already signed in", async () => {
+    const { port } = fakePort();
+
+    render(<App port={port} sessionStatus={aGatedAgent({ signedIn: true })} />);
+
+    expect(await screen.findByRole("button", { name: "Open chat" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Pass code")).not.toBeInTheDocument();
+  });
+
+  it("gates a chat link behind the pass code, then opens that conversation", async () => {
+    window.history.replaceState({}, "", "/?conversation=conv-9");
+    const { port, asked } = fakePort();
+    const access = aSignIn("correct-horse");
+    render(<App port={port} sessionStatus={aGatedAgent()} signIn={access.signIn} />);
+    const user = userEvent.setup();
+
+    await user.type(await screen.findByLabelText("Pass code"), "correct-horse");
+    await user.click(screen.getByRole("button", { name: "Enter chat" }));
+
+    await screen.findByRole("textbox", { name: "Message" });
+    expect(asked.getConversation).toContain("conv-9");
+  });
+
+  it("lands on the landing page with the error when a ?code= is refused", async () => {
+    window.history.replaceState({}, "", "/?conversation=conv-9&code=guess");
+    const { port } = fakePort();
+    const access = aSignIn("correct-horse");
+
+    render(<App port={port} sessionStatus={aGatedAgent()} signIn={access.signIn} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("refused");
+    expect(screen.getByLabelText("Pass code")).toBeInTheDocument();
+    expect(urlParam("code")).toBeNull();
   });
 });
 

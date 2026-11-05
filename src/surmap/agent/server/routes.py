@@ -10,8 +10,11 @@
   `GET /sim/map/<id>` carries CORS headers, as the chat fetches it.
 - With `web_dist`, `GET /` and `GET /assets/…` — the built chat page.
 - With `gate`, `POST /auth/session` trades the pass code for a session token
-  (`surmap.agent.server.access`), and every `GET` but `/health` and the page, and every other
-  `POST` route here, needs one (401).
+  (`surmap.agent.server.access`), and every `GET` but `/health`, `/auth/session` and the page,
+  and every other `POST` route here, needs one (401).
+- `GET /auth/session` — `{"gated", "signed_in"}`: whether the agent has a gate and whether the
+  request carries a valid session; with no gate, `signed_in` is always true. The landing page
+  reads it to decide whether to ask for the pass code.
 
 An unknown run, object or frame is 404. A request whose `Origin` is one of `cors_origins` gets
 `Access-Control-Allow-Origin` with that origin; any other origin gets no CORS headers.
@@ -115,6 +118,20 @@ def agent_http_routes(
             if any(part in ("", ".", "..") for part in request.path.split("/")[1:]):
                 return HttpResponse(status=404)
             return static_file(web_dist, list(PurePosixPath(request.path).parts[1:]))
+        if request.path == SESSION_PATH:
+            status = {
+                "gated": gate is not None,
+                "signed_in": gate is None or _signed_in(gate, request),
+            }
+            return HttpResponse(
+                status=200,
+                body=json.dumps(status).encode(),
+                headers={
+                    "content-type": "application/json",
+                    "cache-control": "no-store",
+                    **_cors(request, origins),
+                },
+            )
         if gate is not None and not _signed_in(gate, request):
             log_event("auth_refused", surface="http", target=request.path)
             return HttpResponse(status=401, body=UNAUTHENTICATED_HINT.encode(), headers=_PLAIN)

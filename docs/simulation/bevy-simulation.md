@@ -1144,7 +1144,8 @@ opens the full page.
 - **Locally.** `scripts/dev.sh --bridge` makes the streaming RTAB-Map image ready
   (`scripts/build_rtabmap_stream.py`, once per source hash; a failure stops the stack before any
   service starts), runs the agent with `--bevy-bridge-port $SURMAP_DEV_BRIDGE_PORT` (8782) and
-  the chat with `VITE_SURMAP_BRIDGE_URL`; the chat also takes `?bridge=`.
+  the chat with `VITE_SURMAP_BRIDGE_URL` (the chat's only source for the bridge: it never
+  takes one from its URL).
 
 ### Verified
 

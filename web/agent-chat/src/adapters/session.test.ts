@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_SERVER_URL } from "./connect-chat";
-import { SESSION_KEY, defaultServerUrl, sessionInterceptor, signIn, storedToken } from "./session";
+import { SESSION_KEY, defaultServerUrl, sessionInterceptor, sessionStatus, signIn, storedToken } from "./session";
 
 const SERVER = "https://ginas-bb--surmap-agent-serve.us-east.modal.run";
 
@@ -57,6 +57,42 @@ describe("agent session", () => {
     const headers = await headersAfter(sessionInterceptor(() => null));
 
     expect(headers.has("authorization")).toBe(false);
+  });
+
+  it("asks the agent whether the tab must sign in", async () => {
+    const server = fakeFetch(200, { gated: true, signed_in: false });
+
+    const status = await sessionStatus(SERVER, server.fetchFn);
+
+    expect(status).toEqual({ gated: true, signedIn: false });
+    expect(server.sent[0].url).toBe(`${SERVER}/auth/session`);
+  });
+
+  it("asks with the tab's session token once it has one", async () => {
+    sessionStorage.setItem(SESSION_KEY, "1767225600.abc");
+    const server = fakeFetch(200, { gated: true, signed_in: true });
+
+    await sessionStatus(SERVER, server.fetchFn);
+
+    expect(new Headers(server.sent[0].init?.headers).get("authorization")).toBe("Bearer 1767225600.abc");
+  });
+
+  it("takes an agent that cannot say as one with no gate", async () => {
+    const server = fakeFetch(404, {});
+
+    const status = await sessionStatus(SERVER, server.fetchFn);
+
+    expect(status).toEqual({ gated: false, signedIn: true });
+  });
+
+  it("takes an agent it cannot reach as one with no gate", async () => {
+    const unreachable = (async () => {
+      throw new TypeError("Failed to fetch");
+    }) as typeof fetch;
+
+    const status = await sessionStatus(SERVER, unreachable);
+
+    expect(status).toEqual({ gated: false, signedIn: true });
   });
 
   it("talks to the page's own origin when the agent serves the page", () => {

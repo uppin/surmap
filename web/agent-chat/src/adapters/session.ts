@@ -20,6 +20,37 @@ export async function signIn(serverUrl: string, code: string, fetchFn: typeof fe
   sessionStorage.setItem(SESSION_KEY, body.token);
 }
 
+/** Whether the agent has a pass code, and whether this tab may call it. */
+export interface SessionStatus {
+  gated: boolean;
+  signedIn: boolean;
+}
+
+const NO_GATE: SessionStatus = { gated: false, signedIn: true };
+
+/**
+ * Asks the agent (`GET /auth/session`) whether this tab must sign in, with the tab's token when it
+ * has one; the cookie rides along on the page's own origin. An agent that cannot say (unreachable,
+ * or older than the route) is taken as one with no gate, so the page behaves as it did before.
+ */
+export async function sessionStatus(
+  serverUrl: string,
+  fetchFn: typeof fetch = fetch,
+  token: () => string | null = storedToken,
+): Promise<SessionStatus> {
+  const current = token();
+  try {
+    const response = await fetchFn(`${serverUrl.replace(/\/$/, "")}/auth/session`, {
+      headers: current ? { authorization: `Bearer ${current}` } : {},
+    });
+    if (!response.ok) return NO_GATE;
+    const body = (await response.json()) as { gated: boolean; signed_in: boolean };
+    return { gated: body.gated, signedIn: body.signed_in };
+  } catch {
+    return NO_GATE;
+  }
+}
+
 /** The tab's session token, or `null` before signing in. */
 export function storedToken(): string | null {
   try {

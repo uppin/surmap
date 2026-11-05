@@ -180,6 +180,48 @@ async def test_the_chat_page_cannot_be_used_to_read_files_outside_it(tmp_path: P
     assert b"hunter2" not in response.body
 
 
+async def session_status(
+    agent: InMemoryHost[None], headers: dict[str, str] | None = None
+) -> object:
+    response = await agent.http("GET", "/auth/session", headers=headers or {})
+    assert response.status == 200
+    return json.loads(response.body)
+
+
+async def test_the_page_can_ask_whether_it_must_sign_in() -> None:
+    # Given an agent behind a pass code
+    agent = an_agent()
+
+    # When a page that has not signed in asks for its session
+    status = await session_status(agent)
+
+    # Then it learns the agent is gated and it is not signed in
+    assert status == {"gated": True, "signed_in": False}
+
+
+async def test_a_signed_in_browser_learns_it_is_signed_in_from_its_cookie() -> None:
+    # Given a browser that signed in earlier, in another tab
+    agent = an_agent()
+    token = await a_token(agent)
+
+    # When a new tab, holding only the cookie, asks for its session
+    status = await session_status(agent, {"cookie": f"{SESSION_COOKIE}={token}"})
+
+    # Then it is signed in
+    assert status == {"gated": True, "signed_in": True}
+
+
+async def test_an_agent_without_a_pass_code_tells_the_page_it_need_not_sign_in() -> None:
+    # Given an agent with no access code, as run locally
+    agent = an_agent(access_code=None)
+
+    # When the page asks for its session
+    status = await session_status(agent)
+
+    # Then nothing is gated
+    assert status == {"gated": False, "signed_in": True}
+
+
 async def test_an_agent_without_a_pass_code_gates_nothing() -> None:
     # Given an agent with no access code, as run locally
     agent = an_agent(access_code=None)
