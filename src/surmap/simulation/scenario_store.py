@@ -24,6 +24,7 @@ from pathlib import Path, PurePosixPath
 from surmap.simulation.asset_sources import AssetHit, AssetKind, AssetSource
 from surmap.simulation.licences import check_licence
 from surmap.simulation.scenario_manifest import Manifest, ScenarioInvalid, validate_manifest
+from surmap.simulation.sim_assets import load_asset_pins
 
 _SCHEMA = (
     """CREATE TABLE assets (
@@ -413,6 +414,7 @@ class ScenarioStore:
                 credits.append(
                     Credit(asset.ref, asset.title, asset.author, asset.licence, asset.page_url)
                 )
+        credits += self._pinned_credits(manifest)
         floor = manifest.get("map_floor")
         if isinstance(floor, dict) and floor.get("attribution") == "© OpenStreetMap contributors":
             credits.append(
@@ -425,6 +427,43 @@ class ScenarioStore:
                 )
             )
         return tuple(credits)
+
+    def _pinned_credits(self, manifest: Manifest) -> list[Credit]:
+        """A credit for every attribution-licensed pinned asset the manifest shows: as a model,
+        or as the model of a vehicle class it drives."""
+        if self._assets_dir is None:
+            return []
+        shown = set(referenced_paths(manifest))
+        shown |= set(vehicle_model_paths(manifest, self._assets_dir))
+        return [
+            Credit(pin.path, pin.title, pin.author, pin.license, pin.source)
+            for pin in load_asset_pins(self._assets_dir / "assets.lock.json")
+            if pin.path in shown
+            and pin.license.startswith("CC-BY")
+            and pin.title is not None
+            and pin.author is not None
+        ]
+
+
+def vehicle_model_paths(manifest: Manifest, assets_dir: Path) -> Sequence[str]:
+    """The model of each vehicle class the manifest's elements drive."""
+    elements = manifest.get("elements")
+    classes = {
+        element["class"]
+        for element in (elements if isinstance(elements, list) else [])
+        if isinstance(element, dict)
+        and element.get("kind") == "vehicle"
+        and isinstance(element.get("class"), str)
+    }
+    paths: list[str] = []
+    for vehicle_class in sorted(classes):
+        class_file = assets_dir / "vehicle" / f"{vehicle_class}.vehicle.json"
+        if not class_file.is_file():
+            continue
+        spec: object = json.loads(class_file.read_text(encoding="utf-8"))
+        if isinstance(spec, dict) and isinstance(spec.get("glb"), str):
+            paths.append(spec["glb"])
+    return paths
 
 
 def referenced_paths(manifest: Manifest) -> Sequence[str]:

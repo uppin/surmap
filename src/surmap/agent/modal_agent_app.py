@@ -13,8 +13,9 @@ Secrets: ``surmap-agent`` (``MODEL_API_KEY``, ``SURMAP_AGENT_ACCESS_CODE``) and
 
 The image also carries the Bevy simulation the agent serves at ``/sim/``: the PoC's
 ``trunk build`` and its assets with the fetched pinned files. Deploying refuses a page older
-than its sources or unfetched assets (``check_sim_bundle``); only the deploy checks, since the
-container imports this file without the PoC on disk.
+than its sources, unfetched assets, or either page without its third-party licence file
+(``check_sim_bundle``, ``check_chat_bundle``); only the deploy checks, since the container
+imports this file without the PoC on disk.
 
 Build the pages and fetch the assets first, then deploy from the repo root (full steps in
 ``docs/modal.md``):
@@ -22,6 +23,7 @@ Build the pages and fetch the assets first, then deploy from the repo root (full
     (cd web/agent-chat && yarn build)
     uv run python scripts/fetch_sim_assets.py
     (cd examples/bevy-sitl-poc && trunk build index.html --release)
+    uv run python scripts/sim_notices.py
     uv run --with modal modal deploy src/surmap/agent/modal_agent_app.py
     uv run --with modal modal app stop surmap-agent
 """
@@ -45,6 +47,7 @@ from surmap.survey.modal_hosting import (
     AGENT_WEB_DIST,
     SURVEY_SECRET,
     agent_command,
+    check_chat_bundle,
     check_sim_bundle,
 )
 
@@ -54,6 +57,7 @@ _TIMEOUT_S = int(os.environ.get("SURMAP_MODAL_TIMEOUT", "86400"))
 _SCALEDOWN_S = int(os.environ.get("SURMAP_MODAL_SCALEDOWN_WINDOW", "1200"))
 
 if modal.is_local():
+    check_chat_bundle(Path("web/agent-chat/dist"))
     check_sim_bundle(Path("examples/bevy-sitl-poc"))
 
 app = modal.App(AGENT_APP_NAME)

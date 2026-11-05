@@ -320,3 +320,33 @@ def test_the_default_downloader_names_the_site_a_cdn_requires_as_referer(
 
     # Then the request names the site that serves the page as its referer
     assert sent[0].get_header("Referer") == "https://poly.pizza/"
+
+
+def test_a_credited_pin_keeps_the_title_and_author_its_credit_line_names(tmp_path: Path) -> None:
+    # Given a lock file pinning a CC BY model with its title and author
+    credited = {
+        **an_asset("models/car.glb", "0" * 64),
+        "license": "CC-BY-4.0",
+        "attribution": "Car Concept by Eric Chadwick (CC-BY-4.0)",
+        "title": "Car Concept",
+        "author": "Eric Chadwick",
+    }
+
+    # When it is loaded
+    (pin,) = load_asset_pins(a_lock_file(tmp_path, [credited]))
+
+    # Then the pin names what to credit and whom
+    assert (pin.title, pin.author) == ("Car Concept", "Eric Chadwick")
+
+
+def test_every_attribution_licensed_pin_of_the_simulation_names_its_title_and_author() -> None:
+    # Given the simulation's lock file
+    pins = load_asset_pins(POC / "assets" / "assets.lock.json")
+
+    # When the CC BY pins are checked for a title and an author
+    untitled = [
+        p.path for p in pins if p.license.startswith("CC-BY") and not (p.title and p.author)
+    ]
+
+    # Then every one of them can be credited on screen
+    assert untitled == []

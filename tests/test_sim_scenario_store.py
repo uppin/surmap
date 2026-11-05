@@ -162,3 +162,50 @@ def test_two_scenarios_with_one_name_get_distinct_ids(tmp_path: Path) -> None:
     # Then their ids differ and both are listed
     assert first.id != second.id
     assert {s.id for s in store.scenarios()} == {first.id, second.id}
+
+
+def a_store_with_the_simulation_assets(tmp_path: Path) -> ScenarioStore:
+    return ScenarioStore(
+        db_path=tmp_path / "simulation.sqlite",
+        library_dir=tmp_path / "library",
+        presets=load_presets(POC_ASSETS),
+        assets_dir=POC_ASSETS,
+    )
+
+
+def credited_titles(store: ScenarioStore, preset: str) -> list[tuple[str, str, str]]:
+    scenario = store.create_scenario("Credits", preset)
+    return [(c.title, c.author, c.licence) for c in scenario.credits]
+
+
+def test_a_scenario_with_the_pinned_cc_by_car_credits_its_author(tmp_path: Path) -> None:
+    # Given the store over the simulation's own assets
+    store = a_store_with_the_simulation_assets(tmp_path)
+
+    # When the shipped block, whose cars are the CC BY Car Concept, becomes a scenario
+    credits = credited_titles(store, "earthquake-block")
+
+    # Then the car's author is credited once, under its licence
+    assert credits == [("Car Concept", "Eric Chadwick, Darmstadt Graphics Group GmbH", "CC-BY-4.0")]
+
+
+def test_a_scenario_with_a_bus_credits_the_pinned_bus_model(tmp_path: Path) -> None:
+    # Given the store over the simulation's own assets
+    store = a_store_with_the_simulation_assets(tmp_path)
+
+    # When the street traffic, which drives a bus, becomes a scenario
+    credits = credited_titles(store, "street-traffic")
+
+    # Then the bus model, shown through its vehicle class, is credited
+    assert ("Bus", "Poly by Google", "CC-BY-3.0") in credits
+
+
+def test_a_scenario_with_no_pinned_cc_by_model_credits_none(tmp_path: Path) -> None:
+    # Given the store over the simulation's own assets
+    store = a_store_with_the_simulation_assets(tmp_path)
+
+    # When the bare lot becomes a scenario
+    credits = credited_titles(store, "empty-lot")
+
+    # Then it owes no credit
+    assert credits == []

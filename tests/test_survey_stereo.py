@@ -1,14 +1,16 @@
 import io
 import json
 import pathlib
+from collections.abc import Sequence
 
 import numpy as np
 import pytest
 from PIL import Image
 
 from surmap.survey.stereo import FrameImage, StereoReconstructor, StereoRig, decode_grayscale
+from surmap.types import Vec3
 
-FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "eth3d_cables2"
+FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "plane_stereo"
 
 
 def load_rig() -> StereoRig:
@@ -24,11 +26,11 @@ def load_frame(side: str, index: int = 0) -> FrameImage:
 
 
 def test_decoding_a_jpeg_frame_yields_a_grayscale_image_of_its_size() -> None:
-    # Given one real fixture frame (640x397)
+    # Given one fixture frame (640x480)
     gray = decode_grayscale(load_frame("left"))
 
     # Then it decodes to a single-channel float image of that size
-    assert gray.shape == (397, 640)
+    assert gray.shape == (480, 640)
     assert gray.dtype == np.float32
 
 
@@ -43,18 +45,29 @@ def test_decoding_a_raw_rgb_frame_converts_colour_to_gray() -> None:
     assert gray[0, 1] < 5.0
 
 
-def test_reconstruction_finds_the_tabletop_scene_in_a_real_pair() -> None:
-    # Given the first real ETH3D pair and its calibration
-    rig = load_rig()
+def test_reconstruction_puts_a_photo_textured_pair_on_its_true_plane() -> None:
+    # Given the first rendered pair, its calibration and the plane it shows
+    cal = json.loads((FIXTURE / "calibration.json").read_text(encoding="utf-8"))
+    plane = cal["frames"][0]
+    offset = (cal["right_cx"] - cal["cx"], cal["right_cy"] - cal["cy"])
 
-    # When the pair is reconstructed
-    points = StereoReconstructor().reconstruct(load_frame("left"), load_frame("right"), rig)
+    # When the pair is reconstructed with the rig's principal points aligned
+    points = StereoReconstructor(alignment_offset=offset).reconstruct(
+        load_frame("left"), load_frame("right"), load_rig()
+    )
 
-    # Then the scene is there: many points, all in front, sane depths
-    assert len(points) > 500
-    depths = sorted(p.z for p in points)
-    assert depths[len(depths) // 2] == pytest.approx(0.6, abs=0.45)
-    assert all(0.2 <= p.z <= 8.0 for p in points)
+    # Then the scene is there, and nearly every point lies within 5 cm of the true plane
+    assert len(points) > 2_000
+    on_plane = fraction_within(points, plane["plane_normal"], plane["plane_offset_m"], metres=0.05)
+    assert on_plane > 0.95
+
+
+def fraction_within(
+    points: Sequence[Vec3], normal: Sequence[float], offset_m: float, metres: float
+) -> float:
+    """The share of `points` at most `metres` from the plane `normal . p == offset_m`."""
+    xyz = np.array([(p.x, p.y, p.z) for p in points])
+    return float(np.mean(np.abs(xyz @ np.array(normal) - offset_m) < metres))
 
 
 def _shifted_pair(
@@ -117,3 +130,27 @@ def test_a_featureless_pair_yields_no_points() -> None:
 
     # Then nothing can be triangulated
     assert StereoReconstructor().reconstruct(frame, frame, rig) == ()
+
+
+def test_an_alignment_offset_rectifies_a_right_camera_whose_principal_point_sits_lower() -> None:
+    # Given a fractional-disparity plane whose right frame is moved down 8 px, as a right
+    # principal point 8 px below the left one would place it
+    left, right = _shifted_pair(disparity_px=25.0)
+    lowered = _moved_down(right, rows=8)
+    rig = StereoRig(fx=100.0, fy=100.0, cx=160.0, cy=32.0, baseline_m=0.5)
+
+    # When the pair is reconstructed with that offset compensated
+    aligned = StereoReconstructor(max_disparity=64, max_depth_m=10.0, alignment_offset=(0.0, 8.0))
+    points = aligned.reconstruct(left, lowered, rig)
+
+    # Then the plane is found at its true 2.0 m
+    assert len(points) > 150
+    depths = sorted(p.z for p in points)
+    assert depths[len(depths) // 2] == pytest.approx(2.0, abs=0.06)
+
+
+def _moved_down(frame: FrameImage, rows: int) -> FrameImage:
+    pixels = np.frombuffer(frame.data, dtype=np.uint8).reshape(frame.height, frame.width, 3)
+    moved = np.zeros_like(pixels)
+    moved[rows:] = pixels[:-rows]
+    return FrameImage(frame.width, frame.height, "raw_rgb", moved.tobytes())
